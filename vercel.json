@@ -1,7 +1,6 @@
 {
   "buildCommand": "pnpm --filter @paperclipai/ui... build",
   "outputDirectory": "ui/dist",
-  "framework": "vite",
   "rewrites": [
     {
       "source": "/api/:path*",
