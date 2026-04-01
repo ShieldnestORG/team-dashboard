@@ -77,6 +77,7 @@
               "deploy/local-development",
               "deploy/tailscale-private-access",
               "deploy/docker",
+              "deploy/vercel-vps-split",
               "deploy/deployment-modes",
               "deploy/database",
               "deploy/secrets",

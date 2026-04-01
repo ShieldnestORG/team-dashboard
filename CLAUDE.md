@@ -83,11 +83,43 @@ npm run dev
 cd ui && npm run build
 ```
 
-## Deployment
+## Deployment (Split Architecture)
 
-- **Vercel project**: "team dashboard"
-- **GitHub**: ShieldnestORG/team-dashboard
-- **Access**: Authenticated users only
+```
+Vercel (frontend)              VPS 31.220.61.12 (backend)        Neon (database)
+React SPA (ui/dist)  -------> Docker: Express.js :3200  ------> PostgreSQL
+vercel.json rewrites           docker-compose.production.yml     Vercel integration
+/api/* -> VPS:3200             SERVE_UI=false
+```
+
+- **Frontend**: Vercel — auto-deploys on push to master, serves static UI
+- **Backend**: VPS Docker at `31.220.61.12:3200` — Express.js API, agent runtime
+- **Database**: Neon PostgreSQL — managed by Vercel integration
+- **GitHub**: ShieldnestORG/team-dashboard (make private after deploy; use PAT for VPS access)
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `vercel.json` | Vercel build config + `/api/*` rewrite to VPS |
+| `docker-compose.production.yml` | VPS backend Docker Compose (template) |
+| `.env.production` | VPS secrets (never committed, on VPS at `/opt/team-dashboard/`) |
+
+### Updating
+
+```bash
+# Backend: SSH into VPS, pull latest code, rebuild
+ssh root@31.220.61.12
+cd /opt/team-dashboard/repo && git pull
+cd /opt/team-dashboard && docker compose build && docker compose up -d
+
+# Frontend: auto-deploys on push to master
+git push origin master
+```
+
+### WebSocket Limitation
+
+Vercel rewrites don't support WebSocket upgrade. Live push notifications (agent status, issue updates) are degraded. React Query polling still works. Fix later by adding a domain to the VPS with Caddy for HTTPS + WS support.
 
 ---
 

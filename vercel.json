@@ -1,0 +1,15 @@
+{
+  "buildCommand": "pnpm --filter @paperclipai/ui... build",
+  "outputDirectory": "ui/dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "http://31.220.61.12:3200/api/:path*"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

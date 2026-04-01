@@ -1,0 +1,29 @@
+name: team-dashboard
+
+services:
+  server:
+    image: ghcr.io/shieldnestorg/team-dashboard:latest
+    ports:
+      - "3200:3100"
+    env_file:
+      - .env.production
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3100"
+      SERVE_UI: "false"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public"
+      PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
+      PAPERCLIP_DB_BACKUP_ENABLED: "false"
+    volumes:
+      - paperclip-data:/paperclip
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  paperclip-data:
