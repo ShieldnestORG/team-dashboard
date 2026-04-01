@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coherence Daddy — Brand Guidelines</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --gold: #C9A84C;
+      --gold-light: #E8D5A0;
+      --gold-dim: #9A7D35;
+      --black: #0A0A0A;
+      --white: #D8D8D8;
+      --heading-white: #E2E2E2;
+      --warm-gray: #2A2A2A;
+      --slate: #6B6B6B;
+      --muted: #4A4A4A;
+      --glass-bg: rgba(255,255,255,0.035);
+      --glass-border: rgba(255,255,255,0.07);
+      --glass-highlight: rgba(255,255,255,0.11);
+      --shield-blue: #4A7FD4;
+      --crypto-green: #00C896;
+      --sage-purple: #7B68AE;
+      --coral: #FF876D;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--black);
+      color: var(--white);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+    h1, h2, h3, h4 { color: var(--heading-white); text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+
+    /* ── Subtle noise texture ──────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: 0.02;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+      background-size: 256px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(201,168,76,0.012) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(201,168,76,0.012) 1px, transparent 1px);
+      background-size: 80px 80px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container { max-width: 1120px; margin: 0 auto; padding: 0 32px; position: relative; z-index: 1; }
+    section { padding: 96px 0; position: relative; }
+    section + section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(100%, 600px);
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(201,168,76,0.12), transparent);
+    }
+
+    /* ── Hero ──────────────────────────────── */
+    .hero { padding: 160px 0 100px; text-align: center; position: relative; overflow: hidden; }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -300px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 900px;
+      background: radial-gradient(circle, rgba(201,168,76,0.06) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 20px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      margin-bottom: 40px;
+      backdrop-filter: blur(20px);
+    }
+    .hero-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gold);
+    }
+    .hero h1 { font-size: 64px; font-weight: 700; letter-spacing: -2px; line-height: 1.05; margin-bottom: 20px; }
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 50%, var(--gold) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero .tagline { font-size: 18px; color: var(--slate); font-weight: 300; letter-spacing: 3px; text-transform: uppercase; }
+
+    /* ── Section Headers ──────────────────── */
+    .section-label { font-size: 11px; font-weight: 500; letter-spacing: 3px; text-transform: uppercase; color: var(--gold-dim); margin-bottom: 16px; }
+    h2 { font-size: 40px; font-weight: 700; letter-spacing: -1px; margin-bottom: 12px; line-height: 1.1; }
+    .section-desc { font-size: 16px; color: var(--slate); max-width: 520px; margin-bottom: 56px; font-weight: 300; line-height: 1.7; }
+
+    /* ── Glass card ───────────────────────── */
+    .glass {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      backdrop-filter: blur(24px);
+      transition: background 0.4s var(--ease-out), border-color 0.4s var(--ease-out), transform 0.4s var(--ease-out);
+    }
+    .glass:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: var(--glass-highlight);
+      transform: translateY(-2px);
+    }
+
+    /* ── Color Swatches ───────────────────── */
+    .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 56px; }
+    .swatch { border-radius: 16px; overflow: hidden; background: var(--glass-bg); border: 1px solid var(--glass-border); backdrop-filter: blur(24px); transition: transform 0.4s var(--ease-out), border-color 0.4s var(--ease-out); }
+    .swatch:hover { transform: translateY(-2px); border-color: var(--glass-highlight); }
+    .swatch-color { height: 100px; position: relative; }
+    .swatch-info { padding: 16px; }
+    .swatch-name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+    .swatch-hex { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .swatch-usage { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+    /* ── Typography ────────────────────────── */
+    .type-scale { margin-bottom: 48px; }
+    .type-row { display: flex; align-items: baseline; gap: 24px; padding: 24px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .type-row:last-child { border-bottom: none; }
+    .type-label { flex: 0 0 80px; font-family: var(--mono); font-size: 11px; color: var(--gold-dim); letter-spacing: 1px; }
+    .type-size { flex: 0 0 90px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .type-sample { flex: 1; }
+
+    /* ── Voice Cards ──────────────────────── */
+    .voice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .voice-card { padding: 32px; }
+    .voice-card h4 { font-size: 15px; font-weight: 600; margin-bottom: 10px; letter-spacing: 0.3px; }
+    .voice-card p { font-size: 14px; color: var(--slate); line-height: 1.6; font-weight: 300; }
+
+    /* ── Ventures ──────────────────────────── */
+    .venture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .venture-card { padding: 36px; position: relative; overflow: hidden; }
+    .venture-card::before { content: ''; position: absolute; top: -1px; left: 0; right: 0; height: 2px; opacity: 0.7; }
+    .venture-card.shieldnest::before { background: linear-gradient(90deg, var(--shield-blue), transparent); }
+    .venture-card.tokns::before { background: linear-gradient(90deg, var(--crypto-green), transparent); }
+    .venture-card.smartnotes::before { background: linear-gradient(90deg, var(--sage-purple), transparent); }
+    .venture-card.token::before { background: linear-gradient(90deg, var(--coral), transparent); }
+
+    .venture-icon-canvas { display: block; width: 24px; height: 24px; margin-bottom: 20px; }
+
+    .venture-card h3 { font-size: 20px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.3px; }
+    .venture-tagline { font-size: 13px; color: var(--gold-dim); margin-bottom: 14px; font-weight: 500; letter-spacing: 0.3px; }
+    .venture-desc { font-size: 14px; color: var(--slate); line-height: 1.6; font-weight: 300; }
+    .venture-color-label {
+      display: inline-flex; align-items: center; gap: 6px; margin-top: 20px; padding: 5px 14px;
+      border-radius: 100px; font-family: var(--mono); font-size: 11px; font-weight: 500;
+      border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03);
+    }
+    .venture-color-label .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .shieldnest .venture-color-label { color: var(--shield-blue); }
+    .shieldnest .venture-color-label .dot { background: var(--shield-blue); }
+    .tokns .venture-color-label { color: var(--crypto-green); }
+    .tokns .venture-color-label .dot { background: var(--crypto-green); }
+    .smartnotes .venture-color-label { color: var(--sage-purple); }
+    .smartnotes .venture-color-label .dot { background: var(--sage-purple); }
+    .token .venture-color-label { color: var(--coral); }
+    .token .venture-color-label .dot { background: var(--coral); }
+
+    /* ── Messaging ─────────────────────────── */
+    .message-block { padding: 36px; margin-bottom: 16px; }
+    .message-block h4 { font-size: 11px; font-weight: 500; color: var(--gold-dim); margin-bottom: 20px; letter-spacing: 2px; text-transform: uppercase; }
+    .message-block blockquote { font-size: 28px; font-weight: 600; line-height: 1.2; border-left: 2px solid var(--gold); padding-left: 24px; margin-bottom: 16px; letter-spacing: -0.5px; }
+    .message-block blockquote + blockquote { font-size: 18px; font-weight: 300; color: var(--slate); letter-spacing: 0; }
+
+    /* ── Do / Don't ────────────────────────── */
+    .do-dont-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .do-card, .dont-card { padding: 32px; }
+    .do-card h4, .dont-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 20px; letter-spacing: 1px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+    .do-card h4 { color: var(--crypto-green); }
+    .dont-card h4 { color: var(--coral); }
+    .do-card h4 .dot, .dont-card h4 .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .do-card h4 .dot { background: var(--crypto-green); }
+    .dont-card h4 .dot { background: var(--coral); }
+    .do-card li, .dont-card li { font-size: 14px; color: var(--slate); margin-bottom: 10px; list-style: none; padding-left: 20px; position: relative; font-weight: 300; line-height: 1.5; }
+    .do-card li::before { content: '+'; position: absolute; left: 0; color: var(--crypto-green); font-weight: 600; font-family: var(--mono); }
+    .dont-card li::before { content: '-'; position: absolute; left: 0; color: var(--coral); font-weight: 600; font-family: var(--mono); font-size: 16px; }
+
+    /* ── Buttons — no glow, Apple-style ────── */
+    .component-section { padding: 36px; margin-bottom: 16px; }
+    .component-label { font-size: 11px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 20px; }
+    .component-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 36px; align-items: center; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px;
+      border-radius: 12px; font-size: 14px; font-weight: 500; font-family: var(--font);
+      border: none; cursor: pointer; letter-spacing: 0.2px;
+      transition: all 0.25s var(--ease-out);
+      position: relative;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .btn:active { transform: scale(0.97); transition-duration: 0.1s; }
+
+    .btn-primary {
+      background: linear-gradient(180deg, #D4B35C 0%, var(--gold) 100%);
+      color: var(--black);
+    }
+    .btn-primary:hover { filter: brightness(1.08); }
+    .btn-primary:active { filter: brightness(0.95); }
+
+    .btn-glass {
+      background: var(--glass-bg);
+      color: var(--white);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(20px);
+    }
+    .btn-glass:hover { background: rgba(255,255,255,0.08); border-color: var(--glass-highlight); }
+
+    .btn-ghost { background: transparent; color: var(--gold); padding: 12px 20px; }
+    .btn-ghost:hover { background: rgba(201,168,76,0.06); }
+
+    .btn-glass-gold {
+      background: rgba(201,168,76,0.06);
+      color: var(--gold-light);
+      border: 1px solid rgba(201,168,76,0.12);
+      backdrop-filter: blur(20px);
+    }
+    .btn-glass-gold:hover { background: rgba(201,168,76,0.1); border-color: rgba(201,168,76,0.2); }
+
+    /* ── Input ─────────────────────────────── */
+    .input-example {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: var(--white);
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 300;
+      width: 320px;
+      outline: none;
+      transition: border-color 0.3s var(--ease-out);
+      backdrop-filter: blur(20px);
+    }
+    .input-example:focus { border-color: rgba(201,168,76,0.3); }
+    .input-example::placeholder { color: var(--muted); font-weight: 300; }
+
+    /* ── Badges ────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+      border-radius: 100px; font-size: 11px; font-weight: 500; letter-spacing: 0.3px;
+      border: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(12px);
+    }
+    .badge .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .badge-gold { background: rgba(201,168,76,0.08); color: var(--gold-light); }
+    .badge-gold .dot { background: var(--gold); }
+    .badge-blue { background: rgba(74,127,212,0.08); color: #6B9BE0; }
+    .badge-blue .dot { background: var(--shield-blue); }
+    .badge-green { background: rgba(0,200,150,0.08); color: #33D4A8; }
+    .badge-green .dot { background: var(--crypto-green); }
+    .badge-purple { background: rgba(123,104,174,0.08); color: #9B8CC8; }
+    .badge-purple .dot { background: var(--sage-purple); }
+    .badge-coral { background: rgba(255,135,109,0.08); color: #FFA08A; }
+    .badge-coral .dot { background: var(--coral); }
+
+    /* ── Dropdown — Apple style ─────────────── */
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-trigger {
+      display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px;
+      background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px;
+      color: var(--white); font-family: var(--font); font-size: 14px; font-weight: 500;
+      cursor: pointer; backdrop-filter: blur(20px);
+      transition: all 0.25s var(--ease-out);
+      -webkit-user-select: none; user-select: none;
+    }
+    .dropdown-trigger:hover { background: rgba(255,255,255,0.08); border-color: var(--glass-highlight); }
+    .dropdown-trigger:active { transform: scale(0.97); transition-duration: 0.1s; }
+    .dropdown-trigger .chevron {
+      width: 12px; height: 12px;
+      transition: transform 0.3s var(--ease-out);
+    }
+    .dropdown.open .dropdown-trigger .chevron { transform: rotate(180deg); }
+    .dropdown-menu {
+      position: absolute; top: calc(100% + 6px); left: 0; min-width: 200px;
+      background: rgba(28,28,30,0.85); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px; padding: 4px; backdrop-filter: blur(40px) saturate(1.5);
+      opacity: 0; transform: translateY(-8px) scale(0.96);
+      transition: all 0.25s var(--ease-out);
+      pointer-events: none; z-index: 10;
+    }
+    .dropdown.open .dropdown-menu { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+    .dropdown-item {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      border-radius: 8px; font-size: 13px; font-weight: 400; color: var(--white);
+      cursor: pointer; transition: background 0.15s ease;
+    }
+    .dropdown-item:hover { background: rgba(255,255,255,0.08); }
+    .dropdown-item:active { background: rgba(255,255,255,0.12); }
+    .dropdown-item .item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Toggle — Apple style ──────────────── */
+    .toggle-track {
+      width: 44px; height: 26px; border-radius: 13px; padding: 2px;
+      background: rgba(255,255,255,0.12); cursor: pointer;
+      transition: background 0.3s var(--ease-out);
+      -webkit-user-select: none; user-select: none;
+    }
+    .toggle-track.active { background: var(--gold); }
+    .toggle-thumb {
+      width: 22px; height: 22px; border-radius: 11px;
+      background: var(--white);
+      transition: transform 0.3s var(--ease-spring);
+    }
+    .toggle-track.active .toggle-thumb { transform: translateX(18px); }
+
+    /* ── Section Divider ───────────────────── */
+    .section-divider { display: flex; align-items: center; gap: 16px; margin: 48px 0; }
+    .section-divider::before, .section-divider::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
+    .section-divider span { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+    /* ── Footer ────────────────────────────── */
+    .footer { padding: 64px 0; text-align: center; color: var(--muted); font-size: 13px; font-weight: 300; }
+    .footer-gold { background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 600; }
+    .footer-divider { width: 40px; height: 1px; background: rgba(201,168,76,0.2); margin: 16px auto; }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 40px; letter-spacing: -1px; }
+      .hero { padding: 120px 0 80px; }
+      h2 { font-size: 32px; }
+      .do-dont-grid { grid-template-columns: 1fr; }
+      .type-row { flex-direction: column; gap: 8px; }
+      .type-label, .type-size { flex: none; }
+      .color-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge"><span class="dot"></span> Brand Guidelines v1.0</div>
+      <h1><span>Coherence</span> Daddy</h1>
+      <p class="tagline">Guiding Integrity, Ensuring Privacy</p>
+    </div>
+  </section>
+
+  <!-- Colors -->
+  <section>
+    <div class="container">
+      <div class="section-label">01 / Color System</div>
+      <h2>Primary Palette</h2>
+      <p class="section-desc">Gold anchors the brand. Dark backgrounds with subtle texture create depth. Every venture carries its own accent.</p>
+      <div class="color-grid">
+        <div class="swatch"><div class="swatch-color" style="background: linear-gradient(135deg, #C9A84C, #9A7D35)"></div><div class="swatch-info"><div class="swatch-name">Coherence Gold</div><div class="swatch-hex">#C9A84C</div><div class="swatch-usage">Primary brand, CTAs, accents</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: #0A0A0A; border-bottom: 1px solid rgba(255,255,255,0.06)"></div><div class="swatch-info"><div class="swatch-name">Deep Black</div><div class="swatch-hex">#0A0A0A</div><div class="swatch-usage">Backgrounds, primary text</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: #FFFFFF"></div><div class="swatch-info"><div class="swatch-name">Pure White</div><div class="swatch-hex">#FFFFFF</div><div class="swatch-usage">Text on dark, light mode bg</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: linear-gradient(135deg, #E8D5A0, #C9A84C)"></div><div class="swatch-info"><div class="swatch-name">Light Gold</div><div class="swatch-hex">#E8D5A0</div><div class="swatch-usage">Hover states, highlights</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: #1A1A1A"></div><div class="swatch-info"><div class="swatch-name">Warm Gray</div><div class="swatch-hex">#2A2A2A</div><div class="swatch-usage">Cards, subtle backgrounds</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: #4A4A4A"></div><div class="swatch-info"><div class="swatch-name">Slate</div><div class="swatch-hex">#6B6B6B</div><div class="swatch-usage">Body text, muted elements</div></div></div>
+      </div>
+      <div class="section-divider"><span>Venture Accents</span></div>
+      <div class="color-grid">
+        <div class="swatch"><div class="swatch-color" style="background: linear-gradient(135deg, #4A7FD4, #3562A8)"></div><div class="swatch-info"><div class="swatch-name">Shield Blue</div><div class="swatch-hex">#4A7FD4</div><div class="swatch-usage">ShieldNest</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: linear-gradient(135deg, #00C896, #009A74)"></div><div class="swatch-info"><div class="swatch-name">Crypto Green</div><div class="swatch-hex">#00C896</div><div class="swatch-usage">Tokns.fi</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: linear-gradient(135deg, #7B68AE, #5A4A88)"></div><div class="swatch-info"><div class="swatch-name">Sage Purple</div><div class="swatch-hex">#7B68AE</div><div class="swatch-usage">Smart Notes</div></div></div>
+        <div class="swatch"><div class="swatch-color" style="background: linear-gradient(135deg, #FF876D, #E06A50)"></div><div class="swatch-info"><div class="swatch-name">Coral</div><div class="swatch-hex">#FF876D</div><div class="swatch-usage">Token</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Typography -->
+  <section>
+    <div class="container">
+      <div class="section-label">02 / Typography</div>
+      <h2>Type Scale</h2>
+      <p class="section-desc">Inter across the board. Clean, precise, engineered. JetBrains Mono for code and data.</p>
+      <div class="type-scale glass" style="padding: 8px 32px;">
+        <div class="type-row"><span class="type-label">H1</span><span class="type-size">48px / 700</span><span class="type-sample" style="font-size:48px; font-weight:700; letter-spacing:-1.5px; line-height:1.1">Guiding Integrity</span></div>
+        <div class="type-row"><span class="type-label">H2</span><span class="type-size">36px / 600</span><span class="type-sample" style="font-size:36px; font-weight:600; letter-spacing:-0.5px">Ensuring Privacy</span></div>
+        <div class="type-row"><span class="type-label">H3</span><span class="type-size">24px / 600</span><span class="type-sample" style="font-size:24px; font-weight:600">Build with purpose</span></div>
+        <div class="type-row"><span class="type-label">Body</span><span class="type-size">16px / 300</span><span class="type-sample" style="font-size:16px; font-weight:300">A coherent man in a fallen world, helping lift others and protect their future.</span></div>
+        <div class="type-row"><span class="type-label">Small</span><span class="type-size">14px / 300</span><span class="type-sample" style="font-size:14px; color:var(--slate); font-weight:300">Faith-driven technology that empowers people to become architects of their own lives.</span></div>
+        <div class="type-row"><span class="type-label">Mono</span><span class="type-size">13px / 400</span><span class="type-sample" style="font-size:13px; font-family:var(--mono); color:var(--gold-dim)">const mission = "Guiding Integrity, Ensuring Privacy";</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Voice & Tone -->
+  <section>
+    <div class="container">
+      <div class="section-label">03 / Voice & Tone</div>
+      <h2>How We Sound</h2>
+      <p class="section-desc">Authoritative but approachable. Faith-grounded but universal. Premium but never pretentious.</p>
+      <div class="voice-grid">
+        <div class="voice-card glass"><h4>Authoritative</h4><p>We know our stuff. We don't hedge or use weasel words. When we say something is secure, it is.</p></div>
+        <div class="voice-card glass"><h4>Approachable</h4><p>No jargon walls. We explain complex ideas simply. Everyone deserves to understand their tools.</p></div>
+        <div class="voice-card glass"><h4>Faith-Grounded</h4><p>Our values come from somewhere real. We reference faith naturally, never preach or exclude.</p></div>
+        <div class="voice-card glass"><h4>Protective</h4><p>We guard your data AND teach you to guard it yourself. Empowerment over dependence.</p></div>
+        <div class="voice-card glass"><h4>Intentional</h4><p>Every element has purpose. Every word earns its place. Premium is in the restraint.</p></div>
+      </div>
+      <div style="margin-top:48px">
+        <div class="do-dont-grid">
+          <div class="do-card glass"><h4><span class="dot"></span> Do</h4><ul><li>Lead with the benefit, not the feature</li><li>Use "you" and "your" — speak directly</li><li>Keep sentences short. Paragraphs shorter.</li><li>Be technically accurate always</li><li>Use faith language naturally</li></ul></div>
+          <div class="dont-card glass"><h4><span class="dot"></span> Don't</h4><ul><li>Use fear-based marketing</li><li>Sound preachy or exclusive</li><li>Oversimplify to the point of being wrong</li><li>Use corporate jargon or buzzwords</li><li>Promise what we can't deliver</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ventures -->
+  <section>
+    <div class="container">
+      <div class="section-label">04 / Ventures</div>
+      <h2>The Ecosystem</h2>
+      <p class="section-desc">Four ventures, one mission. Each carries its own accent but shares the gold thread.</p>
+      <div class="venture-grid">
+        <div class="venture-card glass shieldnest">
+          <canvas class="venture-icon-canvas" data-icon="shield" data-color="#4A7FD4" width="48" height="48"></canvas>
+          <h3>ShieldNest</h3>
+          <div class="venture-tagline">Your privacy is your power</div>
+          <p class="venture-desc">Privacy-first development company. Builds tools that protect user data, ensure digital sovereignty, and make privacy accessible to everyone.</p>
+          <span class="venture-color-label"><span class="dot"></span> #4A7FD4 Shield Blue</span>
+        </div>
+        <div class="venture-card glass tokns">
+          <canvas class="venture-icon-canvas" data-icon="tokns" data-color="#00C896" width="48" height="48"></canvas>
+          <h3>Tokns.fi</h3>
+          <div class="venture-tagline">Trade smart. Build games. Own your future.</div>
+          <p class="venture-desc">Secure crypto access and AI game builder. Combines DeFi fund management with game creation tools on a trusted platform.</p>
+          <span class="venture-color-label"><span class="dot"></span> #00C896 Crypto Green</span>
+        </div>
+        <div class="venture-card glass smartnotes">
+          <canvas class="venture-icon-canvas" data-icon="notes" data-color="#7B68AE" width="48" height="48"></canvas>
+          <h3>Smart Notes</h3>
+          <div class="venture-tagline">Your life, architected</div>
+          <p class="venture-desc">AI-powered self-help and life architect app. Plan your life, set goals, reflect, and grow with intentional, faith-grounded tools.</p>
+          <span class="venture-color-label"><span class="dot"></span> #7B68AE Sage Purple</span>
+        </div>
+        <div class="venture-card glass token">
+          <canvas class="venture-icon-canvas" data-icon="token" data-color="#FF876D" width="48" height="48"></canvas>
+          <h3>$COHERENCE Token</h3>
+          <div class="venture-tagline">Powering integrity in the digital age</div>
+          <p class="venture-desc">The community token behind the mission. Migrating from Mr. Bankroll via burn-to-mint. New chapter, same values.</p>
+          <span class="venture-color-label"><span class="dot"></span> #FF876D Coral</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Messaging -->
+  <section>
+    <div class="container">
+      <div class="section-label">05 / Messaging</div>
+      <h2>Key Messages</h2>
+      <p class="section-desc">Core messaging for each venture. Starting points for all communications.</p>
+      <div class="message-block glass"><h4>Coherence Daddy</h4><blockquote>Guiding Integrity, Ensuring Privacy</blockquote><blockquote>Be the architect of your own life</blockquote></div>
+      <div class="message-block glass"><h4>ShieldNest</h4><blockquote>Built to protect, designed to empower</blockquote><blockquote>Privacy isn't a feature. It's a right.</blockquote></div>
+      <div class="message-block glass"><h4>Tokns.fi</h4><blockquote>Secure access to the future of finance</blockquote><blockquote>Where serious trading meets creative building</blockquote></div>
+      <div class="message-block glass"><h4>Smart Notes</h4><blockquote>Think clearer. Plan better. Grow intentionally.</blockquote><blockquote>Not just a notes app. A life operating system.</blockquote></div>
+    </div>
+  </section>
+
+  <!-- Components & Interactions -->
+  <section>
+    <div class="container">
+      <div class="section-label">06 / Components & Interactions</div>
+      <h2>UI Elements</h2>
+      <p class="section-desc">Glass morphism with precise interactions. No outer glow. Scale on press. Smooth cubic-bezier transitions throughout.</p>
+
+      <div class="component-section glass">
+        <div class="component-label">Buttons</div>
+        <div class="component-row">
+          <button class="btn btn-primary">Get Started</button>
+          <button class="btn btn-glass">Learn More</button>
+          <button class="btn btn-glass-gold">View Plans</button>
+          <button class="btn btn-ghost">Documentation</button>
+        </div>
+
+        <div class="component-label">Dropdown</div>
+        <div class="component-row">
+          <div class="dropdown" id="demo-dropdown">
+            <div class="dropdown-trigger" onclick="this.parentElement.classList.toggle('open')">
+              Select venture
+              <svg class="chevron" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="dropdown-menu">
+              <div class="dropdown-item" onclick="this.closest('.dropdown').classList.remove('open')"><span class="item-dot" style="background:var(--shield-blue)"></span> ShieldNest</div>
+              <div class="dropdown-item" onclick="this.closest('.dropdown').classList.remove('open')"><span class="item-dot" style="background:var(--crypto-green)"></span> Tokns.fi</div>
+              <div class="dropdown-item" onclick="this.closest('.dropdown').classList.remove('open')"><span class="item-dot" style="background:var(--sage-purple)"></span> Smart Notes</div>
+              <div class="dropdown-item" onclick="this.closest('.dropdown').classList.remove('open')"><span class="item-dot" style="background:var(--coral)"></span> $COHERENCE</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-label">Toggle</div>
+        <div class="component-row">
+          <div class="toggle-track" onclick="this.classList.toggle('active')"><div class="toggle-thumb"></div></div>
+          <span style="font-size:13px; color:var(--slate); font-weight:300">Dark mode</span>
+        </div>
+
+        <div class="component-label">Input</div>
+        <div class="component-row">
+          <input class="input-example" type="email" placeholder="your@email.com">
+        </div>
+
+        <div class="component-label">Badges</div>
+        <div class="component-row">
+          <span class="badge badge-gold"><span class="dot"></span> Coherence Daddy</span>
+          <span class="badge badge-blue"><span class="dot"></span> ShieldNest</span>
+          <span class="badge badge-green"><span class="dot"></span> Tokns.fi</span>
+          <span class="badge badge-purple"><span class="dot"></span> Smart Notes</span>
+          <span class="badge badge-coral"><span class="dot"></span> $COHERENCE</span>
+        </div>
+      </div>
+
+      <!-- Animation reference -->
+      <div class="glass" style="padding:36px; margin-top:16px">
+        <div class="component-label">Interaction Specs</div>
+        <div class="type-scale">
+          <div class="type-row"><span class="type-label" style="flex:0 0 120px">Hover</span><span class="type-sample" style="font-size:14px; color:var(--slate); font-weight:300"><code style="font-family:var(--mono); color:var(--gold-dim)">0.25s cubic-bezier(0.16, 1, 0.3, 1)</code> — smooth deceleration, no bounce</span></div>
+          <div class="type-row"><span class="type-label" style="flex:0 0 120px">Press</span><span class="type-sample" style="font-size:14px; color:var(--slate); font-weight:300"><code style="font-family:var(--mono); color:var(--gold-dim)">scale(0.97)</code> at <code style="font-family:var(--mono); color:var(--gold-dim)">0.1s</code> — instant tactile feedback</span></div>
+          <div class="type-row"><span class="type-label" style="flex:0 0 120px">Dropdown</span><span class="type-sample" style="font-size:14px; color:var(--slate); font-weight:300"><code style="font-family:var(--mono); color:var(--gold-dim)">translateY(-8px) scale(0.96) → origin</code> at <code style="font-family:var(--mono); color:var(--gold-dim)">0.25s</code> — fade + shift up</span></div>
+          <div class="type-row"><span class="type-label" style="flex:0 0 120px">Toggle</span><span class="type-sample" style="font-size:14px; color:var(--slate); font-weight:300"><code style="font-family:var(--mono); color:var(--gold-dim)">0.3s cubic-bezier(0.34, 1.56, 0.64, 1)</code> — spring overshoot on thumb</span></div>
+          <div class="type-row"><span class="type-label" style="flex:0 0 120px">Card lift</span><span class="type-sample" style="font-size:14px; color:var(--slate); font-weight:300"><code style="font-family:var(--mono); color:var(--gold-dim)">translateY(-2px)</code> at <code style="font-family:var(--mono); color:var(--gold-dim)">0.4s</code> — gentle float, no glow</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="container">
+      <p><span class="footer-gold">Coherence Daddy</span></p>
+      <div class="footer-divider"></div>
+      <p>Guiding Integrity, Ensuring Privacy</p>
+      <p style="margin-top:4px">Brand Guidelines v1.0</p>
+    </div>
+  </div>
+
+  <script>
+    // ── Dot-grid canvas icons (inspired by Firecrawl) ─────────────────────
+    // Each icon is an 8x8 grid of dots drawn on a canvas.
+    // On hover, dots animate opacity with requestAnimationFrame.
+
+    const iconPatterns = {
+      shield: [
+        // Shield shape
+        [0,0,1,1,1,1,0,0],
+        [0,1,1,1,1,1,1,0],
+        [1,1,0,1,1,0,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [0,1,1,1,1,1,1,0],
+        [0,0,1,1,1,1,0,0],
+        [0,0,0,1,1,0,0,0],
+      ],
+      tokns: [
+        // Diamond / gem shape
+        [0,0,0,1,1,0,0,0],
+        [0,0,1,0,0,1,0,0],
+        [0,1,0,1,1,0,1,0],
+        [1,0,1,1,1,1,0,1],
+        [1,0,1,1,1,1,0,1],
+        [0,1,0,1,1,0,1,0],
+        [0,0,1,0,0,1,0,0],
+        [0,0,0,1,1,0,0,0],
+      ],
+      notes: [
+        // Page / document shape
+        [0,1,1,1,1,1,0,0],
+        [0,1,0,0,0,1,1,0],
+        [0,1,1,1,1,1,1,0],
+        [0,1,0,1,0,1,1,0],
+        [0,1,1,1,1,1,1,0],
+        [0,1,0,1,0,0,1,0],
+        [0,1,1,1,1,1,1,0],
+        [0,0,0,0,0,0,0,0],
+      ],
+      token: [
+        // Flame / energy shape
+        [0,0,0,1,0,0,0,0],
+        [0,0,1,1,1,0,0,0],
+        [0,0,1,0,1,1,0,0],
+        [0,1,1,0,0,1,0,0],
+        [0,1,0,0,1,1,0,0],
+        [1,1,0,1,1,1,0,0],
+        [1,1,1,1,1,0,0,0],
+        [0,1,1,1,0,0,0,0],
+      ],
+    };
+
+    function initDotIcon(canvas) {
+      const icon = canvas.dataset.icon;
+      const color = canvas.dataset.color;
+      const pattern = iconPatterns[icon];
+      if (!pattern) return;
+
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 2;
+      const size = 24;
+      canvas.width = size * dpr;
+      canvas.height = size * dpr;
+      canvas.style.width = size + 'px';
+      canvas.style.height = size + 'px';
+      ctx.scale(dpr, dpr);
+
+      const dotSize = 2;
+      const gap = 3;
+      const offsetX = (size - 8 * gap) / 2;
+      const offsetY = (size - 8 * gap) / 2;
+
+      // State: each dot has a target opacity and current opacity
+      const dots = [];
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 8; x++) {
+          if (pattern[y][x]) {
+            dots.push({
+              x: offsetX + x * gap,
+              y: offsetY + y * gap,
+              baseOpacity: 0.3 + Math.random() * 0.3,
+              opacity: 0.3 + Math.random() * 0.3,
+              targetOpacity: 0.3 + Math.random() * 0.3,
+              delay: Math.random() * 0.5,
+            });
+          }
+        }
+      }
+
+      let isHovered = false;
+      let animFrame = null;
+      let hoverStart = 0;
+
+      function draw() {
+        ctx.clearRect(0, 0, size, size);
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
+
+        for (const dot of dots) {
+          // Lerp opacity toward target
+          dot.opacity += (dot.targetOpacity - dot.opacity) * 0.08;
+          ctx.fillStyle = `rgba(${r},${g},${b},${dot.opacity})`;
+          ctx.beginPath();
+          ctx.arc(dot.x, dot.y, dotSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      function animate() {
+        const elapsed = (performance.now() - hoverStart) / 1000;
+        for (const dot of dots) {
+          if (isHovered) {
+            const wave = Math.sin((elapsed - dot.delay) * 3) * 0.3 + 0.7;
+            dot.targetOpacity = wave;
+          } else {
+            dot.targetOpacity = dot.baseOpacity;
+          }
+        }
+        draw();
+        animFrame = requestAnimationFrame(animate);
+      }
+
+      // Initial draw
+      draw();
+
+      const card = canvas.closest('.venture-card');
+      card.addEventListener('mouseenter', () => {
+        isHovered = true;
+        hoverStart = performance.now();
+        if (!animFrame) animate();
+      });
+      card.addEventListener('mouseleave', () => {
+        isHovered = false;
+        // Let animation wind down, then stop
+        setTimeout(() => {
+          if (!isHovered && animFrame) {
+            cancelAnimationFrame(animFrame);
+            animFrame = null;
+            draw(); // final draw at base state
+          }
+        }, 800);
+      });
+    }
+
+    // Init all dot icons
+    document.querySelectorAll('.venture-icon-canvas').forEach(initDotIcon);
+
+    // ── Close dropdown on outside click ─────────────────────────────────────
+    document.addEventListener('click', (e) => {
+      document.querySelectorAll('.dropdown.open').forEach(dd => {
+        if (!dd.contains(e.target)) dd.classList.remove('open');
+      });
+    });
+  </script>
+</body>
+</html>

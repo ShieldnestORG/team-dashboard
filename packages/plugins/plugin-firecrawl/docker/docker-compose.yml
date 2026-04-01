@@ -1,0 +1,70 @@
+# Firecrawl Self-Hosted — Coherence Daddy
+# Run: docker compose up -d
+# Firecrawl API will be available at http://localhost:3002
+# No API key needed — set Self-Hosted URL to http://localhost:3002 (or your server IP) in Paperclip plugin settings.
+
+services:
+  api:
+    image: ghcr.io/mendableai/firecrawl:latest
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright:3000
+      - USE_DB_AUTHENTICATION=false
+      - PORT=3002
+      - HOST=0.0.0.0
+      - NUM_WORKERS_PER_QUEUE=2
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}   # optional — only needed for /extract AI mode
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    image: ghcr.io/mendableai/firecrawl:latest
+    restart: unless-stopped
+    command: ["node", "dist/src/services/queue-worker.js"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright:3000
+      - USE_DB_AUTHENTICATION=false
+      - NUM_WORKERS_PER_QUEUE=2
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  playwright:
+    image: ghcr.io/mendableai/firecrawl-playwright-service:latest
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - BLOCK_MEDIA=true  # saves RAM — disable if you need images/video
+    # Resource limits — adjust based on your hardware (see SELF_HOSTING.md)
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:

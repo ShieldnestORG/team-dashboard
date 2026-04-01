@@ -1,4 +1,4 @@
-# CLAUDE.md — Team Dashboard (formerly Paperclip)
+# CLAUDE.md — Team Dashboard
 
 ## What This Project Is
 
@@ -51,10 +51,15 @@ ui/
     pages/            # Authenticated dashboard pages
   public/             # Favicons, service worker
 packages/
-  brand-guide/        # Design system docs
-  plugins/            # AI provider adapters
+  brand-guide/        # Coherence Daddy brand guidelines (standalone HTML)
+  plugins/
+    plugin-firecrawl/ # Firecrawl scraping plugin (scrape, crawl, extract, etc.)
+    ...               # Other plugins and adapters
 docs/
-  tools/              # Legacy tool docs (tools now in coherencedaddy repo)
+  start/              # Getting started, architecture, core concepts
+  deploy/             # Deployment guides (Docker, Tailscale, etc.)
+  guides/             # Operator and developer guides
+  adapters/           # Adapter documentation
 ```
 
 ## Documentation Requirements
@@ -83,3 +88,14 @@ cd ui && npm run build
 - **Vercel project**: "team dashboard"
 - **GitHub**: ShieldnestORG/team-dashboard
 - **Access**: Authenticated users only
+
+---
+
+## Ladder: auto
+
+This project is tracked by **ladder2.0** (MCP server at `~/.ladder/ladder.db`, project name: `team-dashboard`).
+
+After every build, deploy, or code change, track the outcome via `mcp__ladder__track_event` with project `team-dashboard`.
+When 10+ new events accumulate, run `mcp__ladder__generate_sources` with project `team-dashboard` and `persist=true`.
+When new sources are created, run `mcp__ladder__generate_ideas` with project `team-dashboard` and `persist=true`.
+At the end of each session, show `mcp__ladder__pipeline_status` for project `team-dashboard`.

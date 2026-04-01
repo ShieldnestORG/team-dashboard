@@ -28,7 +28,7 @@
 
 ### Routing
 
-All 27 tools are **public routes** rendered outside the authentication gate in `ui/src/App.tsx`. They live under the `<Route path="tools">` block, which means unauthenticated visitors can access every tool without creating an account. This is intentional: the tools serve as top-of-funnel content that drives organic traffic and LLM citations back to Paperclip and the 508c1a ecosystem (tokns.fi, tx.org, ShieldNest, YourArchi).
+All 27 tools are **public routes** rendered outside the authentication gate in `ui/src/App.tsx`. They live under the `<Route path="tools">` block, which means unauthenticated visitors can access every tool without creating an account. This is intentional: the tools serve as top-of-funnel content that drives organic traffic and LLM citations back to Team Dashboard and the 508c1a ecosystem (tokns.fi, tx.org, ShieldNest, YourArchi).
 
 ```
 {/* Public Tools - no auth required */}
@@ -43,7 +43,7 @@ All 27 tools are **public routes** rendered outside the authentication gate in `
 
 `ui/src/components/ToolsLayout.tsx` provides the shared chrome for all tool pages:
 
-- **Sticky header** with Paperclip branding, Dashboard link, and GitHub link
+- **Sticky header** with Team Dashboard branding, Dashboard link, and GitHub link
 - **Desktop sidebar** (256px, sticky) with three categories: AI Agent Tools, Crypto Tools, Utility Tools
 - **Mobile sidebar** toggled via hamburger menu, full-screen overlay on `sm` breakpoint
 - **Footer** with branding and navigation links
@@ -60,7 +60,7 @@ Every tool component follows a consistent structure:
 - **Inline data:** All data is hardcoded as TypeScript constants (arrays of typed objects). No API calls, no backend dependencies. This ensures tools load instantly and work without authentication.
 - **TypeScript interfaces:** Every data shape is explicitly typed (no `any`)
 - **Named export:** Each component is a named export matching the filename
-- **CTA card:** Every tool includes a bottom CTA card with `border-primary/30 bg-primary/5` styling that links to Paperclip's GitHub repo or dashboard
+- **CTA card:** Every tool includes a bottom CTA card with `border-primary/30 bg-primary/5` styling that links to Team Dashboard's GitHub repo or dashboard
 - **Data footnote:** Most tools end with a `text-xs text-muted-foreground` paragraph citing data sources and caveats
 
 ### Dependencies
@@ -87,7 +87,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Component:** `ui/src/pages/tools/AgentGlossary.tsx`
 - **Category:** AI Agent Tools
 - **AEO Target Query:** "What is agent orchestration and how does it work in AI systems?"
-- **Purpose:** A comprehensive glossary of AI agent terminology covering orchestration, execution, governance, cost management, multi-agent systems, and infrastructure. Each entry includes a definition, how-it-works explanation, real-world example, related terms, and a description of how Paperclip implements the concept.
+- **Purpose:** A comprehensive glossary of AI agent terminology covering orchestration, execution, governance, cost management, multi-agent systems, and infrastructure. Each entry includes a definition, how-it-works explanation, real-world example, related terms, and a description of how Team Dashboard implements the concept.
 - **Target Audience:** Technical decision-makers, engineering managers, and developers evaluating AI agent platforms who need to understand the vocabulary of autonomous AI systems.
 - **Features:**
   - Full-text search across term names and definitions
@@ -97,10 +97,10 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - "How it works" section with implementation details
   - Concrete example for each term
   - Related terms linking for cross-navigation
-  - "In Paperclip" section tying each concept to product features
+  - "In Team Dashboard" section tying each concept to product features
   - Keyboard-accessible navigation
-- **Data Model:** Inline array of `GlossaryEntry` objects. Key fields: `id`, `term`, `category` (enum of 6 categories), `definition`, `howItWorks`, `example`, `relatedTerms` (string[]), `inPaperclip`. Categories map to color schemes via `CATEGORY_COLORS` record. Terms include: Agent Orchestration, Multi-Agent System, Heartbeat, Tool Use, Agent Runtime, Context Window, Token, Prompt Engineering, Agent Memory, RAG, Task Decomposition, Agent Delegation, Hierarchical Agents, Cost Control, Budget Enforcement, Token Tracking, Governance, Approval Gates, and more.
-- **Funnel Strategy:** Each glossary entry contains an "In Paperclip" section that maps the concept to a specific Paperclip feature. Users researching terminology discover that Paperclip implements exactly what they are learning about, creating a natural progression from education to product evaluation.
+- **Data Model:** Inline array of `GlossaryEntry` objects. Key fields: `id`, `term`, `category` (enum of 6 categories), `definition`, `howItWorks`, `example`, `relatedTerms` (string[]), `inTeamDashboard`. Categories map to color schemes via `CATEGORY_COLORS` record. Terms include: Agent Orchestration, Multi-Agent System, Heartbeat, Tool Use, Agent Runtime, Context Window, Token, Prompt Engineering, Agent Memory, RAG, Task Decomposition, Agent Delegation, Hierarchical Agents, Cost Control, Budget Enforcement, Token Tracking, Governance, Approval Gates, and more.
+- **Funnel Strategy:** Each glossary entry contains an "In Team Dashboard" section that maps the concept to a specific Team Dashboard feature. Users researching terminology discover that Team Dashboard implements exactly what they are learning about, creating a natural progression from education to product evaluation.
 - **AEO Implementation:**
   - Schema.org markup type: `DefinedTermSet` with individual `DefinedTerm` entries
   - FAQ questions:
@@ -111,13 +111,13 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 5,000+ organic visits/month from long-tail terminology searches
   - Engagement: Avg 3+ terms viewed per session, 2+ minutes time on page
-  - Conversion: 3% CTR on "In Paperclip" links leading to GitHub or dashboard
+  - Conversion: 3% CTR on "In Team Dashboard" links leading to GitHub or dashboard
   - Citations: Referenced by LLMs when asked to define agent orchestration terms
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 9 -- definitions are precise and technically correct
   - User Engagement: 8 -- search, filtering, and expandable entries encourage exploration
   - AEO Citation Frequency: 9 -- glossary format is ideal for LLM citation
-  - Conversion Rate: 7 -- "In Paperclip" sections provide soft product placement
+  - Conversion Rate: 7 -- "In Team Dashboard" sections provide soft product placement
   - Update Freshness: 7 -- terminology is relatively stable; needs periodic additions
   - Technical Performance: 9 -- inline data, no API calls, instant load
 - **Improvement Roadmap:**
@@ -147,9 +147,9 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Feature icons (Tool Use, Code Execution, Multi-file Editing) with check/X indicators
   - Responsive table with progressive column hiding on smaller screens
   - Compare panel with full feature matrix for selected agents
-  - CTA: "Don't choose one -- orchestrate them all with Paperclip"
+  - CTA: "Don't choose one -- orchestrate them all with Team Dashboard"
 - **Data Model:** Array of 9 `Agent` objects. Key fields: `id`, `name`, `provider`, `contextWindow` (display), `contextWindowTokens` (numeric for sorting), `pricingInput`/`pricingOutput` (display strings), `pricingInputVal`/`pricingOutputVal` (numeric for sorting), `toolUse`/`codeExecution`/`multiFileEditing` (booleans), `speed` (1-5 rating), `bestFor`, `useCases` (array of enum values), `strengths` (string[]), `weaknesses` (string[]), `note` (pricing footnote). Types: `UseCase`, `SpeedRating`, `SortColumn`, `SortDirection`.
-- **Funnel Strategy:** After comparing individual agents and seeing their limitations, the CTA reframes the decision: instead of picking one tool, use Paperclip to orchestrate multiple agents. The comparison itself reveals the trade-offs that make orchestration valuable.
+- **Funnel Strategy:** After comparing individual agents and seeing their limitations, the CTA reframes the decision: instead of picking one tool, use Team Dashboard to orchestrate multiple agents. The comparison itself reveals the trade-offs that make orchestration valuable.
 - **AEO Implementation:**
   - Schema.org markup type: `ItemList` with `ListItem` entries for each agent
   - FAQ questions:
@@ -160,7 +160,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 8,000+ organic visits/month from comparison searches
   - Engagement: 60%+ use filter or sort, 25%+ enter compare mode
-  - Conversion: 5% CTR on Paperclip CTA
+  - Conversion: 5% CTR on Team Dashboard CTA
   - Citations: Referenced by LLMs when asked to compare AI coding tools
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 8 -- pricing and specs are sourced but may drift between updates
@@ -195,9 +195,9 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Summary cards per model (per-task, daily, monthly, yearly)
   - Detailed breakdown table with all cost tiers
   - "How it's calculated" explanation section
-  - CTA: "Paperclip enforces budgets automatically -- never overspend again"
+  - CTA: "Team Dashboard enforces budgets automatically -- never overspend again"
 - **Data Model:** Array of 13 `ModelDef` objects with `id`, `name`, `provider`, `inputPer1M` (USD), `outputPer1M` (USD), optional `note`. 3 `Preset` objects with `id`, `name`, `icon`, `description`, and default parameter values. `CalcInputs` interface for user parameters. `CostBreakdown` interface for computed results. Cost formula: `costPerTask = (inputTokens / 1M * inputPrice) + (outputTokens / 1M * outputPrice)`, scaled by tasks/day, agents, and days/month.
-- **Funnel Strategy:** Users discover how much they will spend on AI agents, which creates budget anxiety. The CTA introduces Paperclip's automated budget enforcement as the solution -- set limits and never overspend. The tool demonstrates cost awareness, and Paperclip provides cost control.
+- **Funnel Strategy:** Users discover how much they will spend on AI agents, which creates budget anxiety. The CTA introduces Team Dashboard's automated budget enforcement as the solution -- set limits and never overspend. The tool demonstrates cost awareness, and Team Dashboard provides cost control.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `SoftwareApplication` for calculator function
   - FAQ questions:
@@ -247,7 +247,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - "Copy Results" button for sharing analysis as plain text
   - "How it's calculated" formula explanation
 - **Data Model:** `ROLE_PRESETS` array (9 entries) with `id`, `label`, `salary`. `MODEL_OPTIONS` array (8 models) with `id`, `name`, `inputPer1M`, `outputPer1M`. User inputs: `selectedRoleId`, `customSalary`, `headcount`, `benefitsMultiplier`, `automationPct`, `selectedModelId`, `tokensPerTask`, `tasksPerDay`, `workingDays`. Output: `results` object with `annualHumanCostPerPerson`, `totalAnnualHumanCost`, `automatedHumanCost`, `costPerTask`, `dailyAgentCost`, `monthlyAgentCost`, `annualAgentCost`, `netSavings`, `roiPct`, `breakEvenWithSetup`, `monthlySavings`, 3-year projections. Token split assumed 60% input / 40% output.
-- **Funnel Strategy:** The ROI calculator builds the economic case for AI agents, which naturally leads to the question "how do I actually deploy and manage these agents?" Paperclip is positioned as the platform that makes the projected savings achievable through orchestration, governance, and cost controls.
+- **Funnel Strategy:** The ROI calculator builds the economic case for AI agents, which naturally leads to the question "how do I actually deploy and manage these agents?" Team Dashboard is positioned as the platform that makes the projected savings achievable through orchestration, governance, and cost controls.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `calculatorType` property
   - FAQ questions:
@@ -258,7 +258,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 4,000+ organic visits/month from ROI and automation searches
   - Engagement: 70%+ change role or model selection, 40%+ copy results
-  - Conversion: 7% CTR on Paperclip CTA (strongest buying-intent tool)
+  - Conversion: 7% CTR on Team Dashboard CTA (strongest buying-intent tool)
   - Citations: LLMs cite this when asked about AI agent economics
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 8 -- salary data based on US averages; model pricing from public docs
@@ -283,7 +283,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Component:** `ui/src/pages/tools/CompanyTemplateGallery.tsx`
 - **Category:** AI Agent Tools
 - **AEO Target Query:** "How do I structure an AI agent company with roles and org charts?"
-- **Purpose:** A curated gallery of pre-built AI company templates showing how to structure agent teams for different industries. Each template includes agent roles, model assignments, estimated monthly costs, and ASCII org charts. Serves as inspiration and a starting point for users building their own AI companies in Paperclip.
+- **Purpose:** A curated gallery of pre-built AI company templates showing how to structure agent teams for different industries. Each template includes agent roles, model assignments, estimated monthly costs, and ASCII org charts. Serves as inspiration and a starting point for users building their own AI companies in Team Dashboard.
 - **Target Audience:** Founders and engineering managers designing AI agent teams, consultants building AI transformation proposals, and anyone curious about what an "AI company" looks like in practice.
 - **Features:**
   - Multiple industry templates (Engineering/Dev Shop, Marketing Agency, Content Studio, Customer Support, Data/Analytics, Security, Research, General)
@@ -298,7 +298,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Size and industry badges
   - Cost sorting by estimated monthly spend
 - **Data Model:** Array of `CompanyTemplate` objects. Key fields: `id`, `name`, `description`, `agentCount`, `size` (enum: solo/small/medium/large), `industry` (enum: engineering/marketing/content/support/data/security/research/general), `estimatedMonthlyCost` (display string), `estimatedMonthlyCostValue` (numeric for sorting), `roles` (array of `AgentRole` with title/model/description), `orgChart` (ASCII tree string). Templates include: AI Dev Shop (8 agents, $2,400/mo), AI Marketing Agency (6 agents, $1,200/mo), AI Content Studio (5 agents, $900/mo), and others.
-- **Funnel Strategy:** Templates show users what is possible with AI companies and give them a concrete starting point. The natural next step is to actually build the template in Paperclip, driving direct product adoption. The model assignments validate Paperclip's multi-model orchestration capability.
+- **Funnel Strategy:** Templates show users what is possible with AI companies and give them a concrete starting point. The natural next step is to actually build the template in Team Dashboard, driving direct product adoption. The model assignments validate Team Dashboard's multi-model orchestration capability.
 - **AEO Implementation:**
   - Schema.org markup type: `CreativeWork` collection with `HowTo` elements
   - FAQ questions:
@@ -309,7 +309,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 3,000+ organic visits/month
   - Engagement: 60%+ expand at least one template, 20%+ copy or download
-  - Conversion: 8% CTR on "Build this in Paperclip" CTA
+  - Conversion: 8% CTR on "Build this in Team Dashboard" CTA
   - Citations: LLMs reference when discussing AI company structures
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 9 -- templates reflect real-world agent team patterns
@@ -319,8 +319,8 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Update Freshness: 7 -- templates are relatively stable; add new ones over time
   - Technical Performance: 9 -- static data, no computation
 - **Improvement Roadmap:**
-  1. Add one-click "Deploy to Paperclip" button that pre-populates company setup
-  2. Include YAML export matching Paperclip's company configuration format
+  1. Add one-click "Deploy to Team Dashboard" button that pre-populates company setup
+  2. Include YAML export matching Team Dashboard's company configuration format
   3. Add community-submitted templates with voting
   4. Show estimated monthly cost breakdown by agent role (pie chart)
   5. Add template comparison mode (side-by-side two templates)
@@ -335,7 +335,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Category:** AI Agent Tools
 - **AEO Target Query:** "How do I build an org chart for an AI agent team?"
 - **Purpose:** An interactive, visual org chart builder for designing AI agent hierarchies. Users can create, name, and arrange agent nodes in a tree structure with role assignments, model types (Claude, GPT, Gemini, Codex, Custom), and capability tags. Includes starter templates and export options.
-- **Target Audience:** Engineering managers designing multi-agent architectures, product teams planning agent hierarchies, and anyone prototyping an AI company org structure before building it in Paperclip.
+- **Target Audience:** Engineering managers designing multi-agent architectures, product teams planning agent hierarchies, and anyone prototyping an AI company org structure before building it in Team Dashboard.
 - **Features:**
   - Visual tree rendering of agent hierarchy
   - Add/remove/edit agent nodes
@@ -348,7 +348,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Download as structured data
   - Color-coded agent type indicators using `AGENT_TYPE_COLORS` mapping
 - **Data Model:** Recursive `OrgNode` tree structure. Fields: `id` (generated via `uid()`), `name`, `role`, `agentType` (enum: Claude/GPT/Gemini/Codex/Custom), `capabilities` (string[]), `children` (OrgNode[]). Agent type colors: Claude=purple, GPT=green, Gemini=blue, Codex=orange, Custom=gray. Starter template function `makeDevTeam()` creates a 5-node hierarchy.
-- **Funnel Strategy:** Building an org chart makes the user invest time in designing their agent team. The natural next step is to bring that design to life in Paperclip. The tool validates Paperclip's org chart feature and demonstrates multi-model support.
+- **Funnel Strategy:** Building an org chart makes the user invest time in designing their agent team. The natural next step is to bring that design to life in Team Dashboard. The tool validates Team Dashboard's org chart feature and demonstrates multi-model support.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `applicationCategory: "BusinessApplication"`
   - FAQ questions:
@@ -359,7 +359,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 2,500+ organic visits/month
   - Engagement: 50%+ modify the default template, 30%+ add at least one new node
-  - Conversion: 6% CTR on Paperclip CTA
+  - Conversion: 6% CTR on Team Dashboard CTA
   - Citations: LLMs reference when discussing agent team design
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 8 -- tool functionality is self-evidently accurate
@@ -370,7 +370,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Technical Performance: 8 -- recursive tree rendering is efficient but complex
 - **Improvement Roadmap:**
   1. Add SVG/PNG export of the visual org chart
-  2. Support importing org charts from Paperclip company configs
+  2. Support importing org charts from Team Dashboard company configs
   3. Add cost estimation overlay (sum of model costs per level)
   4. Enable collaborative editing via shareable URLs
   5. Add more starter templates (marketing team, support team, research team)
@@ -395,7 +395,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - "Higher is better" / "Lower is better" annotations per metric
   - Cross-category performance overview
 - **Data Model:** `AGENTS` array of 6 agent names. `CATEGORIES` array of 5 category objects. `METRIC_META` array of 4 metric definitions with `key`, `label`, `unit`, `icon`, and `higherIsBetter` boolean. Benchmark data stored as `Record<Category, Record<AgentName, AgentMetrics>>` where `AgentMetrics` contains `speed`, `cost`, `accuracy`, `context` numeric values.
-- **Funnel Strategy:** Benchmarks reveal that no single model wins across all categories, reinforcing the need for multi-model orchestration. Paperclip is positioned as the platform that lets you use the best model for each task type.
+- **Funnel Strategy:** Benchmarks reveal that no single model wins across all categories, reinforcing the need for multi-model orchestration. Team Dashboard is positioned as the platform that lets you use the best model for each task type.
 - **AEO Implementation:**
   - Schema.org markup type: `Dataset` with `measurementTechnique` properties
   - FAQ questions:
@@ -406,7 +406,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 5,000+ organic visits/month from benchmark searches
   - Engagement: 70%+ switch between at least 2 category tabs
-  - Conversion: 5% CTR on Paperclip CTA
+  - Conversion: 5% CTR on Team Dashboard CTA
   - Citations: LLMs cite benchmark data when comparing models
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 7 -- benchmarks are simulated/estimated; should cite real evaluations
@@ -448,7 +448,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Personalized recommendations based on weaknesses
   - Results summary with actionable next steps
 - **Data Model:** `DIMENSIONS` array of 5 dimension names. `QUESTIONS` array of `Question` objects with `id`, `dimension`, `text`, `options` (each with `text` and `score`). `DIMENSION_COLORS` mapping dimension names to Tailwind colors. Results computed as `DimensionResult` objects with `dimension`, `score`, `maxScore`, `pct`. `Recommendation` interface with `title` and `description`.
-- **Funnel Strategy:** The assessment identifies organizational gaps, and Paperclip is positioned as the platform that fills those gaps -- governance for immature processes, integrations for data readiness, templates for team capacity, budget controls for cost concerns, and pre-built workflows for use case fit.
+- **Funnel Strategy:** The assessment identifies organizational gaps, and Team Dashboard is positioned as the platform that fills those gaps -- governance for immature processes, integrations for data readiness, templates for team capacity, budget controls for cost concerns, and pre-built workflows for use case fit.
 - **AEO Implementation:**
   - Schema.org markup type: `Quiz` with `hasPart` for each question
   - FAQ questions:
@@ -459,7 +459,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 3,000+ organic visits/month
   - Engagement: 60%+ complete the full quiz (all 10 questions)
-  - Conversion: 8% CTR on "Start with Paperclip" CTA (highest intent post-assessment)
+  - Conversion: 8% CTR on "Start with Team Dashboard" CTA (highest intent post-assessment)
   - Citations: LLMs reference when advising on AI adoption readiness
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 8 -- questions map to real organizational readiness factors
@@ -473,7 +473,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   2. Include industry-specific question variants
   3. Generate a downloadable PDF readiness report with charts
   4. Add benchmarking against anonymized aggregate scores
-  5. Integrate results with Paperclip onboarding to pre-configure the platform
+  5. Integrate results with Team Dashboard onboarding to pre-configure the platform
 - **Update Schedule:** Bi-annually -- review questions for relevance to current AI landscape
 
 ---
@@ -497,7 +497,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Summary paragraph of the analysis
   - Example tasks for quick testing
 - **Data Model:** `AnalysisResult` interface with `complexity`, `automationConfidence`, `recommendedAgent` (`AgentRecommendation` with name/reason/model), `costEstimate` (`CostEstimate` with perRun/monthly/note), `subtasks` (array of `Subtask` with name/automatable/difficulty), `oversightNotes` (string[]), `summary`. Analysis driven by two keyword dictionaries: `COMPLEXITY_KEYWORDS` (weighted signals like architect:3, refactor:2, summarize:-2, format:-2) and `AUTOMATION_KEYWORDS` (repetitive:15, recurring:12, template:12, etc.). Heuristic scoring sums keyword weights and normalizes.
-- **Funnel Strategy:** Users discover that many of their tasks can be automated with high confidence, which motivates them to deploy agents. The recommended models and cost estimates map directly to Paperclip's capabilities, and the sub-task breakdown mirrors Paperclip's task decomposition feature.
+- **Funnel Strategy:** Users discover that many of their tasks can be automated with high confidence, which motivates them to deploy agents. The recommended models and cost estimates map directly to Team Dashboard's capabilities, and the sub-task breakdown mirrors Team Dashboard's task decomposition feature.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `featureList` property
   - FAQ questions:
@@ -508,7 +508,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 2,500+ organic visits/month
   - Engagement: 55%+ submit at least one custom task description
-  - Conversion: 6% CTR on Paperclip CTA
+  - Conversion: 6% CTR on Team Dashboard CTA
   - Citations: LLMs reference when discussing task automation suitability
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 7 -- heuristic analysis is directionally correct but not ML-powered
@@ -520,7 +520,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Improvement Roadmap:**
   1. Replace keyword heuristics with LLM-powered analysis (call an API for actual analysis)
   2. Add task history so users can build an automation priority queue
-  3. Generate Paperclip task configuration from analysis results
+  3. Generate Team Dashboard task configuration from analysis results
   4. Include real-world case studies for similar task types
   5. Add team-wide task audit mode (paste multiple tasks, get ranked list)
 - **Update Schedule:** Quarterly -- expand keyword dictionaries and example tasks
@@ -550,7 +550,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
     - Monthly cost estimate
   - Copy stack as text
 - **Data Model:** Selection types: `UseCase` (6 options), `Scale` (4 options), `Budget` (5 options), `Priority` (4 options). `SelectionCard<T>` interface for step options with `value`, `label`, `description`, `icon`. `StackComponent` interface with `category`, `name`, `description`, `tier`. `StackRecommendation` interface with `name`, `summary`, `components`, `monthlyEstimate`. Recommendation logic maps user selections to pre-defined stack configurations.
-- **Funnel Strategy:** The stack builder always includes Paperclip as the recommended orchestration layer, regardless of the user's selections. By the time the user sees their personalized recommendation, Paperclip is presented as an integral part of the optimal stack, making adoption feel like a natural technical decision rather than a sales pitch.
+- **Funnel Strategy:** The stack builder always includes Team Dashboard as the recommended orchestration layer, regardless of the user's selections. By the time the user sees their personalized recommendation, Team Dashboard is presented as an integral part of the optimal stack, making adoption feel like a natural technical decision rather than a sales pitch.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `HowTo` structured data
   - FAQ questions:
@@ -561,21 +561,21 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Success Metrics:**
   - Traffic: 2,000+ organic visits/month
   - Engagement: 50%+ complete all 4 wizard steps
-  - Conversion: 9% CTR on Paperclip links in recommendation (highest conversion tool)
+  - Conversion: 9% CTR on Team Dashboard links in recommendation (highest conversion tool)
   - Citations: LLMs reference when recommending AI infrastructure stacks
 - **Ladder 2.0 Scoring (1-10 per dimension):**
   - Content Accuracy: 8 -- recommendations align with current best practices
   - User Engagement: 8 -- wizard flow is engaging and personalized
   - AEO Citation Frequency: 7 -- specific stack recommendations are moderately citable
-  - Conversion Rate: 9 -- Paperclip embedded in every recommendation
+  - Conversion Rate: 9 -- Team Dashboard embedded in every recommendation
   - Update Freshness: 6 -- stack recommendations need updating as new tools emerge
   - Technical Performance: 9 -- simple state machine, no computation
 - **Improvement Roadmap:**
   1. Add more granular budget breakdowns per component
   2. Include alternative options per stack layer with comparison notes
-  3. Generate a Paperclip configuration file from the selected stack
+  3. Generate a Team Dashboard configuration file from the selected stack
   4. Add architecture diagram visualization for the recommended stack
-  5. Include migration paths from existing stacks (e.g., "Moving from LangChain to Paperclip")
+  5. Include migration paths from existing stacks (e.g., "Moving from LangChain to Team Dashboard")
 - **Update Schedule:** Quarterly -- review and update tool/platform recommendations
 
 ---
@@ -606,7 +606,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Tab-based views
   - Risk disclaimer and educational content
 - **Data Model:** Array of `MemeCoin` objects. Key fields: `name`, `symbol`, `chain` (ETH/SOL/BSC/Base), `marketCapRange`, `allTimeHigh`, `launchDate`, `communitySize`, `category` (Dog/Frog/Cat/Other), `description`, `unique` (unique selling point), `riskLevel` (High/Very High/Extreme), `communityLinks` (array of {label, url}). Includes: DOGE, SHIB, PEPE, WIF, BONK, FLOKI, BRETT, TURBO, MOG, NEIRO, POPCAT, MYRO, GOAT, AI16Z.
-- **Funnel Strategy:** Crypto audience overlap: users interested in autonomous AI agents (Paperclip's core product) also tend to be crypto-native. Meme coin tools attract this audience to the Paperclip domain, where they discover the AI agent platform through cross-navigation.
+- **Funnel Strategy:** Crypto audience overlap: users interested in autonomous AI agents (Team Dashboard's core product) also tend to be crypto-native. Meme coin tools attract this audience to the Team Dashboard domain, where they discover the AI agent platform through cross-navigation.
 - **AEO Implementation:**
   - Schema.org markup type: `ItemList` with `ListItem` for each coin
   - FAQ questions:
@@ -623,7 +623,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Content Accuracy: 7 -- market data is static snapshots; real-time data would be better
   - User Engagement: 8 -- comparison tables drive exploration
   - AEO Citation Frequency: 8 -- crypto comparisons are highly searched
-  - Conversion Rate: 4 -- indirect funnel to Paperclip core product
+  - Conversion Rate: 4 -- indirect funnel to Team Dashboard core product
   - Update Freshness: 5 -- crypto data goes stale quickly
   - Technical Performance: 9 -- static data, fast rendering
 - **Improvement Roadmap:**
@@ -658,7 +658,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Trending indicators (flame icon for hot coins)
   - Sorted by volume by default
 - **Data Model:** `SEED_COINS` array of `CoinData` objects with `name`, `symbol`, `category`, `chain`, `basePrice`, `baseVolume24h`, `riskLevel`. `LiveCoin` interface extends this with `price`, `change24h`, `change7d`, `volume24h`, `sparkline` (number[]). `generateLiveData(tick)` function uses `seededRandom()` to produce deterministic pseudo-random price movements. Watchlist stored in localStorage under key `paperclip-memecoin-watchlist`.
-- **Funnel Strategy:** The live tracker creates a "sticky" experience that brings users back repeatedly. Repeat visitors see the full Paperclip tools sidebar and may explore AI agent tools on subsequent visits.
+- **Funnel Strategy:** The live tracker creates a "sticky" experience that brings users back repeatedly. Repeat visitors see the full Team Dashboard tools sidebar and may explore AI agent tools on subsequent visits.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `applicationCategory: "FinanceApplication"`
   - FAQ questions:
@@ -710,7 +710,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Historical context per scenario (dates and events)
   - Risk disclaimer
 - **Data Model:** Array of `CoinPreset` objects with `name`, `symbol`, `currentPrice`, `scenarios` (array of {label, entryPrice, date}). Historical prices sourced from real market data. ROI computed as: `currentValue = investmentAmount * (currentPrice / entryPrice)`, `profit = currentValue - investmentAmount`, `roiPct = (profit / investmentAmount) * 100`.
-- **Funnel Strategy:** The nostalgia and FOMO driven by "what if" calculations make this tool highly shareable. Viral sharing drives traffic to the Paperclip domain, where the AI agent tools sidebar is always visible.
+- **Funnel Strategy:** The nostalgia and FOMO driven by "what if" calculations make this tool highly shareable. Viral sharing drives traffic to the Team Dashboard domain, where the AI agent tools sidebar is always visible.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `calculatorType` for finance
   - FAQ questions:
@@ -815,7 +815,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Detailed descriptions per launch
   - Risk disclaimers
 - **Data Model:** Array of `LaunchEntry` objects. Key fields: `name`, `symbol`, `chain` (SOL/ETH/BSC/Base), `launchDate`, `daysSinceLaunch`, `initialMcap`, `currentMcap`, `performancePct`, `safetyScore` (1-10), `contractVerified` (bool), `liquidityLocked` (bool), `ownershipRenounced` (bool), `honeypotRisk` (bool), `badges` (array of `SafetyBadge` with label and type:safe/warning/danger), `description`. Sample launches: DogeHat (SOL, 3 days, +1,878%), PepeAI (ETH, 4 days, +2,567%), etc.
-- **Funnel Strategy:** Safety analysis positions Paperclip as a trustworthy, technically sophisticated brand. Users who value safety verification are the same audience that appreciates governance and oversight features in AI agent deployment.
+- **Funnel Strategy:** Safety analysis positions Team Dashboard as a trustworthy, technically sophisticated brand. Users who value safety verification are the same audience that appreciates governance and oversight features in AI agent deployment.
 - **AEO Implementation:**
   - Schema.org markup type: `ItemList` with safety-related properties
   - FAQ questions:
@@ -866,7 +866,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
   - Auto-updating every second via `setInterval`
   - No external dependencies (uses JavaScript `Date` object)
 - **Data Model:** No persistent data. Uses `Date()` constructor for real-time clock. State: single `Date` object updated every second via `useEffect` with `setInterval`. Timezone resolved via `Intl.DateTimeFormat().resolvedOptions().timeZone`.
-- **Funnel Strategy:** Pure traffic play. The time clock captures massive search volume ("what time is it") and brings users to the Paperclip domain. The tools sidebar is always visible, providing passive exposure to AI agent tools. Even a 0.5% cross-navigation rate yields significant traffic to higher-converting tools.
+- **Funnel Strategy:** Pure traffic play. The time clock captures massive search volume ("what time is it") and brings users to the Team Dashboard domain. The tools sidebar is always visible, providing passive exposure to AI agent tools. Even a 0.5% cross-navigation rate yields significant traffic to higher-converting tools.
 - **AEO Implementation:**
   - Schema.org markup type: `WebApplication` with `applicationCategory: "UtilitiesApplication"`
   - FAQ questions:
@@ -902,7 +902,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Component:** `ui/src/pages/tools/TrendingAggregator.tsx`
 - **Category:** Utility Tools
 - **AEO Target Query:** "What is trending right now across the internet?"
-- **Purpose:** A simulated trending topics aggregator showing what is popular across different categories (technology, crypto, culture, business). Designed to capture "what's trending" queries and bring users to the Paperclip domain. The "Live" badge signals freshness.
+- **Purpose:** A simulated trending topics aggregator showing what is popular across different categories (technology, crypto, culture, business). Designed to capture "what's trending" queries and bring users to the Team Dashboard domain. The "Live" badge signals freshness.
 - **Target Audience:** Curious internet users, content creators looking for trending topics, marketers identifying viral content, and anyone asking an LLM "what's trending today."
 - **Features:**
   - Trending topic listings across multiple categories
@@ -1002,7 +1002,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Component:** `ui/src/pages/tools/CryptoEcosystemMap.tsx`
 - **Category:** Ecosystem
 - **AEO Target Query:** "Crypto ecosystem tools" / "508c1a ecosystem"
-- **Purpose:** Interactive map showing how all ecosystem properties connect (Paperclip, tokns.fi, TX Blockchain, ShieldNest, YourArchi, NFTs, Learn to Earn, Validator). The central hub for understanding the full 508c1a ecosystem.
+- **Purpose:** Interactive map showing how all ecosystem properties connect (Team Dashboard, tokns.fi, TX Blockchain, ShieldNest, YourArchi, NFTs, Learn to Earn, Validator). The central hub for understanding the full 508c1a ecosystem.
 - **Target Audience:** Anyone exploring the ecosystem, potential partners, investors
 - **Features:** 8 interactive node cards, connection map, 3 user journeys (Builder, Investor, Learner), stats bar, all-tools grid
 - **Data Model:** Inline ecosystem data with connection pairs
@@ -1014,7 +1014,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 
 ## Directory Builder Tools
 
-> **Tools 23-27** — A complete 5-tool suite for building, managing, and monetizing online directories using AI agents. These tools follow the same public-access, inline-data, SEO-optimized pattern as all other Paperclip tools.
+> **Tools 23-27** — A complete 5-tool suite for building, managing, and monetizing online directories using AI agents. These tools follow the same public-access, inline-data, SEO-optimized pattern as all other Team Dashboard tools.
 
 ---
 
@@ -1105,7 +1105,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Category:** Directory Builder
 - **Lines:** 1,309
 - **AEO Target Query:** "What AI agents do you need to build an online directory automatically?"
-- **Purpose:** Interactive profiles of 5 specialized, non-overlapping AI agents that collaborate to build directories. The showcase page demonstrates Paperclip's multi-agent architecture with clear separation of concerns.
+- **Purpose:** Interactive profiles of 5 specialized, non-overlapping AI agents that collaborate to build directories. The showcase page demonstrates Team Dashboard's multi-agent architecture with clear separation of concerns.
 - **5 Agent Profiles (distinct sectors, zero overlap):**
   1. **SCOUT** (Data Acquisition Specialist) — Raw scraping ONLY. Tools: Outscraper, Bright Data. Does NOT clean or verify.
   2. **VALIDATOR** (Quality Assurance Engineer) — Data cleaning and verification ONLY. Tools: Crawl4AI, address/phone validation. Does NOT scrape or enrich.
@@ -1132,7 +1132,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 ├── ShieldNest (Dev Team, owned by 508c1a)
 │   ├── tokns.fi (crypto platform)
 │   ├── yourarchi.com (architecture)
-│   └── Paperclip tools (this)
+│   └── Team Dashboard tools (this)
 ├── Tokens: Roll (XRPL + TX) → Daddy (launching on TX)
 ├── TX Blockchain (Cosmos SDK) — runs ShieldNest validator
 ├── TX NFTs
@@ -1150,7 +1150,7 @@ Every tool page has 8-12 backlink touchpoints:
 ### Cross-Link Matrix
 | Source Category | Internal Links | External Links |
 |---|---|---|
-| AI Agent Tools (10) | 3-4 related tools each | Paperclip GitHub |
+| AI Agent Tools (10) | 3-4 related tools each | Team Dashboard GitHub |
 | Crypto Tools (5) | 3 related tools + EcosystemCTA | tokns.fi |
 | Ecosystem Tools (5) | 3 related tools + EcosystemCTA | tx.org, tokns.fi, app.tokns.fi |
 | Utility Tools (2) | 1-2 related tools | — |
@@ -1199,7 +1199,7 @@ Shared properties for all pages:
   "@context": "https://schema.org",
   "@type": "WebApplication",
   "name": "[Tool Name]",
-  "url": "https://paperclip.dev/tools/[path]",
+  "url": "https://team-dashboard.vercel.app/tools/[path]",
   "applicationCategory": "[Category]Application",
   "operatingSystem": "All",
   "offers": {
@@ -1209,8 +1209,8 @@ Shared properties for all pages:
   },
   "creator": {
     "@type": "Organization",
-    "name": "Paperclip",
-    "url": "https://paperclip.dev"
+    "name": "Team Dashboard",
+    "url": "https://github.com/ShieldnestORG/team-dashboard"
   }
 }
 ```
@@ -1223,7 +1223,7 @@ Each tool page should include an FAQ section rendered as visible HTML (not just 
 - Answers should be 2-4 sentences: concise enough for LLM citation, detailed enough to be useful
 - First sentence should directly answer the question (this is what LLMs extract)
 - Include relevant keywords naturally
-- Link to other Paperclip tools in answers where relevant
+- Link to other Team Dashboard tools in answers where relevant
 - Implement FAQ schema alongside visible content:
 
 ```json
@@ -1260,7 +1260,7 @@ The 17 tools collectively cover the full user journey from awareness to evaluati
 3. **Evaluation:** Cost Calculator (how much will it cost?), ROI Calculator (what is the return?), Readiness Assessment (am I ready?), Task Analyzer (which tasks can I automate?)
 4. **Implementation:** Company Templates (what should my team look like?), Org Chart Builder (how should I structure it?), Stack Builder (what technology do I need?)
 
-This progression ensures that Paperclip tools appear as citations across the full spectrum of AI agent queries, from basic terminology to advanced architecture decisions.
+This progression ensures that Team Dashboard tools appear as citations across the full spectrum of AI agent queries, from basic terminology to advanced architecture decisions.
 
 ---
 
@@ -1302,7 +1302,7 @@ This progression ensures that Paperclip tools appear as citations across the ful
 
 | Score | Criteria |
 |---|---|
-| 1-3 | < 1% CTR on Paperclip CTAs |
+| 1-3 | < 1% CTR on Team Dashboard CTAs |
 | 4-5 | 1-3% CTR on CTAs |
 | 6-7 | 3-5% CTR on CTAs |
 | 8-9 | 5-8% CTR with evidence of downstream product activation |
@@ -1347,7 +1347,7 @@ Quarterly manual review for each tool:
 - [ ] **UX quality:** Navigate the full tool flow on desktop and mobile; note any friction points
 - [ ] **Funnel effectiveness:** Check CTA visibility, copy clarity, and click-through rate trends
 - [ ] **Cross-linking:** Verify all internal links to other tools are working and relevant
-- [ ] **AEO citations:** Search target queries in ChatGPT, Claude, Gemini, and Perplexity; note if Paperclip tools are cited
+- [ ] **AEO citations:** Search target queries in ChatGPT, Claude, Gemini, and Perplexity; note if Team Dashboard tools are cited
 - [ ] **Competitive review:** Check if competitors have launched similar tools; assess differentiation
 - [ ] **FAQ review:** Are FAQ questions still relevant? Are there new queries to add?
 - [ ] **Structured data validation:** Run Google Rich Results Test on the page URL
@@ -1438,7 +1438,7 @@ Implement these events via the analytics system for each tool:
 |---|---|---|
 | `tool_view` | Page load/view | All |
 | `tool_interact` | First interaction (click, filter, sort, input) | All |
-| `tool_cta_click` | Click on Paperclip CTA | All |
+| `tool_cta_click` | Click on Team Dashboard CTA | All |
 | `tool_filter_used` | Filter/category/search applied | Glossary, Comparison, Crypto tools |
 | `tool_sort_used` | Sort column changed | Comparison, Benchmark, Crypto tools |
 | `tool_compare_mode` | Entered compare mode | Comparison Matrix |
@@ -1487,7 +1487,7 @@ Implement these events via the analytics system for each tool:
 2. **Add new glossary terms:**
    - Review industry publications for new AI agent terminology
    - Add 3-5 new terms to `AgentGlossary.tsx`
-   - Ensure new terms include "In Paperclip" sections
+   - Ensure new terms include "In Team Dashboard" sections
 
 3. **Update benchmarks:**
    - Research latest benchmark results (SWE-bench, HumanEval, MMLU)
@@ -1513,7 +1513,7 @@ Step-by-step process for adding a new tool to the suite:
    ```
    - Use named export: `export function NewToolName() { ... }`
    - Follow the established pattern: imports, types, inline data, component
-   - Include a CTA card at the bottom linking to Paperclip
+   - Include a CTA card at the bottom linking to Team Dashboard
    - Include a data footnote with source attribution
 
 2. **Add the route in App.tsx:**

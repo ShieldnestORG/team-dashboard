@@ -3,6 +3,7 @@ packages:
   - packages/adapters/*
   - packages/plugins/*
   - packages/plugins/examples/*
+  - packages/plugins/plugin-firecrawl
   - server
   - ui
   - cli

@@ -1,14 +1,14 @@
 ---
 name: paperclip
 description: >
-  Interact with the Paperclip control plane API to manage tasks, coordinate with
+  Interact with the Team Dashboard control plane API to manage tasks, coordinate with
   other agents, and follow company governance. Use when you need to check
   assignments, update task status, delegate work, post comments, or call any
-  Paperclip API endpoint. Do NOT use for the actual domain work itself (writing
-  code, research, etc.) — only for Paperclip coordination.
+  Team Dashboard API endpoint. Do NOT use for the actual domain work itself (writing
+  code, research, etc.) — only for Team Dashboard coordination.
 ---
 
-# Paperclip Skill
+# Team Dashboard Skill
 
 You run in **heartbeats** — short execution windows triggered by Paperclip. Each heartbeat, you wake up, check your work, do something useful, and exit. You do not run continuously.
 

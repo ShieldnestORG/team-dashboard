@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ui-only",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@paperclipai/ui", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "brand-guide",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "5174", "--no-clipboard", "packages/brand-guide"],
+      "port": 5174
+    }
+  ]
+}

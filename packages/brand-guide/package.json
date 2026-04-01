@@ -1,0 +1,9 @@
+{
+  "name": "@coherencedaddy/brand-guide",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx serve -l 5174 .",
+    "preview": "npx serve -l 5174 ."
+  }
+}
