@@ -480,6 +480,10 @@ export async function startServer(): Promise<StartedServer> {
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
     const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins]));
+    // Share trusted origins with the board mutation guard middleware so it
+    // accepts requests proxied through Vercel (or any external frontend).
+    const { setExtraTrustedOrigins } = await import("./middleware/board-mutation-guard.js");
+    setExtraTrustedOrigins(effectiveTrustedOrigins);
     logger.info(
       {
         authBaseUrlMode: config.authBaseUrlMode,

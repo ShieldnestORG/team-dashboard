@@ -6,6 +6,13 @@ const DEFAULT_DEV_ORIGINS = [
   "http://127.0.0.1:3100",
 ];
 
+let _extraTrustedOrigins: string[] = [];
+
+/** Register additional trusted origins (e.g. from auth config or env). */
+export function setExtraTrustedOrigins(origins: string[]) {
+  _extraTrustedOrigins = origins.map((o) => o.toLowerCase().replace(/\/+$/, ""));
+}
+
 function parseOrigin(value: string | undefined) {
   if (!value) return null;
   try {
@@ -18,6 +25,9 @@ function parseOrigin(value: string | undefined) {
 
 function trustedOriginsForRequest(req: Request) {
   const origins = new Set(DEFAULT_DEV_ORIGINS.map((value) => value.toLowerCase()));
+  for (const extra of _extraTrustedOrigins) {
+    origins.add(extra);
+  }
   const host = req.header("host")?.trim();
   if (host) {
     origins.add(`http://${host}`.toLowerCase());
