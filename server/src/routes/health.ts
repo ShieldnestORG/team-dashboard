@@ -89,5 +89,47 @@ export function healthRoutes(
     });
   });
 
+  /**
+   * Readiness probe for load balancers and container orchestrators.
+   * Returns 200 when the database is reachable, 503 otherwise.
+   */
+  router.get("/readiness", async (_req, res) => {
+    if (!db) {
+      res.status(503).json({ ready: false, reason: "no_database" });
+      return;
+    }
+    try {
+      await db.execute(sql`SELECT 1`);
+      res.json({ ready: true });
+    } catch {
+      res.status(503).json({ ready: false, reason: "database_unreachable" });
+    }
+  });
+
+  /**
+   * Lightweight metrics endpoint for monitoring.
+   * Returns agent, run, and system counts in JSON.
+   */
+  router.get("/metrics", async (_req, res) => {
+    if (!db) {
+      res.json({ status: "no_database" });
+      return;
+    }
+    try {
+      const [agentCounts] = await db
+        .select({ count: count() })
+        .from(heartbeatRuns)
+        .where(inArray(heartbeatRuns.status, ["queued", "running"]));
+      res.json({
+        version: serverVersion,
+        uptime: process.uptime(),
+        memoryMB: Math.round(process.memoryUsage.rss() / 1024 / 1024),
+        activeRuns: Number(agentCounts?.count ?? 0),
+      });
+    } catch {
+      res.status(500).json({ error: "metrics_unavailable" });
+    }
+  });
+
   return router;
 }
