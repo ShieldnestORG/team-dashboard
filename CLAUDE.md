@@ -50,6 +50,16 @@ ui/
     lib/              # Utilities, router, agent config
     pages/            # Authenticated dashboard pages
   public/             # Favicons, service worker
+agents/
+  atlas/              # CEO — strategy, delegation, board comms
+  nova/               # CTO — technical direction, manages eng team
+  sage/               # CMO — marketing, brand, AEO strategy
+  river/              # PM — project coordination, sprint planning
+  pixel/              # Designer — UI/UX, design system
+  core/               # Backend Dev — Express, DB, APIs
+  flux/               # Frontend Dev — React, UI, components
+  bridge/             # Full-Stack Dev — integration, deployment, docs
+  echo/               # Data Engineer — Firecrawl scraping, Qdrant, AEO
 packages/
   brand-guide/        # Coherence Daddy brand guidelines (standalone HTML)
   plugins/
@@ -95,7 +105,12 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Frontend**: Vercel — auto-deploys on push to master, serves static UI
 - **Backend**: VPS Docker at `31.220.61.12:3200` — Express.js API, agent runtime
 - **Database**: Neon PostgreSQL — managed by Vercel integration
+- **Firecrawl**: Self-hosted at `168.231.127.180` — scraping, crawling, data extraction
+- **Embeddings**: `31.220.61.12:8000` — vector embedding service
+- **Directory API**: `168.231.127.180:4000` — data sync from Firecrawl
+- **Ollama**: `168.231.127.180:11434` — local summarization (qwen2.5:1.5b)
 - **GitHub**: ShieldnestORG/team-dashboard (make private after deploy; use PAT for VPS access)
+- **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 
 ### Key Files
 

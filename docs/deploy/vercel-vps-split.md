@@ -148,7 +148,45 @@ Push to master — Vercel auto-deploys.
 | `PAPERCLIP_PUBLIC_URL` | VPS `.env.production` | Must be the Vercel frontend URL |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | VPS `.env.production` | Vercel domain for CORS |
 | `ANTHROPIC_API_KEY` | VPS `.env.production` | For Claude adapter |
+| `SITE_METRICS_KEY` | VPS `.env.production` | Shared secret for external site metrics ingestion |
 | `SERVE_UI` | Docker Compose env | `false` (Vercel serves UI) |
+
+## Site Metrics Integration
+
+External properties (coherencedaddy.com, tokns.fi, etc.) report analytics to the dashboard so agents can monitor traffic, subscribers, and tool usage.
+
+### How It Works
+
+```
+coherencedaddy.com              VPS Backend (31.220.61.12:3200)
+┌──────────────────┐     POST   ┌──────────────────────────────┐
+│ Vercel Cron      │───────────▶│ /api/companies/:id/          │
+│ daily 6am UTC    │  metrics   │   site-metrics/ingest        │
+│ /api/metrics/    │            │                              │
+│   report         │            │ Agents query via:            │
+└──────────────────┘            │ GET /api/companies/:id/      │
+                                │   site-metrics               │
+                                └──────────────────────────────┘
+```
+
+### Endpoints
+
+- **Ingest**: `POST /api/companies/:companyId/site-metrics/ingest` — receives metrics from external sites
+- **Query**: `GET /api/companies/:companyId/site-metrics?siteId=coherencedaddy.com&period=daily&limit=30`
+
+Auth: standard bearer token (agents/board) or `X-Site-Metrics-Key` header for external sites.
+
+### Coherencedaddy.com Side
+
+The coherencedaddy repo has:
+- `lib/metrics-reporter.ts` — aggregates tool views, directory clicks, subscribers from local Neon DB
+- `app/api/metrics/report/route.ts` — cron-triggered endpoint
+- `vercel.json` — daily cron at 6am UTC
+
+Env vars required on Vercel (coherencedaddy project):
+- `TEAM_DASHBOARD_URL` — VPS backend URL (e.g., `http://31.220.61.12:3200`)
+- `TEAM_DASHBOARD_METRICS_KEY` — must match `SITE_METRICS_KEY` on VPS
+- `TEAM_DASHBOARD_COMPANY_ID` — the company UUID
 
 ## Known Limitations
 

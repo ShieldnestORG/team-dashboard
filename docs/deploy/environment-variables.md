@@ -42,6 +42,22 @@ These are set automatically by the server when invoking agents:
 | `PAPERCLIP_APPROVAL_STATUS` | Approval decision |
 | `PAPERCLIP_LINKED_ISSUE_IDS` | Comma-separated linked issue IDs |
 
+## Site Metrics Integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SITE_METRICS_KEY` | (none) | Shared secret for external sites to push metrics via `X-Site-Metrics-Key` header |
+
+External properties (coherencedaddy.com, tokns.fi, etc.) call `POST /api/companies/:companyId/site-metrics/ingest` with this key to report analytics. Agents can query metrics via `GET /api/companies/:companyId/site-metrics`.
+
+## Firecrawl Plugin
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FIRECRAWL_EMBEDDING_API_KEY` | (none) | Coherence Daddy embedding API key |
+
+Firecrawl plugin config (apiUrl, directoryApiUrl, embeddingApiUrl, ollamaUrl) is set via the plugin config API, not environment variables. See the Firecrawl plugin docs at `packages/plugins/plugin-firecrawl/docker/SELF_HOSTING.md`.
+
 ## LLM Provider Keys (for adapters)
 
 | Variable | Description |
