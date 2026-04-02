@@ -340,6 +340,31 @@ const manifest: PaperclipPluginManifestV1 = {
         },
       },
     },
+    {
+      name: "claim-next-post",
+      displayName: "Twitter: Claim Next Post",
+      description:
+        "Claim the next pending tweet from the queue. Returns the tweet content for the extension to post. Marks it as claimed.",
+      parametersSchema: {
+        type: "object",
+        properties: {},
+      },
+    },
+    {
+      name: "report-post-result",
+      displayName: "Twitter: Report Post Result",
+      description: "Report the result of a posted tweet back to the dashboard.",
+      parametersSchema: {
+        type: "object",
+        required: ["queueItemId", "success"],
+        properties: {
+          queueItemId: { type: "string" },
+          success: { type: "boolean" },
+          tweetUrl: { type: "string" },
+          error: { type: "string" },
+        },
+      },
+    },
   ],
 };
 
