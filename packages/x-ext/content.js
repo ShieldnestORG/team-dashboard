@@ -1192,6 +1192,13 @@ function renderMainUI(container, profile = null) {
         <div style="display:flex; flex-direction:column; align-items:center; gap: 8px;">
            <span id="tmb-state-label" style="font-size: 14px;">Offline</span>
            <span style="font-family: 'DM Mono', monospace; font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px;">Awaiting Directives</span>
+           <div id="tmb-toggle-wrap" style="margin-top: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; padding: 6px 16px; border-radius: 20px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+             <input type="checkbox" id="tmb-toggle-input" style="position:absolute;opacity:0;pointer-events:none;" />
+             <span id="tmb-track" style="display:inline-block; width: 36px; height: 20px; border-radius: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); position: relative; transition: background 0.3s; flex-shrink: 0;">
+               <span id="tmb-thumb" style="position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #555; transition: all 0.25s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></span>
+             </span>
+             <span id="tmb-toggle-label" style="font-family: 'DM Mono', monospace; font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; user-select: none;">Enable</span>
+           </div>
         </div>
       </div>
     </div>
@@ -1209,11 +1216,16 @@ function renderMainUI(container, profile = null) {
 
       // Use settings.online as persistent source of truth
       const botActive = settings.online ?? false;
-      
+
       const dot = card.querySelector("#tmb-dot");
       const label = card.querySelector("#tmb-state-label");
-      if (dot && label) {
-          if (botActive) {
+      const toggle = card.querySelector("#tmb-toggle-input");
+      const thumb = card.querySelector("#tmb-thumb");
+      const toggleLabel = card.querySelector("#tmb-toggle-label");
+
+      function updateBotUI(isActive) {
+        if (dot && label) {
+          if (isActive) {
             dot.classList.add("active");
             label.textContent = "Online";
             label.style.color = "var(--tmb-mint)";
@@ -1222,6 +1234,42 @@ function renderMainUI(container, profile = null) {
             label.textContent = "Offline";
             label.style.color = "var(--tmb-text-secondary)";
           }
+        }
+        if (toggle) toggle.checked = isActive;
+        if (thumb) {
+          thumb.style.left = isActive ? "20px" : "2px";
+          thumb.style.background = isActive ? "var(--tmb-mint, #00e5a0)" : "#666";
+        }
+        if (toggleLabel) toggleLabel.textContent = isActive ? "Disable" : "Enable";
+      }
+
+      updateBotUI(botActive);
+
+      // Toggle event — enable/disable bot locally
+      // Click on wrapper toggles the hidden checkbox
+      const toggleWrap = card.querySelector("#tmb-toggle-wrap");
+      if (toggleWrap && toggle) {
+        toggleWrap.addEventListener("click", (e) => {
+          if (e.target !== toggle) toggle.checked = !toggle.checked;
+          toggle.dispatchEvent(new Event("change"));
+        });
+      }
+      if (toggle) {
+        toggle.addEventListener("change", async () => {
+          const isOn = toggle.checked;
+          const currentSettings = (await chrome.storage.local.get([SETTINGS_KEY]))[SETTINGS_KEY] || {};
+          currentSettings.online = isOn;
+          await chrome.storage.local.set({ [SETTINGS_KEY]: currentSettings, [BOT_ENABLED]: isOn });
+          updateBotUI(isOn);
+          if (isOn) {
+            startBot();
+            showNotification(card, "success", "Bot enabled — polling for queued tweets");
+          } else {
+            stopBot();
+            showNotification(card, "info", "Bot disabled");
+          }
+          syncInteractionShield(isOn);
+        });
       }
 
       if (botActive) startBot();

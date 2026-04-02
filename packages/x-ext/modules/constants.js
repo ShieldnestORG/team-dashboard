@@ -22,6 +22,8 @@ const API_BASE = "https://team-dashboard-cyan.vercel.app";
 const DASHBOARD_URL = API_BASE;
 // Plugin webhook base for extension bridge endpoints
 const WEBHOOK_BASE = `${API_BASE}/api/plugins/coherencedaddy.twitter/webhooks`;
+// Extension bridge — direct tool execution without auth
+const EXT_API = `${API_BASE}/api/plugins/coherencedaddy.twitter/ext`;
 
 // Default access token — used for all X accounts connecting to this dashboard.
 // Change this if you deploy publicly; for local use any value works.

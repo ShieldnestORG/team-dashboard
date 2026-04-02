@@ -22,7 +22,7 @@ async function fetchProfile(token) {
       return {
         ok: true,
         profile: { name: "Dashboard User", role: "operator" },
-        settings: { bot_enabled: true, posting_enabled: true },
+        settings: { bot_enabled: true, posting_enabled: true, online: true },
       };
     }
   } catch (e) {

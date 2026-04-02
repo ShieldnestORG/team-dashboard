@@ -258,28 +258,12 @@ async function handleCommandMission(settings, mission, cycleNum) {
         break;
       case 'POST':
         try {
-          // 1. Authenticate and build fetch URL to the Dashboard API
-          const storedAuth = await chrome.storage.local.get([STORAGE_KEY]);
-          const session_token = storedAuth[STORAGE_KEY];
-          if (!session_token) throw new Error("No session token to fetch POST content.");
-
-          let fetchUrl = `${WEBHOOK_BASE}/ext-poll`;
-          const queryParams = new URLSearchParams();
-          if (step.params.role && step.params.role !== 'random') {
-            queryParams.append('role', step.params.role);
-          }
-          if (step.params.row && step.params.row !== 'random') {
-            queryParams.append('row', step.params.row);
-          } else if (step.params.row === 'random' || step.params.role === 'random') {
-            queryParams.append('row', 'random');
-          }
-          if (queryParams.toString()) {
-            fetchUrl += '?' + queryParams.toString();
-          }
-
-          console.log(`[Bot] Requesting POST content: ${fetchUrl}`);
-          const res = await fetch(fetchUrl, {
-            headers: { 'Authorization': `Bearer ${session_token}` }
+          // 1. Fetch next queued tweet from dashboard plugin
+          console.log(`[Bot] Requesting POST content from dashboard...`);
+          const res = await fetch(`${EXT_API}/get-queue-status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
           });
 
           if (!res.ok) throw new Error(`Dashboard API rejected POST fetch (Status: ${res.status})`);
@@ -483,57 +467,30 @@ async function handleCommandMission(settings, mission, cycleNum) {
  */
 async function syncProfileSettings(cycleNum) {
   try {
-    const stored = await chrome.storage.local.get([STORAGE_KEY]);
+    const stored = await chrome.storage.local.get([STORAGE_KEY, BOT_ENABLED, SETTINGS_KEY]);
     const token = stored[STORAGE_KEY];
-    // Send heartbeat to dashboard plugin
-    const botState = await chrome.storage.local.get([BOT_ENABLED]);
+    const currentSettings = stored[SETTINGS_KEY] || {};
+
+    // Send heartbeat to dashboard plugin (fire-and-forget)
     const sessionMem = await chrome.storage.local.get(['session_id']);
-    await fetch(`${WEBHOOK_BASE}/ext-heartbeat`, {
+    fetch(`${WEBHOOK_BASE}/ext-heartbeat`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionId: sessionMem.session_id || "unknown",
-        botEnabled: !!botState[BOT_ENABLED],
+        botEnabled: !!stored[BOT_ENABLED],
         currentUrl: window.location.href,
       })
-    });
+    }).catch(() => {});
 
-    // Poll for work items and targets from dashboard plugin
-    const res = await fetch(`${WEBHOOK_BASE}/ext-poll`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "poll" })
-    });
-
-    let mergedSettings = null;
-    let targets = [];
-
-    if (res.ok) {
-      const data = await res.json();
-      // The poll response contains queueItem, mission, and targets
-      mergedSettings = data.settings || data;
-      targets = data.targets || [];
+    // Preserve the local online state — the toggle controls this, not the backend
+    // The bot cycle checks settings.online, so we must keep it true while the toggle is on
+    if (stored[BOT_ENABLED] && !currentSettings.online) {
+      currentSettings.online = true;
+      await chrome.storage.local.set({ [SETTINGS_KEY]: currentSettings });
     }
 
-    // Also try original profile endpoint as fallback
-    try {
-      const profileRes = await fetch(`${API_BASE}/api/profile`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (profileRes.ok) {
-        const profileData = await profileRes.json();
-        if (profileData.settings) {
-          mergedSettings = { ...mergedSettings, ...profileData.settings };
-        }
-      }
-    } catch (_) { /* fallback — dashboard profile may not exist yet */ }
-
-    if (mergedSettings) {
-      mergedSettings.targets = targets;
-      await chrome.storage.local.set({ [SETTINGS_KEY]: mergedSettings });
-      console.log(`[Bot] Cycle #${cycleNum} — 🧠 Brain Sync Complete (Dashboard Plugin + Target Roster Loaded).`);
-    }
+    console.log(`[Bot] Cycle #${cycleNum} — 🧠 Brain Sync Complete (online: ${currentSettings.online}).`);
   } catch (err) {
     console.error(`[Bot] Cycle #${cycleNum} — 🧠 Brain Sync Error:`, err.message);
   }
@@ -883,7 +840,99 @@ async function runBotCycle() {
       console.log(`[Bot] Cycle #${cycleNum} — Tactical Mission Found: "${mission.intent || 'Untitled'}"`);
       await handleCommandMission(settings, mission, cycleNum);
     } else {
-      console.log(`[Bot] Cycle #${cycleNum} — Standing by for Neural Command...`);
+      // ── DASHBOARD QUEUE POLLING ──
+      // No local mission — check the dashboard for queued tweets and post them
+      console.log(`[Bot] Cycle #${cycleNum} — Polling dashboard for queued tweets...`);
+      try {
+        const claimRes = await fetch(`${EXT_API}/claim-next-post`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+
+        if (claimRes.ok) {
+          const claimed = await claimRes.json();
+
+          if (claimed.data?.empty) {
+            console.log(`[Bot] Cycle #${cycleNum} — Queue empty. Standing by...`);
+          } else {
+            const tweetText = claimed.data?.text || claimed.content || "";
+            const queueItemId = claimed.data?.id;
+            const mediaUrls = claimed.data?.mediaUrls || [];
+
+            console.log(`[Bot] Cycle #${cycleNum} — 📬 Claimed tweet: "${tweetText.slice(0, 60)}..."`);
+
+            if (tweetText.trim()) {
+              // Post the tweet using X.com's protocol
+              let postSuccess = false;
+              let tweetUrl = "";
+
+              try {
+                // Upload media if present
+                let mediaIds = [];
+                if (mediaUrls.length > 0) {
+                  console.log(`[Bot] Uploading ${mediaUrls.length} media file(s)...`);
+                  // Fetch images and upload via protocol
+                  const files = [];
+                  for (const url of mediaUrls) {
+                    try {
+                      const imgRes = await fetch(url);
+                      const blob = await imgRes.blob();
+                      files.push(new File([blob], "image.jpg", { type: blob.type }));
+                    } catch (e) {
+                      console.warn(`[Bot] Failed to fetch media: ${url}`, e);
+                    }
+                  }
+                  if (files.length > 0) {
+                    mediaIds = await uploadMediaProtocol(files);
+                  }
+                }
+
+                // Submit via GraphQL protocol
+                const result = await submitTweetProtocol(tweetText, mediaIds);
+                postSuccess = result.success;
+                if (result.rest_id) {
+                  tweetUrl = `https://x.com/i/web/status/${result.rest_id}`;
+                }
+
+                if (!postSuccess) {
+                  // Fallback: type into compose box
+                  console.log("[Bot] Protocol post failed, trying DOM method...");
+                  await navigateToHome();
+                  await new Promise(r => setTimeout(r, 1500));
+                  await typeInCompose(tweetText);
+                  await new Promise(r => setTimeout(r, 500));
+                  await clickPostButton();
+                  postSuccess = await waitForPostSuccess(8000);
+                }
+              } catch (postErr) {
+                console.error(`[Bot] Post error:`, postErr);
+              }
+
+              // Report result back to dashboard
+              try {
+                await fetch(`${EXT_API}/report-post-result`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    queueItemId: queueItemId,
+                    success: postSuccess,
+                    tweetUrl: tweetUrl,
+                    error: postSuccess ? undefined : "Post failed"
+                  })
+                });
+              } catch (_) { /* best effort */ }
+
+              console.log(`[Bot] Cycle #${cycleNum} — ${postSuccess ? '✅ Tweet posted!' : '❌ Tweet failed'} ${tweetUrl}`);
+              await logPostResult({ post_id: queueItemId, type: 'dashboard', text: tweetText, status: postSuccess ? 'success' : 'fail', tweetUrl });
+            }
+          }
+        } else {
+          console.log(`[Bot] Cycle #${cycleNum} — Dashboard poll returned ${claimRes.status}`);
+        }
+      } catch (pollErr) {
+        console.log(`[Bot] Cycle #${cycleNum} — Dashboard poll error:`, pollErr.message);
+      }
     }
 
     console.log(`[Bot] ── Cycle #${cycleNum} END ──`);

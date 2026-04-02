@@ -1892,6 +1892,128 @@ export function pluginRoutes(
    * - 400 if plugin is not in ready state or lacks webhooks.receive capability
    * - 502 if the worker is unavailable or the RPC call fails
    */
+  // ===========================================================================
+  // Extension bridge: unauthenticated tool execution for extension polling
+  // ===========================================================================
+
+  /**
+   * POST /api/plugins/:pluginId/ext/:toolName
+   *
+   * Execute a plugin tool WITHOUT board authentication.
+   * This route is specifically for browser extensions that can't carry session cookies.
+   * Only works for plugins that declare the `webhooks.receive` capability (i.e., they
+   * expect external callers). The tool result is returned directly.
+   */
+  router.options("/plugins/:pluginId/ext/:toolName", (_req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.set("Access-Control-Max-Age", "86400");
+    res.status(204).end();
+  });
+
+  router.post("/plugins/:pluginId/ext/:toolName", async (req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+
+    if (!toolDeps) {
+      res.status(501).json({ error: "Tool dispatch not enabled" });
+      return;
+    }
+
+    const { pluginId, toolName } = req.params;
+
+    // Resolve plugin and verify it has webhooks.receive (extension-facing)
+    const plugin = await resolvePlugin(registry, pluginId);
+    if (!plugin) {
+      res.status(404).json({ error: "Plugin not found" });
+      return;
+    }
+
+    const capabilities = plugin.manifestJson?.capabilities ?? [];
+    if (!capabilities.includes("webhooks.receive")) {
+      res.status(403).json({ error: "Plugin is not extension-facing" });
+      return;
+    }
+
+    const namespacedName = `${plugin.pluginKey}:${toolName}`;
+    const registeredTool = toolDeps.toolDispatcher.getTool(namespacedName);
+    if (!registeredTool) {
+      res.status(404).json({ error: `Tool "${namespacedName}" not found` });
+      return;
+    }
+
+    try {
+      const parameters = req.body?.parameters ?? req.body ?? {};
+      const runContext = {
+        agentId: "x-ext-extension",
+        runId: `ext-${randomUUID().slice(0, 8)}`,
+        companyId: req.body?.companyId || "extension",
+        projectId: req.body?.projectId || "extension",
+      };
+
+      const result = await toolDeps.toolDispatcher.executeTool(
+        namespacedName,
+        parameters,
+        runContext,
+      );
+
+      res.json(result.result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  router.get("/plugins/:pluginId/ext/:toolName", async (req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+
+    if (!toolDeps) {
+      res.status(501).json({ error: "Tool dispatch not enabled" });
+      return;
+    }
+
+    const { pluginId, toolName } = req.params;
+    const plugin = await resolvePlugin(registry, pluginId);
+    if (!plugin) {
+      res.status(404).json({ error: "Plugin not found" });
+      return;
+    }
+
+    const capabilities = plugin.manifestJson?.capabilities ?? [];
+    if (!capabilities.includes("webhooks.receive")) {
+      res.status(403).json({ error: "Plugin is not extension-facing" });
+      return;
+    }
+
+    const namespacedName = `${plugin.pluginKey}:${toolName}`;
+    const registeredTool = toolDeps.toolDispatcher.getTool(namespacedName);
+    if (!registeredTool) {
+      res.status(404).json({ error: `Tool "${namespacedName}" not found` });
+      return;
+    }
+
+    try {
+      const parameters = req.query as Record<string, unknown>;
+      const runContext = {
+        agentId: "x-ext-extension",
+        runId: `ext-${randomUUID().slice(0, 8)}`,
+        companyId: "extension",
+        projectId: "extension",
+      };
+
+      const result = await toolDeps.toolDispatcher.executeTool(
+        namespacedName,
+        parameters,
+        runContext,
+      );
+
+      res.json(result.result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
+
   // CORS preflight for webhook routes (called by browser extensions from external origins)
   router.options("/plugins/:pluginId/webhooks/:endpointKey", (_req, res) => {
     res.set("Access-Control-Allow-Origin", "*");

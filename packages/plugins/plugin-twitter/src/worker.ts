@@ -648,6 +648,134 @@ const plugin = definePlugin({
       },
     );
 
+    // ── claim-next-post (extension-facing) ──────────────────────────────────
+
+    ctx.tools.register(
+      "claim-next-post",
+      {
+        displayName: "Twitter: Claim Next Post",
+        description: "Claim the next pending tweet from the queue. Returns the tweet content for the extension to post. Marks it as claimed.",
+        parametersSchema: { type: "object", properties: {} },
+      },
+      async (): Promise<ToolResult> => {
+        const queueItems = await ctx.entities.list({
+          entityType: "tweet-queue",
+          limit: 50,
+        });
+
+        const nowStr = now();
+        const pending = queueItems
+          .filter((e) => e.status === "pending")
+          .filter((e) => {
+            const d = e.data as unknown as TweetQueueData;
+            return !d.scheduledAt || d.scheduledAt <= nowStr;
+          })
+          .sort((a, b) => {
+            const aTime = (a.data as unknown as TweetQueueData).queuedAt || "";
+            const bTime = (b.data as unknown as TweetQueueData).queuedAt || "";
+            return aTime.localeCompare(bTime);
+          });
+
+        if (pending.length === 0) {
+          return { content: "No pending tweets in queue", data: { empty: true } };
+        }
+
+        const item = pending[0];
+        const d = item.data as unknown as TweetQueueData;
+
+        // Mark as claimed
+        await ctx.entities.upsert({
+          entityType: "tweet-queue",
+          scopeKind: "instance",
+          externalId: item.externalId || "",
+          title: item.title || "",
+          status: "claimed",
+          data: { ...item.data, claimedAt: now() },
+        });
+
+        // Build the full text with hashtags
+        let text = d.text || "";
+        if (d.hashtags && d.hashtags.length > 0) {
+          const tags = d.hashtags.map((h: string) => h.startsWith("#") ? h : `#${h}`).join(" ");
+          text += `\n\n${tags}`;
+        }
+
+        ctx.logger.info(`Claimed post: ${item.externalId}`, { text: text.slice(0, 50) });
+
+        return {
+          content: text,
+          data: {
+            id: item.externalId,
+            text,
+            action: d.action,
+            mediaUrls: d.mediaUrls || [],
+            hashtags: d.hashtags || [],
+            replyToUrl: d.replyToUrl,
+            repostUrl: d.repostUrl,
+          },
+        };
+      },
+    );
+
+    // ── report-post-result (extension-facing) ─────────────────────────────
+
+    ctx.tools.register(
+      "report-post-result",
+      {
+        displayName: "Twitter: Report Post Result",
+        description: "Report the result of a posted tweet back to the dashboard.",
+        parametersSchema: {
+          type: "object",
+          required: ["queueItemId", "success"],
+          properties: {
+            queueItemId: { type: "string" },
+            success: { type: "boolean" },
+            tweetUrl: { type: "string" },
+            error: { type: "string" },
+          },
+        },
+      },
+      async (params: unknown): Promise<ToolResult> => {
+        const p = params as { queueItemId: string; success: boolean; tweetUrl?: string; error?: string };
+
+        const items = await ctx.entities.list({
+          entityType: "tweet-queue",
+          externalId: p.queueItemId,
+          limit: 1,
+        });
+
+        if (items.length === 0) {
+          return { error: `Queue item ${p.queueItemId} not found` };
+        }
+
+        const item = items[0];
+        await ctx.entities.upsert({
+          entityType: "tweet-queue",
+          scopeKind: "instance",
+          externalId: item.externalId || "",
+          title: item.title || "",
+          status: p.success ? "posted" : "failed",
+          data: {
+            ...item.data,
+            completedAt: now(),
+            tweetUrl: p.tweetUrl,
+            error: p.error,
+          },
+        });
+
+        if (p.success) {
+          await incrementAnalytics(ctx, "postsSent");
+        } else {
+          await incrementAnalytics(ctx, "postsFailed");
+        }
+
+        return {
+          content: p.success ? `Posted successfully: ${p.tweetUrl || ""}` : `Failed: ${p.error || "unknown"}`,
+          data: { status: p.success ? "posted" : "failed" },
+        };
+      },
+    );
+
     // ══════════════════════════════════════════════════════════════════════════
     // JOBS — Scheduled maintenance
     // ══════════════════════════════════════════════════════════════════════════
