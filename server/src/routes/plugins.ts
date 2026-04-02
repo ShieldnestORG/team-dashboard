@@ -1892,7 +1892,19 @@ export function pluginRoutes(
    * - 400 if plugin is not in ready state or lacks webhooks.receive capability
    * - 502 if the worker is unavailable or the RPC call fails
    */
+  // CORS preflight for webhook routes (called by browser extensions from external origins)
+  router.options("/plugins/:pluginId/webhooks/:endpointKey", (_req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.set("Access-Control-Max-Age", "86400");
+    res.status(204).end();
+  });
+
   router.post("/plugins/:pluginId/webhooks/:endpointKey", async (req, res) => {
+    // Allow cross-origin requests (extensions, external webhook callers)
+    res.set("Access-Control-Allow-Origin", "*");
+
     if (!webhookDeps) {
       res.status(501).json({ error: "Webhook ingestion is not enabled" });
       return;
