@@ -279,3 +279,10 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
+
+export {
+  intelSearchSchema,
+  intelCompanySchema,
+  type IntelSearch,
+  type IntelCompany,
+} from "./intel.js";

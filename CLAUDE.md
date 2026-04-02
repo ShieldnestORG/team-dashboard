@@ -20,6 +20,7 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 
 - **Agent management** — 9 AI agents (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend)
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync
+- **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, cron-scheduled ingestion
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
 - **Plugin system** — adapter packages for AI providers
 - **API layer** — backend at port 3100, proxied from UI dev server
@@ -42,8 +43,9 @@ The 27 public free tools were **migrated to the coherencedaddy repo** (April 202
 ```
 server/
   src/
-    routes/           # Express API routes (agents, issues, skills, plugins, site-metrics, etc.)
-    services/         # Business logic (agent instructions, company skills, etc.)
+    routes/           # Express API routes (agents, issues, skills, plugins, site-metrics, intel, etc.)
+    services/         # Business logic (agent instructions, company skills, intel ingestion, etc.)
+    data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
 ui/
