@@ -18,7 +18,7 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 
 ## What Lives Here
 
-- **Agent management** — 9 AI agents (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Marketing, Core/Backend, Bridge/Full-Stack, Flux/Frontend)
+- **Agent management** — 9 AI agents (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend)
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
 - **Plugin system** — adapter packages for AI providers
@@ -40,6 +40,12 @@ The 27 public free tools were **migrated to the coherencedaddy repo** (April 202
 ## Project Structure
 
 ```
+server/
+  src/
+    routes/           # Express API routes (agents, issues, skills, plugins, site-metrics, etc.)
+    services/         # Business logic (agent instructions, company skills, etc.)
+    middleware/       # Auth, validation, board mutation guard
+    adapters/         # HTTP/process adapter runners
 ui/
   src/
     api/              # REST API client (auth, companies, agents, etc.)
@@ -50,7 +56,7 @@ ui/
     lib/              # Utilities, router, agent config
     pages/            # Authenticated dashboard pages
   public/             # Favicons, service worker
-agents/
+agents/                 # Per-agent AGENTS.md instruction files
   atlas/              # CEO — strategy, delegation, board comms
   nova/               # CTO — technical direction, manages eng team
   sage/               # CMO — marketing, brand, AEO strategy
@@ -60,16 +66,25 @@ agents/
   flux/               # Frontend Dev — React, UI, components
   bridge/             # Full-Stack Dev — integration, deployment, docs
   echo/               # Data Engineer — Firecrawl scraping, Qdrant, AEO
+.agents/
+  skills/             # Company skills (company-creator, doc-maintenance, release, etc.)
 packages/
+  db/                 # Drizzle schema, migrations, DB clients
+  shared/             # Shared types, constants, validators, API path constants
+  adapter-utils/      # Shared adapter utilities
+  adapters/           # Agent adapter implementations (Claude, Codex, Cursor, etc.)
   brand-guide/        # Coherence Daddy brand guidelines (standalone HTML)
   plugins/
     plugin-firecrawl/ # Firecrawl scraping plugin (scrape, crawl, extract, etc.)
-    ...               # Other plugins and adapters
+    sdk/              # Plugin SDK for building plugins
+cli/                  # CLI tool (paperclipai command)
 docs/
-  start/              # Getting started, architecture, core concepts
-  deploy/             # Deployment guides (Docker, Tailscale, etc.)
-  guides/             # Operator and developer guides
+  api/                # REST API endpoint documentation
+  deploy/             # Deployment guides (Vercel+VPS, Docker, Tailscale, etc.)
+  guides/             # Operator and agent developer guides
   adapters/           # Adapter documentation
+  companies/          # Agent Companies specification
+doc/                  # Operational docs (SPEC, PRODUCT, GOAL, plans/)
 ```
 
 ## Documentation Requirements

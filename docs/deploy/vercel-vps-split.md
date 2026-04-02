@@ -110,9 +110,11 @@ curl http://localhost:3200/api/health
 ## Vercel Frontend Setup
 
 The `vercel.json` at the repo root configures:
-- Build command: `pnpm --filter @paperclipai/ui... build`
-- Output: `ui/dist`
-- API rewrites: `/api/*` proxied to VPS
+- Install: `pnpm install --frozen-lockfile`
+- Build: `pnpm --filter @paperclipai/shared build && pnpm --filter @paperclipai/ui build && mv ui/dist dist`
+- Output: `dist` (moved from `ui/dist` post-build)
+- API rewrites: `/api/*` proxied to VPS at `31.220.61.12:3200`
+- SPA fallback: all non-API routes serve `index.html`
 
 Push to master triggers auto-deploy.
 

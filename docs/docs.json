@@ -119,7 +119,9 @@
               "api/costs",
               "api/secrets",
               "api/activity",
-              "api/dashboard"
+              "api/dashboard",
+              "api/routines",
+              "api/site-metrics"
             ]
           }
         ]
