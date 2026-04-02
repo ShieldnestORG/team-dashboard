@@ -896,14 +896,39 @@ async function runBotCycle() {
                 }
 
                 if (!postSuccess) {
-                  // Fallback: type into compose box
+                  // Fallback: type into compose box using DOM manipulation
                   console.log("[Bot] Protocol post failed, trying DOM method...");
-                  await navigateToHome();
-                  await new Promise(r => setTimeout(r, 1500));
-                  await typeInCompose(tweetText);
-                  await new Promise(r => setTimeout(r, 500));
-                  await clickPostButton();
-                  postSuccess = await waitForPostSuccess(8000);
+
+                  // Make sure we're on the home page
+                  if (!window.location.pathname.startsWith('/home')) {
+                    await navigateTo('/home');
+                    await new Promise(r => setTimeout(r, 2000));
+                  }
+
+                  // Find the compose textarea
+                  const composeBox = document.querySelector('[data-testid="tweetTextarea_0"] [contenteditable="true"]')
+                    || document.querySelector('[role="textbox"][data-testid="tweetTextarea_0"]')
+                    || document.querySelector('.public-DraftEditor-content[contenteditable="true"]');
+
+                  if (composeBox) {
+                    // Type the tweet text
+                    composeBox.focus();
+                    await new Promise(r => setTimeout(r, 300));
+                    await typeIntoContentEditable(composeBox, tweetText);
+                    await new Promise(r => setTimeout(r, 800));
+
+                    // Click the Post button
+                    const postBtn = document.querySelector('[data-testid="tweetButtonInline"]')
+                      || document.querySelector('[data-testid="tweetButton"]');
+                    if (postBtn && !postBtn.disabled) {
+                      postBtn.click();
+                      postSuccess = await waitForPostSuccess(10000);
+                    } else {
+                      console.warn("[Bot] Post button not found or disabled");
+                    }
+                  } else {
+                    console.warn("[Bot] Compose box not found on page");
+                  }
                 }
               } catch (postErr) {
                 console.error(`[Bot] Post error:`, postErr);
