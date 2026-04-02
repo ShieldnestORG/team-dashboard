@@ -4,6 +4,7 @@ packages:
   - packages/plugins/*
   - packages/plugins/examples/*
   - packages/plugins/plugin-firecrawl
+  - packages/plugins/plugin-twitter
   - server
   - ui
   - cli

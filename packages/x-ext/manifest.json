@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Tokns Automation Bot",
+  "version": "1.0.0",
+  "description": "Automated bot for Tokns.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://team-dashboard-cyan.vercel.app/*",
+    "http://31.220.61.12:3200/*",
+    "http://localhost:3000/*",
+    "http://localhost:3100/*",
+    "http://localhost:5173/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/logo.png",
+    "48": "icons/logo.png",
+    "128": "icons/logo.png"
+  },
+  "action": {
+    "default_title": "Tokns Automation Bot",
+    "default_icon": "icons/logo.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*"
+      ],
+      "js": [
+        "modules/constants.js",
+        "modules/api.js",
+        "modules/notifications.js",
+        "modules/helpers.js",
+        "modules/uiComponents.js",
+        "modules/domHelpers.js",
+        "modules/botController.js",
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["tracer.js", "icons/logo.png"],
+      "matches": ["https://x.com/*"]
+    }
+  ]
+}
