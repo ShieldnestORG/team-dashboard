@@ -14,9 +14,16 @@ services:
       PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "public"
       PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
-      PAPERCLIP_DB_BACKUP_ENABLED: "false"
+      PAPERCLIP_DB_BACKUP_ENABLED: "true"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      ALERT_EMAIL_TO: "${ALERT_EMAIL_TO:-}"
+      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-}"
     volumes:
       - paperclip-data:/paperclip
+      - paperclip-backups:/paperclip/backups
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3100/api/health"]
@@ -27,3 +34,4 @@ services:
 
 volumes:
   paperclip-data:
+  paperclip-backups:

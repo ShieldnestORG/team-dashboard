@@ -16,3 +16,4 @@ export { llmRoutes } from "./llms.js";
 export { accessRoutes } from "./access.js";
 export { instanceSettingsRoutes } from "./instance-settings.js";
 export { siteMetricsRoutes } from "./site-metrics.js";
+export { systemHealthRoutes } from "./system-health.js";

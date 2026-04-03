@@ -30,7 +30,10 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { siteMetricsRoutes } from "./routes/site-metrics.js";
 import { intelRoutes } from "./routes/intel.js";
+import { systemHealthRoutes } from "./routes/system-health.js";
 import { startIntelCrons } from "./services/intel-crons.js";
+import { startEvalCrons } from "./services/eval-crons.js";
+import { startAlertCrons } from "./services/alert-crons.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -160,6 +163,7 @@ export async function createApp(
   api.use(instanceSettingsRoutes(db));
   api.use(siteMetricsRoutes(db));
   api.use("/intel", intelRoutes(db));
+  api.use("/system-health", systemHealthRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);
@@ -294,6 +298,8 @@ export async function createApp(
   jobCoordinator.start();
   scheduler.start();
   const stopIntelCrons = startIntelCrons(db);
+  const stopEvalCrons = startEvalCrons();
+  const stopAlertCrons = startAlertCrons();
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
@@ -316,6 +322,8 @@ export async function createApp(
   process.once("exit", () => {
     devWatcher?.close();
     stopIntelCrons();
+    stopEvalCrons();
+    stopAlertCrons();
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();
   });

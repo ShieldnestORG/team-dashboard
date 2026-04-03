@@ -37,6 +37,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/nodemailer": "^7.0.11",
     "cross-env": "^10.1.0",
     "esbuild": "^0.27.3",
     "typescript": "^5.7.3",
@@ -53,5 +55,9 @@
     "patchedDependencies": {
       "embedded-postgres@18.1.0-beta.16": "patches/embedded-postgres@18.1.0-beta.16.patch"
     }
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "nodemailer": "^8.0.4"
   }
 }

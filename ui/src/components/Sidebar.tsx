@@ -12,6 +12,8 @@ import {
   Repeat,
   Settings,
   Bird,
+  Coins,
+  HeartPulse,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -113,6 +115,8 @@ export function Sidebar() {
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/twitter" label="Twitter/X" icon={Bird} />
+          <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
+          <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>

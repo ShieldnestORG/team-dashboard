@@ -43,6 +43,31 @@ export const logger = pino({
   ],
 }));
 
+// Forward warn/error/fatal logs to the in-memory log store
+import { appendLog } from "../services/log-store.js";
+
+const _origWarn = logger.warn.bind(logger);
+const _origError = logger.error.bind(logger);
+const _origFatal = logger.fatal.bind(logger);
+
+logger.warn = function (...args: Parameters<typeof logger.warn>) {
+  _origWarn(...args);
+  const msg = typeof args[0] === "string" ? args[0] : typeof args[1] === "string" ? args[1] : "";
+  appendLog("warn", msg, typeof args[0] === "object" ? args[0] : undefined);
+} as typeof logger.warn;
+
+logger.error = function (...args: Parameters<typeof logger.error>) {
+  _origError(...args);
+  const msg = typeof args[0] === "string" ? args[0] : typeof args[1] === "string" ? args[1] : "";
+  appendLog("error", msg, typeof args[0] === "object" ? args[0] : undefined);
+} as typeof logger.error;
+
+logger.fatal = function (...args: Parameters<typeof logger.fatal>) {
+  _origFatal(...args);
+  const msg = typeof args[0] === "string" ? args[0] : typeof args[1] === "string" ? args[1] : "";
+  appendLog("fatal", msg, typeof args[0] === "object" ? args[0] : undefined);
+} as typeof logger.fatal;
+
 export const httpLogger = pinoHttp({
   logger,
   customLogLevel(_req, res, err) {

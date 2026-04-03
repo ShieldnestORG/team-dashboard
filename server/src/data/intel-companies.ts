@@ -1048,14 +1048,14 @@ export const INTEL_COMPANIES: IntelCompany[] = [
   {
     slug: "tx-blockchain",
     name: "TX Blockchain",
-    category: "cosmos-ecosystem",
-    description: "A Cosmos SDK-based Layer 1 blockchain developed as part of the Coherence Daddy / ShieldNest ecosystem. TX is built for sovereign interchain applications and participates in the broader IBC-connected network of blockchains.",
+    category: "l1-blockchain",
+    description: "TX is a Cosmos SDK-based Layer 1 blockchain focused on community governance and interoperability via IBC. The tokns.fi validator and platform serves as the primary gateway for staking, NFT trading, and token swaps on TX chain.",
     website: "https://tx.org",
     coingecko_id: null,
     github_org: null,
     subreddit: null,
     rss_feeds: [],
-    twitter_handle: "tx_blockchain",
+    twitter_handle: null,
   },
   {
     slug: "canton-network",
