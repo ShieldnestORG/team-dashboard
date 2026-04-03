@@ -10,9 +10,10 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 
 - **Team Dashboard** (this repo) — internal admin, agent management, data pipelines
 - **Coherence Daddy** (coherencedaddy.com) — public brand landing page
-- **Free Tools** (freetools.coherencedaddy.com) — 27 public tools (lives in coherencedaddy repo)
-- **tokns.fi / app.tokns.fi** — crypto platform and dashboard
-- **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator
+- **Free Tools** (coherencedaddy.com/tools) — 41+ public tools (lives in coherencedaddy repo)
+- **Blockchain Directory** (coherencedaddy.com/directory) — public directory of 114+ blockchain projects powered by Intel API (lives in coherencedaddy repo)
+- **tokns.fi / app.tokns.fi** — crypto platform and dashboard (NFTs, swaps, staking, wallet tracking)
+- **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator; goal: #1 validator via tokns.fi
 - **ShieldNest** (shieldnest.io) — privacy-first dev company
 - **YourArchi** (yourarchi.com) — architecture platform
 
