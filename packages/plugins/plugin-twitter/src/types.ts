@@ -10,6 +10,17 @@ export type TwitterConfig = {
   maxPostGapMinutes: number;
   postingWindowStart: number;
   postingWindowEnd: number;
+  // Anti-bot behavior settings
+  cycleIntervalMin: number;
+  cycleIntervalMax: number;
+  dailyLikesLimit: number;
+  dailyFollowsLimit: number;
+  dailyRepliesLimit: number;
+  dailyRepostsLimit: number;
+  breathingPauseMinActions: number;
+  breathingPauseMaxActions: number;
+  breathingPauseMinSeconds: number;
+  breathingPauseMaxSeconds: number;
 };
 
 // ─── Entity data shapes ──────────────────────────────────────────────────────

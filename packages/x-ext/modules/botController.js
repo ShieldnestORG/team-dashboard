@@ -7,6 +7,58 @@ let __postingInProgress = false;
 let _totalActionsThisBurst = 0;
 let _nextBreathingThreshold = 5 + Math.floor(Math.random() * 6); // 5-10
 
+// ── Dashboard-managed bot config (overrides hardcoded constants) ─────────────
+let _dashboardBotConfig = null;
+let _configLastFetched = 0;
+const CONFIG_CACHE_MS = 5 * 60 * 1000; // re-fetch every 5 minutes
+
+async function loadBotConfig() {
+  if (_dashboardBotConfig && (Date.now() - _configLastFetched) < CONFIG_CACHE_MS) {
+    return _dashboardBotConfig;
+  }
+  try {
+    const res = await fetch(`${EXT_API}/get-bot-config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.data) {
+        _dashboardBotConfig = data.data;
+        _configLastFetched = Date.now();
+        console.log("[Bot] Dashboard bot config loaded:", _dashboardBotConfig);
+      }
+    }
+  } catch (_) { /* use hardcoded fallbacks */ }
+  return _dashboardBotConfig;
+}
+
+function getDashboardCycleInterval() {
+  const cfg = _dashboardBotConfig;
+  const min = cfg?.cycleIntervalMin ? cfg.cycleIntervalMin * 1000 : BOT_CYCLE_INTERVAL_MIN;
+  const max = cfg?.cycleIntervalMax ? cfg.cycleIntervalMax * 1000 : BOT_CYCLE_INTERVAL_MAX;
+  return min + Math.random() * (max - min);
+}
+
+function getDashboardActionLimit(action) {
+  const cfg = _dashboardBotConfig;
+  if (cfg?.dailyLimits && cfg.dailyLimits[action] !== undefined) {
+    return cfg.dailyLimits[action];
+  }
+  return SESSION_ACTION_LIMITS[action] || null;
+}
+
+function getDashboardBreathingConfig() {
+  const cfg = _dashboardBotConfig;
+  return {
+    minActions: cfg?.breathingPause?.minActions || 5,
+    maxActions: cfg?.breathingPause?.maxActions || 10,
+    minSeconds: cfg?.breathingPause?.minSeconds || 30,
+    maxSeconds: cfg?.breathingPause?.maxSeconds || 90,
+  };
+}
+
 // ── Anti-Bot: Session action limit helpers ───────────────────────────────────
 
 async function getActionCounts() {
@@ -29,7 +81,7 @@ async function incrementActionCount(action) {
 }
 
 async function isActionAllowed(action) {
-  const limit = SESSION_ACTION_LIMITS[action];
+  const limit = getDashboardActionLimit(action);
   if (!limit) return true;
   const counts = await getActionCounts();
   return (counts[action] || 0) < limit;
@@ -37,13 +89,13 @@ async function isActionAllowed(action) {
 
 async function maybeBreathingPause(cycleNum) {
   _totalActionsThisBurst++;
-  if (_totalActionsThisBurst >= _nextBreathingThreshold) {
-    const pause = 30000 + Math.random() * 60000; // 30-90 seconds
+  const bp = getDashboardBreathingConfig();
+  const threshold = bp.minActions + Math.floor(Math.random() * (bp.maxActions - bp.minActions + 1));
+  if (_totalActionsThisBurst >= threshold) {
+    const pause = (bp.minSeconds + Math.random() * (bp.maxSeconds - bp.minSeconds)) * 1000;
     console.log(`[Bot] Cycle #${cycleNum} — 😮‍💨 Breathing pause: ${(pause / 1000).toFixed(0)}s after ${_totalActionsThisBurst} actions...`);
     await new Promise(r => setTimeout(r, pause));
     _totalActionsThisBurst = 0;
-    _nextBreathingThreshold = 5 + Math.floor(Math.random() * 6);
-    // Check if bot was stopped during pause
     if (!window.__botRunning) {
       console.log("[Bot] Bot stopped during breathing pause.");
       return false;
@@ -899,6 +951,9 @@ async function runBotCycle() {
   try {
     console.log(`[Bot] ── Cycle #${cycleNum} START ──`);
 
+    // ── Load dashboard bot config (cached 5min) ──
+    await loadBotConfig();
+
     // ──────────────────────────────────────────
     // 🧠 BRAIN SYNC (Start of Cycle)
     // Synchronize local cache with Supabase backend to eliminate stale state
@@ -1134,7 +1189,7 @@ async function runBotCycle() {
     console.error(`[Bot] Cycle #${cycleNum} error:`, err);
   } finally {
     if (window.__botRunning) {
-      const nextInterval = getJitteredInterval();
+      const nextInterval = getDashboardCycleInterval();
       window.__botTimerId = setTimeout(runBotCycle, nextInterval);
       console.log(`[Bot] Next cycle in ${(nextInterval / 1000).toFixed(1)}s.`);
     }

@@ -280,6 +280,17 @@ interface PostingConfig {
   postingWindowStart: number;
   postingWindowEnd: number;
   maxQueueSize: number;
+  // Anti-bot
+  cycleIntervalMin: number;
+  cycleIntervalMax: number;
+  dailyLikesLimit: number;
+  dailyFollowsLimit: number;
+  dailyRepliesLimit: number;
+  dailyRepostsLimit: number;
+  breathingPauseMinActions: number;
+  breathingPauseMaxActions: number;
+  breathingPauseMinSeconds: number;
+  breathingPauseMaxSeconds: number;
 }
 
 const DEFAULTS: PostingConfig = {
@@ -289,6 +300,16 @@ const DEFAULTS: PostingConfig = {
   postingWindowStart: 6,
   postingWindowEnd: 24,
   maxQueueSize: 100,
+  cycleIntervalMin: 12,
+  cycleIntervalMax: 25,
+  dailyLikesLimit: 40,
+  dailyFollowsLimit: 15,
+  dailyRepliesLimit: 20,
+  dailyRepostsLimit: 10,
+  breathingPauseMinActions: 5,
+  breathingPauseMaxActions: 10,
+  breathingPauseMinSeconds: 30,
+  breathingPauseMaxSeconds: 90,
 };
 
 function PostingSettings() {
@@ -313,6 +334,16 @@ function PostingSettings() {
         postingWindowStart: (c.postingWindowStart as number) ?? DEFAULTS.postingWindowStart,
         postingWindowEnd: (c.postingWindowEnd as number) ?? DEFAULTS.postingWindowEnd,
         maxQueueSize: (c.maxQueueSize as number) || DEFAULTS.maxQueueSize,
+        cycleIntervalMin: (c.cycleIntervalMin as number) || DEFAULTS.cycleIntervalMin,
+        cycleIntervalMax: (c.cycleIntervalMax as number) || DEFAULTS.cycleIntervalMax,
+        dailyLikesLimit: (c.dailyLikesLimit as number) || DEFAULTS.dailyLikesLimit,
+        dailyFollowsLimit: (c.dailyFollowsLimit as number) || DEFAULTS.dailyFollowsLimit,
+        dailyRepliesLimit: (c.dailyRepliesLimit as number) || DEFAULTS.dailyRepliesLimit,
+        dailyRepostsLimit: (c.dailyRepostsLimit as number) || DEFAULTS.dailyRepostsLimit,
+        breathingPauseMinActions: (c.breathingPauseMinActions as number) || DEFAULTS.breathingPauseMinActions,
+        breathingPauseMaxActions: (c.breathingPauseMaxActions as number) || DEFAULTS.breathingPauseMaxActions,
+        breathingPauseMinSeconds: (c.breathingPauseMinSeconds as number) || DEFAULTS.breathingPauseMinSeconds,
+        breathingPauseMaxSeconds: (c.breathingPauseMaxSeconds as number) || DEFAULTS.breathingPauseMaxSeconds,
       });
     }
   }, [configData]);
@@ -401,6 +432,92 @@ function PostingSettings() {
             min={10}
             max={500}
             onChange={(v) => update("maxQueueSize", v)}
+          />
+        </div>
+
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">
+          Anti-Bot Behavior
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <SettingField
+            label="Cycle Interval Min (sec)"
+            description="Minimum seconds between bot poll cycles"
+            value={values.cycleIntervalMin}
+            min={5}
+            max={60}
+            onChange={(v) => update("cycleIntervalMin", v)}
+          />
+          <SettingField
+            label="Cycle Interval Max (sec)"
+            description="Maximum seconds between bot poll cycles"
+            value={values.cycleIntervalMax}
+            min={10}
+            max={120}
+            onChange={(v) => update("cycleIntervalMax", v)}
+          />
+          <SettingField
+            label="Daily Likes Limit"
+            description="Max likes per day per account"
+            value={values.dailyLikesLimit}
+            min={1}
+            max={100}
+            onChange={(v) => update("dailyLikesLimit", v)}
+          />
+          <SettingField
+            label="Daily Follows Limit"
+            description="Max follows per day (X.com is strict on this)"
+            value={values.dailyFollowsLimit}
+            min={1}
+            max={50}
+            onChange={(v) => update("dailyFollowsLimit", v)}
+          />
+          <SettingField
+            label="Daily Replies Limit"
+            description="Max replies per day per account"
+            value={values.dailyRepliesLimit}
+            min={1}
+            max={50}
+            onChange={(v) => update("dailyRepliesLimit", v)}
+          />
+          <SettingField
+            label="Daily Reposts Limit"
+            description="Max reposts per day per account"
+            value={values.dailyRepostsLimit}
+            min={1}
+            max={50}
+            onChange={(v) => update("dailyRepostsLimit", v)}
+          />
+          <SettingField
+            label="Breathing Pause After (min)"
+            description="Min consecutive actions before a pause"
+            value={values.breathingPauseMinActions}
+            min={2}
+            max={20}
+            onChange={(v) => update("breathingPauseMinActions", v)}
+          />
+          <SettingField
+            label="Breathing Pause After (max)"
+            description="Max consecutive actions before forced pause"
+            value={values.breathingPauseMaxActions}
+            min={3}
+            max={30}
+            onChange={(v) => update("breathingPauseMaxActions", v)}
+          />
+          <SettingField
+            label="Breathing Pause Min (sec)"
+            description="Minimum duration of breathing pause"
+            value={values.breathingPauseMinSeconds}
+            min={10}
+            max={300}
+            onChange={(v) => update("breathingPauseMinSeconds", v)}
+          />
+          <SettingField
+            label="Breathing Pause Max (sec)"
+            description="Maximum duration of breathing pause"
+            value={values.breathingPauseMaxSeconds}
+            min={15}
+            max={600}
+            onChange={(v) => update("breathingPauseMaxSeconds", v)}
           />
         </div>
 

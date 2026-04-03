@@ -77,6 +77,16 @@ async function getConfig(ctx: PluginContext): Promise<TwitterConfig> {
     maxPostGapMinutes: (raw.maxPostGapMinutes as number) || 120,
     postingWindowStart: (raw.postingWindowStart as number) ?? 6,
     postingWindowEnd: (raw.postingWindowEnd as number) ?? 24,
+    cycleIntervalMin: (raw.cycleIntervalMin as number) || 12,
+    cycleIntervalMax: (raw.cycleIntervalMax as number) || 25,
+    dailyLikesLimit: (raw.dailyLikesLimit as number) || 40,
+    dailyFollowsLimit: (raw.dailyFollowsLimit as number) || 15,
+    dailyRepliesLimit: (raw.dailyRepliesLimit as number) || 20,
+    dailyRepostsLimit: (raw.dailyRepostsLimit as number) || 10,
+    breathingPauseMinActions: (raw.breathingPauseMinActions as number) || 5,
+    breathingPauseMaxActions: (raw.breathingPauseMaxActions as number) || 10,
+    breathingPauseMinSeconds: (raw.breathingPauseMinSeconds as number) || 30,
+    breathingPauseMaxSeconds: (raw.breathingPauseMaxSeconds as number) || 90,
   };
 }
 
@@ -902,6 +912,39 @@ const plugin = definePlugin({
         return {
           content: `Queued thread (id: ${id}, ${p.tweets.length} tweets). Extension will post on next cycle.`,
           data: { queueItemId: id, status: "pending", tweetCount: p.tweets.length },
+        };
+      },
+    );
+
+    // ── get-bot-config (extension-facing: returns anti-bot settings) ────────
+
+    ctx.tools.register(
+      "get-bot-config",
+      {
+        displayName: "Twitter: Get Bot Config",
+        description: "Returns the anti-bot behavior settings for the extension (cycle timing, action limits, breathing pauses).",
+        parametersSchema: { type: "object", properties: {} },
+      },
+      async (): Promise<ToolResult> => {
+        const config = await getConfig(ctx);
+        return {
+          content: "Bot config loaded",
+          data: {
+            cycleIntervalMin: config.cycleIntervalMin,
+            cycleIntervalMax: config.cycleIntervalMax,
+            dailyLimits: {
+              LIKE: config.dailyLikesLimit,
+              FOLLOW: config.dailyFollowsLimit,
+              REPLY: config.dailyRepliesLimit,
+              REPOST: config.dailyRepostsLimit,
+            },
+            breathingPause: {
+              minActions: config.breathingPauseMinActions,
+              maxActions: config.breathingPauseMaxActions,
+              minSeconds: config.breathingPauseMinSeconds,
+              maxSeconds: config.breathingPauseMaxSeconds,
+            },
+          },
         };
       },
     );
