@@ -264,8 +264,10 @@ export function intelService(db: Db) {
   // ------ Stats ------
 
   async function stats() {
-    const [totals, byType, topCompanies, recentActivity, coverage, lastIngested] =
-      await Promise.all([
+    const [
+      totals, byType, topCompanies, recentActivity, coverage, lastIngested,
+      timeWindows, storageEstimate, freshnessRows, ingestionHealth,
+    ] = await Promise.all([
         rawQuery<{ total: string }>(sql`SELECT COUNT(*) AS total FROM intel_reports`),
         rawQuery<{ report_type: string; count: string }>(sql`
           SELECT report_type, COUNT(*) AS count
@@ -294,9 +296,43 @@ export function intelService(db: Db) {
           SELECT report_type, MAX(captured_at) AS last_at
           FROM intel_reports GROUP BY report_type
         `),
+        // Reports by time window
+        rawQuery<{ last_hour: string; last_24h: string; last_7d: string; last_30d: string }>(sql`
+          SELECT
+            COUNT(*) FILTER (WHERE captured_at > NOW() - INTERVAL '1 hour') AS last_hour,
+            COUNT(*) FILTER (WHERE captured_at > NOW() - INTERVAL '24 hours') AS last_24h,
+            COUNT(*) FILTER (WHERE captured_at > NOW() - INTERVAL '7 days') AS last_7d,
+            COUNT(*) FILTER (WHERE captured_at > NOW() - INTERVAL '30 days') AS last_30d
+          FROM intel_reports
+        `),
+        // Storage estimate (approximate total characters in body + headline)
+        rawQuery<{ total_chars: string }>(sql`
+          SELECT COALESCE(SUM(LENGTH(body) + LENGTH(headline)), 0) AS total_chars
+          FROM intel_reports
+        `),
+        // Freshness: companies with at least 1 report in last 7 days
+        rawQuery<{ total_companies: string; fresh_companies: string }>(sql`
+          SELECT
+            (SELECT COUNT(*) FROM intel_companies) AS total_companies,
+            COUNT(DISTINCT r.company_slug) AS fresh_companies
+          FROM intel_reports r
+          WHERE r.captured_at > NOW() - INTERVAL '7 days'
+        `),
+        // Ingestion health: per report_type, last_ingested + count in last 24h
+        rawQuery<{ report_type: string; last_ingested: string; count_last_24h: string }>(sql`
+          SELECT
+            report_type,
+            MAX(captured_at) AS last_ingested,
+            COUNT(*) FILTER (WHERE captured_at > NOW() - INTERVAL '24 hours') AS count_last_24h
+          FROM intel_reports
+          GROUP BY report_type
+        `),
       ]);
 
     const cov = coverage[0] as Record<string, string> | undefined;
+    const tw = timeWindows[0] as Record<string, string> | undefined;
+    const totalCompanies = Number(freshnessRows[0]?.total_companies ?? 0);
+    const freshCompanies = Number(freshnessRows[0]?.fresh_companies ?? 0);
 
     return {
       total_reports: Number(totals[0]?.total ?? 0),
@@ -319,6 +355,29 @@ export function intelService(db: Db) {
           coingecko: Number(cov?.with_coingecko ?? 0),
         },
       },
+      reports_by_window: {
+        last_hour: Number(tw?.last_hour ?? 0),
+        last_24h: Number(tw?.last_24h ?? 0),
+        last_7d: Number(tw?.last_7d ?? 0),
+        last_30d: Number(tw?.last_30d ?? 0),
+      },
+      storage_estimate: {
+        total_characters: Number(storageEstimate[0]?.total_chars ?? 0),
+        approx_mb: Math.round((Number(storageEstimate[0]?.total_chars ?? 0) / 1_048_576) * 100) / 100,
+      },
+      freshness: {
+        companies_with_recent_data: freshCompanies,
+        total_companies: totalCompanies,
+        freshness_pct: totalCompanies > 0
+          ? Math.round((freshCompanies / totalCompanies) * 10000) / 100
+          : 0,
+      },
+      ingestion_health: Object.fromEntries(
+        ingestionHealth.map((r) => [r.report_type, {
+          last_ingested: r.last_ingested,
+          count_last_24h: Number(r.count_last_24h),
+        }]),
+      ),
       generated_at: new Date().toISOString(),
     };
   }

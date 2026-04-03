@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  --gold: #C9A84C;
+  --gold-light: #E8D5A0;
+  --gold-dim: #9A7D35;
+  --black: #0A0A0A;
+  --white: #D8D8D8;
+  --heading-white: #E2E2E2;
+  --warm-gray: #2A2A2A;
+  --slate: #6B6B6B;
+  --muted: #4A4A4A;
+  --crypto-green: #00C896;
+  --shield-blue: #4A7FD4;
+}
+
+body {
+  margin: 0;
+  background: var(--black);
+  color: var(--white);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--gold); text-decoration: none; }
+a:hover { color: var(--gold-light); }
