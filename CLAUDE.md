@@ -19,15 +19,17 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 ## What Lives Here
 
 - **Agent management** — 9 AI agents (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend)
-- **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync
+- **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
 - **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, cron-scheduled ingestion
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
 - **Plugin system** — adapter packages for AI providers
 - **API layer** — backend at port 3100, proxied from UI dev server
+- **System Health dashboard** — eval results, alerting, log aggregation, ladder pipeline status
+- **TX Ecosystem page** — tokns.fi validator promotion, ecosystem cross-links
 
 ## What Does NOT Live Here
 
-The 27 public free tools were **migrated to the coherencedaddy repo** (April 2026). Do not add public marketing tools here. This repo is for authenticated admin functionality only.
+The 27 public free tools were **migrated to the coherencedaddy repo** (April 2026). Do not add public marketing tools here. This repo is for authenticated admin functionality only. The public blockchain directory page lives in the coherencedaddy repo at `/directory`, powered by this repo's Intel API.
 
 ## Tech Stack
 
@@ -45,6 +47,10 @@ server/
   src/
     routes/           # Express API routes (agents, issues, skills, plugins, site-metrics, intel, etc.)
     services/         # Business logic (agent instructions, company skills, intel ingestion, etc.)
+      alerting.ts, alert-crons.ts   # SMTP email alerts with health check + daily digest
+      eval-store.ts, eval-crons.ts  # Daily promptfoo eval runner + JSON result store
+      ladder.ts                     # Read-only access to ladder2.0 pipeline data
+      log-store.ts                  # In-memory + file-based log aggregation
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
@@ -128,6 +134,9 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Ollama**: `168.231.127.180:11434` — local summarization (qwen2.5:1.5b)
 - **GitHub**: ShieldnestORG/team-dashboard (make private after deploy; use PAT for VPS access)
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
+- **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
+- **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
+- **Cron Schedulers**: intel (5 jobs), eval (1 job), alert (2 jobs)
 
 ### Key Files
 

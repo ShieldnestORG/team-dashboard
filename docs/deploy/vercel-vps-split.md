@@ -64,9 +64,10 @@ services:
       PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "public"
       PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
-      PAPERCLIP_DB_BACKUP_ENABLED: "false"
+      PAPERCLIP_DB_BACKUP_ENABLED: "true"
     volumes:
       - paperclip-data:/paperclip
+      - paperclip-backups:/backups
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3100/api/health"]
@@ -77,6 +78,7 @@ services:
 
 volumes:
   paperclip-data:
+  paperclip-backups:
 ```
 
 ### 4. Create `.env.production`
@@ -151,6 +153,12 @@ Push to master — Vercel auto-deploys.
 | `BETTER_AUTH_TRUSTED_ORIGINS` | VPS `.env.production` | Vercel domain for CORS |
 | `ANTHROPIC_API_KEY` | VPS `.env.production` | For Claude adapter |
 | `SITE_METRICS_KEY` | VPS `.env.production` | Shared secret for external site metrics ingestion |
+| `SMTP_HOST` | VPS `.env.production` | SMTP server hostname for alert emails |
+| `SMTP_PORT` | VPS `.env.production` | SMTP server port (e.g., `587`) |
+| `SMTP_USER` | VPS `.env.production` | SMTP authentication username |
+| `SMTP_PASS` | VPS `.env.production` | SMTP authentication password |
+| `ALERT_EMAIL_TO` | VPS `.env.production` | Recipient address for alert notifications |
+| `ALERT_EMAIL_FROM` | VPS `.env.production` | Sender address for alert notifications |
 | `SERVE_UI` | Docker Compose env | `false` (Vercel serves UI) |
 
 ## Site Metrics Integration
@@ -189,6 +197,38 @@ Env vars required on Vercel (coherencedaddy project):
 - `TEAM_DASHBOARD_URL` — VPS backend URL (e.g., `http://31.220.61.12:3200`)
 - `TEAM_DASHBOARD_METRICS_KEY` — must match `SITE_METRICS_KEY` on VPS
 - `TEAM_DASHBOARD_COMPANY_ID` — the company UUID
+
+## Automated Cron Jobs
+
+The backend runs several scheduled jobs in production:
+
+### Intel Ingestion
+
+| Job | Schedule |
+|-----|----------|
+| Price snapshots | Every 6 hours |
+| News ingestion | Every 4 hours |
+| Twitter ingestion | Every 2 hours |
+| GitHub ingestion | Every 8 hours |
+| Reddit ingestion | Every 6 hours |
+
+### Eval and Alerting
+
+| Job | Schedule |
+|-----|----------|
+| Eval smoke test | Daily at 6:00 AM UTC |
+| Alert health check | Every 5 minutes |
+| Alert daily digest | Daily at 7:00 AM UTC |
+
+All cron jobs start automatically when the server boots. No external scheduler (e.g., system crontab) is required.
+
+## Database Backups
+
+DB backups are enabled in production (`PAPERCLIP_DB_BACKUP_ENABLED: "true"`). Backups are stored in the `paperclip-backups` Docker volume and retained for 30 days. The backup volume is defined in `docker-compose.production.yml` alongside the main data volume.
+
+## System Health Endpoints
+
+The `/api/system-health/*` endpoints expose operational status for cron jobs, alerting, and eval results. These are used by the System Health dashboard page and the automated alert health check.
 
 ## Known Limitations
 
