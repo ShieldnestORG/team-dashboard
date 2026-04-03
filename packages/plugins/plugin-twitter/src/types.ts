@@ -5,6 +5,11 @@ export type TwitterConfig = {
   defaultVenture: string;
   maxQueueSize: number;
   enableAutoEngage: boolean;
+  maxPostsPerDay: number;
+  minPostGapMinutes: number;
+  maxPostGapMinutes: number;
+  postingWindowStart: number;
+  postingWindowEnd: number;
 };
 
 // ─── Entity data shapes ──────────────────────────────────────────────────────

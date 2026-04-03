@@ -37,6 +37,34 @@ function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, "")     // strip URLs
+    .replace(/@\w+/g, "")               // strip @mentions
+    .replace(/#\w+/g, "")               // strip #hashtags
+    .replace(/[^\w\s]/g, " ")           // strip punctuation
+    .replace(/\s+/g, " ")              // collapse whitespace
+    .trim();
+}
+
+function jaccardSimilarity(a: string, b: string): number {
+  const setA = new Set(a.split(" ").filter(Boolean));
+  const setB = new Set(b.split(" ").filter(Boolean));
+  if (setA.size === 0 && setB.size === 0) return 1;
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  for (const word of setA) {
+    if (setB.has(word)) intersection++;
+  }
+  const union = setA.size + setB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function randomBetween(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
 async function getConfig(ctx: PluginContext): Promise<TwitterConfig> {
   const raw = await ctx.config.get();
   return {
@@ -44,6 +72,11 @@ async function getConfig(ctx: PluginContext): Promise<TwitterConfig> {
     defaultVenture: (raw.defaultVenture as string) || "coherencedaddy",
     maxQueueSize: (raw.maxQueueSize as number) || 100,
     enableAutoEngage: (raw.enableAutoEngage as boolean) || false,
+    maxPostsPerDay: (raw.maxPostsPerDay as number) || 8,
+    minPostGapMinutes: (raw.minPostGapMinutes as number) || 30,
+    maxPostGapMinutes: (raw.maxPostGapMinutes as number) || 120,
+    postingWindowStart: (raw.postingWindowStart as number) ?? 6,
+    postingWindowEnd: (raw.postingWindowEnd as number) ?? 24,
   };
 }
 
@@ -150,16 +183,86 @@ const plugin = definePlugin({
         const config = await getConfig(ctx);
 
         // Check queue capacity
-        const pending = await ctx.entities.list({
+        const allQueueItems = await ctx.entities.list({
           entityType: "tweet-queue",
-          limit: config.maxQueueSize + 1,
+          limit: 500,
         });
-        const pendingCount = pending.filter(
+        const pendingCount = allQueueItems.filter(
           (e) => (e.data as unknown as TweetQueueData).action === "POST" &&
             (e.status === "pending" || e.status === "claimed"),
         ).length;
         if (pendingCount >= config.maxQueueSize) {
           return { error: `Queue full (${pendingCount}/${config.maxQueueSize}). Wait for items to be posted or increase maxQueueSize.` };
+        }
+
+        // ── Dedupe check ──────────────────────────────────────────────────────
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const normalizedNew = normalizeText(p.text);
+        if (normalizedNew.length > 0) {
+          const recentItems = allQueueItems.filter((e) => {
+            const d = e.data as unknown as TweetQueueData;
+            return (
+              d.text &&
+              (e.status === "pending" || e.status === "claimed" || e.status === "posted") &&
+              d.queuedAt > sevenDaysAgo
+            );
+          });
+          for (const item of recentItems) {
+            const d = item.data as unknown as TweetQueueData;
+            const normalizedOld = normalizeText(d.text || "");
+            if (normalizedOld.length === 0) continue;
+            if (normalizedOld === normalizedNew) {
+              return { error: "Duplicate: identical tweet already posted or queued in the last 7 days." };
+            }
+            if (jaccardSimilarity(normalizedOld, normalizedNew) > 0.85) {
+              return { error: "Duplicate: very similar tweet already posted or queued in the last 7 days. Rephrase with a different angle." };
+            }
+          }
+        }
+
+        // ── Daily limit check ─────────────────────────────────────────────────
+        const today = todayKey();
+        const todaysItems = allQueueItems.filter((e) => {
+          const d = e.data as unknown as TweetQueueData;
+          return (
+            d.action === "POST" &&
+            (e.status === "pending" || e.status === "claimed" || e.status === "posted") &&
+            (d.scheduledAt?.startsWith(today) || d.queuedAt.startsWith(today))
+          );
+        });
+        if (todaysItems.length >= config.maxPostsPerDay) {
+          return { error: `Daily limit reached (${todaysItems.length}/${config.maxPostsPerDay}). Try again tomorrow or increase maxPostsPerDay.` };
+        }
+
+        // ── Auto-schedule if no scheduledAt provided ──────────────────────────
+        let scheduledAt = p.scheduledAt;
+        if (!scheduledAt) {
+          // Find the latest scheduled/queued time among today's items
+          const scheduledTimes = todaysItems
+            .map((e) => {
+              const d = e.data as unknown as TweetQueueData;
+              return d.scheduledAt || d.queuedAt;
+            })
+            .sort();
+          const lastTime = scheduledTimes.length > 0
+            ? new Date(scheduledTimes[scheduledTimes.length - 1]!)
+            : new Date();
+
+          // Add random gap
+          const gapMinutes = randomBetween(config.minPostGapMinutes, config.maxPostGapMinutes);
+          const nextTime = new Date(Math.max(lastTime.getTime(), Date.now()) + gapMinutes * 60 * 1000);
+
+          // Check if within posting window
+          const hour = nextTime.getHours();
+          if (hour >= config.postingWindowEnd || hour < config.postingWindowStart) {
+            // Push to next day at window start + random 0-60min
+            const nextDay = new Date(nextTime);
+            nextDay.setDate(nextDay.getDate() + (hour >= config.postingWindowEnd ? 1 : 0));
+            nextDay.setHours(config.postingWindowStart, Math.floor(Math.random() * 60), 0, 0);
+            scheduledAt = nextDay.toISOString();
+          } else {
+            scheduledAt = nextTime.toISOString();
+          }
         }
 
         const id = uuid();
@@ -168,7 +271,7 @@ const plugin = definePlugin({
           text: p.text,
           mediaUrls: p.mediaUrls,
           hashtags: p.hashtags,
-          scheduledAt: p.scheduledAt,
+          scheduledAt,
           venture: p.venture || config.defaultVenture,
           queuedBy: runCtx.agentId,
           queuedAt: now(),
@@ -188,8 +291,8 @@ const plugin = definePlugin({
         ctx.logger.info(`Queued post: ${id}`, { text: p.text.slice(0, 50) });
 
         return {
-          content: `Queued tweet (id: ${id}). The extension will post it on its next poll cycle.${p.scheduledAt ? ` Scheduled for: ${p.scheduledAt}` : ""}`,
-          data: { queueItemId: id, status: "pending" },
+          content: `Queued tweet (id: ${id}). Scheduled for: ${scheduledAt}. The extension will post it when the time arrives.`,
+          data: { queueItemId: id, status: "pending", scheduledAt },
         };
       },
     );
@@ -282,6 +385,109 @@ const plugin = definePlugin({
         return {
           content: `Queued repost (id: ${id}) of ${p.repostUrl}`,
           data: { queueItemId: id, status: "pending" },
+        };
+      },
+    );
+
+    // ── generate-tweets (content pipeline) ─────────────────────────────────
+
+    ctx.tools.register(
+      "generate-tweets",
+      {
+        displayName: "Twitter: Generate Tweet Context",
+        description:
+          "Gather context for generating unique tweets. Returns recent posts (to avoid repetition), scraped data, and guidelines. Use the returned context to write original tweets, then call queue-post for each.",
+        parametersSchema: {
+          type: "object",
+          required: ["topic"],
+          properties: {
+            topic: { type: "string" },
+            count: { type: "number", default: 5 },
+            venture: { type: "string" },
+            style: { type: "string", enum: ["informative", "engaging", "promotional", "thread"], default: "engaging" },
+          },
+        },
+      },
+      async (params: unknown): Promise<ToolResult> => {
+        const p = params as {
+          topic: string;
+          count?: number;
+          venture?: string;
+          style?: string;
+        };
+        const config = await getConfig(ctx);
+        const count = Math.min(Math.max(1, p.count || 5), 10);
+        const style = p.style || "engaging";
+        const venture = p.venture || config.defaultVenture;
+
+        // Get recent posted tweets to avoid repetition
+        const queueItems = await ctx.entities.list({
+          entityType: "tweet-queue",
+          limit: 200,
+        });
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const recentTweets = queueItems
+          .filter((e) => {
+            const d = e.data as unknown as TweetQueueData;
+            return (
+              (e.status === "posted" || e.status === "pending") &&
+              d.text &&
+              d.queuedAt > sevenDaysAgo
+            );
+          })
+          .map((e) => (e.data as unknown as TweetQueueData).text!)
+          .slice(0, 20);
+
+        // Note: Scraped context from Firecrawl should be fetched by the agent
+        // directly (call Firecrawl query tool), then use the results alongside
+        // this context to write tweets. Plugins cannot call other plugins' tools.
+        const scrapedContext: string[] = [];
+
+        // Venture-specific hashtag suggestions
+        const hashtagMap: Record<string, string[]> = {
+          coherencedaddy: ["#coherencedaddy", "#web3", "#blockchain"],
+          tokns: ["#tokns", "#staking", "#DeFi", "#crypto"],
+          shieldnest: ["#ShieldNest", "#privacy", "#web3dev"],
+          smartnotes: ["#smartnotes", "#productivity", "#AI"],
+          token: ["#CoherenceToken", "#crypto", "#tokenomics"],
+          brand: ["#coherencedaddy", "#508c1a"],
+        };
+
+        const guidelines = [
+          `Each tweet must be under 280 characters`,
+          `Write ${count} unique tweets about: ${p.topic}`,
+          `Style: ${style}`,
+          `Never repeat phrasing from the recent tweets listed below`,
+          `Vary sentence structure, opening words, and angle for each tweet`,
+          `Do NOT use generic filler ("Exciting news!", "Stay tuned!") — be specific and valuable`,
+          `Include a clear value proposition or insight in each tweet`,
+          `After writing, call queue-post for each approved draft`,
+        ];
+
+        return {
+          content: [
+            `Context for generating ${count} ${style} tweets about "${p.topic}" for ${venture}:`,
+            ``,
+            `RECENT TWEETS (avoid repeating these):`,
+            ...recentTweets.map((t, i) => `  ${i + 1}. ${t}`),
+            recentTweets.length === 0 ? "  (none yet)" : "",
+            ``,
+            scrapedContext.length > 0 ? `SCRAPED CONTEXT:` : "",
+            ...scrapedContext.map((s, i) => `  ${i + 1}. ${s}`),
+            ``,
+            `GUIDELINES:`,
+            ...guidelines.map((g) => `  - ${g}`),
+          ].filter(Boolean).join("\n"),
+          data: {
+            topic: p.topic,
+            style,
+            venture,
+            count,
+            recentTweets,
+            scrapedContext,
+            guidelines,
+            suggestedHashtags: hashtagMap[venture] || ["#web3", "#blockchain"],
+          },
         };
       },
     );
@@ -919,7 +1125,30 @@ const plugin = definePlugin({
         });
 
         let queueResponse: ExtPollResponse["queueItem"] = null;
+
+        // ── Rate limit: enforce minimum gap between posts ──────────────────
+        let rateLimited = false;
         if (ready) {
+          const recentlyPosted = queueItems
+            .filter((e) => e.status === "posted")
+            .map((e) => (e.data as unknown as TweetQueueData).completedAt)
+            .filter(Boolean)
+            .sort()
+            .reverse();
+          if (recentlyPosted.length > 0) {
+            const lastPostTime = new Date(recentlyPosted[0]!).getTime();
+            const minGapMs = config.minPostGapMinutes * 60 * 1000;
+            if (Date.now() - lastPostTime < minGapMs) {
+              rateLimited = true;
+              ctx.logger.info("ext-poll: rate limited, too soon since last post", {
+                lastPost: recentlyPosted[0],
+                minGapMinutes: config.minPostGapMinutes,
+              });
+            }
+          }
+        }
+
+        if (ready && !rateLimited) {
           const d = ready.data as unknown as TweetQueueData;
           // Mark as claimed
           await ctx.entities.upsert({

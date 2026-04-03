@@ -53,6 +53,36 @@ const manifest: PaperclipPluginManifestV1 = {
         description: "When true, engagement missions auto-execute when the extension polls. When false, missions require manual activation.",
         default: false,
       },
+      maxPostsPerDay: {
+        type: "number",
+        title: "Max Posts Per Day",
+        description: "Maximum tweets to post per day. Prevents over-posting.",
+        default: 8,
+      },
+      minPostGapMinutes: {
+        type: "number",
+        title: "Min Post Gap (minutes)",
+        description: "Minimum time between consecutive posts. Ensures human-like pacing.",
+        default: 30,
+      },
+      maxPostGapMinutes: {
+        type: "number",
+        title: "Max Post Gap (minutes)",
+        description: "Maximum time between auto-scheduled posts. Used for random spread.",
+        default: 120,
+      },
+      postingWindowStart: {
+        type: "number",
+        title: "Posting Window Start (hour)",
+        description: "Earliest hour of day to auto-schedule posts (0-23).",
+        default: 6,
+      },
+      postingWindowEnd: {
+        type: "number",
+        title: "Posting Window End (hour)",
+        description: "Latest hour of day to auto-schedule posts (0-24).",
+        default: 24,
+      },
     },
   },
 
@@ -357,6 +387,38 @@ const manifest: PaperclipPluginManifestV1 = {
           venture: {
             type: "string",
             enum: ["shieldnest", "tokns", "smartnotes", "token", "brand", "coherencedaddy"],
+          },
+        },
+      },
+    },
+    {
+      name: "generate-tweets",
+      displayName: "Twitter: Generate Tweet Context",
+      description:
+        "Gather context for generating unique tweets. Pulls recent posts (to avoid repetition) and scraped content from Firecrawl (if available). Returns structured data the agent uses to write original tweets, then calls queue-post for each.",
+      parametersSchema: {
+        type: "object",
+        required: ["topic"],
+        properties: {
+          topic: {
+            type: "string",
+            description: "What to write about (e.g. 'tokns.fi staking launch', 'web3 privacy').",
+          },
+          count: {
+            type: "number",
+            description: "How many tweet drafts to generate. Defaults to 5, max 10.",
+            default: 5,
+          },
+          venture: {
+            type: "string",
+            enum: ["shieldnest", "tokns", "smartnotes", "token", "brand", "coherencedaddy"],
+            description: "Filter scraped context by venture.",
+          },
+          style: {
+            type: "string",
+            enum: ["informative", "engaging", "promotional", "thread"],
+            description: "Tone for the tweets. Defaults to engaging.",
+            default: "engaging",
           },
         },
       },
