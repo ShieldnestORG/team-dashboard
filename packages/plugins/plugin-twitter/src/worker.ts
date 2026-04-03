@@ -916,10 +916,55 @@ const plugin = definePlugin({
         parametersSchema: { type: "object", properties: {} },
       },
       async (): Promise<ToolResult> => {
+        const config = await getConfig(ctx);
+
+        // ── Rate enforcement: posting window check ─────────────────────────
+        const currentHour = new Date().getHours();
+        if (currentHour < config.postingWindowStart || currentHour >= config.postingWindowEnd) {
+          return {
+            content: `Outside posting window (${config.postingWindowStart}:00-${config.postingWindowEnd}:00, current: ${currentHour}:00)`,
+            data: { empty: true, reason: "outside_window" },
+          };
+        }
+
         const queueItems = await ctx.entities.list({
           entityType: "tweet-queue",
-          limit: 50,
+          limit: 200,
         });
+
+        // ── Rate enforcement: daily limit check ────────────────────────────
+        const todayStr = todayKey();
+        const todaysPosted = queueItems.filter((e) => {
+          const d = e.data as unknown as TweetQueueData;
+          return (e.status === "posted" || e.status === "claimed") &&
+            (d.completedAt?.startsWith(todayStr) || d.claimedAt?.startsWith(todayStr) || d.queuedAt?.startsWith(todayStr));
+        });
+        if (todaysPosted.length >= config.maxPostsPerDay) {
+          return {
+            content: `Daily post limit reached (${todaysPosted.length}/${config.maxPostsPerDay})`,
+            data: { empty: true, reason: "daily_limit" },
+          };
+        }
+
+        // ── Rate enforcement: minimum gap check ────────────────────────────
+        const recentPosts = queueItems
+          .filter((e) => e.status === "posted")
+          .map((e) => (e.data as unknown as TweetQueueData).completedAt)
+          .filter(Boolean)
+          .sort()
+          .reverse();
+        if (recentPosts.length > 0) {
+          const lastPostTime = new Date(recentPosts[0]!).getTime();
+          const gapMs = Date.now() - lastPostTime;
+          const minGapMs = config.minPostGapMinutes * 60 * 1000;
+          if (gapMs < minGapMs) {
+            const waitMin = Math.ceil((minGapMs - gapMs) / 60000);
+            return {
+              content: `Rate limited: ${waitMin}min until next post allowed (min gap: ${config.minPostGapMinutes}min)`,
+              data: { empty: true, reason: "rate_limited", waitMinutes: waitMin },
+            };
+          }
+        }
 
         const nowStr = now();
         const pending = queueItems
@@ -1036,6 +1081,122 @@ const plugin = definePlugin({
         return {
           content: p.success ? `Posted successfully: ${p.tweetUrl || ""}` : `Failed: ${p.error || "unknown"}`,
           data: { status: p.success ? "posted" : "failed" },
+        };
+      },
+    );
+
+    // ── claim-next-mission (extension auto-engage bridge) ───────────────────
+
+    ctx.tools.register(
+      "claim-next-mission",
+      {
+        displayName: "Twitter: Claim Next Mission",
+        description: "Claim the next active mission for the extension to execute.",
+        parametersSchema: { type: "object", properties: {} },
+      },
+      async (): Promise<ToolResult> => {
+        const config = await getConfig(ctx);
+        if (!config.enableAutoEngage) {
+          return { content: "Auto-engage is disabled", data: { empty: true, reason: "auto_engage_disabled" } };
+        }
+
+        const missions = await ctx.entities.list({ entityType: "mission", limit: 50 });
+        const active = missions
+          .filter((e) => e.status === "active")
+          .sort((a, b) => {
+            const aTime = (a.data as unknown as MissionData).createdAt || "";
+            const bTime = (b.data as unknown as MissionData).createdAt || "";
+            return aTime.localeCompare(bTime);
+          });
+
+        if (active.length === 0) {
+          return { content: "No active missions", data: { empty: true } };
+        }
+
+        const mission = active[0];
+        const mData = mission.data as unknown as MissionData;
+
+        if (!mData.startedAt) {
+          mData.startedAt = now();
+          await ctx.entities.upsert({
+            entityType: "mission",
+            scopeKind: "instance",
+            externalId: mission.externalId || "",
+            title: mission.title || "",
+            status: "active",
+            data: mData as unknown as Record<string, unknown>,
+          });
+        }
+
+        ctx.logger.info(`Claimed mission: ${mission.externalId}`, { name: mData.name, steps: mData.steps.length });
+
+        return {
+          content: `Mission: ${mData.name || "Unnamed"} (${mData.steps.length} steps, at step ${mData.currentStep})`,
+          data: {
+            missionId: mission.externalId || mission.id,
+            name: mData.name,
+            steps: mData.steps,
+            currentStep: mData.currentStep,
+          },
+        };
+      },
+    );
+
+    // ── report-mission-result (extension auto-engage bridge) ────────────────
+
+    ctx.tools.register(
+      "report-mission-result",
+      {
+        displayName: "Twitter: Report Mission Result",
+        description: "Report the completion or failure of a mission.",
+        parametersSchema: {
+          type: "object",
+          required: ["missionId", "success"],
+          properties: {
+            missionId: { type: "string" },
+            success: { type: "boolean" },
+            currentStep: { type: "number" },
+            error: { type: "string" },
+          },
+        },
+      },
+      async (params: unknown): Promise<ToolResult> => {
+        const p = params as { missionId: string; success: boolean; currentStep?: number; error?: string };
+
+        const missions = await ctx.entities.list({
+          entityType: "mission",
+          externalId: p.missionId,
+          limit: 1,
+        });
+
+        if (missions.length === 0) {
+          return { error: `Mission ${p.missionId} not found` };
+        }
+
+        const mission = missions[0];
+        const mData = mission.data as unknown as MissionData;
+
+        if (p.currentStep !== undefined) {
+          mData.currentStep = p.currentStep;
+        }
+
+        const isComplete = p.success && mData.currentStep >= mData.steps.length;
+        if (isComplete) {
+          mData.completedAt = now();
+        }
+
+        await ctx.entities.upsert({
+          entityType: "mission",
+          scopeKind: "instance",
+          externalId: mission.externalId || "",
+          title: mission.title || "",
+          status: isComplete ? "completed" : p.success ? "active" : "failed",
+          data: { ...mData as unknown as Record<string, unknown>, error: p.error },
+        });
+
+        return {
+          content: `Mission ${p.missionId}: step ${mData.currentStep}/${mData.steps.length}${isComplete ? " — COMPLETED" : ""}`,
+          data: { missionId: p.missionId, status: isComplete ? "completed" : "active", currentStep: mData.currentStep },
         };
       },
     );

@@ -448,6 +448,31 @@ const manifest: PaperclipPluginManifestV1 = {
         },
       },
     },
+    {
+      name: "claim-next-mission",
+      displayName: "Twitter: Claim Next Mission",
+      description:
+        "Claim the next active mission for the extension to execute. Returns mission steps. Only works when enableAutoEngage is on.",
+      parametersSchema: {
+        type: "object",
+        properties: {},
+      },
+    },
+    {
+      name: "report-mission-result",
+      displayName: "Twitter: Report Mission Result",
+      description: "Report the completion or failure of a mission back to the dashboard.",
+      parametersSchema: {
+        type: "object",
+        required: ["missionId", "success"],
+        properties: {
+          missionId: { type: "string" },
+          success: { type: "boolean" },
+          currentStep: { type: "number" },
+          error: { type: "string" },
+        },
+      },
+    },
   ],
 };
 

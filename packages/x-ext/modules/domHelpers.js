@@ -579,7 +579,7 @@ async function triggerRepost(tweetNode) {
   if (!btn) return false;
 
   btn.click();
-  await new Promise(r => setTimeout(r, 600));
+  await new Promise(r => setTimeout(r, 800 + Math.random() * 1200));
   const confirm = document.querySelector('[data-testid="retweetConfirm"]') ||
     document.querySelector('[role="menuitem"] span')?.parentElement; // Fallback for confirm
 
@@ -611,7 +611,7 @@ async function triggerLike(tweetNode) {
 
   console.log("[Bot][DOM] Found Like button, centering and engaging...");
   btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  await new Promise(r => setTimeout(r, 400));
+  await new Promise(r => setTimeout(r, 800 + Math.random() * 1200));
 
   btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
   btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));

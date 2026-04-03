@@ -3,6 +3,55 @@
 let _botCycleCount = 0;
 let __postingInProgress = false;
 
+// ── Anti-Bot: Breathing pause tracking ───────────────────────────────────────
+let _totalActionsThisBurst = 0;
+let _nextBreathingThreshold = 5 + Math.floor(Math.random() * 6); // 5-10
+
+// ── Anti-Bot: Session action limit helpers ───────────────────────────────────
+
+async function getActionCounts() {
+  const stored = await chrome.storage.local.get([ACTION_COUNTS_KEY, ACTION_COUNTS_DATE_KEY]);
+  const today = new Date().toISOString().slice(0, 10);
+  if (stored[ACTION_COUNTS_DATE_KEY] !== today) {
+    // Reset counts for new day
+    const fresh = { LIKE: 0, FOLLOW: 0, REPLY: 0, REPOST: 0 };
+    await chrome.storage.local.set({ [ACTION_COUNTS_KEY]: fresh, [ACTION_COUNTS_DATE_KEY]: today });
+    return fresh;
+  }
+  return stored[ACTION_COUNTS_KEY] || { LIKE: 0, FOLLOW: 0, REPLY: 0, REPOST: 0 };
+}
+
+async function incrementActionCount(action) {
+  const counts = await getActionCounts();
+  counts[action] = (counts[action] || 0) + 1;
+  await chrome.storage.local.set({ [ACTION_COUNTS_KEY]: counts });
+  return counts[action];
+}
+
+async function isActionAllowed(action) {
+  const limit = SESSION_ACTION_LIMITS[action];
+  if (!limit) return true;
+  const counts = await getActionCounts();
+  return (counts[action] || 0) < limit;
+}
+
+async function maybeBreathingPause(cycleNum) {
+  _totalActionsThisBurst++;
+  if (_totalActionsThisBurst >= _nextBreathingThreshold) {
+    const pause = 30000 + Math.random() * 60000; // 30-90 seconds
+    console.log(`[Bot] Cycle #${cycleNum} — 😮‍💨 Breathing pause: ${(pause / 1000).toFixed(0)}s after ${_totalActionsThisBurst} actions...`);
+    await new Promise(r => setTimeout(r, pause));
+    _totalActionsThisBurst = 0;
+    _nextBreathingThreshold = 5 + Math.floor(Math.random() * 6);
+    // Check if bot was stopped during pause
+    if (!window.__botRunning) {
+      console.log("[Bot] Bot stopped during breathing pause.");
+      return false;
+    }
+  }
+  return true;
+}
+
 async function startBot() {
   if (window.__botRunning || window.__botStarting) {
     console.log("[Bot] startBot() — already running or starting, skipping.");
@@ -133,6 +182,32 @@ async function handleCommandMission(settings, mission, cycleNum) {
   // We can push to a 'mission_log' in storage that content.js reads
 
   try {
+    // ── Anti-Bot: Human-like pre-step delay ────────────────────────────────
+    const preDelay = getStepDelay(step.action);
+    if (preDelay > 0) {
+      console.log(`[Bot] Cycle #${cycleNum} — ⏱️ Human pause: ${(preDelay / 1000).toFixed(1)}s before ${step.action}...`);
+      await new Promise(r => setTimeout(r, preDelay));
+    }
+
+    // ── Anti-Bot: Session action limit check ───────────────────────────────
+    if (['LIKE', 'FOLLOW', 'REPLY', 'REPOST'].includes(step.action)) {
+      const allowed = await isActionAllowed(step.action);
+      if (!allowed) {
+        console.warn(`[Bot] Cycle #${cycleNum} — 🚫 Daily limit reached for ${step.action} (max ${SESSION_ACTION_LIMITS[step.action]}). Skipping.`);
+        const nextIdx = mission_step_index + 1;
+        await chrome.storage.local.set({ mission_step_index: nextIdx });
+        return true;
+      }
+    }
+
+    // ── Anti-Bot: Natural variance (10% skip for random-index actions) ─────
+    if (['LIKE', 'FOLLOW', 'REPOST'].includes(step.action) && step.params?.index === 'random' && Math.random() < 0.1) {
+      console.log(`[Bot] Cycle #${cycleNum} — 🎲 Natural variance: skipping ${step.action} this cycle.`);
+      const nextIdx = mission_step_index + 1;
+      await chrome.storage.local.set({ mission_step_index: nextIdx });
+      return true;
+    }
+
     let success = false;
     switch (step.action) {
       case 'SEARCH':
@@ -435,6 +510,16 @@ async function handleCommandMission(settings, mission, cycleNum) {
       const nextIdx = mission_step_index + 1;
       await chrome.storage.local.set({ mission_step_index: nextIdx });
 
+      // ── Anti-Bot: Track engagement action counts ───────────────────────
+      if (['LIKE', 'FOLLOW', 'REPLY', 'REPOST'].includes(step.action)) {
+        const newCount = await incrementActionCount(step.action);
+        console.log(`[Bot] ${step.action} count today: ${newCount}/${SESSION_ACTION_LIMITS[step.action] || '∞'}`);
+
+        // ── Anti-Bot: Breathing pause after burst of actions ─────────────
+        const shouldContinue = await maybeBreathingPause(cycleNum);
+        if (!shouldContinue) return false;
+      }
+
       // Sync progress to DB
       const mem = await chrome.storage.local.get(['session_id']);
       if (mem.session_id) {
@@ -445,9 +530,17 @@ async function handleCommandMission(settings, mission, cycleNum) {
         }).catch(e => console.error("[Bot] Progress sync failed", e));
       }
 
+      // Report to dashboard if this is a bridged mission
+      const missionId = settings.last_mission_id || settings.last_mission?._dashboardMissionId;
+      if (missionId) {
+        fetch(`${EXT_API}/report-mission-result`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ missionId, success: true, currentStep: nextIdx })
+        }).catch(() => {});
+      }
+
       // If we did a navigation action, we MUST abort the cycle to allow page load.
-      // Failing to do so causes the next step to instantly evaluate on the old DOM,
-      // triggering a false View-Lock Breach and snapping the browser back.
       if (['SEARCH', 'CLICK_TWEET', 'VISIT_PROFILE', 'GOTO', 'NAVIGATE_BACK'].includes(step.action)) {
         return true;
       }
@@ -840,8 +933,51 @@ async function runBotCycle() {
       console.log(`[Bot] Cycle #${cycleNum} — Tactical Mission Found: "${mission.intent || 'Untitled'}"`);
       await handleCommandMission(settings, mission, cycleNum);
     } else {
+      // ── DASHBOARD MISSION BRIDGE ──
+      // No local mission — check if dashboard has an active mission for us
+      let missionClaimed = false;
+      try {
+        const missionRes = await fetch(`${EXT_API}/claim-next-mission`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+
+        if (missionRes.ok) {
+          const missionData = await missionRes.json();
+          if (missionData.data && !missionData.data.empty && missionData.data.steps) {
+            console.log(`[Bot] Cycle #${cycleNum} — 🎯 Dashboard mission claimed: "${missionData.data.name || 'Unnamed'}" (${missionData.data.steps.length} steps)`);
+
+            const dashboardMission = {
+              intent: missionData.data.name || "Dashboard Mission",
+              steps: missionData.data.steps,
+              _dashboardMissionId: missionData.data.missionId,
+            };
+
+            // Store in settings so handleCommandMission picks it up
+            const setObj = await chrome.storage.local.get([SETTINGS_KEY]);
+            const newSettings = {
+              ...setObj[SETTINGS_KEY],
+              last_mission: dashboardMission,
+              last_mission_id: missionData.data.missionId,
+            };
+            await chrome.storage.local.set({
+              [SETTINGS_KEY]: newSettings,
+              mission_step_index: missionData.data.currentStep || 0,
+              mission_base_url: null,
+            });
+
+            await handleCommandMission(newSettings, dashboardMission, cycleNum);
+            missionClaimed = true;
+          }
+        }
+      } catch (missionErr) {
+        console.log(`[Bot] Cycle #${cycleNum} — Mission bridge error:`, missionErr.message);
+      }
+
+      if (!missionClaimed) {
       // ── DASHBOARD QUEUE POLLING ──
-      // No local mission — check the dashboard for queued tweets and post them
+      // No mission — check the dashboard for queued tweets and post them
       console.log(`[Bot] Cycle #${cycleNum} — Polling dashboard for queued tweets...`);
       try {
         const claimRes = await fetch(`${EXT_API}/claim-next-post`, {
@@ -989,7 +1125,8 @@ async function runBotCycle() {
       } catch (pollErr) {
         console.log(`[Bot] Cycle #${cycleNum} — Dashboard poll error:`, pollErr.message);
       }
-    }
+      } // close if (!missionClaimed)
+    } // close else (no local mission)
 
     console.log(`[Bot] ── Cycle #${cycleNum} END ──`);
 
@@ -997,8 +1134,9 @@ async function runBotCycle() {
     console.error(`[Bot] Cycle #${cycleNum} error:`, err);
   } finally {
     if (window.__botRunning) {
-      window.__botTimerId = setTimeout(runBotCycle, BOT_CYCLE_INTERVAL);
-      console.log(`[Bot] Next cycle in ${BOT_CYCLE_INTERVAL / 1000}s.`);
+      const nextInterval = getJitteredInterval();
+      window.__botTimerId = setTimeout(runBotCycle, nextInterval);
+      console.log(`[Bot] Next cycle in ${(nextInterval / 1000).toFixed(1)}s.`);
     }
   }
 }
