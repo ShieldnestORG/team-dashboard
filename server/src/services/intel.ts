@@ -365,7 +365,7 @@ export function intelService(db: Db) {
             'price',
             ${headline},
             ${priceBody},
-            ${"https://www.coingecko.com/en/coins/" + company.coingecko_id},
+            ${null},
             ${embeddingStr}::vector
           )
         `);
