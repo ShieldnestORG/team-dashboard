@@ -856,14 +856,45 @@ async function runBotCycle() {
           if (claimed.data?.empty) {
             console.log(`[Bot] Cycle #${cycleNum} — Queue empty. Standing by...`);
           } else {
+            const isThread = claimed.data?.isThread || false;
+            const threadTweets = claimed.data?.threadTweets || [];
             const tweetText = claimed.data?.text || claimed.content || "";
             const queueItemId = claimed.data?.id;
             const mediaUrls = claimed.data?.mediaUrls || [];
 
             console.log(`[Bot] Cycle #${cycleNum} — 📬 Claimed tweet: "${tweetText.slice(0, 60)}..."`);
 
-            if (tweetText.trim()) {
-              // Post the tweet using X.com's protocol
+            if (isThread && threadTweets.length > 1) {
+              // Post as a thread using DOM method
+              console.log(`[Bot] Cycle #${cycleNum} — 🧵 Posting thread with ${threadTweets.length} tweets...`);
+              let postSuccess = false;
+              let tweetUrl = "";
+
+              try {
+                postSuccess = await postThread(threadTweets);
+              } catch (threadErr) {
+                console.error(`[Bot] Thread post error:`, threadErr);
+              }
+
+              // Report result back to dashboard
+              try {
+                await fetch(`${EXT_API}/report-post-result`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    queueItemId: queueItemId,
+                    success: postSuccess,
+                    tweetUrl: tweetUrl,
+                    error: postSuccess ? undefined : "Thread post failed"
+                  })
+                });
+              } catch (_) { /* best effort */ }
+
+              console.log(`[Bot] Cycle #${cycleNum} — ${postSuccess ? '✅ Thread posted!' : '❌ Thread failed'}`);
+              await logPostResult({ post_id: queueItemId, type: 'thread', text: threadTweets[0], status: postSuccess ? 'success' : 'fail' });
+
+            } else if (tweetText.trim()) {
+              // Post single tweet using X.com's protocol
               let postSuccess = false;
               let tweetUrl = "";
 

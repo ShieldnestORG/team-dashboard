@@ -78,48 +78,149 @@ async function navigateTo(path) {
  * @returns {Promise<void>}
  */
 async function typeIntoContentEditable(el, text) {
-  console.log(`[Bot][DOM] Starting Draft.js Sync (Paste Injection)...`);
+  console.log(`[Bot][DOM] Starting text injection (multi-strategy)...`);
 
-  // 1. Hard Focus
+  // 1. Focus the element
   el.focus();
   el.click();
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, 300));
 
-  // 2. Set Caret Position (Selection)
+  // Strategy A: execCommand insertText (most reliable for modern X.com)
+  // This triggers React's synthetic event system properly
   const selection = window.getSelection();
   const range = document.createRange();
   range.selectNodeContents(el);
-  range.collapse(false); // Go to end
+  range.collapse(false);
   selection.removeAllRanges();
   selection.addRange(range);
 
-  // 3. Paste Injection (The Draft.js Master Stroke)
+  // Clear any existing content first
+  if (el.innerText.trim()) {
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  // Insert text — try execCommand first
+  const inserted = document.execCommand('insertText', false, text);
+  await new Promise((r) => setTimeout(r, 400));
+
+  if (inserted && el.innerText.trim().length > 0) {
+    console.log(`[Bot][DOM] execCommand insertText succeeded: "${el.innerText.slice(0, 50)}..."`);
+    return;
+  }
+
+  // Strategy B: Clipboard paste injection (fallback for DraftJS)
+  console.log("[Bot][DOM] execCommand failed, trying paste injection...");
+  el.focus();
+  await new Promise((r) => setTimeout(r, 200));
+
   const dt = new DataTransfer();
   dt.setData('text/plain', text);
-
-  const pasteEvent = new ClipboardEvent('paste', {
+  el.dispatchEvent(new ClipboardEvent('paste', {
     clipboardData: dt,
     bubbles: true,
     cancelable: true
-  });
+  }));
+  await new Promise((r) => setTimeout(r, 400));
 
-  // This forces Draft.js to update its internal Virtual DOM state
-  el.dispatchEvent(pasteEvent);
-
-  // 4. Verification Check
-  await new Promise((r) => setTimeout(r, 500));
-  console.log(`[Bot][Debug][Editor] Text injected: ${el.innerText}`);
-
-  // If the placeholder is still there, we do a fallback Input trigger
-  if (document.querySelector('.public-DraftEditorPlaceholder-root')) {
-    console.warn("[Bot][DOM] Placeholder still visible! Triggering fallback input chain...");
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    document.execCommand('insertText', false, " "); // Tiny space to wake it up
+  if (el.innerText.trim().length > 0) {
+    console.log(`[Bot][DOM] Paste injection succeeded: "${el.innerText.slice(0, 50)}..."`);
+    return;
   }
 
-  // 5. Final blur (Commit)
-  el.dispatchEvent(new Event('blur', { bubbles: true }));
-  console.log(`[Bot][Debug][Editor] Final registered text: ${el.innerText}`);
+  // Strategy C: Direct innerHTML + React input events (last resort)
+  console.log("[Bot][DOM] Paste failed, trying direct DOM + input events...");
+  el.innerHTML = `<span data-text="true">${text}</span>`;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+
+  console.log(`[Bot][DOM] Final text state: "${el.innerText.slice(0, 50)}..."`);
+}
+
+/**
+ * Post a thread (array of tweet texts) using X.com's compose UI.
+ * Opens compose, types each tweet, clicks "Add another tweet" between them,
+ * then clicks "Post all".
+ * @param {string[]} tweets — array of tweet texts (each max 280 chars)
+ * @returns {Promise<boolean>} true if thread was posted
+ */
+async function postThread(tweets) {
+  if (!tweets || tweets.length === 0) return false;
+  if (tweets.length === 1) return false; // Use single post for one tweet
+
+  console.log(`[Bot][Thread] Starting thread with ${tweets.length} tweets...`);
+
+  // 1. Make sure we're on home
+  if (!window.location.pathname.startsWith('/home')) {
+    await navigateTo('/home');
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  // 2. Find the compose box and type first tweet
+  const composeBox = await waitForElement(
+    '[data-testid="tweetTextarea_0"] [contenteditable="true"], [role="textbox"][data-testid="tweetTextarea_0"]',
+    5000
+  ).catch(() => null);
+
+  if (!composeBox) {
+    console.error("[Bot][Thread] Could not find compose box");
+    return false;
+  }
+
+  await typeIntoContentEditable(composeBox, tweets[0]);
+  await new Promise(r => setTimeout(r, 500));
+  console.log(`[Bot][Thread] Typed tweet 1/${tweets.length}`);
+
+  // 3. For each additional tweet, click "Add" and type
+  for (let i = 1; i < tweets.length; i++) {
+    // Click the "Add another tweet" button (the + icon)
+    const addBtn = document.querySelector('[data-testid="addButton"]')
+      || document.querySelector('[aria-label="Add post"]')
+      || document.querySelector('[aria-label="Add another tweet"]');
+
+    if (!addBtn) {
+      console.error(`[Bot][Thread] Could not find 'Add' button for tweet ${i + 1}`);
+      break;
+    }
+
+    addBtn.click();
+    await new Promise(r => setTimeout(r, 800));
+
+    // Find the new compose box (tweetTextarea_1, _2, etc.)
+    const nextBox = await waitForElement(
+      `[data-testid="tweetTextarea_${i}"] [contenteditable="true"], [role="textbox"][data-testid="tweetTextarea_${i}"]`,
+      3000
+    ).catch(() => null);
+
+    if (!nextBox) {
+      console.error(`[Bot][Thread] Could not find compose box for tweet ${i + 1}`);
+      break;
+    }
+
+    await typeIntoContentEditable(nextBox, tweets[i]);
+    await new Promise(r => setTimeout(r, 500));
+    console.log(`[Bot][Thread] Typed tweet ${i + 1}/${tweets.length}`);
+  }
+
+  // 4. Click "Post all" button
+  await new Promise(r => setTimeout(r, 500));
+  const postAllBtn = document.querySelector('[data-testid="tweetButton"]')
+    || document.querySelector('[data-testid="tweetButtonInline"]');
+
+  if (postAllBtn && !postAllBtn.disabled) {
+    postAllBtn.click();
+    console.log("[Bot][Thread] Clicked Post All button");
+
+    // Wait for confirmation
+    const posted = await waitForPostSuccess(12000);
+    console.log(`[Bot][Thread] Thread post ${posted ? 'succeeded' : 'failed'}`);
+    return posted;
+  }
+
+  console.error("[Bot][Thread] Post button not found or disabled");
+  return false;
 }
 
 

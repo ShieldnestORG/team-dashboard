@@ -648,6 +648,58 @@ const plugin = definePlugin({
       },
     );
 
+    // ── queue-thread ───────────────────────────────────────────────────────
+
+    ctx.tools.register(
+      "queue-thread",
+      {
+        displayName: "Twitter: Queue Thread",
+        description: "Queue a thread (multiple tweets posted in sequence). Each tweet is max 280 chars. The extension posts them as a connected thread.",
+        parametersSchema: {
+          type: "object",
+          required: ["tweets"],
+          properties: {
+            tweets: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of tweet texts for the thread, in order. Max 25 tweets.",
+              maxItems: 25,
+            },
+            venture: { type: "string" },
+          },
+        },
+      },
+      async (params: unknown, runCtx: ToolRunContext): Promise<ToolResult> => {
+        const p = params as { tweets: string[]; venture?: string };
+        const config = await getConfig(ctx);
+        const id = uuid();
+
+        const data: TweetQueueData = {
+          action: "POST",
+          text: "__THREAD__",
+          venture: p.venture || config.defaultVenture,
+          queuedBy: runCtx.agentId,
+          queuedAt: now(),
+          retryCount: 0,
+        };
+
+        await ctx.entities.upsert({
+          entityType: "tweet-queue",
+          scopeKind: "instance",
+          externalId: id,
+          title: `Thread (${p.tweets.length} tweets): ${p.tweets[0].slice(0, 50)}`,
+          status: "pending",
+          data: { ...data, threadTweets: p.tweets } as unknown as Record<string, unknown>,
+        });
+
+        await incrementAnalytics(ctx, "postsQueued");
+        return {
+          content: `Queued thread (id: ${id}, ${p.tweets.length} tweets). Extension will post on next cycle.`,
+          data: { queueItemId: id, status: "pending", tweetCount: p.tweets.length },
+        };
+      },
+    );
+
     // ── claim-next-post (extension-facing) ──────────────────────────────────
 
     ctx.tools.register(
@@ -693,21 +745,27 @@ const plugin = definePlugin({
           data: { ...item.data, claimedAt: now() },
         });
 
+        // Check if this is a thread
+        const threadTweets = (item.data as Record<string, unknown>).threadTweets as string[] | undefined;
+        const isThread = d.text === "__THREAD__" && threadTweets && threadTweets.length > 0;
+
         // Build the full text with hashtags
         let text = d.text || "";
-        if (d.hashtags && d.hashtags.length > 0) {
+        if (!isThread && d.hashtags && d.hashtags.length > 0) {
           const tags = d.hashtags.map((h: string) => h.startsWith("#") ? h : `#${h}`).join(" ");
           text += `\n\n${tags}`;
         }
 
-        ctx.logger.info(`Claimed post: ${item.externalId}`, { text: text.slice(0, 50) });
+        ctx.logger.info(`Claimed ${isThread ? "thread" : "post"}: ${item.externalId}`);
 
         return {
-          content: text,
+          content: isThread ? threadTweets.join("\n---\n") : text,
           data: {
             id: item.externalId,
-            text,
+            text: isThread ? threadTweets[0] : text,
             action: d.action,
+            isThread,
+            threadTweets: isThread ? threadTweets : undefined,
             mediaUrls: d.mediaUrls || [],
             hashtags: d.hashtags || [],
             replyToUrl: d.replyToUrl,

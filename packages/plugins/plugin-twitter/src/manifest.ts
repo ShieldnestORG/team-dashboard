@@ -341,6 +341,27 @@ const manifest: PaperclipPluginManifestV1 = {
       },
     },
     {
+      name: "queue-thread",
+      displayName: "Twitter: Queue Thread",
+      description: "Queue a thread (multiple connected tweets). The extension posts them as a thread using X.com's thread UI.",
+      parametersSchema: {
+        type: "object",
+        required: ["tweets"],
+        properties: {
+          tweets: {
+            type: "array",
+            items: { type: "string" },
+            description: "Array of tweet texts in order. Each max 280 chars. Max 25 tweets.",
+            maxItems: 25,
+          },
+          venture: {
+            type: "string",
+            enum: ["shieldnest", "tokns", "smartnotes", "token", "brand", "coherencedaddy"],
+          },
+        },
+      },
+    },
+    {
       name: "claim-next-post",
       displayName: "Twitter: Claim Next Post",
       description:
