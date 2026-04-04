@@ -228,19 +228,35 @@ git push origin master
 
 | Variable | Required | Where | Purpose |
 |----------|----------|-------|---------|
+| **Database** | | | |
 | `DATABASE_URL` | Yes | VPS + Vercel + Local | Neon PostgreSQL connection string |
-| `PAPERCLIP_AGENT_JWT_SECRET` | Yes | VPS | Agent authentication |
+| **Auth** | | | |
+| `PAPERCLIP_AGENT_JWT_SECRET` | Yes | VPS | Agent JWT signing secret |
+| `BETTER_AUTH_SECRET` | Yes | VPS | Better Auth session signing |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | Yes | VPS | CORS origins for auth (Vercel URL) |
+| `PAPERCLIP_PUBLIC_URL` | Yes | VPS | Public URL for auth callbacks |
+| `PAPERCLIP_ALLOWED_HOSTNAMES` | Yes | VPS | Allowed hostnames for private mode |
+| **API** | | | |
 | `PAPERCLIP_API_URL` | Yes | VPS | Backend API base URL |
-| `ANTHROPIC_API_KEY` | Yes | VPS | Claude API for agent runtime |
-| `CONTENT_API_KEY` | Yes | VPS | Auth for content generation endpoints |
 | `TEAM_DASHBOARD_COMPANY_ID` | Yes | VPS + Local | `8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy) |
+| **AI / LLM** | | | |
+| `ANTHROPIC_API_KEY` | Yes | VPS | Claude API for agent runtime |
+| `ANTHROPIC_MODEL` | Optional | VPS | Default model (default: claude-haiku-4-5-20251001) |
+| `OLLAMA_URL` | Yes | VPS | Ollama LLM for content generation (`http://168.231.127.180:11434`) |
+| `OLLAMA_MODEL` | Optional | VPS | Ollama model (default: qwen2.5:1.5b) |
+| **Visual Content** | | | |
+| `CONTENT_API_KEY` | Yes | VPS | Auth for content + visual content endpoints |
 | `GEMINI_API_KEY` | Optional | VPS | Enables Gemini visual backend (Imagen 3 + Veo 2) |
 | `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI backend (grok-2-image + grok-imagine-video) |
+| **Intel Engine** | | | |
 | `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
 | `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |
+| `EMBED_URL` | Yes | VPS | Embedding service (`http://31.220.61.12:8000`) |
+| `EMBED_API_KEY` | Yes | VPS | Embedding service auth |
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
+| **Monitoring** | | | |
 | `SITE_METRICS_KEY` | Yes | VPS + coherencedaddy | Site analytics ingestion auth |
-| `SMTP_HOST/PORT/USER/PASS` | Optional | VPS | Email alerting |
+| `SMTP_HOST/PORT/USER/PASS` | Optional | VPS | Email alerting (Proton Mail) |
 | `ALERT_EMAIL_TO/FROM` | Optional | VPS | Alert email recipients |
 
 **Vercel** gets `DATABASE_URL` automatically via Neon integration. No other env vars needed there — it only serves the static UI.

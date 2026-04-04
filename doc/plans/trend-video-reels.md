@@ -35,14 +35,16 @@ coherencedaddy.com/reels (new page in coherencedaddy repo)
 
 ## Implementation Phases
 
-### Phase 1 — Video Script Generator + Image Backend (this repo, feature branch)
+### Phase 1 — Video Script Generator + Image/Video Backend (COMPLETED 2026-04-04)
 
-**Goal**: Agents can generate video scripts and static images from trending topics.
+**Status**: Deployed to production. Both Gemini and Grok backends active on VPS.
+
+**Goal**: Agents can generate video scripts, images, and videos from trending topics.
 
 **New files:**
 - `server/src/services/visual-backends/types.ts` — VisualBackend interface
 - `server/src/services/visual-backends/gemini.ts` — Gemini Imagen 3 (images) + Veo 2 (video)
-- `server/src/services/visual-backends/grok.ts` — xAI Grok image generation
+- `server/src/services/visual-backends/grok.ts` — xAI Grok image (grok-2-image) + video (grok-imagine-video)
 - `server/src/services/visual-backends/index.ts` — Backend registry (auto-enable by env var)
 - `server/src/services/visual-content.ts` — Visual content queue (parallel to text queue)
 - `server/src/services/visual-jobs.ts` — Async job tracker (video gen takes minutes)
@@ -55,7 +57,7 @@ coherencedaddy.com/reels (new page in coherencedaddy repo)
 
 **Env vars:**
 - `GEMINI_API_KEY` — Gemini free tier
-- `GROK_API_KEY` — xAI image API
+- `GROK_API_KEY` — xAI image + video API (grok-2-image + grok-imagine-video)
 
 **Content type additions:**
 ```
