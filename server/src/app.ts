@@ -31,11 +31,13 @@ import { accessRoutes } from "./routes/access.js";
 import { siteMetricsRoutes } from "./routes/site-metrics.js";
 import { intelRoutes } from "./routes/intel.js";
 import { contentRoutes } from "./routes/content.js";
+import { visualContentRoutes } from "./routes/visual-content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
 import { startIntelCrons } from "./services/intel-crons.js";
 import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
+import { logAvailableBackends } from "./services/visual-backends/index.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -185,6 +187,8 @@ export async function createApp(
   api.use(siteMetricsRoutes(db));
   api.use("/intel", intelRoutes(db));
   api.use("/content", contentRoutes(db));
+  const visualRoutes = visualContentRoutes(db, opts.storageService, "default");
+  api.use("/visual", visualRoutes.router);
   api.use("/system-health", systemHealthRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
@@ -306,6 +310,7 @@ export async function createApp(
   const stopEvalCrons = startEvalCrons();
   const stopAlertCrons = startAlertCrons();
   const stopContentCrons = startContentCrons(db);
+  logAvailableBackends();
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
@@ -331,6 +336,7 @@ export async function createApp(
     stopEvalCrons();
     stopAlertCrons();
     stopContentCrons();
+    visualRoutes.stopPolling();
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();
   });
