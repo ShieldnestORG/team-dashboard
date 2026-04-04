@@ -80,8 +80,9 @@ export function contentRoutes(db: Db) {
   // ---- PATCH /api/content/queue/:id/review ----
 
   router.patch("/queue/:id/review", requireContentKey, async (req, res) => {
-    const { id } = req.params;
-    const { reviewStatus, reviewComment } = req.body;
+    const id = req.params.id as string;
+    const reviewStatus = req.body.reviewStatus as string;
+    const reviewComment = req.body.reviewComment as string | undefined;
 
     if (!reviewStatus) {
       res.status(400).json({ error: "Missing required field: reviewStatus" });
