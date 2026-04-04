@@ -76,182 +76,283 @@ const LIGHT_THEME_VARS = {
 // ── Default Diagram ─────────────────────────────────────────────────────────
 
 const DEFAULT_DIAGRAM = `graph TB
-  APP(["Express App"]):::entryNode
+  %% ═══════════════════════════════════════════════════════
+  %% ECOSYSTEM OVERVIEW
+  %% ═══════════════════════════════════════════════════════
 
-  subgraph Core["Core Business"]
+  subgraph Ecosystem["Coherence Daddy Ecosystem"]
     direction TB
-    Companies(["Companies"])
-    Agents(["Agents"])
-    Projects(["Projects"])
-    Issues(["Issues"])
-    Goals(["Goals"])
-    Routines(["Routines"])
-    Approvals(["Approvals"])
-    Access(["Access Control"])
-    Dashboard(["Dashboard"])
-    Activity(["Activity"])
+
+    subgraph PublicSites["Public-Facing Properties"]
+      direction TB
+      CD(["coherencedaddy.com"]):::siteNode
+      CDTools(["523+ Free Tools"])
+      CDDirectory(["Blockchain Directory"])
+      CDBlog(["Blog + RSS"])
+      CDReels(["Public Reels"])
+    end
+
+    subgraph OtherProps["Ecosystem Properties"]
+      direction TB
+      Tokns(["tokns.fi"]):::siteNode
+      ToknsApp(["app.tokns.fi"])
+      TXChain(["TX Blockchain"]):::siteNode
+      ShieldNest(["shieldnest.io"]):::siteNode
+      YourArchi(["yourarchi.com"]):::siteNode
+    end
+
+    subgraph TDash["Team Dashboard — Control Plane"]
+      direction TB
+
+      APP(["Express API :3200"]):::entryNode
+
+      subgraph Core["Core Business"]
+        direction TB
+        Companies(["Companies"])
+        Agents(["Agents"])
+        Projects(["Projects"])
+        Issues(["Issues"])
+        Goals(["Goals"])
+        Routines(["Routines"])
+        Approvals(["Approvals"])
+        Activity(["Activity"])
+      end
+
+      subgraph AgentTeam["Agent Team — 14 Agents"]
+        direction TB
+        Atlas(["Atlas — CEO"])
+        Nova(["Nova — CTO"])
+        Sage(["Sage — CMO"])
+        River(["River — PM"])
+        Pixel(["Pixel — Designer"])
+        Core2(["Core — Backend"])
+        Flux(["Flux — Frontend"])
+        Bridge(["Bridge — Full-Stack"])
+        Echo(["Echo — Data Eng"])
+        Mermaid(["Mermaid — Structure"])
+        ContentAgents(["Blaze / Cipher / Spark / Prism"])
+      end
+
+      subgraph Execution["Agent Execution"]
+        direction TB
+        Heartbeat(["Heartbeat"])
+        WorkspaceRuntime(["Workspace Runtime"])
+        ExecWorkspaces(["Exec Workspaces"])
+        AgentInstructions(["Instructions"])
+        IssueWakeup(["Issue Wakeup"])
+      end
+
+      subgraph ContentPipeline["Content Pipeline"]
+        direction TB
+        ContentSvc(["Content Service"])
+        ContentCrons{{"Content Crons — 9 jobs"}}
+        VisualContent(["Visual Content"])
+        VisualJobs(["Visual Jobs"])
+        Templates(["Blaze / Cipher / Spark / Prism"])
+        VideoAssembler(["Video Assembler"])
+        SEOEngine(["SEO Engine"])
+        Publishers(["Platform Publishers"])
+      end
+
+      subgraph VisualBack["Visual Backends"]
+        direction TB
+        GeminiBack(["Gemini — Imagen 3 + Veo 2"])
+        GrokBack(["Grok / xAI"])
+        CanvaBack(["Canva — Python bridge"])
+      end
+
+      subgraph IntelEngine["Intel Engine"]
+        direction TB
+        IntelSvc(["Intel Service"])
+        IntelCrons{{"Intel Crons — 5 jobs"}}
+        Embeddings[("Vector Embeddings — BGE-M3")]
+        TrendScanner(["Trend Scanner"])
+        TrendCrons{{"Trend Crons"}}
+      end
+
+      subgraph PluginSys["Plugin System"]
+        direction TB
+        PluginRegistry(["Registry"])
+        PluginLoader(["Loader"])
+        PluginLifecycle(["Lifecycle"])
+        PluginWorkerMgr(["Worker Manager"])
+        PluginJobScheduler{{"Job Scheduler — 30s tick"}}
+        PluginToolDispatch(["Tool Dispatcher"])
+        PluginEventBus(["Event Bus"])
+      end
+
+      subgraph Monitor["Monitoring & Alerting"]
+        direction TB
+        Alerting(["SMTP Alerting"])
+        AlertCrons{{"Health Check 5m + Digest 7am"}}
+        EvalStore[("Eval Store")]
+        EvalCrons{{"Evals — promptfoo 6am"}}
+        LogStore[("Log Store")]
+        SiteMetrics(["Site Metrics Ingest"])
+      end
+
+      subgraph Finance["Financial"]
+        direction TB
+        Costs(["Cost Events"])
+        FinanceRpt(["Finance Reports"])
+        Budgets(["Budget Enforcement"])
+        QuotaWindows(["Quota Windows"])
+      end
+    end
   end
 
-  subgraph Execution["Agent Execution"]
+  subgraph Infra["Infrastructure"]
     direction TB
-    Heartbeat(["Heartbeat"])
-    WorkspaceRuntime(["Workspace Runtime"])
-    ExecWorkspaces(["Exec Workspaces"])
-    WorkspaceOps(["Workspace Ops"])
-    AgentInstructions(["Instructions"])
-    AgentPerms(["Permissions"])
-    IssueWakeup(["Issue Wakeup"])
+
+    subgraph VPS["VPS — 31.220.61.12"]
+      direction TB
+      Docker(["Docker Container"])
+      ExpressRuntime(["Express.js :3200"])
+      AgentRuntime(["Agent Runtime"])
+    end
+
+    subgraph VercelInfra["Vercel"]
+      direction TB
+      VercelUI(["React SPA — ui/dist"])
+      VercelRewrites(["API Rewrites → VPS"])
+    end
+
+    subgraph NeonInfra["Neon"]
+      direction TB
+      NeonDB[("PostgreSQL")]
+    end
+
+    subgraph SelfHosted["Self-Hosted Services — 168.231.127.180"]
+      direction TB
+      FirecrawlSvc(["Firecrawl — Scraping"])
+      OllamaSvc(["Ollama — qwen2.5:1.5b"])
+      DirectoryAPI(["Directory API :4000"])
+    end
+
+    subgraph EmbedInfra["31.220.61.12:8000"]
+      direction TB
+      EmbedSvc(["Embedding Service — BGE-M3"])
+    end
+
+    subgraph ExtAPIs["External APIs"]
+      direction TB
+      GeminiAPI(["Google Gemini API"])
+      GrokAPI(["xAI / Grok API"])
+      CoinGecko(["CoinGecko"])
+      HackerNews(["Hacker News"])
+      GitHubAPI(["GitHub API"])
+    end
   end
 
-  subgraph ContentPipeline["Content Pipeline"]
-    direction TB
-    ContentSvc(["Content Service"])
-    ContentCrons{{"Content Crons"}}
-    VisualContent(["Visual Content"])
-    VisualJobs(["Visual Jobs"])
-    Templates(["Templates"])
-    VideoAssembler(["Video Assembler"])
-    SEOEngine(["SEO Engine"])
-    Publishers(["Publishers"])
-  end
+  %% ═══════════════════════════════════════════════════════
+  %% CROSS-PROJECT CONNECTIONS
+  %% ═══════════════════════════════════════════════════════
 
-  subgraph VisualBack["Visual Backends"]
-    direction TB
-    Gemini(["Gemini"])
-    Grok(["Grok / xAI"])
-    Canva(["Canva"])
-  end
+  %% Team Dashboard → Infrastructure
+  APP --> Docker
+  Docker --> ExpressRuntime
+  ExpressRuntime --> NeonDB
+  ExpressRuntime --> AgentRuntime
 
-  subgraph IntelEngine["Intel Engine"]
-    direction TB
-    IntelSvc(["Intel Service"])
-    IntelCrons{{"Intel Crons"}}
-    Embeddings[("Embeddings")]
-    TrendScanner(["Trend Scanner"])
-    TrendCrons{{"Trend Crons"}}
-  end
+  %% Vercel serves frontend, rewrites API to VPS
+  VercelUI -->|"serves"| CD
+  VercelRewrites -->|"/api/* proxy"| ExpressRuntime
 
-  subgraph PluginSys["Plugin System"]
-    direction TB
-    Registry(["Registry"])
-    Loader(["Loader"])
-    Lifecycle(["Lifecycle"])
-    WorkerMgr(["Worker Manager"])
-    JobScheduler{{"Job Scheduler"}}
-    JobStore[("Job Store")]
-    ToolDispatch(["Tool Dispatcher"])
-    HostServices(["Host Services"])
-    EventBus(["Event Bus"])
-  end
+  %% coherencedaddy.com consumes Team Dashboard APIs
+  CDDirectory -->|"Intel API"| IntelSvc
+  CDBlog -->|"SEO content"| SEOEngine
+  CDReels -->|"/api/reels"| VisualContent
+  CD -->|"site metrics"| SiteMetrics
 
-  subgraph Monitor["Monitoring"]
-    direction TB
-    Alerting(["Alerting"])
-    AlertCrons{{"Alert Crons"}}
-    EvalStore[("Eval Store")]
-    EvalCrons{{"Eval Crons"}}
-    LogStore[("Log Store")]
-    SiteMetrics(["Site Metrics"])
-  end
+  %% Content pipeline → External
+  ContentSvc --> OllamaSvc
+  ContentSvc --> Embeddings
+  SEOEngine --> TrendScanner
+  IntelSvc --> FirecrawlSvc
+  Embeddings --> EmbedSvc
+  TrendScanner --> CoinGecko
+  TrendScanner --> HackerNews
+  IntelSvc --> GitHubAPI
 
-  subgraph Finance["Financial"]
-    direction TB
-    Costs(["Costs"])
-    FinanceRpt(["Finance"])
-    Budgets(["Budgets"])
-    QuotaWindows(["Quota Windows"])
-  end
+  %% Visual backends → External APIs
+  GeminiBack --> GeminiAPI
+  GrokBack --> GrokAPI
 
-  subgraph Extern["External Services"]
-    direction TB
-    Neon[("Neon PostgreSQL")]
-    Ollama(["Ollama LLM"])
-    Firecrawl(["Firecrawl"])
-    EmbedSvc(["Embed Service"])
-    GeminiAPI(["Gemini API"])
-    GrokAPI(["Grok API"])
-  end
+  %% Agent execution
+  Agents --> Heartbeat
+  Heartbeat --> WorkspaceRuntime
+  Issues --> IssueWakeup
+  IssueWakeup --> Heartbeat
 
-  %% ── App connections ──
-  APP --> Core
-  APP --> Execution
-  APP --> ContentPipeline
-  APP --> IntelEngine
-  APP --> PluginSys
-  APP --> Monitor
-  APP --> Finance
-
-  %% ── Core flows ──
+  %% Core flows
   Companies --> Agents
   Companies --> Projects
   Projects --> Issues
   Issues --> Approvals
-  Issues --> Activity
-  Agents --> AgentInstructions
-  Agents --> AgentPerms
 
-  %% ── Execution flows ──
-  Agents --> Heartbeat
-  Heartbeat --> WorkspaceRuntime
-  Heartbeat --> ExecWorkspaces
-  Heartbeat --> WorkspaceOps
-  Heartbeat --> Budgets
-  Heartbeat --> Costs
-  Issues --> IssueWakeup
-  IssueWakeup --> Heartbeat
-
-  %% ── Content flows ──
+  %% Content flows
   ContentCrons --> ContentSvc
   ContentSvc --> Templates
-  ContentSvc --> Ollama
-  ContentSvc --> Embeddings
-  ContentCrons --> SEOEngine
-  SEOEngine --> TrendScanner
   VisualContent --> VisualJobs
   VisualContent --> VisualBack
-  Gemini --> GeminiAPI
-  Grok --> GrokAPI
   VideoAssembler --> VisualContent
   ContentSvc --> Publishers
 
-  %% ── Intel flows ──
+  %% Intel flows
   IntelCrons --> IntelSvc
-  IntelSvc --> Embeddings
-  Embeddings --> EmbedSvc
   TrendCrons --> TrendScanner
-  TrendScanner --> IntelSvc
 
-  %% ── Plugin flows ──
-  Loader --> Registry
-  Lifecycle --> WorkerMgr
-  JobScheduler --> JobStore
-  JobScheduler --> Lifecycle
-  ToolDispatch --> WorkerMgr
-  HostServices --> WorkerMgr
-  EventBus --> Lifecycle
+  %% Plugin flows
+  PluginLoader --> PluginRegistry
+  PluginLifecycle --> PluginWorkerMgr
+  PluginJobScheduler --> PluginLifecycle
+  PluginToolDispatch --> PluginWorkerMgr
 
-  %% ── Monitoring flows ──
+  %% Monitoring
   AlertCrons --> Alerting
   EvalCrons --> EvalStore
   Heartbeat --> LogStore
 
-  %% ── Financial flows ──
+  %% Financial
+  Heartbeat --> Costs
   Budgets --> QuotaWindows
   Costs --> FinanceRpt
 
-  %% ── External connections ──
-  APP --> Neon
-  IntelSvc --> Firecrawl
+  %% Ecosystem cross-links
+  Tokns -->|"validator"| TXChain
+  ToknsApp -->|"staking + swaps"| TXChain
+  ShieldNest -->|"builds"| CD
+  DirectoryAPI -->|"data sync"| FirecrawlSvc
 
-  %% ── Styling ──
+  %% Agent team reporting
+  Atlas --> Nova
+  Atlas --> Sage
+  Atlas --> River
+  Nova --> Core2
+  Nova --> Flux
+  Nova --> Bridge
+  Nova --> Echo
+  Nova --> Mermaid
+  Sage --> ContentAgents
+
+  %% ═══════════════════════════════════════════════════════
+  %% STYLING
+  %% ═══════════════════════════════════════════════════════
+
   classDef entryNode fill:#f59e0b,stroke:#d97706,stroke-width:3px,color:#451a03,font-weight:bold
+  classDef siteNode fill:#6366f1,stroke:#4f46e5,stroke-width:2px,color:#eef2ff,font-weight:bold
   classDef cronNode fill:#7c3aed,stroke:#6d28d9,color:#f5f3ff,stroke-width:2px
   classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
 
-  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,JobScheduler cronNode
-  class Neon,Embeddings,EvalStore,LogStore,JobStore storeNode
+  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler cronNode
+  class NeonDB,Embeddings,EvalStore,LogStore storeNode
 
+  style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
+  style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
+  style OtherProps fill:#faf5ff,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+  style TDash fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#14532d
   style Core fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+  style AgentTeam fill:#fefce8,stroke:#eab308,stroke-width:2px,color:#713f12
   style Execution fill:#fce7f3,stroke:#ec4899,stroke-width:2px,color:#5f1e3a
   style ContentPipeline fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#1e5f3a
   style VisualBack fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#1e5f3a
@@ -259,7 +360,13 @@ const DEFAULT_DIAGRAM = `graph TB
   style PluginSys fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#3a1e5f
   style Monitor fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
   style Finance fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f
-  style Extern fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
+  style Infra fill:#f8fafc,stroke:#64748b,stroke-width:2px,color:#1e293b
+  style VPS fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+  style VercelInfra fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#312e81
+  style NeonInfra fill:#cffafe,stroke:#0891b2,stroke-width:2px,color:#164e63
+  style SelfHosted fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
+  style EmbedInfra fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
+  style ExtAPIs fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12
 `;
 
 // ── Mermaid Loader ──────────────────────────────────────────────────────────
