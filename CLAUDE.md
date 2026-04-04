@@ -25,7 +25,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 
 ## What Lives Here
 
-- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism)
+- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism) + Mermaid (Company Structure Agent)
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
 - **Content engine** — Ollama-powered text content generation with 4 personality agents, content queue, blog publishing API, multi-platform distribution
 - **SEO engine** — trend scanner (CoinGecko + HackerNews every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
@@ -39,6 +39,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **API layer** — backend at port 3100, proxied from UI dev server
 - **System Health dashboard** — eval results, alerting, log aggregation, ladder pipeline status
 - **TX Ecosystem page** — tokns.fi validator promotion, ecosystem cross-links
+- **Structure page** — Mermaid-powered architecture diagram of all backend services, routes, and crons with color-coded subgraphs, zoom/fullscreen controls, and revision history. Stored via documents table (no migration needed)
 
 ## What Does NOT Live Here
 
@@ -76,6 +77,7 @@ server/
         index.ts                    # Backend registry (auto-enable by env var)
       video-assembler.ts            # FFmpeg pipeline (text overlays, watermark, metadata)
       watermark.ts                  # Brand watermark utility + metadata helper
+      structure.ts                  # Company structure diagram service (Mermaid, versioned via documents table)
       platform-publishers/          # Automated social media publishing
         types.ts                    # PlatformPublisher interface
         youtube.ts                  # YouTube Shorts (Data API v3)
@@ -87,6 +89,7 @@ server/
     routes/
       visual-content.ts             # Visual content API (/api/visual/*)
       public-reels.ts               # Public reels API (/api/reels/* — no auth)
+      structure.ts                  # Structure diagram API (/api/companies/:id/structure)
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
@@ -114,6 +117,7 @@ agents/                 # Per-agent AGENTS.md instruction files
   cipher/             # Content Technical — deep technical content for Blog/LinkedIn
   spark/              # Content Community — community engagement for Discord/Bluesky
   prism/              # Content Reporter — trend reports for Blog/LinkedIn/Newsletter
+  mermaid/            # Company Structure Agent — architecture flowcharts, service topology
 .agents/
   skills/             # Company skills (company-creator, doc-maintenance, release, etc.)
     content-writer/   # Content generation and publishing skill
@@ -232,6 +236,9 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/services/platform-publishers/` | Auto-publishing to YouTube/TikTok/Instagram/Twitter |
 | `server/src/routes/public-reels.ts` | Public reels API (no auth) for coherencedaddy.com |
 | `scripts/canva-generator.py` | Canva Connect API Python bridge |
+| `server/src/services/structure.ts` | Company structure diagram service (Mermaid, versioned) |
+| `server/src/routes/structure.ts` | Structure diagram API (`/api/companies/:id/structure`) |
+| `ui/src/pages/Structure.tsx` | Architecture diagram page with zoom, fullscreen, revisions |
 
 ### Updating
 
