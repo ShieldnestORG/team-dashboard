@@ -180,6 +180,18 @@ git push origin master
 2. Never leave documentation referencing stale file lists or architecture
 3. Verify documentation accuracy as part of the final review step
 
+## Structure Diagram Updates
+
+**After adding, removing, or restructuring backend services, routes, or cron jobs**, update the company structure diagram:
+
+1. Read the current diagram: `GET /api/companies/:companyId/structure`
+2. Update the Mermaid source to reflect changes (add/remove nodes, update subgraphs, fix arrows)
+3. Save: `PUT /api/companies/:companyId/structure` with `{ body: "<mermaid source>", changeSummary: "what changed" }`
+
+Use `TEAM_DASHBOARD_COMPANY_ID` (`8365d8c2-ea73-4c04-af78-a7db3ee7ecd4`) as the companyId. The diagram lives on the Structure page (`/structure`) in the UI. If no diagram exists in the DB yet, the page renders a built-in default — update via the API to persist changes.
+
+**What triggers an update**: new files in `server/src/services/`, `server/src/routes/`, new cron jobs, new visual backends, new plugin services, or any change to `server/src/app.ts` route mounting.
+
 ## Commands
 
 ```bash
