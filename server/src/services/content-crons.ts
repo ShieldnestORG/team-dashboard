@@ -1,5 +1,6 @@
 import type { Db } from "@paperclipai/db";
 import { contentService } from "./content.js";
+import { seoEngineService } from "./seo-engine.js";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
@@ -69,6 +70,19 @@ async function pickTopic(db: Db): Promise<string> {
 
 export function startContentCrons(db: Db) {
   const svc = contentService(db);
+  const seoEngine = seoEngineService();
+
+  // SEO engine job — daily at 7am, generates blog post from trend signals
+  const seoJob = {
+    name: "content:seo-engine",
+    schedule: "3 7 * * *",
+    nextRun: null as Date | null,
+    running: false,
+  };
+  {
+    const parsed = parseCron(seoJob.schedule);
+    if (parsed) seoJob.nextRun = nextCronTick(parsed, new Date());
+  }
 
   const jobs: ContentCronJob[] = JOB_DEFS.map((def) => ({
     ...def,
@@ -94,6 +108,22 @@ export function startContentCrons(db: Db) {
 
   const interval = setInterval(async () => {
     const now = new Date();
+
+    // SEO engine check
+    if (!seoJob.running && seoJob.nextRun && now >= seoJob.nextRun) {
+      seoJob.running = true;
+      logger.info({ job: seoJob.name }, "SEO engine cron starting");
+      try {
+        const result = await seoEngine.run();
+        logger.info({ job: seoJob.name, result }, "SEO engine cron completed");
+      } catch (err) {
+        logger.error({ err, job: seoJob.name }, "SEO engine cron failed");
+      } finally {
+        seoJob.running = false;
+        const parsed = parseCron(seoJob.schedule);
+        if (parsed) seoJob.nextRun = nextCronTick(parsed, new Date());
+      }
+    }
 
     for (const job of jobs) {
       if (job.running) continue;

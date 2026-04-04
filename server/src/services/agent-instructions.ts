@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { Db } from "@paperclipai/db";
+import { normalizeAgentUrlKey } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 import { resolveHomeAwarePath, resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { agentService } from "./agents.js";
 
 const ENTRY_FILE_DEFAULT = "AGENTS.md";
 const MODE_KEY = "instructionsBundleMode";
@@ -732,4 +735,46 @@ export function agentInstructionsService() {
     ensureManagedBundle: ensureWritableBundle,
     materializeManagedBundle,
   };
+}
+
+export async function seedManagedInstructionsFromRepo(
+  db: Db,
+  companyId: string,
+): Promise<{ seeded: string[]; skipped: string[] }> {
+  const agentsSvc = agentService(db);
+  const instructionsSvc = agentInstructionsService();
+  const agentList = await agentsSvc.list(companyId);
+  const seeded: string[] = [];
+  const skipped: string[] = [];
+
+  for (const agent of agentList) {
+    const managedRoot = resolveManagedInstructionsRoot(agent);
+    const stat = await fs.stat(managedRoot).catch(() => null);
+    if (stat?.isDirectory()) {
+      const entries = await fs.readdir(managedRoot).catch(() => []);
+      if (entries.length > 0) {
+        skipped.push(agent.name);
+        continue;
+      }
+    }
+
+    const urlKey = normalizeAgentUrlKey(agent.name);
+    if (!urlKey) {
+      skipped.push(agent.name);
+      continue;
+    }
+
+    const repoAgentFile = path.resolve(process.cwd(), "agents", urlKey, "AGENTS.md");
+    const content = await fs.readFile(repoAgentFile, "utf8").catch(() => null);
+    if (!content) {
+      skipped.push(agent.name);
+      continue;
+    }
+
+    const result = await instructionsSvc.materializeManagedBundle(agent, { "AGENTS.md": content });
+    await agentsSvc.update(agent.id, { adapterConfig: result.adapterConfig as any });
+    seeded.push(agent.name);
+  }
+
+  return { seeded, skipped };
 }

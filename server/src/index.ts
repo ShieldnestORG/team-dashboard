@@ -28,7 +28,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
-import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService } from "./services/index.js";
+import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService, seedManagedInstructionsFromRepo } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -565,7 +565,23 @@ export async function startServer(): Promise<StartedServer> {
     .catch((err) => {
       logger.error({ err }, "startup reconciliation of persisted runtime services failed");
     });
-  
+
+  const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID;
+  if (companyId) {
+    void seedManagedInstructionsFromRepo(db as any, companyId)
+      .then((result) => {
+        if (result.seeded.length > 0) {
+          logger.info(
+            { seeded: result.seeded, skipped: result.skipped.length },
+            "seeded agent instructions from repo",
+          );
+        }
+      })
+      .catch((err) => {
+        logger.error({ err }, "startup agent instructions seeding failed");
+      });
+  }
+
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
     const routines = routineService(db as any);

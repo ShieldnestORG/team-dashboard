@@ -638,12 +638,15 @@ export function parseSkillImportSourceInput(rawInput: string): ParsedSkillImport
   };
 }
 
-function resolveBundledSkillsRoot() {
+function resolveBundledSkillsRoots() {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   return [
     path.resolve(moduleDir, "../../skills"),
     path.resolve(process.cwd(), "skills"),
     path.resolve(moduleDir, "../../../skills"),
+    path.resolve(moduleDir, "../../.agents/skills"),
+    path.resolve(process.cwd(), ".agents/skills"),
+    path.resolve(moduleDir, "../../../.agents/skills"),
   ];
 }
 
@@ -1447,7 +1450,8 @@ export function companySkillService(db: Db) {
   const secretsSvc = secretService(db);
 
   async function ensureBundledSkills(companyId: string) {
-    for (const skillsRoot of resolveBundledSkillsRoot()) {
+    const allBundledSkills: ImportedSkill[] = [];
+    for (const skillsRoot of resolveBundledSkillsRoots()) {
       const stats = await fs.stat(skillsRoot).catch(() => null);
       if (!stats?.isDirectory()) continue;
       const bundledSkills = await readLocalSkillImports(companyId, skillsRoot)
@@ -1466,10 +1470,10 @@ export function companySkillService(db: Db) {
           },
         })))
         .catch(() => [] as ImportedSkill[]);
-      if (bundledSkills.length === 0) continue;
-      return upsertImportedSkills(companyId, bundledSkills);
+      allBundledSkills.push(...bundledSkills);
     }
-    return [];
+    if (allBundledSkills.length === 0) return [];
+    return upsertImportedSkills(companyId, allBundledSkills);
   }
 
   async function pruneMissingLocalPathSkills(companyId: string) {
