@@ -62,7 +62,10 @@ These are set automatically by the server when invoking agents:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CONTENT_API_KEY` | (none) | Auth key for `/api/content/*` and `/api/visual/*` endpoints (via `X-Content-Key` header) |
+| `CONTENT_API_KEY` | (none) | Auth key for `/api/content/*`, `/api/visual/*`, and `/api/trends/*` POST endpoints (via `X-Content-Key` header) |
+| `CD_BLOG_API_URL` | `https://coherencedaddy.com/api/blog/posts` | Blog publish endpoint on coherencedaddy |
+| `CD_BLOG_API_KEY` | (none) | Bearer token for blog publish API |
+| `INDEXNOW_KEY` | (none) | IndexNow verification key for search engine ping after blog publish |
 
 ## Visual Content Backends
 
@@ -98,6 +101,23 @@ External properties (coherencedaddy.com, tokns.fi, etc.) call `POST /api/compani
 | `FIRECRAWL_EMBEDDING_API_KEY` | (none) | Coherence Daddy embedding API key |
 
 Firecrawl plugin config (apiUrl, directoryApiUrl, embeddingApiUrl, ollamaUrl) is set via the plugin config API, not environment variables. See the Firecrawl plugin docs at `packages/plugins/plugin-firecrawl/docker/SELF_HOSTING.md`.
+
+## Platform Publishing (Auto-Posting)
+
+All optional — publishers auto-enable when their credentials are set.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `YOUTUBE_CLIENT_ID` | (none) | YouTube Data API v3 OAuth client ID |
+| `YOUTUBE_CLIENT_SECRET` | (none) | YouTube Data API v3 OAuth client secret |
+| `YOUTUBE_REFRESH_TOKEN` | (none) | YouTube OAuth refresh token for Shorts upload |
+| `TIKTOK_ACCESS_TOKEN` | (none) | TikTok Content Posting API access token |
+| `TWITTER_API_KEY` | (none) | Twitter/X API key (consumer key) |
+| `TWITTER_API_SECRET` | (none) | Twitter/X API secret (consumer secret) |
+| `TWITTER_ACCESS_TOKEN` | (none) | Twitter/X user access token |
+| `TWITTER_ACCESS_SECRET` | (none) | Twitter/X user access secret |
+| `INSTAGRAM_ACCESS_TOKEN` | (none) | Instagram Graph API long-lived access token |
+| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | (none) | Instagram business account ID |
 
 ## Alerting (SMTP)
 

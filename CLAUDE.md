@@ -10,7 +10,7 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 
 - **Team Dashboard** (this repo) — internal admin, agent management, data pipelines
 - **Coherence Daddy** (coherencedaddy.com) — public brand landing page
-- **Free Tools** (coherencedaddy.com/tools) — 523+ public tools (lives in coherencedaddy repo)
+- **Free Tools** (freetools.coherencedaddy.com) — 523+ public tools, subdomain routed (lives in coherencedaddy repo)
 - **Blockchain Directory** (coherencedaddy.com/directory) — public directory of 114+ blockchain projects powered by Intel API (lives in coherencedaddy repo)
 - **tokns.fi / app.tokns.fi** — crypto platform and dashboard (NFTs, swaps, staking, wallet tracking)
 - **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator; goal: #1 validator via tokns.fi
@@ -28,7 +28,10 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism)
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
 - **Content engine** — Ollama-powered text content generation with 4 personality agents, content queue, blog publishing API, multi-platform distribution
-- **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2) and Grok/xAI, async job system, visual content queue with review workflow, Content Studio UI with Text/Visual mode toggle
+- **SEO engine** — trend scanner (CoinGecko + HackerNews every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
+- **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, visual content queue with review workflow, Content Studio UI with Text/Visual mode toggle
+- **Public Reels API** — unauthenticated `/api/reels` endpoint serving approved visual content for coherencedaddy.com. Stream, download (with Content-Disposition), and thumbnail endpoints
+- **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
 - **Directory expansion** — AI/ML (152 entries), DeFi (114), DevTools (155) niche directories beyond the original 114 blockchain companies
 - **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, cron-scheduled ingestion
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
@@ -68,11 +71,22 @@ server/
       visual-backends/              # Pluggable visual generation backends
         types.ts                    # VisualBackend interface
         gemini.ts                   # Gemini Imagen 3 (image) + Veo 2 (video)
-        grok.ts                     # Grok/xAI image generation
+        grok.ts                     # Grok/xAI image + video (grok-imagine-video)
+        canva.ts                    # Canva Python bridge (template-based designs)
         index.ts                    # Backend registry (auto-enable by env var)
+      video-assembler.ts            # FFmpeg pipeline (text overlays, watermark, metadata)
+      watermark.ts                  # Brand watermark utility + metadata helper
+      platform-publishers/          # Automated social media publishing
+        types.ts                    # PlatformPublisher interface
+        youtube.ts                  # YouTube Shorts (Data API v3)
+        tiktok.ts                   # TikTok (Content Posting API)
+        twitter-video.ts            # Twitter/X video (stub — needs OAuth 1.0a)
+        instagram.ts                # Instagram Reels (stub — needs public URL)
+        index.ts                    # Publisher registry
     content-templates/  # Personality prompt templates (blaze, cipher, spark, prism)
     routes/
       visual-content.ts             # Visual content API (/api/visual/*)
+      public-reels.ts               # Public reels API (/api/reels/* — no auth)
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
@@ -198,7 +212,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (5 jobs), eval (1 job), alert (2 jobs), content (9 jobs: 6 text + 3 video script)
+- **Cron Schedulers**: intel (5 jobs), eval (1 job), alert (2 jobs), content (10 jobs: 6 text + 3 video script + 1 SEO engine), trends (1 job: scan every 6hr)
 
 ### Key Files
 
@@ -210,7 +224,14 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/routes/content.ts` | Text content generation + queue API |
 | `server/src/routes/visual-content.ts` | Visual content generation + queue + asset serving API |
 | `server/src/content-templates/*.ts` | Personality prompt templates (text + video_script) |
-| `server/src/services/visual-backends/` | Pluggable visual generation backends (Gemini, Grok) |
+| `server/src/services/trend-scanner.ts` | CoinGecko + HackerNews trend scanner |
+| `server/src/services/seo-engine.ts` | Claude-powered blog generation + publish + IndexNow |
+| `server/src/routes/trends.ts` | Trend signals + SEO engine API (`/api/trends/*`) |
+| `server/src/services/visual-backends/` | Pluggable visual generation backends (Gemini, Grok, Canva) |
+| `server/src/services/video-assembler.ts` | FFmpeg video pipeline (overlays, watermark, metadata) |
+| `server/src/services/platform-publishers/` | Auto-publishing to YouTube/TikTok/Instagram/Twitter |
+| `server/src/routes/public-reels.ts` | Public reels API (no auth) for coherencedaddy.com |
+| `scripts/canva-generator.py` | Canva Connect API Python bridge |
 
 ### Updating
 
@@ -245,9 +266,21 @@ git push origin master
 | `OLLAMA_URL` | Yes | VPS | Ollama LLM for content generation (`http://168.231.127.180:11434`) |
 | `OLLAMA_MODEL` | Optional | VPS | Ollama model (default: qwen2.5:1.5b) |
 | **Visual Content** | | | |
-| `CONTENT_API_KEY` | Yes | VPS | Auth for content + visual content endpoints |
+| `CONTENT_API_KEY` | Yes | VPS | Auth for content, visual content, and trend endpoints |
+| `CD_BLOG_API_URL` | Optional | VPS | Blog publish endpoint (default: `https://coherencedaddy.com/api/blog/posts`) |
+| `CD_BLOG_API_KEY` | Yes | VPS | Bearer token for coherencedaddy blog API |
+| `INDEXNOW_KEY` | Optional | VPS | IndexNow verification key for search engine ping |
 | `GEMINI_API_KEY` | Optional | VPS | Enables Gemini visual backend (Imagen 3 + Veo 2) |
 | `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI backend (grok-2-image + grok-imagine-video) |
+| `CANVA_API_KEY` | Optional | VPS | Enables Canva template backend (Python bridge) |
+| **Platform Publishing** | | | |
+| `YOUTUBE_CLIENT_ID/SECRET` | Optional | VPS | YouTube Shorts auto-publishing |
+| `YOUTUBE_REFRESH_TOKEN` | Optional | VPS | YouTube OAuth refresh token |
+| `TIKTOK_ACCESS_TOKEN` | Optional | VPS | TikTok Content Posting API |
+| `TWITTER_API_KEY/SECRET` | Optional | VPS | Twitter/X video posting |
+| `TWITTER_ACCESS_TOKEN/SECRET` | Optional | VPS | Twitter/X OAuth tokens |
+| `INSTAGRAM_ACCESS_TOKEN` | Optional | VPS | Instagram Graph API |
+| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Optional | VPS | Instagram business account |
 | **Intel Engine** | | | |
 | `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
 | `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |

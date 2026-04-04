@@ -98,7 +98,13 @@ keywords: "bitcoin,crypto,trends"
 RUN apt-get update && apt-get install -y ffmpeg
 ```
 
-### Phase 3 — Public Reels API + coherencedaddy.com Page
+### Phase 2 — FFmpeg Video Assembly + Watermark (COMPLETED 2026-04-04)
+
+**Status**: Built and deployed. `video-assembler.ts` + `watermark.ts` created.
+
+### Phase 3 — Public Reels API + coherencedaddy.com Page (COMPLETED 2026-04-04 — API side)
+
+**Status**: Backend API deployed. coherencedaddy.com `/reels` page still needed (separate repo).
 
 **Goal**: Approved reels are served publicly so users can browse and download them.
 
@@ -134,23 +140,24 @@ RUN apt-get update && apt-get install -y ffmpeg
 }
 ```
 
-### Phase 4 — Canva Template Integration
+### Phase 4 — Canva Template Integration (COMPLETED 2026-04-04)
 
-**Goal**: Agent can use Canva templates for higher-polish designs.
+**Status**: Backend + Python bridge stub deployed. Canva Connect API implementation needed when CANVA_API_KEY is set.
 
-- `scripts/canva-generator.py` — Python script on VPS using Canva Connect API
+- `scripts/canva-generator.py` — Python bridge (stub, needs Canva Connect API fill-in)
 - `server/src/services/visual-backends/canva.ts` — Node bridge via child_process.spawn
-- Templates for: data cards, stat overlays, quote graphics, comparison charts
+- Auto-enables when `CANVA_API_KEY` env var is set
 
-### Phase 5 — Automated Platform Publishing
+### Phase 5 — Automated Platform Publishing (COMPLETED 2026-04-04)
 
-**Goal**: Approved reels auto-publish to YouTube Shorts, TikTok, Instagram, Twitter.
+**Status**: Publisher framework deployed. YouTube + TikTok fully implemented. Twitter + Instagram are stubs needing OAuth setup.
 
-- YouTube Data API v3 (Shorts upload)
-- TikTok Content Posting API
-- Instagram Graph API (Reels)
-- Twitter/X API v2 (video tweets)
-- OAuth flows stored in company secrets
+- `server/src/services/platform-publishers/` — publisher registry
+- YouTube Data API v3 (Shorts upload) — IMPLEMENTED
+- TikTok Content Posting API — IMPLEMENTED
+- Twitter/X API v2 — STUB (needs oauth-1.0a package)
+- Instagram Graph API — STUB (needs public URL for video hosting)
+- All publishers env-var gated and auto-enabled when credentials are set
 
 ## Trend Scoring System
 

@@ -37,6 +37,8 @@ import { startIntelCrons } from "./services/intel-crons.js";
 import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
+import { startTrendCrons } from "./services/trend-crons.js";
+import { trendRoutes } from "./routes/trends.js";
 import { logAvailableBackends } from "./services/visual-backends/index.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
@@ -55,6 +57,8 @@ import { setPluginEventBus } from "./services/activity-log.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
+import { publicReelsRoutes } from "./routes/public-reels.js";
+import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -187,6 +191,7 @@ export async function createApp(
   api.use(siteMetricsRoutes(db));
   api.use("/intel", intelRoutes(db));
   api.use("/content", contentRoutes(db));
+  api.use(trendRoutes());
   const visualRoutes = visualContentRoutes(db, opts.storageService, "default");
   api.use("/visual", visualRoutes.router);
   api.use("/system-health", systemHealthRoutes(db));
@@ -244,6 +249,9 @@ export async function createApp(
       allowedHostnames: opts.allowedHostnames,
     }),
   );
+  // Public reels API — unauthenticated, serves approved/published visual content
+  app.use("/api/reels", publicReelsRoutes(db, opts.storageService, "default"));
+
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
@@ -310,7 +318,9 @@ export async function createApp(
   const stopEvalCrons = startEvalCrons();
   const stopAlertCrons = startAlertCrons();
   const stopContentCrons = startContentCrons(db);
+  const stopTrendCrons = startTrendCrons();
   logAvailableBackends();
+  logConfiguredPublishers();
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
@@ -336,6 +346,7 @@ export async function createApp(
     stopEvalCrons();
     stopAlertCrons();
     stopContentCrons();
+    stopTrendCrons();
     visualRoutes.stopPolling();
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();

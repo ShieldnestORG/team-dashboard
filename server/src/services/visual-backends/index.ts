@@ -1,6 +1,7 @@
 import type { VisualBackend, VisualCapability } from "./types.js";
 import { geminiBackend } from "./gemini.js";
 import { grokBackend } from "./grok.js";
+import { canvaBackend } from "./canva.js";
 import { logger } from "../../middleware/logger.js";
 
 interface BackendEntry {
@@ -11,6 +12,7 @@ interface BackendEntry {
 const ALL_BACKENDS: BackendEntry[] = [
   { backend: geminiBackend, envKey: "GEMINI_API_KEY" },
   { backend: grokBackend, envKey: "GROK_API_KEY" },
+  { backend: canvaBackend, envKey: "CANVA_API_KEY" },
 ];
 
 function isEnabled(entry: BackendEntry): boolean {
@@ -54,7 +56,7 @@ export function getBackendSummary(): Array<{
 export function logAvailableBackends(): void {
   const available = getAvailableBackends();
   if (available.length === 0) {
-    logger.warn("No visual generation backends configured (set GEMINI_API_KEY or GROK_API_KEY)");
+    logger.warn("No visual generation backends configured (set GEMINI_API_KEY, GROK_API_KEY, or CANVA_API_KEY)");
   } else {
     logger.info(
       { backends: available.map((b) => b.name) },
