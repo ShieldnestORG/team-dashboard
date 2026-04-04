@@ -192,7 +192,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Directory API**: `168.231.127.180:4000` — data sync from Firecrawl
 - **Ollama**: `168.231.127.180:11434` — local LLM for content generation and summarization (qwen2.5:1.5b)
 - **Content API Key**: `CONTENT_API_KEY` env var for content generation auth (text + visual)
-- **Visual Backends**: `GEMINI_API_KEY` (Imagen 3 + Veo 2), `GROK_API_KEY` (xAI images) — optional, auto-enabled when set
+- **Visual Backends**: `GEMINI_API_KEY` (Imagen 3 + Veo 2), `GROK_API_KEY` (xAI images via grok-2-image + video via grok-imagine-video) — optional, auto-enabled when set
 - **Company ID**: `TEAM_DASHBOARD_COMPANY_ID=8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy)
 - **GitHub**: ShieldnestORG/team-dashboard (make private after deploy; use PAT for VPS access)
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
@@ -235,7 +235,7 @@ git push origin master
 | `CONTENT_API_KEY` | Yes | VPS | Auth for content generation endpoints |
 | `TEAM_DASHBOARD_COMPANY_ID` | Yes | VPS + Local | `8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy) |
 | `GEMINI_API_KEY` | Optional | VPS | Enables Gemini visual backend (Imagen 3 + Veo 2) |
-| `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI image generation backend |
+| `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI backend (grok-2-image + grok-imagine-video) |
 | `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
 | `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
