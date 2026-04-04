@@ -33,6 +33,7 @@ import { intelRoutes } from "./routes/intel.js";
 import { contentRoutes } from "./routes/content.js";
 import { visualContentRoutes } from "./routes/visual-content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
+import { structureRoutes } from "./routes/structure.js";
 import { startIntelCrons } from "./services/intel-crons.js";
 import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
@@ -195,6 +196,7 @@ export async function createApp(
   const visualRoutes = visualContentRoutes(db, opts.storageService, "default");
   api.use("/visual", visualRoutes.router);
   api.use("/system-health", systemHealthRoutes(db));
+  api.use(structureRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,

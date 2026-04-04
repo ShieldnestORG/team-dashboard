@@ -39,6 +39,7 @@ import { TwitterDashboard } from "./pages/TwitterDashboard";
 import { TxEcosystem } from "./pages/TxEcosystem";
 import { SystemHealth } from "./pages/SystemHealth";
 import { ContentReview } from "./pages/ContentReview";
+import { Structure } from "./pages/Structure";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -172,6 +173,7 @@ function boardRoutes() {
       <Route path="tx-ecosystem" element={<TxEcosystem />} />
       <Route path="system-health" element={<SystemHealth />} />
       <Route path="content-review" element={<ContentReview />} />
+      <Route path="structure" element={<Structure />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       <Route path="inbox/mine" element={<Inbox />} />
       <Route path="inbox/recent" element={<Inbox />} />

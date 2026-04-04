@@ -17,3 +17,4 @@ export { accessRoutes } from "./access.js";
 export { instanceSettingsRoutes } from "./instance-settings.js";
 export { siteMetricsRoutes } from "./site-metrics.js";
 export { systemHealthRoutes } from "./system-health.js";
+export { structureRoutes } from "./structure.js";

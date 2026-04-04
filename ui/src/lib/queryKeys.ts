@@ -129,6 +129,10 @@ export const queryKeys = {
   skills: {
     available: ["skills", "available"] as const,
   },
+  structure: {
+    diagram: (companyId: string) => ["structure", companyId] as const,
+    revisions: (companyId: string) => ["structure", "revisions", companyId] as const,
+  },
   plugins: {
     all: ["plugins"] as const,
     examples: ["plugins", "examples"] as const,
