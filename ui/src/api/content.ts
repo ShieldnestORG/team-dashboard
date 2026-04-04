@@ -17,6 +17,25 @@ export interface ContentQueueStats {
   byStatus: Record<string, number>;
   byPlatform: Record<string, number>;
   byPersonality: Record<string, number>;
+  byReviewStatus: Record<string, number>;
+}
+
+export interface ContentPreviewResult {
+  content: string;
+  metadata: {
+    topic: string;
+    contextQuery?: string;
+    model: string;
+    charCount: number;
+    charLimit: number;
+    withinLimit: boolean;
+  };
+}
+
+export interface ContentGenerateResult {
+  contentId: string;
+  content: string;
+  metadata: ContentPreviewResult["metadata"];
 }
 
 export interface ContentQueueListResponse {
@@ -49,4 +68,8 @@ export const contentApi = {
       ...(reviewComment ? { reviewComment } : {}),
     }),
   stats: () => api.get<ContentQueueStats>("/content/queue/stats"),
+  preview: (params: { personalityId: string; contentType: string; topic: string; contextQuery?: string }) =>
+    api.post<ContentPreviewResult>("/content/preview", params),
+  generate: (params: { personalityId: string; contentType: string; topic: string; contextQuery?: string }) =>
+    api.post<ContentGenerateResult>("/content/generate", params),
 };

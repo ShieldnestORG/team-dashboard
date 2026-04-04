@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { contentApi } from "../api/content";
-import type { ContentQueueItem } from "../api/content";
+import type { ContentQueueItem, ContentPreviewResult } from "../api/content";
+import { PlatformPreview } from "../components/content-previews";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
 import {
   Newspaper,
   ThumbsUp,
@@ -19,8 +24,18 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
-  AlertTriangle,
   Loader2,
+  AlertTriangle,
+  Sparkles,
+  Save,
+  RefreshCw,
+  Trash2,
+  Twitter,
+  BookOpen,
+  Linkedin,
+  MessageCircle as DiscordIcon,
+  Cloud,
+  Hash,
 } from "lucide-react";
 
 // ── Query Keys ──────────────────────────────────────────────────────────────
@@ -33,25 +48,31 @@ const contentKeys = {
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const PLATFORMS = [
-  "all",
-  "twitter",
-  "blog",
-  "linkedin",
-  "reddit",
-  "discord",
-  "bluesky",
+const PLATFORM_TABS = [
+  { value: "all", label: "All", icon: Newspaper },
+  { value: "twitter", label: "Twitter", icon: Twitter },
+  { value: "blog", label: "Blog", icon: BookOpen },
+  { value: "linkedin", label: "LinkedIn", icon: Linkedin },
+  { value: "discord", label: "Discord", icon: DiscordIcon },
+  { value: "bluesky", label: "Bluesky", icon: Cloud },
+  { value: "reddit", label: "Reddit", icon: Hash },
 ] as const;
 
-const STATUSES = [
-  "all",
-  "published",
-  "pending",
-  "failed",
-  "rejected",
+const PERSONALITY_OPTIONS = [
+  { value: "blaze", label: "Blaze" },
+  { value: "cipher", label: "Cipher" },
+  { value: "spark", label: "Spark" },
+  { value: "prism", label: "Prism" },
 ] as const;
 
-const PERSONALITIES = ["all", "blaze", "cipher", "spark", "prism"] as const;
+const CONTENT_TYPE_OPTIONS = [
+  { value: "tweet", label: "Tweet", platform: "twitter" },
+  { value: "blog_post", label: "Blog Post", platform: "blog" },
+  { value: "linkedin", label: "LinkedIn", platform: "linkedin" },
+  { value: "discord", label: "Discord", platform: "discord" },
+  { value: "bluesky", label: "Bluesky", platform: "bluesky" },
+  { value: "reddit", label: "Reddit", platform: "reddit" },
+] as const;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -81,7 +102,6 @@ function statusColor(status: string): string {
     case "pending":
       return "bg-amber-500/15 text-amber-400 border-amber-500/30";
     case "failed":
-      return "bg-red-500/15 text-red-400 border-red-500/30";
     case "rejected":
       return "bg-red-500/15 text-red-400 border-red-500/30";
     default:
@@ -132,36 +152,188 @@ function formatRelativeTime(dateStr: string): string {
   });
 }
 
-// ── Filter Select ───────────────────────────────────────────────────────────
+function resolvePlatform(contentType: string): string {
+  return CONTENT_TYPE_OPTIONS.find((o) => o.value === contentType)?.platform ?? contentType;
+}
 
-function FilterSelect({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: readonly string[];
-  onChange: (v: string) => void;
-}) {
+// ── Generate Preview Panel ─────────────────────────────────────────────────
+
+function GeneratePreviewPanel() {
+  const queryClient = useQueryClient();
+  const [topic, setTopic] = useState("");
+  const [personalityId, setPersonalityId] = useState("blaze");
+  const [contentType, setContentType] = useState("tweet");
+  const [previewResult, setPreviewResult] = useState<ContentPreviewResult | null>(null);
+
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      contentApi.preview({ personalityId, contentType, topic }),
+    onSuccess: (data) => setPreviewResult(data),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      contentApi.generate({ personalityId, contentType, topic }),
+    onSuccess: () => {
+      setPreviewResult(null);
+      setTopic("");
+      queryClient.invalidateQueries({ queryKey: ["content"] });
+    },
+  });
+
+  const platform = resolvePlatform(contentType);
+  const canGenerate = topic.trim().length > 0 && !previewMutation.isPending;
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-      >
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt === "all" ? "All" : opt.charAt(0).toUpperCase() + opt.slice(1)}
-          </option>
-        ))}
-      </select>
-    </div>
+    <Card className="rounded-xl">
+      <CardContent className="space-y-4 pt-0">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-amber-400" />
+          <h3 className="text-sm font-semibold">Generate Preview</h3>
+        </div>
+
+        {/* Input row */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="sm:col-span-2 lg:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Topic
+            </label>
+            <input
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="Enter a topic for content generation..."
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && canGenerate) previewMutation.mutate();
+              }}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Personality
+            </label>
+            <select
+              value={personalityId}
+              onChange={(e) => setPersonalityId(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              {PERSONALITY_OPTIONS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Platform
+            </label>
+            <select
+              value={contentType}
+              onChange={(e) => setContentType(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              {CONTENT_TYPE_OPTIONS.map((ct) => (
+                <option key={ct.value} value={ct.value}>
+                  {ct.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Generate button */}
+        <div>
+          <button
+            onClick={() => previewMutation.mutate()}
+            disabled={!canGenerate}
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {previewMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {previewMutation.isPending ? "Generating..." : "Generate Preview"}
+          </button>
+        </div>
+
+        {/* Error */}
+        {previewMutation.isError && (
+          <div className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2">
+            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+            <p className="text-xs text-red-300">
+              {previewMutation.error instanceof Error
+                ? previewMutation.error.message
+                : "Generation failed"}
+            </p>
+          </div>
+        )}
+
+        {/* Preview result */}
+        {previewResult && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Preview Result
+              </span>
+              {previewResult.metadata.withinLimit ? (
+                <Badge className="text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                  Within limit
+                </Badge>
+              ) : (
+                <Badge className="text-[10px] bg-red-500/15 text-red-400 border-red-500/30">
+                  Over limit ({previewResult.metadata.charCount}/{previewResult.metadata.charLimit})
+                </Badge>
+              )}
+            </div>
+
+            {/* Platform-specific preview */}
+            <div className="max-w-xl">
+              <PlatformPreview
+                platform={platform}
+                content={previewResult.content}
+                personality={personalityId}
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-40"
+              >
+                {saveMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                Save to Queue
+              </button>
+              <button
+                onClick={() => previewMutation.mutate()}
+                disabled={previewMutation.isPending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted border border-border"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Regenerate
+              </button>
+              <button
+                onClick={() => setPreviewResult(null)}
+                className="inline-flex items-center gap-1.5 rounded-md bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted border border-border"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Discard
+              </button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -178,11 +350,7 @@ function ContentCard({
 }) {
   const [showComment, setShowComment] = useState(false);
   const [comment, setComment] = useState("");
-
-  const preview =
-    item.content.length > 200
-      ? item.content.slice(0, 200) + "..."
-      : item.content;
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <Card className="rounded-xl">
@@ -211,10 +379,27 @@ function ContentCard({
           </span>
         </div>
 
-        {/* Content preview */}
-        <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">
-          {preview}
-        </p>
+        {/* Platform-specific preview */}
+        <div
+          className={`max-w-xl ${!expanded ? "max-h-64 overflow-hidden relative" : ""}`}
+        >
+          <PlatformPreview
+            platform={item.platform}
+            content={item.content}
+            personality={item.personality}
+          />
+          {!expanded && item.content.length > 200 && (
+            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" />
+          )}
+        </div>
+        {item.content.length > 200 && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {expanded ? "Show less" : "Expand preview"}
+          </button>
+        )}
 
         {/* Review comment if present */}
         {item.reviewComment && (
@@ -300,17 +485,13 @@ export function ContentReview() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Content Review" }]);
+    setBreadcrumbs([{ label: "Content Studio" }]);
   }, [setBreadcrumbs]);
 
-  const [platformFilter, setPlatformFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [personalityFilter, setPersonalityFilter] = useState("all");
+  const [platformTab, setPlatformTab] = useState("all");
 
   const queryParams = {
-    ...(platformFilter !== "all" ? { platform: platformFilter } : {}),
-    ...(statusFilter !== "all" ? { status: statusFilter } : {}),
-    ...(personalityFilter !== "all" ? { personality: personalityFilter } : {}),
+    ...(platformTab !== "all" ? { platform: platformTab } : {}),
     limit: 50,
   };
 
@@ -356,9 +537,8 @@ export function ContentReview() {
   // Derive stat counts
   const totalItems = stats?.total ?? 0;
   const publishedCount = stats?.byStatus?.published ?? 0;
-  const pendingCount = stats?.byStatus?.pending ?? 0;
-  const flaggedCount =
-    (stats?.byStatus as Record<string, number> | undefined)?.flagged ?? 0;
+  const pendingCount = stats?.byReviewStatus?.pending ?? stats?.byStatus?.pending ?? 0;
+  const flaggedCount = stats?.byReviewStatus?.flagged ?? 0;
 
   // ── Loading state ───────────────────────────────────────────────────────
 
@@ -415,9 +595,9 @@ export function ContentReview() {
           <Newspaper className="h-5 w-5 text-blue-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Content Review</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Content Studio</h1>
           <p className="text-sm text-muted-foreground">
-            Review, approve, or flag AI-generated content before publishing.
+            Generate, preview, and review content before publishing.
           </p>
         </div>
       </div>
@@ -429,7 +609,7 @@ export function ContentReview() {
             <div className="flex items-center gap-2 mb-1">
               <FileText className="h-3.5 w-3.5 text-muted-foreground" />
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Total Items
+                Total
               </p>
             </div>
             <p className="text-2xl font-bold tabular-nums">{totalItems}</p>
@@ -455,7 +635,7 @@ export function ContentReview() {
             <div className="flex items-center gap-2 mb-1">
               <Clock className="h-3.5 w-3.5 text-amber-400" />
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Pending Review
+                Pending
               </p>
             </div>
             <p className="text-2xl font-bold tabular-nums text-amber-400">
@@ -479,64 +659,61 @@ export function ContentReview() {
         </Card>
       </div>
 
-      {/* ── Filters ────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <FilterSelect
-          label="Platform"
-          value={platformFilter}
-          options={PLATFORMS}
-          onChange={setPlatformFilter}
-        />
-        <FilterSelect
-          label="Status"
-          value={statusFilter}
-          options={STATUSES}
-          onChange={setStatusFilter}
-        />
-        <FilterSelect
-          label="Personality"
-          value={personalityFilter}
-          options={PERSONALITIES}
-          onChange={setPersonalityFilter}
-        />
-        {(platformFilter !== "all" ||
-          statusFilter !== "all" ||
-          personalityFilter !== "all") && (
-          <button
-            onClick={() => {
-              setPlatformFilter("all");
-              setStatusFilter("all");
-              setPersonalityFilter("all");
-            }}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
+      {/* ── Generate Preview Panel ─────────────────────────────────────── */}
+      <GeneratePreviewPanel />
 
-      {/* ── Content Grid ───────────────────────────────────────────────── */}
-      {items.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
-          {items.map((item: ContentQueueItem) => (
-            <ContentCard
-              key={item.id}
-              item={item}
-              onReview={handleReview}
-              isReviewing={reviewingId === item.id}
-            />
-          ))}
-        </div>
-      ) : (
-        <Card className="rounded-xl border-dashed">
-          <CardContent className="flex items-center gap-3 pt-0">
-            <Newspaper className="h-5 w-5 text-muted-foreground shrink-0" />
-            <p className="text-sm text-muted-foreground">
-              No content items match the current filters.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* ── Platform Tabs + Content Queue ──────────────────────────────── */}
+      <Tabs value={platformTab} onValueChange={setPlatformTab}>
+        <TabsList variant="line" className="rounded-lg">
+          {PLATFORM_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const count =
+              tab.value === "all"
+                ? totalItems
+                : (stats?.byPlatform?.[tab.value] ?? 0);
+            return (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+                {count > 0 && (
+                  <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums leading-none">
+                    {count}
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+
+        {/* All tab contents share the same filtered queue */}
+        {PLATFORM_TABS.map((tab) => (
+          <TabsContent key={tab.value} value={tab.value}>
+            {items.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
+                {items.map((item: ContentQueueItem) => (
+                  <ContentCard
+                    key={item.id}
+                    item={item}
+                    onReview={handleReview}
+                    isReviewing={reviewingId === item.id}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Card className="rounded-xl border-dashed">
+                <CardContent className="flex items-center gap-3 pt-0">
+                  <Newspaper className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <p className="text-sm text-muted-foreground">
+                    No content items
+                    {tab.value !== "all" ? ` for ${tab.label}` : ""} in the
+                    queue.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 }

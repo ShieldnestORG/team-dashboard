@@ -36,6 +36,27 @@ export function contentRoutes(db: Db) {
   const router = Router();
   const svc = contentService(db);
 
+  // ---- POST /api/content/preview ----
+
+  router.post("/preview", requireContentKey, async (req, res) => {
+    const { personalityId, contentType, topic, contextQuery } = req.body;
+
+    if (!personalityId || !contentType || !topic) {
+      res.status(400).json({
+        error: "Missing required fields: personalityId, contentType, topic",
+      });
+      return;
+    }
+
+    try {
+      const result = await svc.preview({ personalityId, contentType, topic, contextQuery });
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Content preview error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ---- POST /api/content/generate ----
 
   router.post("/generate", requireContentKey, async (req, res) => {

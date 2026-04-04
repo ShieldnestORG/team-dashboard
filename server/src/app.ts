@@ -35,6 +35,7 @@ import { systemHealthRoutes } from "./routes/system-health.js";
 import { startIntelCrons } from "./services/intel-crons.js";
 import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
+import { startContentCrons } from "./services/content-crons.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -134,38 +135,7 @@ export async function createApp(
   }
   app.use(llmRoutes(db));
 
-  // Mount API routes
-  const api = Router();
-  api.use(boardMutationGuard());
-  api.use(
-    "/health",
-    healthRoutes(db, {
-      deploymentMode: opts.deploymentMode,
-      deploymentExposure: opts.deploymentExposure,
-      authReady: opts.authReady,
-      companyDeletionEnabled: opts.companyDeletionEnabled,
-    }),
-  );
-  api.use("/companies", companyRoutes(db, opts.storageService));
-  api.use(companySkillRoutes(db));
-  api.use(agentRoutes(db));
-  api.use(assetRoutes(db, opts.storageService));
-  api.use(projectRoutes(db));
-  api.use(issueRoutes(db, opts.storageService));
-  api.use(routineRoutes(db));
-  api.use(executionWorkspaceRoutes(db));
-  api.use(goalRoutes(db));
-  api.use(approvalRoutes(db));
-  api.use(secretRoutes(db));
-  api.use(costRoutes(db));
-  api.use(activityRoutes(db));
-  api.use(dashboardRoutes(db));
-  api.use(sidebarBadgeRoutes(db));
-  api.use(instanceSettingsRoutes(db));
-  api.use(siteMetricsRoutes(db));
-  api.use("/intel", intelRoutes(db));
-  api.use("/content", contentRoutes(db));
-  api.use("/system-health", systemHealthRoutes(db));
+  // Plugin infrastructure (must be created before routes that need toolDispatcher)
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);
@@ -183,6 +153,39 @@ export async function createApp(
     lifecycleManager: lifecycle,
     db,
   });
+
+  // Mount API routes
+  const api = Router();
+  api.use(boardMutationGuard());
+  api.use(
+    "/health",
+    healthRoutes(db, {
+      deploymentMode: opts.deploymentMode,
+      deploymentExposure: opts.deploymentExposure,
+      authReady: opts.authReady,
+      companyDeletionEnabled: opts.companyDeletionEnabled,
+    }),
+  );
+  api.use("/companies", companyRoutes(db, opts.storageService));
+  api.use(companySkillRoutes(db));
+  api.use(agentRoutes(db, { toolDispatcher }));
+  api.use(assetRoutes(db, opts.storageService));
+  api.use(projectRoutes(db));
+  api.use(issueRoutes(db, opts.storageService));
+  api.use(routineRoutes(db));
+  api.use(executionWorkspaceRoutes(db));
+  api.use(goalRoutes(db));
+  api.use(approvalRoutes(db));
+  api.use(secretRoutes(db));
+  api.use(costRoutes(db));
+  api.use(activityRoutes(db));
+  api.use(dashboardRoutes(db));
+  api.use(sidebarBadgeRoutes(db));
+  api.use(instanceSettingsRoutes(db));
+  api.use(siteMetricsRoutes(db));
+  api.use("/intel", intelRoutes(db));
+  api.use("/content", contentRoutes(db));
+  api.use("/system-health", systemHealthRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -302,6 +305,7 @@ export async function createApp(
   const stopIntelCrons = startIntelCrons(db);
   const stopEvalCrons = startEvalCrons();
   const stopAlertCrons = startAlertCrons();
+  const stopContentCrons = startContentCrons(db);
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
@@ -326,6 +330,7 @@ export async function createApp(
     stopIntelCrons();
     stopEvalCrons();
     stopAlertCrons();
+    stopContentCrons();
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();
   });

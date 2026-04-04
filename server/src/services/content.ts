@@ -315,5 +315,51 @@ export function contentService(db: Db) {
     };
   }
 
-  return { generate, listQueue, reviewItem, stats };
+  async function preview(opts: {
+    personalityId: string;
+    contentType: string;
+    topic: string;
+    contextQuery?: string;
+  }): Promise<{ content: string; metadata: ContentItem["metadata"] }> {
+    const personality = PERSONALITIES[opts.personalityId];
+    if (!personality) {
+      throw new Error(`Unknown personality: ${opts.personalityId}. Valid: ${Object.keys(PERSONALITIES).join(", ")}`);
+    }
+
+    const contentTypePrompt = personality.CONTENT_TYPE_PROMPTS[opts.contentType];
+    if (!contentTypePrompt) {
+      throw new Error(`Unknown content type: ${opts.contentType}. Valid: ${Object.keys(personality.CONTENT_TYPE_PROMPTS).join(", ")}`);
+    }
+
+    const charLimit = personality.PLATFORM_LIMITS[opts.contentType] || 5000;
+
+    const contextTopic = opts.contextQuery || opts.topic;
+    const context = await fetchContext(db, contextTopic);
+
+    const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context);
+    const fullPrompt = `${systemPrompt}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
+
+    const generatedText = await callOllama(fullPrompt);
+
+    const charCount = generatedText.length;
+    const withinLimit = charCount <= charLimit;
+
+    const metadata: ContentItem["metadata"] = {
+      topic: opts.topic,
+      contextQuery: opts.contextQuery,
+      model: OLLAMA_MODEL,
+      charCount,
+      charLimit,
+      withinLimit,
+    };
+
+    logger.info(
+      { personalityId: opts.personalityId, contentType: opts.contentType, charCount, withinLimit },
+      "Content preview generated (not saved to queue)",
+    );
+
+    return { content: generatedText, metadata };
+  }
+
+  return { generate, preview, listQueue, reviewItem, stats };
 }

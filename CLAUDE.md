@@ -10,7 +10,7 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 
 - **Team Dashboard** (this repo) — internal admin, agent management, data pipelines
 - **Coherence Daddy** (coherencedaddy.com) — public brand landing page
-- **Free Tools** (coherencedaddy.com/tools) — 41+ public tools (lives in coherencedaddy repo)
+- **Free Tools** (coherencedaddy.com/tools) — 523+ public tools (lives in coherencedaddy repo)
 - **Blockchain Directory** (coherencedaddy.com/directory) — public directory of 114+ blockchain projects powered by Intel API (lives in coherencedaddy repo)
 - **tokns.fi / app.tokns.fi** — crypto platform and dashboard (NFTs, swaps, staking, wallet tracking)
 - **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator; goal: #1 validator via tokns.fi
@@ -19,8 +19,10 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 
 ## What Lives Here
 
-- **Agent management** — 9 AI agents (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend)
+- **Agent management** — 13 AI agents (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend, Blaze/Content-Analyst, Cipher/Content-Technical, Spark/Content-Community, Prism/Content-Reporter)
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
+- **Content engine** — Ollama-powered content generation with 4 personality agents (Blaze/Cipher/Spark/Prism), content queue, blog publishing API, multi-platform distribution
+- **Directory expansion** — AI/ML (152 entries), DeFi (114), DevTools (155) niche directories beyond the original 114 blockchain companies
 - **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, cron-scheduled ingestion
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
 - **Plugin system** — adapter packages for AI providers
@@ -52,6 +54,9 @@ server/
       eval-store.ts, eval-crons.ts  # Daily promptfoo eval runner + JSON result store
       ladder.ts                     # Read-only access to ladder2.0 pipeline data
       log-store.ts                  # In-memory + file-based log aggregation
+      content.ts                    # Content generation service (Ollama integration, personality prompts)
+      content-crons.ts              # Scheduled content generation jobs
+    content-templates/  # Personality prompt templates (blaze, cipher, spark, prism)
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
@@ -75,8 +80,14 @@ agents/                 # Per-agent AGENTS.md instruction files
   flux/               # Frontend Dev — React, UI, components
   bridge/             # Full-Stack Dev — integration, deployment, docs
   echo/               # Data Engineer — Firecrawl scraping, Qdrant, AEO
+  blaze/              # Content Analyst — hot-take, data-driven content for Twitter/Reddit
+  cipher/             # Content Technical — deep technical content for Blog/LinkedIn
+  spark/              # Content Community — community engagement for Discord/Bluesky
+  prism/              # Content Reporter — trend reports for Blog/LinkedIn/Newsletter
 .agents/
   skills/             # Company skills (company-creator, doc-maintenance, release, etc.)
+    content-writer/   # Content generation and publishing skill
+    content-orchestrator/ # Sage's content dispatch and calendar management
 packages/
   db/                 # Drizzle schema, migrations, DB clients
   shared/             # Shared types, constants, validators, API path constants
@@ -132,7 +143,8 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Firecrawl**: Self-hosted at `168.231.127.180` — scraping, crawling, data extraction
 - **Embeddings**: `31.220.61.12:8000` — vector embedding service
 - **Directory API**: `168.231.127.180:4000` — data sync from Firecrawl
-- **Ollama**: `168.231.127.180:11434` — local summarization (qwen2.5:1.5b)
+- **Ollama**: `168.231.127.180:11434` — local LLM for content generation and summarization (qwen2.5:1.5b)
+- **Content API Key**: `CONTENT_API_KEY` env var for content generation auth
 - **GitHub**: ShieldnestORG/team-dashboard (make private after deploy; use PAT for VPS access)
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
@@ -146,6 +158,8 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `vercel.json` | Vercel build config + `/api/*` rewrite to VPS |
 | `docker-compose.production.yml` | VPS backend Docker Compose (template) |
 | `.env.production` | VPS secrets (never committed, on VPS at `/opt/team-dashboard/`) |
+| `server/src/routes/content.ts` | Content generation + queue API |
+| `server/src/content-templates/*.ts` | Personality prompt templates |
 
 ### Updating
 
