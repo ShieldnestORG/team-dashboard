@@ -30,6 +30,7 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { siteMetricsRoutes } from "./routes/site-metrics.js";
 import { intelRoutes } from "./routes/intel.js";
+import { contentRoutes } from "./routes/content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
 import { startIntelCrons } from "./services/intel-crons.js";
 import { startEvalCrons } from "./services/eval-crons.js";
@@ -163,6 +164,7 @@ export async function createApp(
   api.use(instanceSettingsRoutes(db));
   api.use(siteMetricsRoutes(db));
   api.use("/intel", intelRoutes(db));
+  api.use("/content", contentRoutes(db));
   api.use("/system-health", systemHealthRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();

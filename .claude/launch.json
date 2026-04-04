@@ -18,6 +18,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "-l", "5174", "--no-clipboard", "packages/brand-guide"],
       "port": 5174
+    },
+    {
+      "name": "coherencedaddy",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/exe/Downloads/Claude/coherencedaddy-landing && npm run dev"],
+      "port": 3000
     }
   ]
 }
