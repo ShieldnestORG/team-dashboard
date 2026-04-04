@@ -8,7 +8,7 @@ import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Settings, Check, Download, Upload } from "lucide-react";
+import { Settings, Check, Download, Upload, Copy, UserPlus } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import {
   Field,
@@ -52,6 +52,10 @@ export function CompanySettings() {
   const [inviteSnippet, setInviteSnippet] = useState<string | null>(null);
   const [snippetCopied, setSnippetCopied] = useState(false);
   const [snippetCopyDelightId, setSnippetCopyDelightId] = useState(0);
+
+  const [humanInviteUrl, setHumanInviteUrl] = useState<string | null>(null);
+  const [humanInviteCopied, setHumanInviteCopied] = useState(false);
+  const [humanInviteError, setHumanInviteError] = useState<string | null>(null);
 
   const generalDirty =
     !!selectedCompany &&
@@ -133,6 +137,23 @@ export function CompanySettings() {
     }
   });
 
+  const humanInviteMutation = useMutation({
+    mutationFn: () =>
+      accessApi.createCompanyInvite(selectedCompanyId!, {
+        allowedJoinTypes: "human",
+      }),
+    onSuccess: (invite) => {
+      setHumanInviteError(null);
+      const base = window.location.origin.replace(/\/+$/, "");
+      setHumanInviteUrl(`${base}/invite/${invite.token}`);
+    },
+    onError: (err) => {
+      setHumanInviteError(
+        err instanceof Error ? err.message : "Failed to create invite"
+      );
+    },
+  });
+
   const syncLogoState = (nextLogoUrl: string | null) => {
     setLogoUrl(nextLogoUrl ?? "");
     void queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
@@ -174,6 +195,9 @@ export function CompanySettings() {
     setInviteSnippet(null);
     setSnippetCopied(false);
     setSnippetCopyDelightId(0);
+    setHumanInviteUrl(null);
+    setHumanInviteCopied(false);
+    setHumanInviteError(null);
   }, [selectedCompanyId]);
 
   const archiveMutation = useMutation({
@@ -396,6 +420,66 @@ export function CompanySettings() {
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Invites
         </div>
+
+        {/* Human / Employee invite */}
+        <div className="space-y-3 rounded-md border border-border px-4 py-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">
+              Invite an employee to this company. They'll create an account and request access.
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => humanInviteMutation.mutate()}
+              disabled={humanInviteMutation.isPending}
+            >
+              <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+              {humanInviteMutation.isPending
+                ? "Generating..."
+                : "Invite Employee"}
+            </Button>
+          </div>
+          {humanInviteError && (
+            <p className="text-sm text-destructive">{humanInviteError}</p>
+          )}
+          {humanInviteUrl && (
+            <div className="rounded-md border border-border bg-muted/30 p-3">
+              <div className="text-xs text-muted-foreground mb-1.5">
+                Share this link with the employee:
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none"
+                  value={humanInviteUrl}
+                  readOnly
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(humanInviteUrl);
+                      setHumanInviteCopied(true);
+                      setTimeout(() => setHumanInviteCopied(false), 2000);
+                    } catch {
+                      /* clipboard may not be available */
+                    }
+                  }}
+                >
+                  {humanInviteCopied ? (
+                    <><Check className="mr-1 h-3 w-3" /> Copied</>
+                  ) : (
+                    <><Copy className="mr-1 h-3 w-3" /> Copy</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Agent invite */}
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
