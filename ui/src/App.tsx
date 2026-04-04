@@ -38,6 +38,7 @@ import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
 import { TwitterDashboard } from "./pages/TwitterDashboard";
 import { TxEcosystem } from "./pages/TxEcosystem";
 import { SystemHealth } from "./pages/SystemHealth";
+import { ContentReview } from "./pages/ContentReview";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -170,6 +171,7 @@ function boardRoutes() {
       <Route path="twitter" element={<TwitterDashboard />} />
       <Route path="tx-ecosystem" element={<TxEcosystem />} />
       <Route path="system-health" element={<SystemHealth />} />
+      <Route path="content-review" element={<ContentReview />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       <Route path="inbox/mine" element={<Inbox />} />
       <Route path="inbox/recent" element={<Inbox />} />
