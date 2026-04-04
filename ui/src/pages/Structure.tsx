@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useTheme } from "../context/ThemeContext";
@@ -16,134 +17,181 @@ import {
   RotateCcw,
   Clock,
   Maximize2,
+  Minimize2,
+  Move,
 } from "lucide-react";
+
+// ── Theme Config ────────────────────────────────────────────────────────────
+
+const DARK_THEME_VARS = {
+  background: "#18181b",
+  primaryColor: "#3b82f6",
+  primaryTextColor: "#f8fafc",
+  primaryBorderColor: "#3b82f6",
+  secondaryColor: "#27272a",
+  secondaryTextColor: "#e2e8f0",
+  secondaryBorderColor: "#3f3f46",
+  tertiaryColor: "#1e293b",
+  tertiaryTextColor: "#cbd5e1",
+  tertiaryBorderColor: "#334155",
+  noteBkgColor: "#1e293b",
+  noteTextColor: "#e2e8f0",
+  noteBorderColor: "#475569",
+  lineColor: "#64748b",
+  textColor: "#e2e8f0",
+  mainBkg: "#27272a",
+  nodeBorder: "#3f3f46",
+  clusterBkg: "#1e1e22",
+  clusterBorder: "#3f3f46",
+  titleColor: "#f1f5f9",
+  edgeLabelBackground: "#27272a",
+  nodeTextColor: "#f1f5f9",
+};
+
+const LIGHT_THEME_VARS = {
+  background: "#ffffff",
+  primaryColor: "#3b82f6",
+  primaryTextColor: "#1e293b",
+  primaryBorderColor: "#3b82f6",
+  secondaryColor: "#f1f5f9",
+  secondaryTextColor: "#334155",
+  secondaryBorderColor: "#cbd5e1",
+  tertiaryColor: "#f8fafc",
+  tertiaryTextColor: "#475569",
+  tertiaryBorderColor: "#e2e8f0",
+  noteBkgColor: "#f8fafc",
+  noteTextColor: "#334155",
+  noteBorderColor: "#cbd5e1",
+  lineColor: "#94a3b8",
+  textColor: "#334155",
+  mainBkg: "#f8fafc",
+  nodeBorder: "#cbd5e1",
+  clusterBkg: "#f1f5f9",
+  clusterBorder: "#e2e8f0",
+  titleColor: "#0f172a",
+  edgeLabelBackground: "#ffffff",
+  nodeTextColor: "#1e293b",
+};
 
 // ── Default Diagram ─────────────────────────────────────────────────────────
 
 const DEFAULT_DIAGRAM = `graph TB
-  %% ── Express App Entry ──
-  APP["Express App<br/>server/src/app.ts"]
+  APP(["Express App"]):::entryNode
 
-  subgraph Core["Core Business Services"]
-    style Core fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
-    Companies["Companies"]
-    Agents["Agents"]
-    Projects["Projects"]
-    Issues["Issues"]
-    Goals["Goals"]
-    Routines["Routines"]
-    Approvals["Approvals"]
-    Secrets["Secrets"]
-    Access["Access Control"]
-    Dashboard["Dashboard"]
-    SidebarBadges["Sidebar Badges"]
-    InstanceSettings["Instance Settings"]
-    Activity["Activity Log"]
+  subgraph Core["Core Business"]
+    direction TB
+    Companies(["Companies"])
+    Agents(["Agents"])
+    Projects(["Projects"])
+    Issues(["Issues"])
+    Goals(["Goals"])
+    Routines(["Routines"])
+    Approvals(["Approvals"])
+    Access(["Access Control"])
+    Dashboard(["Dashboard"])
+    Activity(["Activity"])
   end
 
   subgraph Execution["Agent Execution"]
-    style Execution fill:#fce7f3,stroke:#ec4899,stroke-width:2px,color:#5f1e3a
-    Heartbeat["Heartbeat<br/><i>3,800+ lines</i>"]
-    WorkspaceRuntime["Workspace Runtime"]
-    ExecWorkspaces["Execution Workspaces"]
-    WorkspaceOps["Workspace Operations"]
-    AgentInstructions["Agent Instructions"]
-    AgentPermissions["Agent Permissions"]
-    HireHook["Hire Hook"]
-    IssueWakeup["Issue Wakeup"]
+    direction TB
+    Heartbeat(["Heartbeat"])
+    WorkspaceRuntime(["Workspace Runtime"])
+    ExecWorkspaces(["Exec Workspaces"])
+    WorkspaceOps(["Workspace Ops"])
+    AgentInstructions(["Instructions"])
+    AgentPerms(["Permissions"])
+    IssueWakeup(["Issue Wakeup"])
   end
 
-  subgraph Content["Content Pipeline"]
-    style Content fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#1e5f3a
-    ContentSvc["Content Service<br/><i>Ollama LLM</i>"]
-    ContentCrons["Content Crons<br/><i>9 scheduled jobs</i>"]
-    VisualContent["Visual Content"]
-    VisualJobs["Visual Jobs"]
-    ContentTemplates["Personality Templates<br/><i>Blaze / Cipher / Spark / Prism</i>"]
-    VideoAssembler["Video Assembler"]
-    Watermark["Watermark"]
-    SEOEngine["SEO Engine"]
-    PlatformPublishers["Platform Publishers"]
+  subgraph ContentPipeline["Content Pipeline"]
+    direction TB
+    ContentSvc(["Content Service"])
+    ContentCrons{{"Content Crons"}}
+    VisualContent(["Visual Content"])
+    VisualJobs(["Visual Jobs"])
+    Templates(["Templates"])
+    VideoAssembler(["Video Assembler"])
+    SEOEngine(["SEO Engine"])
+    Publishers(["Publishers"])
   end
 
-  subgraph VisualBackends["Visual Backends"]
-    style VisualBackends fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#1e5f3a
-    GeminiBackend["Gemini<br/><i>Imagen 3 + Veo 2</i>"]
-    GrokBackend["Grok / xAI<br/><i>grok-2-image</i>"]
-    CanvaBackend["Canva"]
+  subgraph VisualBack["Visual Backends"]
+    direction TB
+    Gemini(["Gemini"])
+    Grok(["Grok / xAI"])
+    Canva(["Canva"])
   end
 
-  subgraph Intel["Intel Engine"]
-    style Intel fill:#ffedd5,stroke:#f97316,stroke-width:2px,color:#5f3a1e
-    IntelSvc["Intel Service<br/><i>Price / News / Twitter / GitHub / Reddit</i>"]
-    IntelCrons["Intel Crons<br/><i>5 scheduled jobs</i>"]
-    IntelEmbeddings["Intel Embeddings<br/><i>BGE-M3 vectors</i>"]
-    TrendScanner["Trend Scanner"]
-    TrendCrons["Trend Crons<br/><i>every 6 hours</i>"]
+  subgraph IntelEngine["Intel Engine"]
+    direction TB
+    IntelSvc(["Intel Service"])
+    IntelCrons{{"Intel Crons"}}
+    Embeddings[("Embeddings")]
+    TrendScanner(["Trend Scanner"])
+    TrendCrons{{"Trend Crons"}}
   end
 
-  subgraph Plugins["Plugin System"]
-    style Plugins fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#3a1e5f
-    PluginRegistry["Plugin Registry"]
-    PluginLoader["Plugin Loader"]
-    PluginLifecycle["Lifecycle Manager"]
-    PluginWorkerMgr["Worker Manager<br/><i>child processes</i>"]
-    PluginJobScheduler["Job Scheduler<br/><i>30s tick</i>"]
-    PluginJobStore["Job Store"]
-    PluginToolDispatch["Tool Dispatcher"]
-    PluginHostServices["Host Services"]
-    PluginEventBus["Event Bus"]
-    PluginDevWatcher["Dev Watcher"]
+  subgraph PluginSys["Plugin System"]
+    direction TB
+    Registry(["Registry"])
+    Loader(["Loader"])
+    Lifecycle(["Lifecycle"])
+    WorkerMgr(["Worker Manager"])
+    JobScheduler{{"Job Scheduler"}}
+    JobStore[("Job Store")]
+    ToolDispatch(["Tool Dispatcher"])
+    HostServices(["Host Services"])
+    EventBus(["Event Bus"])
   end
 
-  subgraph Monitoring["Monitoring & Alerting"]
-    style Monitoring fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
-    Alerting["Alerting<br/><i>SMTP email</i>"]
-    AlertCrons["Alert Crons<br/><i>health check 5m / digest 7am</i>"]
-    EvalStore["Eval Store"]
-    EvalCrons["Eval Crons<br/><i>promptfoo 6am daily</i>"]
-    LogStore["Log Store"]
-    RunLogStore["Run Log Store"]
-    SiteMetrics["Site Metrics"]
+  subgraph Monitor["Monitoring"]
+    direction TB
+    Alerting(["Alerting"])
+    AlertCrons{{"Alert Crons"}}
+    EvalStore[("Eval Store")]
+    EvalCrons{{"Eval Crons"}}
+    LogStore[("Log Store")]
+    SiteMetrics(["Site Metrics"])
   end
 
-  subgraph Financial["Financial"]
-    style Financial fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f
-    Costs["Cost Events"]
-    Finance["Finance Reporting"]
-    Budgets["Budget Enforcement"]
-    QuotaWindows["Quota Windows"]
+  subgraph Finance["Financial"]
+    direction TB
+    Costs(["Costs"])
+    FinanceRpt(["Finance"])
+    Budgets(["Budgets"])
+    QuotaWindows(["Quota Windows"])
   end
 
-  subgraph External["External Services"]
-    style External fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
-    Neon["Neon PostgreSQL"]
-    Ollama["Ollama LLM<br/><i>qwen2.5:1.5b</i>"]
-    Firecrawl["Firecrawl<br/><i>scraping</i>"]
-    EmbedSvc["Embedding Service<br/><i>BGE-M3</i>"]
-    GeminiAPI["Gemini API"]
-    GrokAPI["Grok / xAI API"]
+  subgraph Extern["External Services"]
+    direction TB
+    Neon[("Neon PostgreSQL")]
+    Ollama(["Ollama LLM"])
+    Firecrawl(["Firecrawl"])
+    EmbedSvc(["Embed Service"])
+    GeminiAPI(["Gemini API"])
+    GrokAPI(["Grok API"])
   end
 
-  %% ── App → Route connections ──
+  %% ── App connections ──
   APP --> Core
   APP --> Execution
-  APP --> Content
-  APP --> Intel
-  APP --> Plugins
-  APP --> Monitoring
-  APP --> Financial
+  APP --> ContentPipeline
+  APP --> IntelEngine
+  APP --> PluginSys
+  APP --> Monitor
+  APP --> Finance
 
-  %% ── Core internal flows ──
+  %% ── Core flows ──
   Companies --> Agents
   Companies --> Projects
   Projects --> Issues
   Issues --> Approvals
   Issues --> Activity
   Agents --> AgentInstructions
-  Agents --> AgentPermissions
+  Agents --> AgentPerms
 
   %% ── Execution flows ──
+  Agents --> Heartbeat
   Heartbeat --> WorkspaceRuntime
   Heartbeat --> ExecWorkspaces
   Heartbeat --> WorkspaceOps
@@ -151,61 +199,74 @@ const DEFAULT_DIAGRAM = `graph TB
   Heartbeat --> Costs
   Issues --> IssueWakeup
   IssueWakeup --> Heartbeat
-  Agents --> Heartbeat
-  Approvals --> HireHook
 
   %% ── Content flows ──
   ContentCrons --> ContentSvc
-  ContentSvc --> ContentTemplates
+  ContentSvc --> Templates
   ContentSvc --> Ollama
-  ContentSvc --> IntelEmbeddings
+  ContentSvc --> Embeddings
   ContentCrons --> SEOEngine
   SEOEngine --> TrendScanner
   VisualContent --> VisualJobs
-  VisualContent --> VisualBackends
-  GeminiBackend --> GeminiAPI
-  GrokBackend --> GrokAPI
+  VisualContent --> VisualBack
+  Gemini --> GeminiAPI
+  Grok --> GrokAPI
   VideoAssembler --> VisualContent
-  ContentSvc --> PlatformPublishers
+  ContentSvc --> Publishers
 
   %% ── Intel flows ──
   IntelCrons --> IntelSvc
-  IntelSvc --> IntelEmbeddings
-  IntelEmbeddings --> EmbedSvc
+  IntelSvc --> Embeddings
+  Embeddings --> EmbedSvc
   TrendCrons --> TrendScanner
   TrendScanner --> IntelSvc
 
   %% ── Plugin flows ──
-  PluginLoader --> PluginRegistry
-  PluginLifecycle --> PluginWorkerMgr
-  PluginJobScheduler --> PluginJobStore
-  PluginJobScheduler --> PluginLifecycle
-  PluginToolDispatch --> PluginWorkerMgr
-  PluginHostServices --> PluginWorkerMgr
-  PluginEventBus --> PluginLifecycle
-  PluginDevWatcher --> PluginLoader
+  Loader --> Registry
+  Lifecycle --> WorkerMgr
+  JobScheduler --> JobStore
+  JobScheduler --> Lifecycle
+  ToolDispatch --> WorkerMgr
+  HostServices --> WorkerMgr
+  EventBus --> Lifecycle
 
   %% ── Monitoring flows ──
   AlertCrons --> Alerting
   EvalCrons --> EvalStore
-  Heartbeat --> RunLogStore
+  Heartbeat --> LogStore
 
   %% ── Financial flows ──
-  Heartbeat --> Costs
   Budgets --> QuotaWindows
-  Costs --> Finance
+  Costs --> FinanceRpt
 
   %% ── External connections ──
   APP --> Neon
   IntelSvc --> Firecrawl
 
-  %% ── Node styling ──
-  style APP fill:#fbbf24,stroke:#d97706,stroke-width:3px,color:#451a03
+  %% ── Styling ──
+  classDef entryNode fill:#f59e0b,stroke:#d97706,stroke-width:3px,color:#451a03,font-weight:bold
+  classDef cronNode fill:#7c3aed,stroke:#6d28d9,color:#f5f3ff,stroke-width:2px
+  classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
+
+  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,JobScheduler cronNode
+  class Neon,Embeddings,EvalStore,LogStore,JobStore storeNode
+
+  style Core fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+  style Execution fill:#fce7f3,stroke:#ec4899,stroke-width:2px,color:#5f1e3a
+  style ContentPipeline fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#1e5f3a
+  style VisualBack fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#1e5f3a
+  style IntelEngine fill:#ffedd5,stroke:#f97316,stroke-width:2px,color:#5f3a1e
+  style PluginSys fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#3a1e5f
+  style Monitor fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
+  style Finance fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f
+  style Extern fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
 `;
 
-// ── Mermaid Renderer ────────────────────────────────────────────────────────
+// ── Mermaid Loader ──────────────────────────────────────────────────────────
 
 let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
+let elkRegistered = false;
+
 function loadMermaid() {
   if (!mermaidPromise) {
     mermaidPromise = import("mermaid").then((m) => m.default);
@@ -213,39 +274,94 @@ function loadMermaid() {
   return mermaidPromise;
 }
 
-function MermaidRenderer({
+async function ensureMermaidReady(darkMode: boolean) {
+  const mermaid = await loadMermaid();
+
+  if (!elkRegistered) {
+    try {
+      const elkModule = await import("@mermaid-js/layout-elk");
+      const loaders = elkModule.default ?? elkModule;
+      if (typeof mermaid.registerLayoutLoaders === "function") {
+        mermaid.registerLayoutLoaders(loaders);
+      }
+      elkRegistered = true;
+    } catch {
+      // ELK not available, fall back to dagre
+    }
+  }
+
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    themeVariables: darkMode ? DARK_THEME_VARS : LIGHT_THEME_VARS,
+    fontFamily:
+      'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    suppressErrorRendering: true,
+    flowchart: {
+      defaultRenderer: elkRegistered ? ("elk" as "elk") : undefined,
+      nodeSpacing: 50,
+      rankSpacing: 60,
+      curve: "cardinal",
+      diagramPadding: 20,
+      htmlLabels: true,
+      wrappingWidth: 180,
+    },
+  });
+
+  return mermaid;
+}
+
+function postProcessSvg(svgString: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, "image/svg+xml");
+  const svg = doc.querySelector("svg");
+  if (!svg) return svgString;
+
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", "100%");
+  svg.style.maxWidth = "none";
+  svg.style.minWidth = "800px";
+
+  return new XMLSerializer().serializeToString(svg);
+}
+
+// ── Diagram Viewer (pan/zoom) ───────────────────────────────────────────────
+
+function DiagramViewer({
   source,
   darkMode,
-  zoom,
+  isFullscreen,
+  onToggleFullscreen,
+  diagramMeta,
 }: {
   source: string;
   darkMode: boolean;
-  zoom: number;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+  diagramMeta?: { revisionNumber: number; updatedAt: string } | null;
 }) {
   const renderId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentScale, setCurrentScale] = useState(1);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
     setSvg(null);
     setError(null);
 
-    loadMermaid()
+    ensureMermaidReady(darkMode)
       .then(async (mermaid) => {
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-          theme: darkMode ? "dark" : "default",
-          fontFamily: "inherit",
-          suppressErrorRendering: true,
-        });
         const rendered = await mermaid.render(
-          `structure-diagram-${renderId}`,
+          `structure-${renderId}`,
           source,
         );
         if (!active) return;
-        setSvg(rendered.svg);
+        setSvg(postProcessSvg(rendered.svg));
       })
       .catch((err) => {
         if (!active) return;
@@ -259,9 +375,19 @@ function MermaidRenderer({
     };
   }, [darkMode, renderId, source]);
 
+  // Escape key exits fullscreen
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onToggleFullscreen();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isFullscreen, onToggleFullscreen]);
+
   if (error) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 p-6">
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
           Diagram render error: {error}
         </div>
@@ -274,25 +400,96 @@ function MermaidRenderer({
 
   if (!svg) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <div className="text-sm text-muted-foreground">
-          Rendering diagram...
+      <div className="flex h-full min-h-[400px] items-center justify-center">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          <span className="text-sm">Rendering architecture diagram...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="overflow-auto rounded-lg border bg-card">
-      <div
-        style={{
-          transform: `scale(${zoom})`,
-          transformOrigin: "top left",
-          transition: "transform 150ms ease",
-        }}
-        className="p-6"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+    <div ref={wrapperRef} className="relative h-full w-full" style={{ touchAction: "none" }}>
+      <TransformWrapper
+        initialScale={0.85}
+        minScale={0.1}
+        maxScale={4}
+        centerOnInit
+        wheel={{ step: 0.08 }}
+        pinch={{ step: 5 }}
+        doubleClick={{ disabled: true }}
+        limitToBounds={false}
+        onTransformed={(_ref, state) => setCurrentScale(state.scale)}
+      >
+        {({ zoomIn, zoomOut, resetTransform }) => (
+          <>
+            {/* Floating toolbar */}
+            <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-xl border border-border/50 bg-background/80 px-2 py-1.5 shadow-lg backdrop-blur-md">
+              <button
+                onClick={() => zoomOut()}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Zoom out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-muted-foreground">
+                {Math.round(currentScale * 100)}%
+              </span>
+              <button
+                onClick={() => zoomIn()}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Zoom in"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <div className="mx-1 h-4 w-px bg-border" />
+              <button
+                onClick={() => resetTransform()}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Reset view"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
+                onClick={onToggleFullscreen}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
+              {diagramMeta && (
+                <>
+                  <div className="mx-1 h-4 w-px bg-border" />
+                  <span className="px-1 text-[11px] text-muted-foreground">
+                    v{diagramMeta.revisionNumber}
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Hint overlay */}
+            <div className="pointer-events-none absolute left-4 bottom-4 z-10 flex items-center gap-1.5 rounded-lg bg-background/60 px-2.5 py-1 text-[11px] text-muted-foreground/60 backdrop-blur-sm">
+              <Move className="h-3 w-3" />
+              Drag to pan &middot; Scroll to zoom
+            </div>
+
+            <TransformComponent
+              wrapperStyle={{ width: "100%", height: "100%" }}
+              contentStyle={{ width: "fit-content", height: "fit-content" }}
+            >
+              <div
+                className="p-8"
+                dangerouslySetInnerHTML={{ __html: svg }}
+              />
+            </TransformComponent>
+          </>
+        )}
+      </TransformWrapper>
     </div>
   );
 }
@@ -338,7 +535,6 @@ export function Structure() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { selectedCompanyId } = useCompany();
   const { theme } = useTheme();
-  const [zoom, setZoom] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -364,11 +560,14 @@ export function Structure() {
   const diagramSource = diagramData?.diagram?.body ?? DEFAULT_DIAGRAM;
   const darkMode = theme === "dark";
   const revisions = revisionsData?.revisions ?? [];
+  const diagramMeta = diagramData?.diagram
+    ? {
+        revisionNumber: diagramData.diagram.revisionNumber,
+        updatedAt: diagramData.diagram.updatedAt,
+      }
+    : null;
 
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.25));
-  const handleZoomReset = () => setZoom(1);
-  const toggleFullscreen = () => setIsFullscreen((f) => !f);
+  const toggleFullscreen = useCallback(() => setIsFullscreen((f) => !f), []);
 
   if (!selectedCompanyId) {
     return (
@@ -380,9 +579,8 @@ export function Structure() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4 p-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-        <div className="h-[600px] animate-pulse rounded-lg bg-muted" />
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
       </div>
     );
   }
@@ -395,106 +593,91 @@ export function Structure() {
     );
   }
 
-  const diagramContent = (
-    <>
-      {/* Zoom controls */}
-      <div className="mb-4 flex items-center gap-2">
-        <button
-          onClick={handleZoomOut}
-          className="rounded-md border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Zoom out"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </button>
-        <span className="min-w-[3rem] text-center text-xs tabular-nums text-muted-foreground">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          onClick={handleZoomIn}
-          className="rounded-md border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Zoom in"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </button>
-        <button
-          onClick={handleZoomReset}
-          className="rounded-md border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Reset zoom"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </button>
-        <div className="flex-1" />
-        <button
-          onClick={toggleFullscreen}
-          className="rounded-md border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Toggle fullscreen"
-        >
-          <Maximize2 className="h-4 w-4" />
-        </button>
-        {diagramData?.diagram && (
-          <span className="text-xs text-muted-foreground">
-            v{diagramData.diagram.revisionNumber} &middot; updated{" "}
-            {new Date(diagramData.diagram.updatedAt).toLocaleDateString()}
-          </span>
-        )}
-      </div>
-
-      <MermaidRenderer source={diagramSource} darkMode={darkMode} zoom={zoom} />
-    </>
-  );
-
+  // Fullscreen mode — edge-to-edge
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0 z-50 overflow-auto bg-background p-6">
-        {diagramContent}
+      <div className="fixed inset-0 z-50 flex flex-col bg-background">
+        <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
+          <div className="flex items-center gap-2">
+            <GitBranch className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">Architecture Structure</span>
+          </div>
+          <button
+            onClick={toggleFullscreen}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0">
+          <DiagramViewer
+            source={diagramSource}
+            darkMode={darkMode}
+            isFullscreen
+            onToggleFullscreen={toggleFullscreen}
+            diagramMeta={diagramMeta}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-          <GitBranch className="h-5 w-5 text-primary" />
+    <div className="flex h-full flex-col -m-4 md:-m-6">
+      {/* Header area with padding restored */}
+      <div className="shrink-0 space-y-4 px-4 pt-4 md:px-6 md:pt-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+            <GitBranch className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-base font-semibold">Architecture Structure</h1>
+            <p className="text-xs text-muted-foreground">
+              Backend service topology, data flows, and cron schedules
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-lg font-semibold">Architecture Structure</h1>
-          <p className="text-sm text-muted-foreground">
-            Backend service topology, data flows, and cron schedules
-          </p>
-        </div>
+
+        <Tabs defaultValue="overview">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="revisions">
+              Revisions
+              {revisions.length > 0 && (
+                <Badge variant="secondary" className="ml-1.5 text-xs">
+                  {revisions.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="mt-0 flex-1">
+            {/* This div closes in the parent flex */}
+          </TabsContent>
+
+          <TabsContent value="revisions" className="mt-4 px-0 md:px-0">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Revision History</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RevisionsList revisions={revisions} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="revisions">
-            Revisions
-            {revisions.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {revisions.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="mt-4">
-          {diagramContent}
-        </TabsContent>
-
-        <TabsContent value="revisions" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Revision History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <RevisionsList revisions={revisions} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* Diagram fills remaining space */}
+      <div className="flex-1 min-h-[500px] border-t">
+        <DiagramViewer
+          source={diagramSource}
+          darkMode={darkMode}
+          isFullscreen={false}
+          onToggleFullscreen={toggleFullscreen}
+          diagramMeta={diagramMeta}
+        />
+      </div>
     </div>
   );
 }
