@@ -26,6 +26,10 @@ const JOB_DEFS: Omit<ContentCronJob, "nextRun" | "running">[] = [
   { name: "content:discord",  schedule: "0 10,16,21 * * *",    personality: "spark",  contentType: "discord" },
   { name: "content:bluesky",  schedule: "0 14,17,20 * * *",    personality: "spark",  contentType: "bluesky" },
   { name: "content:reddit",   schedule: "0 15 * * *",          personality: "cipher", contentType: "reddit" },
+  // Video script generation — text agents write scripts for visual content
+  { name: "content:video:trend",  schedule: "0 11,14,18 * * *", personality: "blaze",  contentType: "video_script" },
+  { name: "content:video:market", schedule: "0 9 * * 1-5",      personality: "prism",  contentType: "video_script" },
+  { name: "content:video:weekly", schedule: "0 10 * * 6",       personality: "prism",  contentType: "video_script" },
 ];
 
 // ---------------------------------------------------------------------------

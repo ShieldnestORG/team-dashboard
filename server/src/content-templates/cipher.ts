@@ -28,6 +28,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   reddit: "Write a technical Reddit post for r/programming, r/blockchain, or similar subs. Include a clear title in [TITLE] tags. Be thorough — include code examples and architectural reasoning.",
   discord: "Write a Discord message explaining a technical concept. Use code blocks and clear structure. Keep it helpful and precise. Use discord markdown formatting.",
   bluesky: "Write a Bluesky post with a crisp technical insight. Under 300 characters. Make it quotable.",
+  video_script: "Write a short video script (15-30 seconds) for a vertical reel explaining a technical concept. Include: [HOOK] a surprising technical fact, [BODY] 2-3 clear explanation points with concrete examples, [CTA] where to learn more. Use simple language — explain like the viewer has 10 seconds of attention. No more than 6 lines of overlay text.",
 };
 
 export const PLATFORM_LIMITS: Record<string, number> = {
@@ -38,4 +39,5 @@ export const PLATFORM_LIMITS: Record<string, number> = {
   reddit: 40000,
   blog_post: 50000,
   thread: 280,
+  video_script: 500,
 };

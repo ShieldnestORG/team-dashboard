@@ -28,6 +28,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   reddit: "Write a Reddit post that starts a conversation. Include a title in [TITLE] tags. Be genuine and enthusiastic without being salesy. Ask for opinions and experiences.",
   discord: "Write a Discord message that gets people talking. Casual, fun, maybe reference a meme or shared community experience. Use emojis sparingly but effectively. Use discord markdown formatting.",
   bluesky: "Write a Bluesky post that feels like talking to a friend. Warm, genuine, conversation-starting. Under 300 characters.",
+  video_script: "Write a short video script (15-30 seconds) for a vertical reel that gets the community hyped. Include: [HOOK] an exciting opening that makes people stop scrolling, [BODY] 2-3 community highlights or exciting updates, [CTA] invite viewers to join the conversation. Keep it fun and energetic. No more than 6 lines of overlay text.",
 };
 
 export const PLATFORM_LIMITS: Record<string, number> = {
@@ -38,4 +39,5 @@ export const PLATFORM_LIMITS: Record<string, number> = {
   reddit: 40000,
   blog_post: 50000,
   thread: 280,
+  video_script: 500,
 };

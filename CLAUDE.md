@@ -17,11 +17,18 @@ The public-facing tools and brand site live in a separate repo: [ShieldnestORG/c
 - **ShieldNest** (shieldnest.io) — privacy-first dev company
 - **YourArchi** (yourarchi.com) — architecture platform
 
+## Primary Company
+
+**Coherence Daddy** — ID: `8365d8c2-ea73-4c04-af78-a7db3ee7ecd4`, prefix: `CD`
+
+This is the main company in the dashboard. All agents, content, and data belong to this company. The env var `TEAM_DASHBOARD_COMPANY_ID` must point to this ID.
+
 ## What Lives Here
 
-- **Agent management** — 13 AI agents (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend, Blaze/Content-Analyst, Cipher/Content-Technical, Spark/Content-Community, Prism/Content-Reporter)
+- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism)
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
-- **Content engine** — Ollama-powered content generation with 4 personality agents (Blaze/Cipher/Spark/Prism), content queue, blog publishing API, multi-platform distribution
+- **Content engine** — Ollama-powered text content generation with 4 personality agents, content queue, blog publishing API, multi-platform distribution
+- **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2) and Grok/xAI, async job system, visual content queue with review workflow, Content Studio UI with Text/Visual mode toggle
 - **Directory expansion** — AI/ML (152 entries), DeFi (114), DevTools (155) niche directories beyond the original 114 blockchain companies
 - **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, cron-scheduled ingestion
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
@@ -54,9 +61,18 @@ server/
       eval-store.ts, eval-crons.ts  # Daily promptfoo eval runner + JSON result store
       ladder.ts                     # Read-only access to ladder2.0 pipeline data
       log-store.ts                  # In-memory + file-based log aggregation
-      content.ts                    # Content generation service (Ollama integration, personality prompts)
-      content-crons.ts              # Scheduled content generation jobs
+      content.ts                    # Text content generation service (Ollama, personality prompts)
+      content-crons.ts              # Scheduled content generation jobs (text + video scripts)
+      visual-content.ts             # Visual content queue, generation orchestration, review
+      visual-jobs.ts                # Async job tracker for visual generation (15s polling)
+      visual-backends/              # Pluggable visual generation backends
+        types.ts                    # VisualBackend interface
+        gemini.ts                   # Gemini Imagen 3 (image) + Veo 2 (video)
+        grok.ts                     # Grok/xAI image generation
+        index.ts                    # Backend registry (auto-enable by env var)
     content-templates/  # Personality prompt templates (blaze, cipher, spark, prism)
+    routes/
+      visual-content.ts             # Visual content API (/api/visual/*)
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
@@ -107,6 +123,37 @@ docs/
 doc/                  # Operational docs (SPEC, PRODUCT, GOAL, plans/)
 ```
 
+## Concurrent Agent Sessions — CRITICAL
+
+**Never run multiple agent sessions editing this repo simultaneously on the same branch.**
+
+On 2026-04-03, two concurrent agent sessions both edited `server/src/app.ts` and `ui/src/pages/ContentReview.tsx`. The linter in Session B auto-removed imports that Session A had added (treating them as "unused"), which broke the VPS Docker build. Three emergency fix commits were needed to recover.
+
+### Rules
+
+1. **One writer per branch** — if two agents need to work in parallel, use separate feature branches or worktrees (`/worktree` command)
+2. **Feature branches for new services** — any work that adds new backend services, routes, or DB migrations MUST happen on a feature branch, not directly on `master`
+3. **Verify Docker build before merging** — the VPS TypeScript compiler is stricter than local. Always run `npx tsc --noEmit --project server/tsconfig.json` and confirm zero errors before pushing to master
+4. **Express params** — always cast `req.params.*` as `string` (e.g., `req.params.id as string`) to satisfy strict TypeScript
+5. **Don't `git add -A`** — stage specific files to avoid accidentally committing half-built artifacts from another session
+
+### Safe Workflow for Large Features
+
+```bash
+# 1. Create a feature branch
+git checkout -b feat/my-feature
+
+# 2. Build and test on the branch
+npx tsc --noEmit --project server/tsconfig.json  # zero errors
+cd ui && npx tsc --noEmit                         # zero errors
+
+# 3. Only merge to master when the full feature compiles
+git checkout master && git merge feat/my-feature
+
+# 4. Push — triggers Vercel deploy + manual VPS deploy
+git push origin master
+```
+
 ## Documentation Requirements
 
 **Always update documentation when making changes.** After completing any build, modification, or refactor:
@@ -144,12 +191,14 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Embeddings**: `31.220.61.12:8000` — vector embedding service
 - **Directory API**: `168.231.127.180:4000` — data sync from Firecrawl
 - **Ollama**: `168.231.127.180:11434` — local LLM for content generation and summarization (qwen2.5:1.5b)
-- **Content API Key**: `CONTENT_API_KEY` env var for content generation auth
+- **Content API Key**: `CONTENT_API_KEY` env var for content generation auth (text + visual)
+- **Visual Backends**: `GEMINI_API_KEY` (Imagen 3 + Veo 2), `GROK_API_KEY` (xAI images) — optional, auto-enabled when set
+- **Company ID**: `TEAM_DASHBOARD_COMPANY_ID=8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy)
 - **GitHub**: ShieldnestORG/team-dashboard (make private after deploy; use PAT for VPS access)
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (5 jobs), eval (1 job), alert (2 jobs)
+- **Cron Schedulers**: intel (5 jobs), eval (1 job), alert (2 jobs), content (9 jobs: 6 text + 3 video script)
 
 ### Key Files
 
@@ -158,8 +207,10 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `vercel.json` | Vercel build config + `/api/*` rewrite to VPS |
 | `docker-compose.production.yml` | VPS backend Docker Compose (template) |
 | `.env.production` | VPS secrets (never committed, on VPS at `/opt/team-dashboard/`) |
-| `server/src/routes/content.ts` | Content generation + queue API |
-| `server/src/content-templates/*.ts` | Personality prompt templates |
+| `server/src/routes/content.ts` | Text content generation + queue API |
+| `server/src/routes/visual-content.ts` | Visual content generation + queue + asset serving API |
+| `server/src/content-templates/*.ts` | Personality prompt templates (text + video_script) |
+| `server/src/services/visual-backends/` | Pluggable visual generation backends (Gemini, Grok) |
 
 ### Updating
 
@@ -172,6 +223,29 @@ cd /opt/team-dashboard && docker compose build && docker compose up -d
 # Frontend: auto-deploys on push to master
 git push origin master
 ```
+
+### Environment Variables Reference
+
+| Variable | Required | Where | Purpose |
+|----------|----------|-------|---------|
+| `DATABASE_URL` | Yes | VPS + Vercel + Local | Neon PostgreSQL connection string |
+| `PAPERCLIP_AGENT_JWT_SECRET` | Yes | VPS | Agent authentication |
+| `PAPERCLIP_API_URL` | Yes | VPS | Backend API base URL |
+| `ANTHROPIC_API_KEY` | Yes | VPS | Claude API for agent runtime |
+| `CONTENT_API_KEY` | Yes | VPS | Auth for content generation endpoints |
+| `TEAM_DASHBOARD_COMPANY_ID` | Yes | VPS + Local | `8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy) |
+| `GEMINI_API_KEY` | Optional | VPS | Enables Gemini visual backend (Imagen 3 + Veo 2) |
+| `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI image generation backend |
+| `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
+| `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |
+| `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
+| `SITE_METRICS_KEY` | Yes | VPS + coherencedaddy | Site analytics ingestion auth |
+| `SMTP_HOST/PORT/USER/PASS` | Optional | VPS | Email alerting |
+| `ALERT_EMAIL_TO/FROM` | Optional | VPS | Alert email recipients |
+
+**Vercel** gets `DATABASE_URL` automatically via Neon integration. No other env vars needed there — it only serves the static UI.
+
+**VPS** needs all the above in `.env.production` at `/opt/team-dashboard/`.
 
 ### WebSocket Limitation
 

@@ -28,6 +28,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   reddit: "Write a Reddit post for r/cryptocurrency or similar subs. Include a compelling title in [TITLE] tags. Be substantive — Redditors hate fluff. Use evidence and invite debate.",
   discord: "Write a Discord message that sparks discussion. Casual tone but substantive. Drop a hot take and invite people to challenge it. Use discord markdown formatting.",
   bluesky: "Write a Bluesky post. Similar to Twitter but slightly longer. Be sharp and insightful. Under 300 characters.",
+  video_script: "Write a short video script (15-30 seconds) for a vertical reel. Include: [HOOK] a 3-second attention grabber, [BODY] 2-3 punchy data points with bold claims, [CTA] a call to action. Format each section clearly. Use short, impactful sentences that work as text overlays. No more than 6 lines of overlay text total.",
 };
 
 export const PLATFORM_LIMITS: Record<string, number> = {
@@ -38,4 +39,5 @@ export const PLATFORM_LIMITS: Record<string, number> = {
   reddit: 40000,
   blog_post: 50000,
   thread: 280,
+  video_script: 500,
 };

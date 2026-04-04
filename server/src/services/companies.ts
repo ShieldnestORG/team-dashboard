@@ -101,7 +101,8 @@ export function companyService(db: Db) {
     return database
       .select(companySelection)
       .from(companies)
-      .leftJoin(companyLogos, eq(companyLogos.companyId, companies.id));
+      .leftJoin(companyLogos, eq(companyLogos.companyId, companies.id))
+      .orderBy(companies.name);
   }
 
   function deriveIssuePrefixBase(name: string) {

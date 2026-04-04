@@ -28,6 +28,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   reddit: "Write a Reddit post analyzing a trend or development. Include a title in [TITLE] tags. Be thorough and balanced. Present multiple perspectives. Include data and sources.",
   discord: "Write a Discord message sharing a key update or trend. Concise and factual. Include relevant links or data points. Use discord markdown formatting.",
   bluesky: "Write a Bluesky post with a key data point or trend observation. Factual and concise. Under 300 characters.",
+  video_script: "Write a short video script (15-30 seconds) for a vertical reel reporting on a trend. Include: [HOOK] the most surprising stat or development, [BODY] 2-3 key data points with context, [CTA] where to get the full analysis. Neutral, factual tone. No more than 6 lines of overlay text.",
 };
 
 export const PLATFORM_LIMITS: Record<string, number> = {
@@ -38,4 +39,5 @@ export const PLATFORM_LIMITS: Record<string, number> = {
   reddit: 40000,
   blog_post: 50000,
   thread: 280,
+  video_script: 500,
 };
