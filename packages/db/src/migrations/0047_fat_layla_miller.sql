@@ -1,4 +1,4 @@
-CREATE TABLE "content_feedback" (
+CREATE TABLE IF NOT EXISTS "content_feedback" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"company_id" uuid NOT NULL,
 	"content_item_id" uuid NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE "content_feedback" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "content_items" (
+CREATE TABLE IF NOT EXISTS "content_items" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"company_id" uuid NOT NULL,
 	"personality_id" text NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE "content_items" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "intel_companies" (
+CREATE TABLE IF NOT EXISTS "intel_companies" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"slug" text NOT NULL,
 	"name" text NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE "intel_companies" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "intel_reports" (
+CREATE TABLE IF NOT EXISTS "intel_reports" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"company_slug" text NOT NULL,
 	"report_type" text NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE "intel_reports" (
 	"captured_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "visual_content_assets" (
+CREATE TABLE IF NOT EXISTS "visual_content_assets" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"visual_content_item_id" uuid NOT NULL,
 	"type" text NOT NULL,
@@ -68,7 +68,7 @@ CREATE TABLE "visual_content_assets" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "visual_content_items" (
+CREATE TABLE IF NOT EXISTS "visual_content_items" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"company_id" uuid NOT NULL,
 	"agent_id" text,
@@ -87,18 +87,18 @@ CREATE TABLE "visual_content_items" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "content_feedback" ADD CONSTRAINT "content_feedback_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "content_items" ADD CONSTRAINT "content_items_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "visual_content_assets" ADD CONSTRAINT "visual_content_assets_visual_content_item_id_visual_content_items_id_fk" FOREIGN KEY ("visual_content_item_id") REFERENCES "public"."visual_content_items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "visual_content_items" ADD CONSTRAINT "visual_content_items_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "content_feedback_company_type_created_idx" ON "content_feedback" USING btree ("company_id","content_type","created_at");--> statement-breakpoint
-CREATE INDEX "content_feedback_content_item_idx" ON "content_feedback" USING btree ("content_item_id");--> statement-breakpoint
-CREATE INDEX "content_items_company_created_idx" ON "content_items" USING btree ("company_id","created_at");--> statement-breakpoint
-CREATE INDEX "content_items_company_status_idx" ON "content_items" USING btree ("company_id","status");--> statement-breakpoint
-CREATE INDEX "content_items_company_personality_platform_idx" ON "content_items" USING btree ("company_id","personality_id","platform");--> statement-breakpoint
-CREATE UNIQUE INDEX "intel_companies_slug_uq" ON "intel_companies" USING btree ("slug");--> statement-breakpoint
-CREATE INDEX "idx_intel_reports_company" ON "intel_reports" USING btree ("company_slug");--> statement-breakpoint
-CREATE INDEX "idx_intel_reports_captured" ON "intel_reports" USING btree ("captured_at");--> statement-breakpoint
-CREATE INDEX "visual_content_assets_item_idx" ON "visual_content_assets" USING btree ("visual_content_item_id");--> statement-breakpoint
-CREATE INDEX "visual_content_items_company_created_idx" ON "visual_content_items" USING btree ("company_id","created_at");--> statement-breakpoint
-CREATE INDEX "visual_content_items_company_status_idx" ON "visual_content_items" USING btree ("company_id","status");
+DO $$ BEGIN ALTER TABLE "content_feedback" ADD CONSTRAINT "content_feedback_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "content_items" ADD CONSTRAINT "content_items_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "visual_content_assets" ADD CONSTRAINT "visual_content_assets_visual_content_item_id_visual_content_items_id_fk" FOREIGN KEY ("visual_content_item_id") REFERENCES "public"."visual_content_items"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "visual_content_items" ADD CONSTRAINT "visual_content_items_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "content_feedback_company_type_created_idx" ON "content_feedback" USING btree ("company_id","content_type","created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "content_feedback_content_item_idx" ON "content_feedback" USING btree ("content_item_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "content_items_company_created_idx" ON "content_items" USING btree ("company_id","created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "content_items_company_status_idx" ON "content_items" USING btree ("company_id","status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "content_items_company_personality_platform_idx" ON "content_items" USING btree ("company_id","personality_id","platform");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "intel_companies_slug_uq" ON "intel_companies" USING btree ("slug");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_intel_reports_company" ON "intel_reports" USING btree ("company_slug");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_intel_reports_captured" ON "intel_reports" USING btree ("captured_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "visual_content_assets_item_idx" ON "visual_content_assets" USING btree ("visual_content_item_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "visual_content_items_company_created_idx" ON "visual_content_items" USING btree ("company_id","created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "visual_content_items_company_status_idx" ON "visual_content_items" USING btree ("company_id","status");
