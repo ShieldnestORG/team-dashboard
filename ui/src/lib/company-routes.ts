@@ -16,6 +16,15 @@ const BOARD_ROUTE_ROOTS = new Set([
   "inbox",
   "design-guide",
   "structure",
+  "twitter",
+  "tx-ecosystem",
+  "system-health",
+  "content-review",
+  "onboarding",
+  "plugins",
+  "execution-workspaces",
+  "settings",
+  "tests",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
