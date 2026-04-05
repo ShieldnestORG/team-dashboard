@@ -1,6 +1,7 @@
 import type { Db } from "@paperclipai/db";
 import { intelService } from "./intel.js";
 import { intelDiscoveryService } from "./intel-discovery.js";
+import { mintscanService } from "./mintscan.js";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
@@ -64,18 +65,21 @@ async function paginatedIngest(
 export function startIntelCrons(db: Db) {
   const svc = intelService(db);
   const discovery = intelDiscoveryService(db);
+  const mintscan = mintscanService(db);
 
   const jobs: IntelCronJob[] = [
     // Aggressive schedules for near-realtime intel
-    { name: "intel:prices",   schedule: "0 * * * *",      run: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100),   nextRun: null, running: false },
-    { name: "intel:news",     schedule: "0 * * * *",      run: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50),      nextRun: null, running: false },
-    { name: "intel:twitter",  schedule: "*/30 * * * *",   run: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30),   nextRun: null, running: false },
-    { name: "intel:github",   schedule: "0 */4 * * *",    run: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25),    nextRun: null, running: false },
-    { name: "intel:reddit",   schedule: "0 */2 * * *",    run: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30),    nextRun: null, running: false },
+    { name: "intel:prices",        schedule: "0 * * * *",      run: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100),   nextRun: null, running: false },
+    { name: "intel:news",          schedule: "0 * * * *",      run: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50),      nextRun: null, running: false },
+    { name: "intel:twitter",       schedule: "*/30 * * * *",   run: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30),   nextRun: null, running: false },
+    { name: "intel:github",        schedule: "0 */4 * * *",    run: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25),    nextRun: null, running: false },
+    { name: "intel:reddit",        schedule: "0 */2 * * *",    run: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30),    nextRun: null, running: false },
+    // Chain metrics — Mintscan Cosmos ecosystem APR data
+    { name: "intel:chain-metrics", schedule: "0 */4 * * *",    run: () => mintscan.ingestChainMetrics(),                             nextRun: null, running: false },
     // Backfill — catches companies with sparse data
-    { name: "intel:backfill", schedule: "0 */12 * * *",   run: () => svc.backfillNewCompanies(),                                nextRun: null, running: false },
+    { name: "intel:backfill",      schedule: "0 */12 * * *",   run: () => svc.backfillNewCompanies(),                                nextRun: null, running: false },
     // Discovery — find new trending projects to add to the directory
-    { name: "intel:discover", schedule: "0 */6 * * *",    run: () => discovery.discoverNewProjects(),                            nextRun: null, running: false },
+    { name: "intel:discover",      schedule: "0 */6 * * *",    run: () => discovery.discoverNewProjects(),                            nextRun: null, running: false },
   ];
 
   // Compute initial next-run times

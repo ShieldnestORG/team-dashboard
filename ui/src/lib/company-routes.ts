@@ -20,6 +20,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "tx-ecosystem",
   "system-health",
   "content-review",
+  "intel",
   "onboarding",
   "plugins",
   "execution-workspaces",

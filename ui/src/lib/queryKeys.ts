@@ -133,6 +133,11 @@ export const queryKeys = {
     diagram: (companyId: string) => ["structure", companyId] as const,
     revisions: (companyId: string) => ["structure", "revisions", companyId] as const,
   },
+  intel: {
+    companies: (directory?: string) => ["intel", "companies", directory] as const,
+    stats: ["intel", "stats"] as const,
+    company: (slug: string) => ["intel", "company", slug] as const,
+  },
   plugins: {
     all: ["plugins"] as const,
     examples: ["plugins", "examples"] as const,

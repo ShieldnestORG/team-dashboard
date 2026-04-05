@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { intelService } from "../services/index.js";
 import { intelDiscoveryService } from "../services/intel-discovery.js";
+import { mintscanService } from "../services/mintscan.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,7 @@ export function intelRoutes(db: Db) {
   const router = Router();
   const svc = intelService(db);
   const discovery = intelDiscoveryService(db);
+  const mintscan = mintscanService(db);
 
   // ---- Public read endpoints (no auth) ----
 
@@ -91,6 +93,16 @@ export function intelRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "Intel stats error");
       res.status(500).json({ error: "Stats unavailable" });
+    }
+  });
+
+  router.get("/chain/:network", async (req, res) => {
+    try {
+      const result = await mintscan.getLatestChainMetrics(req.params.network as string);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Chain metrics fetch error");
+      res.status(500).json({ error: "Failed to fetch chain metrics" });
     }
   });
 

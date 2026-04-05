@@ -1085,14 +1085,14 @@ export const INTEL_COMPANIES: IntelCompany[] = [
   {
     slug: "keeta",
     name: "Keeta",
-    category: "payments",
-    description: "A Layer 1 blockchain purpose-built for payments, capable of 11.2 million TPS verified in public testing \u2014 the most scalable blockchain network in the world. Keeta bridges fiat and crypto rails for global financial institutions with built-in identity and compliance tools.",
+    category: "l1-blockchain",
+    description: "Layer-1 blockchain designed as a unifying layer for global finance. Features 400ms settlement and 10M TPS.",
     website: "https://keeta.com",
     coingecko_id: null,
-    github_org: "keetanetwork",
+    github_org: null,
     subreddit: null,
     rss_feeds: ["https://keeta.com/blog/rss"],
-    twitter_handle: "keetaHQ",
+    twitter_handle: "keetanetwork",
   },
   {
     slug: "celo",
