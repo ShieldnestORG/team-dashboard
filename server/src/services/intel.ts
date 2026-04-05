@@ -3,6 +3,7 @@ import { eq, desc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { intelCompanies, intelReports } from "@paperclipai/db";
 import { getEmbedding } from "./intel-embeddings.js";
+import { isDuplicate, scoreContent, shouldIngest } from "./intel-quality.js";
 import { INTEL_COMPANIES } from "../data/intel-companies.js";
 import { AI_COMPANIES } from "../data/intel-companies-ai.js";
 import { DEFI_COMPANIES } from "../data/intel-companies-defi.js";
@@ -564,8 +565,22 @@ export function intelService(db: Db) {
 
               const headline = item.title;
               const body = `${item.description} Source: ${item.link}`;
+
+              // Quality gate: score content before ingesting
+              const quality = scoreContent(`${headline} ${body}`, "news");
+              if (!shouldIngest(quality)) {
+                skipped++;
+                continue;
+              }
+
               const embedding = await getEmbedding(`${headline} ${body}`);
               const embeddingStr = `[${embedding.join(",")}]`;
+
+              // Semantic dedup: skip if >90% similar to existing report
+              if (await isDuplicate(db, company.slug, embeddingStr, "news")) {
+                skipped++;
+                continue;
+              }
 
               await db.execute(sql`
                 INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, embedding)
@@ -635,8 +650,22 @@ export function intelService(db: Db) {
 
             const headline = item.title;
             const body = `${item.description} Source: ${item.link}`;
+
+            // Quality gate
+            const quality = scoreContent(`${headline} ${body}`, "twitter");
+            if (!shouldIngest(quality)) {
+              skipped++;
+              continue;
+            }
+
             const embedding = await getEmbedding(`${headline} ${body}`);
             const embeddingStr = `[${embedding.join(",")}]`;
+
+            // Semantic dedup
+            if (await isDuplicate(db, company.slug, embeddingStr, "twitter")) {
+              skipped++;
+              continue;
+            }
 
             await db.execute(sql`
               INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, embedding)
@@ -810,6 +839,16 @@ export function intelService(db: Db) {
               : `Link: ${post.url}`;
             const body = `${bodyText} Source: ${sourceUrl}`;
 
+            // Quality gate with engagement metadata
+            const quality = scoreContent(`${headline} ${body}`, "reddit", {
+              score: post.score,
+              numComments: post.num_comments,
+            });
+            if (!shouldIngest(quality)) {
+              skipped++;
+              continue;
+            }
+
             const existing = await rawQuery(sql`
               SELECT id FROM intel_reports
               WHERE company_slug = ${company.slug} AND source_url = ${sourceUrl} LIMIT 1
@@ -818,6 +857,13 @@ export function intelService(db: Db) {
 
             const embedding = await getEmbedding(`${headline} ${body}`);
             const embeddingStr = `[${embedding.join(",")}]`;
+
+            // Semantic dedup
+            if (await isDuplicate(db, company.slug, embeddingStr, "reddit")) {
+              skipped++;
+              continue;
+            }
+
             await db.execute(sql`
               INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, embedding)
               VALUES (${company.slug}, 'reddit', ${headline}, ${body}, ${sourceUrl}, ${embeddingStr}::vector)

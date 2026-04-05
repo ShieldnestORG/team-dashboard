@@ -1,7 +1,9 @@
 import { Router } from "express";
+import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { contentService } from "../services/content.js";
 import { contentFeedbackService } from "../services/content-feedback.js";
+import { recordNegativeFeedback, recordPositiveFeedback } from "../services/intel-quality.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -263,6 +265,25 @@ export function contentRoutes(db: Db) {
         comment,
         createdByUserId: req.actor?.type === "board" ? req.actor.userId ?? undefined : undefined,
       });
+
+      // Feedback loop: propagate rating signal to intel quality layer
+      // This downranks/upranks the source company's intel for future content generation
+      try {
+        const [item] = await db.execute(sql`
+          SELECT topic FROM content_items WHERE id = ${contentItemId} LIMIT 1
+        `) as unknown as Array<{ topic: string }>;
+        if (item?.topic) {
+          const slug = item.topic.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 50);
+          if (rating === "dislike") {
+            recordNegativeFeedback(slug);
+          } else {
+            recordPositiveFeedback(slug);
+          }
+        }
+      } catch {
+        // Non-critical — don't fail the feedback response
+      }
+
       res.json(feedback);
     } catch (err) {
       logger.error({ err, contentItemId }, "Content feedback error");

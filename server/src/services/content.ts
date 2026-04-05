@@ -98,34 +98,34 @@ async function callOllama(prompt: string): Promise<string> {
 
 async function fetchContext(db: Db, topic: string, limit = 5): Promise<string> {
   try {
-    const queryEmbedding = await getEmbedding(topic);
-    const embeddingStr = `[${queryEmbedding.join(",")}]`;
-
-    const results = await db.execute(sql`
-      SELECT
-        r.headline,
-        r.body,
-        r.report_type,
-        r.company_slug,
-        r.captured_at,
-        1 - (r.embedding <=> ${embeddingStr}::vector) AS similarity
-      FROM intel_reports r
-      WHERE r.embedding IS NOT NULL
-      ORDER BY r.embedding <=> ${embeddingStr}::vector
-      LIMIT ${limit}
-    `) as unknown as Array<Record<string, unknown>>;
-
-    if (!results || results.length === 0) return "";
-
-    const contextLines = results.map((r) => {
-      const body = typeof r.body === "string" ? r.body.slice(0, 300) : "";
-      return `[${r.report_type}/${r.company_slug}] ${r.headline}\n${body}`;
-    });
-
-    return `\nRelevant context from recent intel:\n${contextLines.join("\n\n")}`;
+    // Use quality-filtered context that scores, deduplicates, and filters for relevance
+    const { fetchQualityContext } = await import("./intel-quality.js");
+    return await fetchQualityContext(db, topic, limit);
   } catch (err) {
-    logger.warn({ err }, "Failed to fetch context for content generation, proceeding without context");
-    return "";
+    logger.warn({ err }, "Failed to fetch quality context, falling back to basic");
+    // Fallback: basic context fetch without quality gates
+    try {
+      const queryEmbedding = await getEmbedding(topic);
+      const embeddingStr = `[${queryEmbedding.join(",")}]`;
+
+      const results = await db.execute(sql`
+        SELECT r.headline, r.body, r.report_type, r.company_slug
+        FROM intel_reports r
+        WHERE r.embedding IS NOT NULL
+          AND r.captured_at > NOW() - INTERVAL '7 days'
+        ORDER BY r.embedding <=> ${embeddingStr}::vector
+        LIMIT ${limit}
+      `) as unknown as Array<Record<string, unknown>>;
+
+      if (!results || results.length === 0) return "";
+      const contextLines = results.map((r) => {
+        const body = typeof r.body === "string" ? r.body.slice(0, 300) : "";
+        return `[${r.report_type}/${r.company_slug}] ${r.headline}\n${body}`;
+      });
+      return `\nRelevant context from recent intel:\n${contextLines.join("\n\n")}`;
+    } catch {
+      return "";
+    }
   }
 }
 
