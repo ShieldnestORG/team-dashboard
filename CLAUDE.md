@@ -36,6 +36,9 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
+- **Mintscan Chain Metrics** — Cosmostation Mintscan API integration for Cosmos ecosystem (staking APR, validator data) tracking cosmos/osmosis/txhuman
+- **Intel Dashboard** — admin UI page at `/intel` with tabbed tables (Overview/Crypto/AI-ML/DeFi/DevTools), searchable company lists, stats cards
+- **Public Article Generator** — rate-limited public endpoint (`POST /api/content/public/generate`) for users to generate AI-powered articles with Coherence Daddy metadata attribution. Powered by Ollama + intel context, supports all platforms (tweet, blog, linkedin, reddit, etc.)
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
 - **Plugin system** — adapter packages for AI providers
 - **API layer** — backend at port 3100, proxied from UI dev server
@@ -231,7 +234,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (7 jobs: 5 ingest + 1 backfill + 1 discover), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr)
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr)
 
 ### Key Files
 
@@ -252,6 +255,8 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/routes/public-reels.ts` | Public reels API (no auth) for coherencedaddy.com |
 | `scripts/canva-generator.py` | Canva Connect API Python bridge |
 | `server/src/services/intel-discovery.ts` | Auto-discovery of trending projects (CoinGecko + GitHub) |
+| `server/src/services/mintscan.ts` | Cosmostation Mintscan API integration (chain APR, validator metrics) |
+| `ui/src/pages/Intel.tsx` | Intel Dashboard — tabbed admin page for browsing 508 companies |
 | `server/src/services/structure.ts` | Company structure diagram service (Mermaid, versioned) |
 | `server/src/routes/structure.ts` | Structure diagram API (`/api/companies/:id/structure`) |
 | `ui/src/pages/Structure.tsx` | Architecture diagram page with zoom, fullscreen, revisions |
@@ -306,6 +311,7 @@ git push origin master
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Optional | VPS | Instagram business account |
 | **Intel Engine** | | | |
 | `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
+| `MINTSCAN_API_KEY` | Optional | VPS | Cosmostation Mintscan API for Cosmos chain metrics (APR, validators) |
 | `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |
 | `EMBED_URL` | Yes | VPS | Embedding service (`http://31.220.61.12:8000`) |
 | `EMBED_API_KEY` | Yes | VPS | Embedding service auth |
