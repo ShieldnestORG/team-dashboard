@@ -27,9 +27,9 @@ This is the main company in the dashboard. All agents, content, and data belong 
 
 - **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism) + Mermaid (Company Structure Agent)
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
-- **Content engine** — Ollama-powered text content generation with 4 personality agents, content queue, blog publishing API, multi-platform distribution
+- **Content engine** — Ollama-powered text content generation with 4 personality agents, PostgreSQL-backed content queue (`content_items` table), blog publishing API, multi-platform distribution. Admin feedback system (`content_feedback` table) with like/dislike ratings that feed back into generation prompts as training signal
 - **SEO engine** — trend scanner (CoinGecko + HackerNews every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
-- **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, visual content queue with review workflow, Content Studio UI with Text/Visual mode toggle
+- **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, PostgreSQL-backed visual content queue (`visual_content_items` + `visual_content_assets` tables) with review workflow, Content Studio UI with Text/Visual mode toggle
 - **Public Reels API** — unauthenticated `/api/reels` endpoint serving approved visual content for coherencedaddy.com. Stream, download (with Content-Disposition), and thumbnail endpoints
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
 - **Directory expansion** — AI/ML (152 entries), DeFi (114), DevTools (155) niche directories beyond the original 114 blockchain companies
@@ -78,6 +78,7 @@ server/
       video-assembler.ts            # FFmpeg pipeline (text overlays, watermark, metadata)
       watermark.ts                  # Brand watermark utility + metadata helper
       structure.ts                  # Company structure diagram service (Mermaid, versioned via documents table)
+      content-feedback.ts           # Admin like/dislike feedback for content training
       platform-publishers/          # Automated social media publishing
         types.ts                    # PlatformPublisher interface
         youtube.ts                  # YouTube Shorts (Data API v3)
