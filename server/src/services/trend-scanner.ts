@@ -1,3 +1,5 @@
+import { sql } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 export interface TrendSignals {
@@ -6,8 +8,8 @@ export interface TrendSignals {
   trending_tech: Array<{ title: string; score: number; category: string; url: string; comments: number }>;
 }
 
-const COINGECKO_URL =
-  "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=dogecoin,shiba-inu,pepe,dogwifhat,bonk,floki,brett,turbo,mog-coin,popcat,book-of-meme,cat-in-a-dogs-world,neiro,ponke,bitcoin,ethereum,solana&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d";
+// Fallback coins if DB is unavailable
+const FALLBACK_COIN_IDS = "dogecoin,shiba-inu,pepe,dogwifhat,bonk,floki,brett,turbo,mog-coin,popcat,book-of-meme,cat-in-a-dogs-world,neiro,ponke,bitcoin,ethereum,solana";
 
 const HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json";
 const HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item";
@@ -21,7 +23,29 @@ function categorize(title: string): string {
   return "Technology";
 }
 
-export function trendScannerService() {
+export function trendScannerService(db?: Db) {
+  // Build dynamic CoinGecko URL from intel_companies
+  async function getCoinGeckoUrl(): Promise<string> {
+    if (db) {
+      try {
+        const rows = await db.execute(
+          sql`SELECT coingecko_id FROM intel_companies WHERE coingecko_id IS NOT NULL`,
+        ) as unknown as Array<{ coingecko_id: string }>;
+
+        if (rows.length > 0) {
+          // CoinGecko allows up to 250 ids per request
+          const ids = rows.map((r) => r.coingecko_id).slice(0, 250).join(",");
+          logger.info({ count: rows.length }, "Trend scanner: loaded coin IDs from DB");
+          return `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d&per_page=250`;
+        }
+      } catch (err) {
+        logger.warn({ err }, "Trend scanner: failed to load coin IDs from DB, using fallback");
+      }
+    }
+
+    return `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${FALLBACK_COIN_IDS}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d`;
+  }
+
   return {
     async scan(): Promise<TrendSignals> {
       const [crypto, tech] = await Promise.allSettled([
@@ -44,7 +68,8 @@ export function trendScannerService() {
     },
 
     async scanCrypto(): Promise<TrendSignals["crypto_movers"]> {
-      const res = await fetch(COINGECKO_URL);
+      const url = await getCoinGeckoUrl();
+      const res = await fetch(url);
       if (!res.ok) {
         logger.warn({ status: res.status }, "CoinGecko request failed");
         return [];

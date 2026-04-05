@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { intelService } from "../services/index.js";
+import { intelDiscoveryService } from "../services/intel-discovery.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,7 @@ function requireIngestKey(
 export function intelRoutes(db: Db) {
   const router = Router();
   const svc = intelService(db);
+  const discovery = intelDiscoveryService(db);
 
   // ---- Public read endpoints (no auth) ----
 
@@ -71,10 +73,11 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.get("/companies", async (_req, res) => {
+  router.get("/companies", async (req, res) => {
     try {
-      const companies = await svc.listCompanies();
-      res.json({ companies });
+      const directory = req.query.directory as string | undefined;
+      const companies = await svc.listCompanies(directory);
+      res.json({ companies, directory: directory ?? "all" });
     } catch (err) {
       logger.error({ err }, "Intel list companies error");
       res.status(500).json({ error: "Failed to list companies" });
@@ -99,6 +102,16 @@ export function intelRoutes(db: Db) {
       res.json(result);
     } catch (err) {
       logger.error({ err }, "Intel seed error");
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  router.post("/backfill", requireIngestKey, async (_req, res) => {
+    try {
+      const result = await svc.backfillNewCompanies();
+      res.json({ success: true, ...result });
+    } catch (err) {
+      logger.error({ err }, "Intel backfill error");
       res.status(500).json({ success: false, error: String(err) });
     }
   });
@@ -159,6 +172,48 @@ export function intelRoutes(db: Db) {
       res.json(result);
     } catch (err) {
       logger.error({ err }, "Intel reddit ingest error");
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  // ---- Discovery endpoints ----
+
+  router.get("/discoveries", requireIngestKey, async (_req, res) => {
+    try {
+      const discoveries = await discovery.listDiscoveries();
+      res.json({ discoveries });
+    } catch (err) {
+      logger.error({ err }, "Intel discoveries list error");
+      res.status(500).json({ error: "Failed to list discoveries" });
+    }
+  });
+
+  router.post("/discoveries/:id/approve", requireIngestKey, async (req, res) => {
+    try {
+      const result = await discovery.approveDiscovery(parseInt(req.params.id as string, 10));
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Intel discovery approve error");
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  router.post("/discoveries/:id/reject", requireIngestKey, async (req, res) => {
+    try {
+      const result = await discovery.rejectDiscovery(parseInt(req.params.id as string, 10));
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Intel discovery reject error");
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  router.post("/discover", requireIngestKey, async (_req, res) => {
+    try {
+      const result = await discovery.discoverNewProjects();
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Intel discovery run error");
       res.status(500).json({ success: false, error: String(err) });
     }
   });

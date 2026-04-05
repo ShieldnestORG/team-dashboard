@@ -320,7 +320,7 @@ export async function createApp(
   const stopEvalCrons = startEvalCrons();
   const stopAlertCrons = startAlertCrons();
   const stopContentCrons = startContentCrons(db);
-  const stopTrendCrons = startTrendCrons();
+  const stopTrendCrons = startTrendCrons(db);
   logAvailableBackends();
   logConfiguredPublishers();
   void toolDispatcher.initialize().catch((err) => {

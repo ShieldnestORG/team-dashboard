@@ -2,6 +2,7 @@ export interface IntelCompany {
   slug: string
   name: string
   category: string
+  directory?: string
   description: string
   website: string
   coingecko_id: string | null

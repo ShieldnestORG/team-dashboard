@@ -5,6 +5,7 @@ import {
   timestamp,
   jsonb,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const intelCompanies = pgTable(
@@ -14,6 +15,7 @@ export const intelCompanies = pgTable(
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     category: text("category").notNull(),
+    directory: text("directory").notNull().default("crypto"),
     description: text("description").notNull(),
     website: text("website"),
     coingeckoId: text("coingecko_id"),
@@ -25,5 +27,6 @@ export const intelCompanies = pgTable(
   },
   (table) => ({
     slugUniqueIdx: uniqueIndex("intel_companies_slug_uq").on(table.slug),
+    directoryIdx: index("intel_companies_directory_idx").on(table.directory),
   }),
 );

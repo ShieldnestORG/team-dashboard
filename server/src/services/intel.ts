@@ -4,7 +4,46 @@ import type { Db } from "@paperclipai/db";
 import { intelCompanies, intelReports } from "@paperclipai/db";
 import { getEmbedding } from "./intel-embeddings.js";
 import { INTEL_COMPANIES } from "../data/intel-companies.js";
+import { AI_COMPANIES } from "../data/intel-companies-ai.js";
+import { DEFI_COMPANIES } from "../data/intel-companies-defi.js";
+import { DEVTOOLS_COMPANIES } from "../data/intel-companies-devtools.js";
 import { logger } from "../middleware/logger.js";
+
+// ---------------------------------------------------------------------------
+// Merge all directory seed data, deduplicating by slug (first occurrence wins)
+// ---------------------------------------------------------------------------
+
+const ALL_COMPANIES = (() => {
+  const seen = new Set<string>();
+  const merged: Array<typeof INTEL_COMPANIES[number] & { directory: string }> = [];
+
+  for (const c of INTEL_COMPANIES) {
+    if (!seen.has(c.slug)) {
+      seen.add(c.slug);
+      merged.push({ ...c, directory: c.directory ?? "crypto" });
+    }
+  }
+  for (const c of AI_COMPANIES) {
+    if (!seen.has(c.slug)) {
+      seen.add(c.slug);
+      merged.push({ ...c, directory: c.directory ?? "ai-ml" });
+    }
+  }
+  for (const c of DEFI_COMPANIES) {
+    if (!seen.has(c.slug)) {
+      seen.add(c.slug);
+      merged.push({ ...c, directory: c.directory ?? "defi" });
+    }
+  }
+  for (const c of DEVTOOLS_COMPANIES) {
+    if (!seen.has(c.slug)) {
+      seen.add(c.slug);
+      merged.push({ ...c, directory: c.directory ?? "devtools" });
+    }
+  }
+
+  return merged;
+})();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -149,7 +188,12 @@ export function intelService(db: Db) {
 
   // ------ Companies ------
 
-  async function listCompanies() {
+  async function listCompanies(directory?: string) {
+    if (directory) {
+      return db.select().from(intelCompanies)
+        .where(eq(intelCompanies.directory, directory))
+        .orderBy(intelCompanies.name);
+    }
     return db.select().from(intelCompanies).orderBy(intelCompanies.name);
   }
 
@@ -187,13 +231,14 @@ export function intelService(db: Db) {
 
   async function seedCompanies() {
     let seeded = 0;
-    for (const company of INTEL_COMPANIES) {
+    for (const company of ALL_COMPANIES) {
       await db.execute(sql`
-        INSERT INTO intel_companies (slug, name, category, description, website, coingecko_id, github_org, subreddit, twitter_handle, rss_feeds)
+        INSERT INTO intel_companies (slug, name, category, directory, description, website, coingecko_id, github_org, subreddit, twitter_handle, rss_feeds)
         VALUES (
           ${company.slug},
           ${company.name},
           ${company.category},
+          ${company.directory},
           ${company.description},
           ${company.website},
           ${company.coingecko_id},
@@ -205,6 +250,7 @@ export function intelService(db: Db) {
         ON CONFLICT (slug) DO UPDATE SET
           name = EXCLUDED.name,
           category = EXCLUDED.category,
+          directory = EXCLUDED.directory,
           description = EXCLUDED.description,
           website = EXCLUDED.website,
           coingecko_id = EXCLUDED.coingecko_id,
@@ -215,7 +261,13 @@ export function intelService(db: Db) {
       `);
       seeded++;
     }
-    return { success: true, message: `Seeded ${seeded} companies`, count: seeded };
+
+    // Fire backfill in background for newly added companies
+    backfillNewCompanies().catch((err) =>
+      logger.error({ err }, "Post-seed backfill failed"),
+    );
+
+    return { success: true, message: `Seeded ${seeded} companies across ${new Set(ALL_COMPANIES.map(c => c.directory)).size} directories`, count: seeded };
   }
 
   // ------ Search ------
@@ -266,7 +318,7 @@ export function intelService(db: Db) {
   async function stats() {
     const [
       totals, byType, topCompanies, recentActivity, coverage, lastIngested,
-      timeWindows, storageEstimate, freshnessRows, ingestionHealth,
+      timeWindows, storageEstimate, freshnessRows, ingestionHealth, directoryStats,
     ] = await Promise.all([
         rawQuery<{ total: string }>(sql`SELECT COUNT(*) AS total FROM intel_reports`),
         rawQuery<{ report_type: string; count: string }>(sql`
@@ -327,6 +379,18 @@ export function intelService(db: Db) {
           FROM intel_reports
           GROUP BY report_type
         `),
+        // Per-directory breakdown
+        rawQuery<{ directory: string; companies: string; reports: string; fresh: string }>(sql`
+          SELECT
+            c.directory,
+            COUNT(DISTINCT c.slug) AS companies,
+            COUNT(r.id) AS reports,
+            COUNT(DISTINCT CASE WHEN r.captured_at > NOW() - INTERVAL '7 days' THEN c.slug END) AS fresh
+          FROM intel_companies c
+          LEFT JOIN intel_reports r ON r.company_slug = c.slug
+          GROUP BY c.directory
+          ORDER BY companies DESC
+        `),
       ]);
 
     const cov = coverage[0] as Record<string, string> | undefined;
@@ -376,6 +440,13 @@ export function intelService(db: Db) {
         ingestionHealth.map((r) => [r.report_type, {
           last_ingested: r.last_ingested,
           count_last_24h: Number(r.count_last_24h),
+        }]),
+      ),
+      directories: Object.fromEntries(
+        directoryStats.map((d) => [d.directory, {
+          companies: Number(d.companies),
+          reports: Number(d.reports),
+          fresh_companies: Number(d.fresh),
         }]),
       ),
       generated_at: new Date().toISOString(),
@@ -773,6 +844,59 @@ export function intelService(db: Db) {
     };
   }
 
+  // ------ Backfill ------
+
+  async function backfillNewCompanies(): Promise<{ processed: number; errors: string[] }> {
+    const errors: string[] = [];
+    let processed = 0;
+
+    // Find companies with fewer than 5 reports
+    const sparse = await rawQuery<{ slug: string; coingecko_id: string | null; github_org: string | null; subreddit: string | null; twitter_handle: string | null; rss_feeds: string; cnt: string }>(sql`
+      SELECT c.slug, c.coingecko_id, c.github_org, c.subreddit, c.twitter_handle, c.rss_feeds::text,
+        COALESCE(r.cnt, 0) AS cnt
+      FROM intel_companies c
+      LEFT JOIN (
+        SELECT company_slug, COUNT(*) AS cnt FROM intel_reports GROUP BY company_slug
+      ) r ON r.company_slug = c.slug
+      WHERE COALESCE(r.cnt, 0) < 5
+      ORDER BY COALESCE(r.cnt, 0) ASC
+      LIMIT 100
+    `);
+
+    logger.info({ count: sparse.length }, "Backfill: found companies with sparse data");
+
+    // Process in small batches with delays to respect rate limits
+    for (const company of sparse) {
+      try {
+        // Price backfill
+        if (company.coingecko_id) {
+          const priceResult = await ingestPrices(1, 0);
+          processed += priceResult.processed;
+        }
+
+        // GitHub backfill (wider window)
+        if (company.github_org) {
+          const ghResult = await ingestGithub(1, 0);
+          processed += ghResult.processed;
+        }
+
+        // Reddit backfill
+        if (company.subreddit) {
+          const redditResult = await ingestReddit(1, 0);
+          processed += redditResult.processed;
+        }
+
+        // Small delay between companies to be polite
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } catch (err) {
+        errors.push(`${company.slug}: ${String(err)}`);
+      }
+    }
+
+    logger.info({ processed, errors: errors.length }, "Backfill completed");
+    return { processed, errors };
+  }
+
   return {
     listCompanies,
     getCompany,
@@ -784,6 +908,7 @@ export function intelService(db: Db) {
     ingestTwitter,
     ingestGithub,
     ingestReddit,
+    backfillNewCompanies,
   };
 }
 

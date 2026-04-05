@@ -1,3 +1,4 @@
+import type { Db } from "@paperclipai/db";
 import { trendScannerService } from "./trend-scanner.js";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
@@ -17,8 +18,8 @@ export function getLatestSignals() {
   return latestSignals;
 }
 
-export function startTrendCrons() {
-  const svc = trendScannerService();
+export function startTrendCrons(db?: Db) {
+  const svc = trendScannerService(db);
 
   const jobs: TrendCronJob[] = [
     {
