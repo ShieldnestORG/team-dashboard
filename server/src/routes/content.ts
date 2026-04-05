@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { contentService } from "../services/content.js";
+import { contentFeedbackService } from "../services/content-feedback.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,7 @@ function requireContentKey(
 export function contentRoutes(db: Db) {
   const router = Router();
   const svc = contentService(db);
+  const feedbackSvc = contentFeedbackService(db);
 
   // ---- POST /api/content/preview ----
 
@@ -130,6 +132,67 @@ export function contentRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "Content stats error");
       res.status(500).json({ error: "Stats unavailable" });
+    }
+  });
+
+  // ---- POST /api/content/:id/feedback ----
+
+  router.post("/:id/feedback", requireContentKey, async (req, res) => {
+    const contentItemId = req.params.id as string;
+    const { rating, comment, contentType } = req.body as {
+      rating: string;
+      comment?: string;
+      contentType?: string;
+    };
+
+    if (!rating || (rating !== "like" && rating !== "dislike")) {
+      res.status(400).json({ error: 'Missing or invalid rating. Must be "like" or "dislike"' });
+      return;
+    }
+
+    const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+    try {
+      const feedback = await feedbackSvc.add({
+        companyId,
+        contentItemId,
+        contentType: (contentType as "text" | "visual") || "text",
+        rating: rating as "like" | "dislike",
+        comment,
+        createdByUserId: req.actor?.type === "board" ? req.actor.userId ?? undefined : undefined,
+      });
+      res.json(feedback);
+    } catch (err) {
+      logger.error({ err, contentItemId }, "Content feedback error");
+      res.status(500).json({ error: "Failed to submit feedback" });
+    }
+  });
+
+  // ---- GET /api/content/:id/feedback ----
+
+  router.get("/:id/feedback", requireContentKey, async (req, res) => {
+    const contentItemId = req.params.id as string;
+
+    try {
+      const feedback = await feedbackSvc.getForItem(contentItemId);
+      res.json({ feedback });
+    } catch (err) {
+      logger.error({ err, contentItemId }, "Content feedback list error");
+      res.status(500).json({ error: "Failed to fetch feedback" });
+    }
+  });
+
+  // ---- GET /api/content/feedback/stats ----
+
+  router.get("/feedback/stats", requireContentKey, async (_req, res) => {
+    const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+    try {
+      const stats = await feedbackSvc.getStats(companyId);
+      res.json(stats);
+    } catch (err) {
+      logger.error({ err }, "Content feedback stats error");
+      res.status(500).json({ error: "Failed to fetch feedback stats" });
     }
   });
 

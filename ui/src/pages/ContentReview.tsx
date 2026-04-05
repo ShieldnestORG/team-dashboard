@@ -5,6 +5,8 @@ import { contentApi } from "../api/content";
 import type { ContentQueueItem, ContentPreviewResult } from "../api/content";
 import { visualContentApi } from "../api/visual-content";
 import type { VisualContentItem } from "../api/visual-content";
+import { contentFeedbackApi } from "../api/content-feedback";
+import type { FeedbackStats } from "../api/content-feedback";
 import { PlatformPreview } from "../components/content-previews";
 import {
   Card,
@@ -352,6 +354,76 @@ function GeneratePreviewPanel() {
 
 // ── Content Card ────────────────────────────────────────────────────────────
 
+function FeedbackButtons({ itemId, contentType }: { itemId: string; contentType: "text" | "visual" }) {
+  const queryClient = useQueryClient();
+  const [showFeedbackComment, setShowFeedbackComment] = useState(false);
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [lastRating, setLastRating] = useState<"like" | "dislike" | null>(null);
+
+  const feedbackMutation = useMutation({
+    mutationFn: ({ rating, comment }: { rating: "like" | "dislike"; comment?: string }) =>
+      contentFeedbackApi.submit(itemId, rating, comment, contentType),
+    onSuccess: (_data, vars) => {
+      setLastRating(vars.rating);
+      setShowFeedbackComment(false);
+      setFeedbackComment("");
+      queryClient.invalidateQueries({ queryKey: ["content", "feedback"] });
+    },
+  });
+
+  return (
+    <div className="flex items-center gap-2 border-t border-border/50 pt-2">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mr-1">Training</span>
+      <button
+        onClick={() => {
+          if (showFeedbackComment) {
+            feedbackMutation.mutate({ rating: "like", comment: feedbackComment || undefined });
+          } else {
+            feedbackMutation.mutate({ rating: "like" });
+          }
+        }}
+        disabled={feedbackMutation.isPending}
+        className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors border ${lastRating === "like" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "bg-muted/30 text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-400 border-border/50"}`}
+      >
+        <ThumbsUp className="h-3 w-3" /> Like
+      </button>
+      <button
+        onClick={() => {
+          if (showFeedbackComment) {
+            feedbackMutation.mutate({ rating: "dislike", comment: feedbackComment || undefined });
+          } else {
+            feedbackMutation.mutate({ rating: "dislike" });
+          }
+        }}
+        disabled={feedbackMutation.isPending}
+        className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors border ${lastRating === "dislike" ? "bg-red-500/20 text-red-400 border-red-500/40" : "bg-muted/30 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 border-border/50"}`}
+      >
+        <ThumbsDown className="h-3 w-3" /> Dislike
+      </button>
+      <button
+        onClick={() => setShowFeedbackComment(!showFeedbackComment)}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium bg-muted/30 text-muted-foreground hover:bg-muted border border-border/50 transition-colors"
+      >
+        <MessageSquare className="h-3 w-3" />
+      </button>
+      {showFeedbackComment && (
+        <input
+          type="text"
+          value={feedbackComment}
+          onChange={(e) => setFeedbackComment(e.target.value)}
+          placeholder="Why? (helps train future content)"
+          className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && feedbackComment.trim()) {
+              feedbackMutation.mutate({ rating: "like", comment: feedbackComment.trim() });
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function ContentCard({
   item,
   onReview,
@@ -486,6 +558,9 @@ function ContentCard({
             />
           </div>
         )}
+
+        {/* Training feedback */}
+        <FeedbackButtons itemId={item.id} contentType="text" />
       </CardContent>
     </Card>
   );
@@ -566,6 +641,7 @@ function VisualContentCard({ item, onReview, isReviewing }: { item: VisualConten
           <button onClick={() => setShowComment(!showComment)} className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-muted/50 text-muted-foreground hover:bg-muted border border-border transition-colors"><MessageSquare className="h-3.5 w-3.5" /> Comment</button>
         </div>}
         {showComment && <div className="flex gap-2"><input type="text" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add a review comment..." className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" onKeyDown={(e) => { if (e.key === "Enter" && comment.trim()) { onReview(item.id, "flagged", comment.trim()); setShowComment(false); setComment(""); } }} /></div>}
+        <FeedbackButtons itemId={item.id} contentType="visual" />
       </CardContent>
     </Card>
   );

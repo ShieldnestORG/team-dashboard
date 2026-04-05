@@ -58,3 +58,6 @@ export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
 export { intelCompanies } from "./intel_companies.js";
 export { intelReports } from "./intel_reports.js";
+export { contentItems } from "./content_items.js";
+export { visualContentItems, visualContentAssets } from "./visual_content_items.js";
+export { contentFeedback } from "./content_feedback.js";

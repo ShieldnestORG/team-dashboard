@@ -1,8 +1,7 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
 import { randomUUID } from "crypto";
-import { sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { contentItems, contentFeedback } from "@paperclipai/db";
 import { getEmbedding } from "./intel-embeddings.js";
 import { logger } from "../middleware/logger.js";
 
@@ -17,6 +16,7 @@ import * as prism from "../content-templates/prism.js";
 
 export interface ContentItem {
   id: string;
+  companyId: string;
   personalityId: string;
   contentType: string;
   platform: string;
@@ -33,6 +33,7 @@ export interface ContentItem {
   createdAt: string;
   reviewStatus: "pending" | "approved" | "flagged";
   reviewComment?: string;
+  publishedAt?: string | null;
 }
 
 export interface GeneratedContent {
@@ -63,31 +64,6 @@ const PERSONALITIES: Record<string, {
   spark,
   prism,
 };
-
-// ---------------------------------------------------------------------------
-// File-based queue store
-// ---------------------------------------------------------------------------
-
-const QUEUE_PATH = join(process.cwd(), "data", "content-queue.json");
-
-function ensureDir() {
-  const dir = dirname(QUEUE_PATH);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-}
-
-function readQueue(): ContentItem[] {
-  if (!existsSync(QUEUE_PATH)) return [];
-  try {
-    return JSON.parse(readFileSync(QUEUE_PATH, "utf-8")) as ContentItem[];
-  } catch {
-    return [];
-  }
-}
-
-function writeQueue(items: ContentItem[]): void {
-  ensureDir();
-  writeFileSync(QUEUE_PATH, JSON.stringify(items, null, 2));
-}
 
 // ---------------------------------------------------------------------------
 // Ollama client
@@ -171,8 +147,119 @@ function resolvePlatform(contentType: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Map DB row to ContentItem
+// ---------------------------------------------------------------------------
+
+function rowToContentItem(row: typeof contentItems.$inferSelect): ContentItem {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    personalityId: row.personalityId,
+    contentType: row.contentType,
+    platform: row.platform,
+    status: row.status as ContentItem["status"],
+    content: row.content,
+    metadata: {
+      topic: row.topic,
+      contextQuery: row.contextQuery ?? undefined,
+      model: row.model ?? OLLAMA_MODEL,
+      charCount: row.charCount ?? 0,
+      charLimit: row.charLimit ?? 0,
+      withinLimit: (row.charCount ?? 0) <= (row.charLimit ?? 0),
+    },
+    createdAt: row.createdAt.toISOString(),
+    reviewStatus: row.reviewStatus as ContentItem["reviewStatus"],
+    reviewComment: row.reviewComment ?? undefined,
+    publishedAt: row.publishedAt?.toISOString() ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Feedback context builder for training
+// ---------------------------------------------------------------------------
+
+async function buildFeedbackContext(
+  db: Db,
+  companyId: string,
+  personalityId: string,
+  platform: string,
+): Promise<string> {
+  try {
+    // Get liked examples
+    const liked = await db
+      .select({
+        content: contentItems.content,
+        comment: contentFeedback.comment,
+      })
+      .from(contentFeedback)
+      .innerJoin(contentItems, eq(contentFeedback.contentItemId, contentItems.id))
+      .where(
+        and(
+          eq(contentFeedback.companyId, companyId),
+          eq(contentFeedback.contentType, "text"),
+          eq(contentFeedback.rating, "like"),
+          eq(contentItems.personalityId, personalityId),
+          eq(contentItems.platform, platform),
+        ),
+      )
+      .orderBy(desc(contentFeedback.createdAt))
+      .limit(3);
+
+    // Get disliked examples
+    const disliked = await db
+      .select({
+        content: contentItems.content,
+        comment: contentFeedback.comment,
+      })
+      .from(contentFeedback)
+      .innerJoin(contentItems, eq(contentFeedback.contentItemId, contentItems.id))
+      .where(
+        and(
+          eq(contentFeedback.companyId, companyId),
+          eq(contentFeedback.contentType, "text"),
+          eq(contentFeedback.rating, "dislike"),
+          eq(contentItems.personalityId, personalityId),
+          eq(contentItems.platform, platform),
+        ),
+      )
+      .orderBy(desc(contentFeedback.createdAt))
+      .limit(3);
+
+    if (liked.length === 0 && disliked.length === 0) return "";
+
+    let feedbackBlock = "\n\n## Recent Admin Feedback\n";
+
+    if (liked.length > 0) {
+      feedbackBlock += "### Content the admin liked:\n";
+      for (const item of liked) {
+        const snippet = item.content.slice(0, 200);
+        const comment = item.comment ? ` — feedback: "${item.comment}"` : "";
+        feedbackBlock += `- "${snippet}..."${comment}\n`;
+      }
+    }
+
+    if (disliked.length > 0) {
+      feedbackBlock += "### Content the admin disliked:\n";
+      for (const item of disliked) {
+        const snippet = item.content.slice(0, 200);
+        const comment = item.comment ? ` — feedback: "${item.comment}"` : "";
+        feedbackBlock += `- "${snippet}..."${comment}\n`;
+      }
+    }
+
+    feedbackBlock += "\nUse this feedback to guide your tone and approach.\n";
+    return feedbackBlock;
+  } catch (err) {
+    logger.warn({ err }, "Failed to fetch feedback for training context");
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
+
+const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 export function contentService(db: Db) {
   async function generate(opts: {
@@ -180,6 +267,7 @@ export function contentService(db: Db) {
     contentType: string;
     topic: string;
     contextQuery?: string;
+    companyId?: string;
   }): Promise<GeneratedContent> {
     const personality = PERSONALITIES[opts.personalityId];
     if (!personality) {
@@ -192,14 +280,19 @@ export function contentService(db: Db) {
     }
 
     const charLimit = personality.PLATFORM_LIMITS[opts.contentType] || 5000;
+    const companyId = opts.companyId || DEFAULT_COMPANY_ID;
+    const platform = resolvePlatform(opts.contentType);
 
     // Fetch context from intel reports
     const contextTopic = opts.contextQuery || opts.topic;
     const context = await fetchContext(db, contextTopic);
 
+    // Fetch admin feedback for training
+    const feedbackContext = await buildFeedbackContext(db, companyId, opts.personalityId, platform);
+
     // Build the full prompt
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context);
-    const fullPrompt = `${systemPrompt}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
+    const fullPrompt = `${systemPrompt}${feedbackContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
     // Call Ollama
     const generatedText = await callOllama(fullPrompt);
@@ -216,98 +309,121 @@ export function contentService(db: Db) {
       withinLimit,
     };
 
-    // Store in queue
+    // Store in database
     const contentId = randomUUID();
-    const item: ContentItem = {
+    const [row] = await db.insert(contentItems).values({
       id: contentId,
+      companyId,
       personalityId: opts.personalityId,
       contentType: opts.contentType,
-      platform: resolvePlatform(opts.contentType),
+      platform,
       status: "draft",
       content: generatedText,
-      metadata,
-      createdAt: new Date().toISOString(),
+      topic: opts.topic,
+      contextQuery: opts.contextQuery ?? null,
+      model: OLLAMA_MODEL,
+      charCount,
+      charLimit,
       reviewStatus: "pending",
-    };
-
-    const queue = readQueue();
-    queue.push(item);
-    writeQueue(queue);
+    }).returning();
 
     logger.info(
-      { contentId, personalityId: opts.personalityId, contentType: opts.contentType, charCount, withinLimit },
-      "Content generated",
+      { contentId: row.id, personalityId: opts.personalityId, contentType: opts.contentType, charCount, withinLimit },
+      "Content generated and stored in DB",
     );
 
-    return { contentId, content: generatedText, metadata };
+    return { contentId: row.id, content: generatedText, metadata };
   }
 
   async function listQueue(opts: {
     status?: string;
     platform?: string;
+    personalityId?: string;
     limit?: number;
     offset?: number;
+    companyId?: string;
   }): Promise<ContentItem[]> {
-    let items = readQueue();
+    const companyId = opts.companyId || DEFAULT_COMPANY_ID;
+    const conditions = [eq(contentItems.companyId, companyId)];
 
     if (opts.status) {
-      items = items.filter((i) => i.status === opts.status || i.reviewStatus === opts.status);
+      // Support filtering by either status or reviewStatus
+      conditions.push(
+        sql`(${contentItems.status} = ${opts.status} OR ${contentItems.reviewStatus} = ${opts.status})`,
+      );
     }
     if (opts.platform) {
-      items = items.filter((i) => i.platform === opts.platform);
+      conditions.push(eq(contentItems.platform, opts.platform));
+    }
+    if (opts.personalityId) {
+      conditions.push(eq(contentItems.personalityId, opts.personalityId));
     }
 
-    // Sort newest first
-    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const rows = await db
+      .select()
+      .from(contentItems)
+      .where(and(...conditions))
+      .orderBy(desc(contentItems.createdAt))
+      .limit(opts.limit || 50)
+      .offset(opts.offset || 0);
 
-    const offset = opts.offset || 0;
-    const limit = opts.limit || 50;
-    return items.slice(offset, offset + limit);
+    return rows.map(rowToContentItem);
   }
 
   async function reviewItem(id: string, reviewStatus: string, reviewComment?: string): Promise<void> {
-    const queue = readQueue();
-    const idx = queue.findIndex((i) => i.id === id);
-    if (idx === -1) {
-      throw new Error(`Content item not found: ${id}`);
-    }
-
     if (reviewStatus !== "approved" && reviewStatus !== "flagged") {
       throw new Error(`Invalid review status: ${reviewStatus}. Must be "approved" or "flagged"`);
     }
 
-    queue[idx].reviewStatus = reviewStatus;
-    if (reviewComment) {
-      queue[idx].reviewComment = reviewComment;
-    }
+    const now = new Date();
+    const updates: Record<string, unknown> = {
+      reviewStatus,
+      reviewComment: reviewComment ?? null,
+      updatedAt: now,
+    };
+
     if (reviewStatus === "approved") {
-      queue[idx].status = "published";
+      updates.status = "published";
+      updates.publishedAt = now;
     }
     if (reviewStatus === "flagged") {
-      queue[idx].status = "rejected";
+      updates.status = "rejected";
     }
 
-    writeQueue(queue);
+    const result = await db
+      .update(contentItems)
+      .set(updates)
+      .where(eq(contentItems.id, id))
+      .returning({ id: contentItems.id });
+
+    if (result.length === 0) {
+      throw new Error(`Content item not found: ${id}`);
+    }
+
     logger.info({ id, reviewStatus }, "Content item reviewed");
   }
 
-  async function stats(): Promise<ContentStats> {
-    const items = readQueue();
+  async function stats(companyId?: string): Promise<ContentStats> {
+    const cid = companyId || DEFAULT_COMPANY_ID;
+    const rows = await db
+      .select()
+      .from(contentItems)
+      .where(eq(contentItems.companyId, cid));
 
     const byStatus: Record<string, number> = {};
     const byPlatform: Record<string, number> = {};
     const byPersonality: Record<string, number> = {};
     const byReviewStatus: Record<string, number> = {};
 
-    for (const item of items) {
-      byStatus[item.status] = (byStatus[item.status] || 0) + 1;
-      byPlatform[item.platform] = (byPlatform[item.platform] || 0) + 1;
-      byPersonality[item.personalityId] = (byPersonality[item.personalityId] || 0) + 1;
-      byReviewStatus[item.reviewStatus] = (byReviewStatus[item.reviewStatus] || 0) + 1;
+    for (const row of rows) {
+      byStatus[row.status] = (byStatus[row.status] || 0) + 1;
+      byPlatform[row.platform] = (byPlatform[row.platform] || 0) + 1;
+      byPersonality[row.personalityId] = (byPersonality[row.personalityId] || 0) + 1;
+      byReviewStatus[row.reviewStatus] = (byReviewStatus[row.reviewStatus] || 0) + 1;
     }
 
     return {
-      total: items.length,
+      total: rows.length,
       byStatus,
       byPlatform,
       byPersonality,
@@ -355,7 +471,7 @@ export function contentService(db: Db) {
 
     logger.info(
       { personalityId: opts.personalityId, contentType: opts.contentType, charCount, withinLimit },
-      "Content preview generated (not saved to queue)",
+      "Content preview generated (not saved)",
     );
 
     return { content: generatedText, metadata };

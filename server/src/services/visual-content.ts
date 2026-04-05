@@ -1,8 +1,7 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
 import { randomUUID } from "crypto";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { sql } from "drizzle-orm";
+import { visualContentItems, visualContentAssets } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { getEmbedding } from "./intel-embeddings.js";
 import {
@@ -44,6 +43,7 @@ export type VisualPlatform =
 
 export interface VisualContentItem {
   id: string;
+  companyId: string;
   agentId: string;
   contentType: VisualContentType;
   platform: VisualPlatform;
@@ -63,6 +63,7 @@ export interface VisualContentItem {
   reviewStatus: "pending" | "approved" | "flagged";
   reviewComment?: string;
   jobId?: string;
+  publishedAt?: string | null;
   createdAt: string;
 }
 
@@ -84,35 +85,6 @@ export const PLATFORM_SPECS: Record<
   instagram_reels: { width: 1080, height: 1920, maxDurationSec: 90, aspectRatio: "9:16" },
   twitter_video: { width: 1280, height: 720, maxDurationSec: 140, aspectRatio: "16:9" },
 };
-
-const QUEUE_PATH = join(process.cwd(), "data", "visual-content-queue.json");
-
-function ensureDir() {
-  const dir = dirname(QUEUE_PATH);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-}
-
-function readQueue(): VisualContentItem[] {
-  if (!existsSync(QUEUE_PATH)) return [];
-  try {
-    return JSON.parse(readFileSync(QUEUE_PATH, "utf-8")) as VisualContentItem[];
-  } catch {
-    return [];
-  }
-}
-
-function writeQueue(items: VisualContentItem[]): void {
-  ensureDir();
-  writeFileSync(QUEUE_PATH, JSON.stringify(items, null, 2));
-}
-
-function updateQueueItem(id: string, updates: Partial<VisualContentItem>): void {
-  const queue = readQueue();
-  const idx = queue.findIndex((i) => i.id === id);
-  if (idx === -1) return;
-  Object.assign(queue[idx], updates);
-  writeQueue(queue);
-}
 
 async function fetchContext(db: Db, topic: string, limit = 5): Promise<string> {
   try {
@@ -156,15 +128,77 @@ function contentTypeToCapability(ct: VisualContentType): VisualCapability {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Map DB rows to VisualContentItem
+// ---------------------------------------------------------------------------
+
+function rowToVisualItem(
+  row: typeof visualContentItems.$inferSelect,
+  assetRows: Array<typeof visualContentAssets.$inferSelect>,
+): VisualContentItem {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    agentId: row.agentId ?? "",
+    contentType: row.contentType as VisualContentType,
+    platform: row.platform as VisualPlatform,
+    status: row.status as VisualContentItem["status"],
+    prompt: row.prompt,
+    scriptText: row.scriptText ?? undefined,
+    backend: row.backend ?? "",
+    assets: assetRows.map((a) => ({
+      id: a.id,
+      type: a.type as VisualAsset["type"],
+      objectKey: a.objectKey,
+      contentType: a.contentType,
+      width: a.width ?? 0,
+      height: a.height ?? 0,
+      durationMs: a.durationMs ?? undefined,
+      thumbnailKey: a.thumbnailKey ?? undefined,
+      byteSize: a.byteSize ?? 0,
+    })),
+    metadata: {
+      topic: (meta.topic as string) ?? "",
+      contextQuery: (meta.contextQuery as string) ?? undefined,
+      model: (meta.model as string) ?? "",
+      width: (meta.width as number) ?? 0,
+      height: (meta.height as number) ?? 0,
+      durationSec: (meta.durationSec as number) ?? undefined,
+    },
+    reviewStatus: row.reviewStatus as VisualContentItem["reviewStatus"],
+    reviewComment: row.reviewComment ?? undefined,
+    jobId: row.jobId ?? undefined,
+    publishedAt: row.publishedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
 export function visualContentService(
   db: Db,
   storageService: StorageService,
   companyId: string,
 ) {
+  const resolvedCompanyId = companyId === "default" ? DEFAULT_COMPANY_ID : companyId;
+
+  // Helper to update a DB row (replaces updateQueueItem)
+  async function updateItem(id: string, updates: Record<string, unknown>): Promise<void> {
+    await db
+      .update(visualContentItems)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(visualContentItems.id, id));
+  }
+
   setJobCompletionCallback(async (job, assetBuffer) => {
     try {
       const result = await storageService.putFile({
-        companyId,
+        companyId: resolvedCompanyId,
         namespace: "visual-content",
         originalFilename: `${job.type}-${job.id}.${job.assetContentType?.split("/")[1] || "bin"}`,
         contentType: job.assetContentType || "application/octet-stream",
@@ -173,8 +207,9 @@ export function visualContentService(
 
       updateJobRecord(job.id, { assetObjectKey: result.objectKey });
 
-      const asset: VisualAsset = {
-        id: randomUUID(),
+      // Insert asset row
+      await db.insert(visualContentAssets).values({
+        visualContentItemId: job.contentItemId,
         type: job.type,
         objectKey: result.objectKey,
         contentType: result.contentType,
@@ -182,20 +217,17 @@ export function visualContentService(
         height: job.height || 1920,
         durationMs: job.durationMs,
         byteSize: result.byteSize,
-      };
-
-      updateQueueItem(job.contentItemId, {
-        status: "ready",
-        assets: [asset],
       });
+
+      await updateItem(job.contentItemId, { status: "ready" });
 
       logger.info(
         { jobId: job.id, objectKey: result.objectKey },
-        "Visual asset stored",
+        "Visual asset stored in DB",
       );
     } catch (err) {
       logger.error({ err, jobId: job.id }, "Failed to store visual asset");
-      updateQueueItem(job.contentItemId, { status: "failed" });
+      await updateItem(job.contentItemId, { status: "failed" });
     }
   });
 
@@ -246,27 +278,7 @@ export function visualContentService(
     });
 
     const contentItemId = randomUUID();
-    const item: VisualContentItem = {
-      id: contentItemId,
-      agentId: opts.agentId,
-      contentType: opts.contentType,
-      platform: opts.platform,
-      status: result.status === "ready" ? "ready" : result.status === "failed" ? "failed" : "generating",
-      prompt: opts.prompt,
-      scriptText: opts.scriptText,
-      backend: backend.name,
-      assets: [],
-      metadata: {
-        topic: opts.topic,
-        contextQuery: opts.contextQuery,
-        model: backend.name,
-        width: spec.width,
-        height: spec.height,
-        durationSec: capability === "video" ? spec.maxDurationSec : undefined,
-      },
-      reviewStatus: "pending",
-      createdAt: new Date().toISOString(),
-    };
+    const itemStatus = result.status === "ready" ? "ready" : result.status === "failed" ? "failed" : "generating";
 
     const job = createJob({
       backendName: backend.name,
@@ -279,30 +291,52 @@ export function visualContentService(
       height: spec.height,
     });
 
-    item.jobId = job.id;
+    // Insert item into DB
+    const [row] = await db.insert(visualContentItems).values({
+      id: contentItemId,
+      companyId: resolvedCompanyId,
+      agentId: opts.agentId,
+      contentType: opts.contentType,
+      platform: opts.platform,
+      status: itemStatus,
+      prompt: opts.prompt,
+      scriptText: opts.scriptText ?? null,
+      backend: backend.name,
+      metadata: {
+        topic: opts.topic,
+        contextQuery: opts.contextQuery,
+        model: backend.name,
+        width: spec.width,
+        height: spec.height,
+        durationSec: capability === "video" ? spec.maxDurationSec : undefined,
+      },
+      reviewStatus: "pending",
+      jobId: job.id,
+    }).returning();
 
+    // Handle sync result (immediate asset)
     if (result.status === "ready" && result.assetBuffer) {
       try {
         const stored = await storageService.putFile({
-          companyId,
+          companyId: resolvedCompanyId,
           namespace: "visual-content",
           originalFilename: result.filename || `visual-${contentItemId}.png`,
           contentType: result.contentType || "image/png",
           body: result.assetBuffer,
         });
 
-        const asset: VisualAsset = {
-          id: randomUUID(),
+        await db.insert(visualContentAssets).values({
+          visualContentItemId: contentItemId,
           type: "image",
           objectKey: stored.objectKey,
           contentType: stored.contentType,
           width: result.width || spec.width,
           height: result.height || spec.height,
           byteSize: stored.byteSize,
-        };
+        });
 
-        item.status = "ready";
-        item.assets = [asset];
+        await updateItem(contentItemId, { status: "ready" });
+
         updateJobRecord(job.id, {
           status: "ready",
           assetObjectKey: stored.objectKey,
@@ -310,26 +344,22 @@ export function visualContentService(
         });
       } catch (err) {
         logger.error({ err }, "Failed to store synchronous visual asset");
-        item.status = "failed";
+        await updateItem(contentItemId, { status: "failed" });
       }
     }
 
-    const queue = readQueue();
-    queue.push(item);
-    writeQueue(queue);
-
     logger.info(
       {
-        contentItemId,
+        contentItemId: row.id,
         jobId: job.id,
         backend: backend.name,
         contentType: opts.contentType,
         platform: opts.platform,
       },
-      "Visual content generation started",
+      "Visual content generation started (DB)",
     );
 
-    return { contentItemId, jobId: job.id, status: item.status };
+    return { contentItemId: row.id, jobId: job.id, status: itemStatus };
   }
 
   async function listQueue(opts: {
@@ -339,32 +369,62 @@ export function visualContentService(
     limit?: number;
     offset?: number;
   }): Promise<VisualContentItem[]> {
-    let items = readQueue();
+    const conditions = [eq(visualContentItems.companyId, resolvedCompanyId)];
 
     if (opts.status) {
-      items = items.filter(
-        (i) => i.status === opts.status || i.reviewStatus === opts.status,
+      conditions.push(
+        sql`(${visualContentItems.status} = ${opts.status} OR ${visualContentItems.reviewStatus} = ${opts.status})`,
       );
     }
     if (opts.platform) {
-      items = items.filter((i) => i.platform === opts.platform);
+      conditions.push(eq(visualContentItems.platform, opts.platform));
     }
     if (opts.agentId) {
-      items = items.filter((i) => i.agentId === opts.agentId);
+      conditions.push(eq(visualContentItems.agentId, opts.agentId));
     }
 
-    items.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    const rows = await db
+      .select()
+      .from(visualContentItems)
+      .where(and(...conditions))
+      .orderBy(desc(visualContentItems.createdAt))
+      .limit(opts.limit || 50)
+      .offset(opts.offset || 0);
 
-    const offset = opts.offset || 0;
-    const limit = opts.limit || 50;
-    return items.slice(offset, offset + limit);
+    // Fetch assets for all items
+    const itemIds = rows.map((r) => r.id);
+    const allAssets = itemIds.length > 0
+      ? await db
+          .select()
+          .from(visualContentAssets)
+          .where(sql`${visualContentAssets.visualContentItemId} IN (${sql.join(itemIds.map((id) => sql`${id}`), sql`,`)})`)
+      : [];
+
+    const assetsByItem = new Map<string, Array<typeof visualContentAssets.$inferSelect>>();
+    for (const asset of allAssets) {
+      const list = assetsByItem.get(asset.visualContentItemId) ?? [];
+      list.push(asset);
+      assetsByItem.set(asset.visualContentItemId, list);
+    }
+
+    return rows.map((row) => rowToVisualItem(row, assetsByItem.get(row.id) ?? []));
   }
 
   async function getItem(id: string): Promise<VisualContentItem | undefined> {
-    return readQueue().find((i) => i.id === id);
+    const [row] = await db
+      .select()
+      .from(visualContentItems)
+      .where(eq(visualContentItems.id, id))
+      .limit(1);
+
+    if (!row) return undefined;
+
+    const assets = await db
+      .select()
+      .from(visualContentAssets)
+      .where(eq(visualContentAssets.visualContentItemId, id));
+
+    return rowToVisualItem(row, assets);
   }
 
   async function reviewItem(
@@ -372,25 +432,43 @@ export function visualContentService(
     reviewStatus: string,
     reviewComment?: string,
   ): Promise<void> {
-    const queue = readQueue();
-    const idx = queue.findIndex((i) => i.id === id);
-    if (idx === -1) throw new Error(`Visual content item not found: ${id}`);
-
     if (reviewStatus !== "approved" && reviewStatus !== "flagged") {
       throw new Error(`Invalid review status: ${reviewStatus}`);
     }
 
-    queue[idx].reviewStatus = reviewStatus;
-    if (reviewComment) queue[idx].reviewComment = reviewComment;
-    if (reviewStatus === "approved") queue[idx].status = "published";
-    if (reviewStatus === "flagged") queue[idx].status = "failed";
+    const now = new Date();
+    const updates: Record<string, unknown> = {
+      reviewStatus,
+      reviewComment: reviewComment ?? null,
+      updatedAt: now,
+    };
 
-    writeQueue(queue);
+    if (reviewStatus === "approved") {
+      updates.status = "published";
+      updates.publishedAt = now;
+    }
+    if (reviewStatus === "flagged") {
+      updates.status = "failed";
+    }
+
+    const result = await db
+      .update(visualContentItems)
+      .set(updates)
+      .where(eq(visualContentItems.id, id))
+      .returning({ id: visualContentItems.id });
+
+    if (result.length === 0) {
+      throw new Error(`Visual content item not found: ${id}`);
+    }
+
     logger.info({ id, reviewStatus }, "Visual content item reviewed");
   }
 
   async function stats(): Promise<VisualContentStats> {
-    const items = readQueue();
+    const rows = await db
+      .select()
+      .from(visualContentItems)
+      .where(eq(visualContentItems.companyId, resolvedCompanyId));
 
     const byStatus: Record<string, number> = {};
     const byPlatform: Record<string, number> = {};
@@ -398,16 +476,15 @@ export function visualContentService(
     const byReviewStatus: Record<string, number> = {};
     const byBackend: Record<string, number> = {};
 
-    for (const item of items) {
-      byStatus[item.status] = (byStatus[item.status] || 0) + 1;
-      byPlatform[item.platform] = (byPlatform[item.platform] || 0) + 1;
-      byAgent[item.agentId] = (byAgent[item.agentId] || 0) + 1;
-      byReviewStatus[item.reviewStatus] =
-        (byReviewStatus[item.reviewStatus] || 0) + 1;
-      byBackend[item.backend] = (byBackend[item.backend] || 0) + 1;
+    for (const row of rows) {
+      byStatus[row.status] = (byStatus[row.status] || 0) + 1;
+      byPlatform[row.platform] = (byPlatform[row.platform] || 0) + 1;
+      if (row.agentId) byAgent[row.agentId] = (byAgent[row.agentId] || 0) + 1;
+      byReviewStatus[row.reviewStatus] = (byReviewStatus[row.reviewStatus] || 0) + 1;
+      if (row.backend) byBackend[row.backend] = (byBackend[row.backend] || 0) + 1;
     }
 
-    return { total: items.length, byStatus, byPlatform, byAgent, byReviewStatus, byBackend };
+    return { total: rows.length, byStatus, byPlatform, byAgent, byReviewStatus, byBackend };
   }
 
   const stopPolling = startJobPolling(15_000);
