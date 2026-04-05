@@ -32,8 +32,10 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, PostgreSQL-backed visual content queue (`visual_content_items` + `visual_content_assets` tables) with review workflow, Content Studio UI with Text/Visual mode toggle
 - **Public Reels API** — unauthenticated `/api/reels` endpoint serving approved visual content for coherencedaddy.com. Stream, download (with Content-Disposition), and thumbnail endpoints
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
-- **Directory expansion** — AI/ML (152 entries), DeFi (114), DevTools (155) niche directories beyond the original 114 blockchain companies
-- **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, cron-scheduled ingestion
+- **Directory expansion** — AI/ML (151 entries), DeFi (114), DevTools (155), Crypto (114) — 508 unique companies across 4 directories, all seeded and ingested
+- **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing
+- **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
+- **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
 - **Plugin system** — adapter packages for AI providers
 - **API layer** — backend at port 3100, proxied from UI dev server
@@ -229,7 +231,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (5 jobs), eval (1 job), alert (2 jobs), content (10 jobs: 6 text + 3 video script + 1 SEO engine), trends (1 job: scan every 6hr)
+- **Cron Schedulers**: intel (7 jobs: 5 ingest + 1 backfill + 1 discover), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr)
 
 ### Key Files
 
@@ -249,6 +251,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/services/platform-publishers/` | Auto-publishing to YouTube/TikTok/Instagram/Twitter |
 | `server/src/routes/public-reels.ts` | Public reels API (no auth) for coherencedaddy.com |
 | `scripts/canva-generator.py` | Canva Connect API Python bridge |
+| `server/src/services/intel-discovery.ts` | Auto-discovery of trending projects (CoinGecko + GitHub) |
 | `server/src/services/structure.ts` | Company structure diagram service (Mermaid, versioned) |
 | `server/src/routes/structure.ts` | Structure diagram API (`/api/companies/:id/structure`) |
 | `ui/src/pages/Structure.tsx` | Architecture diagram page with zoom, fullscreen, revisions |
