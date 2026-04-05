@@ -146,12 +146,16 @@ const DEFAULT_DIAGRAM = `graph TB
         direction TB
         ContentSvc(["Content Service"])
         ContentCrons{{"Content Crons — 9 jobs"}}
+        ContentDB[("content_items")]
         VisualContent(["Visual Content"])
+        VisualDB[("visual_content_items")]
         VisualJobs(["Visual Jobs"])
         Templates(["Blaze / Cipher / Spark / Prism"])
         VideoAssembler(["Video Assembler"])
         SEOEngine(["SEO Engine"])
         Publishers(["Platform Publishers"])
+        FeedbackSvc(["Feedback Service"])
+        FeedbackDB[("content_feedback")]
       end
 
       subgraph VisualBack["Visual Backends"]
@@ -293,7 +297,12 @@ const DEFAULT_DIAGRAM = `graph TB
   %% Content flows
   ContentCrons --> ContentSvc
   ContentSvc --> Templates
+  ContentSvc --> ContentDB
+  ContentDB --> FeedbackSvc
+  FeedbackSvc --> FeedbackDB
+  FeedbackDB -->|"training"| ContentSvc
   VisualContent --> VisualJobs
+  VisualContent --> VisualDB
   VisualContent --> VisualBack
   VideoAssembler --> VisualContent
   ContentSvc --> Publishers
@@ -345,7 +354,7 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
 
   class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler cronNode
-  class NeonDB,Embeddings,EvalStore,LogStore storeNode
+  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
   style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
