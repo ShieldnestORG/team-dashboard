@@ -2,20 +2,20 @@
 
 ## What This Project Is
 
-The internal admin control plane for the Coherence Daddy / 508(c)(1)(A) ecosystem. Manages AI agents, data scraping pipelines, directory API, and operational dashboards. **Not public-facing** — requires authentication.
+The internal admin control plane for the Coherence Daddy / 508(c)(1)(A) ecosystem. Coherence Daddy is a faith-based organization on a mission to help humanity be more coherent through private, secure self-help products that teach real skills, broaden awareness, and help the next generation stay secure. This dashboard manages AI agents, data scraping pipelines, directory API, and operational dashboards. **Not public-facing** — requires authentication.
 
-The public-facing tools and brand site live in a separate repo: [ShieldnestORG/coherencedaddy](https://github.com/ShieldnestORG/coherencedaddy).
+The public-facing brand site and tools live in a separate repo: [ShieldnestORG/coherencedaddy](https://github.com/ShieldnestORG/coherencedaddy).
 
 ## Ecosystem
 
 - **Team Dashboard** (this repo) — internal admin, agent management, data pipelines
-- **Coherence Daddy** (coherencedaddy.com) — public brand landing page
+- **Coherence Daddy** (coherencedaddy.com) — public mission hub: faith-driven technology for a more coherent world. Landing page features the mission, YourArchi spotlight, donation support (Stripe + crypto), venture overview, and FAQ
 - **Free Tools** (freetools.coherencedaddy.com) — 523+ public tools, subdomain routed (lives in coherencedaddy repo)
 - **Blockchain Directory** (coherencedaddy.com/directory) — public directory of 114+ blockchain projects powered by Intel API (lives in coherencedaddy repo)
+- **YourArchi** (yourarchi.com) — flagship self-help product: smart note-taking and personal development app with full privacy (no data leaves the device)
 - **tokns.fi / app.tokns.fi** — crypto platform and dashboard (NFTs, swaps, staking, wallet tracking)
 - **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator; goal: #1 validator via tokns.fi
-- **ShieldNest** (shieldnest.io) — privacy-first dev company
-- **YourArchi** (yourarchi.com) — architecture platform
+- **ShieldNest** (shieldnest.io) — privacy-first dev company that builds all ecosystem infrastructure
 
 ## Primary Company
 
@@ -25,7 +25,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 
 ## What Lives Here
 
-- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism) + Mermaid (Company Structure Agent)
+- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism) + Mermaid (Company Structure Agent). Each agent's AGENTS.md documents its cron responsibilities. See `docs/guides/agent-cron-ownership.md` for the full mapping
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
 - **Content engine** — Ollama-powered text content generation with 4 personality agents, PostgreSQL-backed content queue (`content_items` table), blog publishing API, multi-platform distribution. Admin feedback system (`content_feedback` table) with like/dislike ratings that feed back into generation prompts as training signal
 - **SEO engine** — trend scanner (CoinGecko + HackerNews every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
@@ -141,7 +141,7 @@ cli/                  # CLI tool (paperclipai command)
 docs/
   api/                # REST API endpoint documentation
   deploy/             # Deployment guides (Vercel+VPS, Docker, Tailscale, etc.)
-  guides/             # Operator and agent developer guides
+  guides/             # Operator and agent developer guides (incl. agent-cron-ownership.md)
   adapters/           # Adapter documentation
   companies/          # Agent Companies specification
 doc/                  # Operational docs (SPEC, PRODUCT, GOAL, plans/)
@@ -234,7 +234,8 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr)
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr). All 24 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
 
