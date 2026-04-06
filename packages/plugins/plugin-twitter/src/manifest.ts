@@ -1,7 +1,7 @@
 import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 
 export const PLUGIN_ID = "coherencedaddy.twitter";
-export const PLUGIN_VERSION = "0.1.0";
+export const PLUGIN_VERSION = "0.2.0";
 
 const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
@@ -9,13 +9,12 @@ const manifest: PaperclipPluginManifestV1 = {
   version: PLUGIN_VERSION,
   displayName: "Twitter/X",
   description:
-    "Twitter/X automation bridge for agents. Queue tweets, define engagement missions, extract data, and manage targets — all executed by the x-Ext Chrome extension running on X.com.",
+    "Twitter/X automation for agents via X API v2. Queue tweets, define engagement missions, extract data, and manage targets — all executed directly through the X API.",
   author: "Coherence Daddy",
   categories: ["connector", "automation"],
   capabilities: [
     "agent.tools.register",
     "http.outbound",
-    "webhooks.receive",
     "plugin.state.read",
     "plugin.state.write",
     "jobs.schedule",
@@ -27,12 +26,19 @@ const manifest: PaperclipPluginManifestV1 = {
     type: "object",
     required: [],
     properties: {
-      extensionSecret: {
-        type: "string",
-        title: "Extension Secret (optional)",
+      xApiEnabled: {
+        type: "boolean",
+        title: "X API Enabled",
         description:
-          "Optional shared secret for webhook authentication. Leave blank for local/internal use — only needed if the dashboard is exposed publicly.",
-        default: "",
+          "Enable direct X API v2 posting and engagement. Requires OAuth setup first.",
+        default: false,
+      },
+      rateLimitMultiplier: {
+        type: "number",
+        title: "Rate Limit Multiplier",
+        description:
+          "Fraction of official API rate limits to use (0.1-1.0). Lower = safer. Default 0.5 uses 50% of limits.",
+        default: 0.5,
       },
       defaultVenture: {
         type: "string",
@@ -50,7 +56,7 @@ const manifest: PaperclipPluginManifestV1 = {
       enableAutoEngage: {
         type: "boolean",
         title: "Enable Auto-Engage",
-        description: "When true, engagement missions auto-execute when the extension polls. When false, missions require manual activation.",
+        description: "When true, engagement missions and target cycles auto-execute on schedule.",
         default: false,
       },
       maxPostsPerDay: {
@@ -86,13 +92,13 @@ const manifest: PaperclipPluginManifestV1 = {
       cycleIntervalMin: {
         type: "number",
         title: "Cycle Interval Min (seconds)",
-        description: "Minimum time between bot poll cycles. Lower = more responsive, but more detectable.",
+        description: "Minimum time between engagement actions. Lower = more responsive, but more detectable.",
         default: 12,
       },
       cycleIntervalMax: {
         type: "number",
         title: "Cycle Interval Max (seconds)",
-        description: "Maximum time between bot poll cycles. Higher = more human-like.",
+        description: "Maximum time between engagement actions. Higher = more human-like.",
         default: 25,
       },
       dailyLikesLimit: {
@@ -146,30 +152,21 @@ const manifest: PaperclipPluginManifestV1 = {
     },
   },
 
-  // ── Webhooks (called by x-Ext Chrome extension) ──────────────────────────
-
-  webhooks: [
-    {
-      endpointKey: "ext-poll",
-      displayName: "Extension Poll",
-    },
-    {
-      endpointKey: "ext-result",
-      displayName: "Extension Result",
-    },
-    {
-      endpointKey: "ext-progress",
-      displayName: "Extension Progress",
-    },
-    {
-      endpointKey: "ext-heartbeat",
-      displayName: "Extension Heartbeat",
-    },
-  ],
-
   // ── Scheduled jobs ───────────────────────────────────────────────────────
 
   jobs: [
+    {
+      jobKey: "post-dispatcher",
+      displayName: "Post Dispatcher",
+      description: "Process scheduled tweet queue via X API v2.",
+      schedule: "*/2 * * * *",
+    },
+    {
+      jobKey: "engagement-cycle",
+      displayName: "Engagement Cycle",
+      description: "Execute engagement actions on targets via X API v2.",
+      schedule: "*/5 * * * *",
+    },
     {
       jobKey: "queue-cleanup",
       displayName: "Queue Cleanup",
@@ -191,7 +188,7 @@ const manifest: PaperclipPluginManifestV1 = {
       name: "queue-post",
       displayName: "Twitter: Queue Post",
       description:
-        "Queue a tweet for the x-Ext Chrome extension to post. Supports text, media URLs, hashtags, and optional scheduling. The extension picks it up on its next poll cycle.",
+        "Queue a tweet for posting via X API v2. Supports text, media URLs, hashtags, and optional scheduling. If X API is enabled and no scheduledAt is set, posts immediately.",
       parametersSchema: {
         type: "object",
         required: ["text"],
@@ -227,7 +224,7 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       name: "queue-reply",
       displayName: "Twitter: Queue Reply",
-      description: "Queue a reply to a specific tweet. The extension navigates to the tweet and posts the reply.",
+      description: "Queue a reply to a specific tweet. Posts via X API v2.",
       parametersSchema: {
         type: "object",
         required: ["replyToUrl", "text"],
@@ -271,7 +268,7 @@ const manifest: PaperclipPluginManifestV1 = {
       name: "create-mission",
       displayName: "Twitter: Create Mission",
       description:
-        "Define a multi-step engagement mission. Steps can include SEARCH, LIKE, FOLLOW, REPLY, EXTRACT, VISIT_PROFILE, etc. The extension executes steps sequentially.",
+        "Define a multi-step engagement mission. Steps can include SEARCH, LIKE, FOLLOW, REPLY, EXTRACT, VISIT_PROFILE, etc. API-compatible steps execute via X API v2; DOM-specific steps are logged as no-ops.",
       parametersSchema: {
         type: "object",
         required: ["steps"],
@@ -403,7 +400,7 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       name: "get-queue-status",
       displayName: "Twitter: Queue Status",
-      description: "Check the content queue depth — pending, claimed, posted, and failed counts.",
+      description: "Check the content queue depth — pending, claimed, posted, and failed counts. Includes X API connection and rate limit status.",
       parametersSchema: {
         type: "object",
         properties: {
@@ -433,7 +430,7 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       name: "queue-thread",
       displayName: "Twitter: Queue Thread",
-      description: "Queue a thread (multiple connected tweets). The extension posts them as a thread using X.com's thread UI.",
+      description: "Queue a thread (multiple connected tweets). Posts as a connected thread via X API v2.",
       parametersSchema: {
         type: "object",
         required: ["tweets"],
@@ -486,58 +483,8 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       name: "get-bot-config",
       displayName: "Twitter: Get Bot Config",
-      description: "Returns anti-bot behavior settings for the extension (cycle timing, action limits, breathing pauses).",
+      description: "Returns anti-bot behavior settings and X API rate limit status.",
       parametersSchema: { type: "object", properties: {} },
-    },
-    {
-      name: "claim-next-post",
-      displayName: "Twitter: Claim Next Post",
-      description:
-        "Claim the next pending tweet from the queue. Returns the tweet content for the extension to post. Marks it as claimed.",
-      parametersSchema: {
-        type: "object",
-        properties: {},
-      },
-    },
-    {
-      name: "report-post-result",
-      displayName: "Twitter: Report Post Result",
-      description: "Report the result of a posted tweet back to the dashboard.",
-      parametersSchema: {
-        type: "object",
-        required: ["queueItemId", "success"],
-        properties: {
-          queueItemId: { type: "string" },
-          success: { type: "boolean" },
-          tweetUrl: { type: "string" },
-          error: { type: "string" },
-        },
-      },
-    },
-    {
-      name: "claim-next-mission",
-      displayName: "Twitter: Claim Next Mission",
-      description:
-        "Claim the next active mission for the extension to execute. Returns mission steps. Only works when enableAutoEngage is on.",
-      parametersSchema: {
-        type: "object",
-        properties: {},
-      },
-    },
-    {
-      name: "report-mission-result",
-      displayName: "Twitter: Report Mission Result",
-      description: "Report the completion or failure of a mission back to the dashboard.",
-      parametersSchema: {
-        type: "object",
-        required: ["missionId", "success"],
-        properties: {
-          missionId: { type: "string" },
-          success: { type: "boolean" },
-          currentStep: { type: "number" },
-          error: { type: "string" },
-        },
-      },
     },
   ],
 };

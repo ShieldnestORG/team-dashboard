@@ -26,6 +26,13 @@ if [ -f /data/chrome-profile/SingletonCookie ]; then
   rm -f /data/chrome-profile/SingletonCookie
 fi
 
+# Prevent "Chrome didn't shut down correctly" restore bubble
+PREFS_FILE="/data/chrome-profile/Default/Preferences"
+if [ -f "$PREFS_FILE" ]; then
+  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' "$PREFS_FILE"
+  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' "$PREFS_FILE"
+fi
+
 echo "[chrome-bot] Launching Chrome with x-ext extension..."
 exec google-chrome-stable \
   --no-sandbox \
@@ -40,6 +47,9 @@ exec google-chrome-stable \
   --disable-background-networking \
   --disable-sync \
   --disable-translate \
+  --disable-session-crashed-bubble \
+  --hide-crash-restore-bubble \
   --start-maximized \
+  --remote-debugging-port=9222 \
   --display=:99 \
   "https://x.com/home"

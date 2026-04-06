@@ -344,6 +344,13 @@
       "when": 1775520000000,
       "tag": "0048_intel_directory_expansion",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1775606400000,
+      "tag": "0049_x_api_integration",
+      "breakpoints": true
     }
   ]
 }

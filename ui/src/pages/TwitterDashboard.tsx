@@ -7,12 +7,23 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { pluginsApi } from "../api/plugins";
 import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
+import {
   Bird,
   Clock,
   CheckCircle2,
   AlertTriangle,
-  Wifi,
-  WifiOff,
   Target,
   BarChart3,
   Send,
@@ -22,6 +33,12 @@ import {
   Settings2,
   Save,
   Loader2,
+  LinkIcon,
+  Unlink,
+  Gauge,
+  MessageSquare,
+  Eye,
+  TrendingUp,
 } from "lucide-react";
 
 // ── API helpers ──────────────────────────────────────────────────────────────
@@ -58,11 +75,16 @@ async function executeTool<T = unknown>(
   return res.json();
 }
 
+async function apiFetch<T = unknown>(path: string): Promise<T> {
+  const res = await fetch(path, { credentials: "include" });
+  if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
+  return res.json();
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface QueueStatusData {
   counts: { pending: number; claimed: number; posted: number; failed: number; cancelled: number };
-  extensionOnline: boolean;
   totalItems: number;
 }
 
@@ -94,6 +116,61 @@ interface DailyAnalytics {
   follows: number;
 }
 
+interface ConnectionStatus {
+  connected: boolean;
+  username?: string;
+  userId?: string;
+  expiresAt?: string;
+  connectedAt?: string;
+}
+
+interface RateLimitBudgetItem {
+  used: number;
+  limit: number;
+}
+
+interface RateLimitStatus {
+  endpoints: Record<string, unknown>;
+  dailyBudget: {
+    posts: RateLimitBudgetItem;
+    likes: RateLimitBudgetItem;
+    follows: RateLimitBudgetItem;
+    replies: RateLimitBudgetItem;
+  };
+  multiplier: number;
+  panicMode: boolean;
+}
+
+interface EngagementData {
+  daily: Array<{ date: string; action: string; count: number }>;
+  totals: Array<{ action: string; count: number; success_count: number }>;
+  topTargets: Array<{ username: string; engagement_count: number; actions: string[] }>;
+  days: number;
+}
+
+interface PostingData {
+  daily: Array<{ date: string; count: number }>;
+  recentPosts: Array<{
+    tweet_id: string;
+    tweet_text: string;
+    posted_at: string;
+    like_count: number;
+    retweet_count: number;
+    reply_count: number;
+    impression_count: number;
+    quote_count: number;
+  }>;
+  stats: {
+    total: number;
+    with_impressions: number;
+    total_likes: number;
+    total_retweets: number;
+    total_replies: number;
+    total_impressions: number;
+  };
+  days: number;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function TwitterDashboard() {
@@ -104,6 +181,7 @@ export function TwitterDashboard() {
     setBreadcrumbs([{ label: "Twitter/X" }]);
   }, [setBreadcrumbs]);
 
+  // Plugin-based queries (existing)
   const { data: queueData, isLoading: queueLoading } = useQuery({
     queryKey: ["twitter", "queue-status", selectedCompanyId],
     queryFn: () =>
@@ -136,6 +214,31 @@ export function TwitterDashboard() {
     refetchInterval: 60000,
   });
 
+  // New API-based queries
+  const { data: connectionData } = useQuery({
+    queryKey: ["x-analytics", "connection"],
+    queryFn: () => apiFetch<ConnectionStatus>("/api/x/analytics/connection"),
+    refetchInterval: 60000,
+  });
+
+  const { data: rateLimitData } = useQuery({
+    queryKey: ["x-analytics", "rate-limits"],
+    queryFn: () => apiFetch<RateLimitStatus>("/api/x/analytics/rate-limits"),
+    refetchInterval: 30000,
+  });
+
+  const { data: engagementData } = useQuery({
+    queryKey: ["x-analytics", "engagement"],
+    queryFn: () => apiFetch<EngagementData>("/api/x/analytics/engagement?days=7"),
+    refetchInterval: 60000,
+  });
+
+  const { data: postingData } = useQuery({
+    queryKey: ["x-analytics", "posting"],
+    queryFn: () => apiFetch<PostingData>("/api/x/analytics/posting?days=7"),
+    refetchInterval: 60000,
+  });
+
   if (!selectedCompanyId) {
     return <EmptyState icon={Bird} message="Select a company to view the Twitter dashboard." />;
   }
@@ -147,126 +250,633 @@ export function TwitterDashboard() {
   const queue = queueData?.result?.data;
   const targets = targetsData?.result?.data?.targets ?? [];
   const analytics = analyticsData?.result?.data?.totals;
-  const extensionOnline = queue?.extensionOnline ?? false;
+  const connection = connectionData ?? { connected: false };
 
   return (
     <div className="space-y-6">
-      {/* Extension status banner */}
-      <div
-        className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
-          extensionOnline
-            ? "border-green-500/30 bg-green-500/5"
-            : "border-yellow-500/30 bg-yellow-500/5"
-        }`}
-      >
-        {extensionOnline ? (
-          <Wifi className="h-4 w-4 text-green-500" />
-        ) : (
-          <WifiOff className="h-4 w-4 text-yellow-500" />
-        )}
-        <span className="text-sm">
-          {extensionOnline
-            ? "x-Ext extension is connected and running"
-            : "x-Ext extension is offline — load the extension in Chrome and open x.com"}
-        </span>
-      </div>
+      {/* OAuth Connection Card */}
+      <ConnectionCard connection={connection} />
 
-      {/* Queue metrics */}
-      <div>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-          Tweet Queue
-        </h2>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
-          <MetricCard
-            icon={Clock}
-            value={queue?.counts?.pending ?? 0}
-            label="Pending"
-            description="Waiting for extension"
-          />
-          <MetricCard
-            icon={Send}
-            value={queue?.counts?.claimed ?? 0}
-            label="Claimed"
-            description="Being posted now"
-          />
-          <MetricCard
-            icon={CheckCircle2}
-            value={queue?.counts?.posted ?? 0}
-            label="Posted"
-            description="Successfully sent"
-          />
-          <MetricCard
-            icon={AlertTriangle}
-            value={queue?.counts?.failed ?? 0}
-            label="Failed"
-            description="Errors occurred"
-          />
-        </div>
-      </div>
+      {/* Tabs */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="posting">Posting</TabsTrigger>
+          <TabsTrigger value="targets">Targets</TabsTrigger>
+          <TabsTrigger value="rate-limits">Rate Limits</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
 
-      {/* Analytics summary */}
-      {analytics && (
-        <div>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-            7-Day Analytics
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-1 sm:gap-2">
-            <MetricCard icon={Bird} value={analytics.postsSent} label="Posts Sent" />
-            <MetricCard icon={Heart} value={analytics.likes} label="Likes" />
-            <MetricCard icon={Repeat2} value={analytics.reposts} label="Reposts" />
-            <MetricCard icon={UserPlus} value={analytics.follows} label="Follows" />
-            <MetricCard icon={Send} value={analytics.replies} label="Replies" />
-            <MetricCard icon={BarChart3} value={analytics.extractions} label="Extractions" />
+        {/* ── Overview Tab ──────────────────────────────────────────────── */}
+        <TabsContent value="overview" className="space-y-6">
+          {/* Queue metrics */}
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Tweet Queue
+            </h2>
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
+              <MetricCard
+                icon={Clock}
+                value={queue?.counts?.pending ?? 0}
+                label="Pending"
+                description="Waiting to post"
+              />
+              <MetricCard
+                icon={Send}
+                value={queue?.counts?.claimed ?? 0}
+                label="Claimed"
+                description="Being posted now"
+              />
+              <MetricCard
+                icon={CheckCircle2}
+                value={queue?.counts?.posted ?? 0}
+                label="Posted"
+                description="Successfully sent"
+              />
+              <MetricCard
+                icon={AlertTriangle}
+                value={queue?.counts?.failed ?? 0}
+                label="Failed"
+                description="Errors occurred"
+              />
+            </div>
           </div>
+
+          {/* Analytics summary */}
+          {analytics && (
+            <div>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                7-Day Analytics
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-1 sm:gap-2">
+                <MetricCard icon={Bird} value={analytics.postsSent} label="Posts Sent" />
+                <MetricCard icon={Heart} value={analytics.likes} label="Likes" />
+                <MetricCard icon={Repeat2} value={analytics.reposts} label="Reposts" />
+                <MetricCard icon={UserPlus} value={analytics.follows} label="Follows" />
+                <MetricCard icon={Send} value={analytics.replies} label="Replies" />
+                <MetricCard icon={BarChart3} value={analytics.extractions} label="Extractions" />
+              </div>
+            </div>
+          )}
+
+          {/* Quick rate limit summary */}
+          {rateLimitData && (
+            <div>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                Daily Rate Limits
+              </h2>
+              <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
+                {Object.entries(rateLimitData.dailyBudget).map(([key, val]) => {
+                  const remaining = val.limit - val.used;
+                  return (
+                    <MetricCard
+                      key={key}
+                      icon={Gauge}
+                      value={remaining}
+                      label={`${key.charAt(0).toUpperCase() + key.slice(1)} Left`}
+                      description={`${val.used}/${val.limit} used`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Analytics Tab ─────────────────────────────────────────────── */}
+        <TabsContent value="analytics" className="space-y-6">
+          {/* Plugin analytics (existing) */}
+          {analytics && (
+            <div>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                7-Day Summary (Plugin)
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-1 sm:gap-2">
+                <MetricCard icon={Bird} value={analytics.postsSent} label="Posts Sent" />
+                <MetricCard icon={Heart} value={analytics.likes} label="Likes" />
+                <MetricCard icon={Repeat2} value={analytics.reposts} label="Reposts" />
+                <MetricCard icon={UserPlus} value={analytics.follows} label="Follows" />
+                <MetricCard icon={Send} value={analytics.replies} label="Replies" />
+                <MetricCard icon={BarChart3} value={analytics.extractions} label="Extractions" />
+              </div>
+            </div>
+          )}
+
+          {/* Engagement breakdown by action */}
+          {engagementData && (
+            <>
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                  Engagement by Action Type
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+                  {engagementData.totals.map((t) => (
+                    <Card key={t.action}>
+                      <CardContent className="pt-4 pb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium capitalize">{t.action}</span>
+                          <Badge variant="secondary">{t.count}</Badge>
+                        </div>
+                        <EngagementBar
+                          used={t.count}
+                          total={Math.max(t.count, 1)}
+                          label={`${t.success_count} succeeded`}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {t.count > 0
+                            ? `${Math.round((t.success_count / t.count) * 100)}% success rate`
+                            : "No data"}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top Engaged Accounts */}
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                  Top Engaged Accounts
+                </h2>
+                {engagementData.topTargets.length > 0 ? (
+                  <div className="border border-border rounded-lg divide-y divide-border overflow-hidden">
+                    <div className="grid grid-cols-3 gap-4 px-4 py-2 bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      <span>Username</span>
+                      <span>Actions</span>
+                      <span className="text-right">Engagements</span>
+                    </div>
+                    {engagementData.topTargets.map((t) => (
+                      <div
+                        key={t.username}
+                        className="grid grid-cols-3 gap-4 px-4 py-3 hover:bg-accent/50 transition-colors"
+                      >
+                        <span className="text-sm font-medium truncate">@{t.username}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {t.actions.map((a) => (
+                            <Badge key={a} variant="outline" className="text-xs capitalize">
+                              {a}
+                            </Badge>
+                          ))}
+                        </div>
+                        <span className="text-sm text-right tabular-nums">{t.engagement_count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-lg p-6">
+                    <EmptyState icon={Target} message="No engagement data for this period." />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        {/* ── Posting Tab ───────────────────────────────────────────────── */}
+        <TabsContent value="posting" className="space-y-6">
+          {postingData && (
+            <>
+              {/* Stats cards */}
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                  Posting Stats ({postingData.days} Days)
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-1 sm:gap-2">
+                  <MetricCard icon={Bird} value={postingData.stats.total} label="Total Posts" />
+                  <MetricCard icon={Eye} value={postingData.stats.total_impressions} label="Impressions" />
+                  <MetricCard icon={Heart} value={postingData.stats.total_likes} label="Likes" />
+                  <MetricCard icon={Repeat2} value={postingData.stats.total_retweets} label="Retweets" />
+                  <MetricCard icon={MessageSquare} value={postingData.stats.total_replies} label="Replies" />
+                  <MetricCard
+                    icon={TrendingUp}
+                    value={
+                      postingData.stats.total > 0
+                        ? `${Math.round((postingData.stats.with_impressions / postingData.stats.total) * 100)}%`
+                        : "N/A"
+                    }
+                    label="Impression Rate"
+                  />
+                </div>
+              </div>
+
+              {/* Daily posts bar chart */}
+              {postingData.daily.length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                    Daily Posts
+                  </h2>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <SimpleBarChart data={postingData.daily} valueKey="count" labelKey="date" />
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Recent posts table */}
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                  Recent Posts
+                </h2>
+                {postingData.recentPosts.length > 0 ? (
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            <th className="px-4 py-2 text-left">Tweet</th>
+                            <th className="px-4 py-2 text-left">Posted</th>
+                            <th className="px-4 py-2 text-right">Likes</th>
+                            <th className="px-4 py-2 text-right">RTs</th>
+                            <th className="px-4 py-2 text-right">Replies</th>
+                            <th className="px-4 py-2 text-right">Impressions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {postingData.recentPosts.map((p) => (
+                            <tr key={p.tweet_id} className="hover:bg-accent/50 transition-colors">
+                              <td className="px-4 py-3 max-w-xs truncate" title={p.tweet_text}>
+                                {p.tweet_text.length > 80
+                                  ? p.tweet_text.slice(0, 80) + "..."
+                                  : p.tweet_text}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                                {new Date(p.posted_at).toLocaleDateString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums">{p.like_count}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{p.retweet_count}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{p.reply_count}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{p.impression_count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-lg p-6">
+                    <EmptyState icon={Bird} message="No posts recorded for this period." />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        {/* ── Targets Tab ───────────────────────────────────────────────── */}
+        <TabsContent value="targets" className="space-y-6">
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Engagement Targets ({targets.length})
+            </h2>
+            {targets.length > 0 ? (
+              <div className="border border-border rounded-lg divide-y divide-border overflow-hidden">
+                {targets.map((t) => (
+                  <div
+                    key={t.handle}
+                    className="flex items-center justify-between px-4 py-3 hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Target className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          @{t.handle}
+                          {t.displayName && (
+                            <span className="text-muted-foreground ml-2">
+                              {t.displayName}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.engageActions.join(", ")} &middot; {t.venture}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {t.engagementCount} engagements
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="border border-border rounded-lg p-6">
+                <EmptyState
+                  icon={Target}
+                  message="No engagement targets yet. Use the add-target tool to add Twitter accounts."
+                />
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ── Rate Limits Tab ───────────────────────────────────────────── */}
+        <TabsContent value="rate-limits" className="space-y-6">
+          <RateLimitsPanel data={rateLimitData} />
+        </TabsContent>
+
+        {/* ── Settings Tab ──────────────────────────────────────────────── */}
+        <TabsContent value="settings" className="space-y-6">
+          <RateMultiplierSetting currentMultiplier={rateLimitData?.multiplier} />
+          <PostingSettings />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ── Connection Card ────────────────────────────────────────────────────────
+
+function ConnectionCard({ connection }: { connection: ConnectionStatus }) {
+  const queryClient = useQueryClient();
+
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/x/oauth/revoke", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to disconnect");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["x-analytics", "connection"] });
+    },
+  });
+
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between py-4">
+        <div className="flex items-center gap-3">
+          <Bird className="h-5 w-5 text-sky-500" />
+          {connection.connected ? (
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-green-500" />
+              <span className="text-sm font-medium">
+                Connected as <span className="text-sky-500">@{connection.username}</span>
+              </span>
+              {connection.connectedAt && (
+                <span className="text-xs text-muted-foreground">
+                  since {new Date(connection.connectedAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-yellow-500" />
+              <span className="text-sm text-muted-foreground">Not connected to X</span>
+            </div>
+          )}
+        </div>
+        <div>
+          {connection.connected ? (
+            <button
+              onClick={() => disconnectMutation.mutate()}
+              disabled={disconnectMutation.isPending}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-destructive/30 text-destructive hover:bg-destructive/10 disabled:opacity-50 transition-colors"
+            >
+              {disconnectMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Unlink className="h-3.5 w-3.5" />
+              )}
+              Disconnect
+            </button>
+          ) : (
+            <a
+              href="/api/x/oauth/authorize"
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-sky-500 text-white hover:bg-sky-600 transition-colors"
+            >
+              <LinkIcon className="h-3.5 w-3.5" />
+              Connect X Account
+            </a>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Rate Limits Panel ──────────────────────────────────────────────────────
+
+function RateLimitsPanel({ data }: { data?: RateLimitStatus }) {
+  if (!data) {
+    return (
+      <div className="border border-border rounded-lg p-6">
+        <EmptyState icon={Gauge} message="Loading rate limit data..." />
+      </div>
+    );
+  }
+
+  const budgetItems = [
+    { key: "posts", label: "Posts", icon: Bird },
+    { key: "likes", label: "Likes", icon: Heart },
+    { key: "follows", label: "Follows", icon: UserPlus },
+    { key: "replies", label: "Replies", icon: MessageSquare },
+  ] as const;
+
+  return (
+    <div className="space-y-4">
+      {data.panicMode && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/5">
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+          <span className="text-sm text-red-400">
+            Panic mode active -- operating at 50% of normal multiplier due to 429 response
+          </span>
         </div>
       )}
 
-      {/* Posting Settings */}
-      <PostingSettings />
-
-      {/* Targets */}
-      <div>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-          Engagement Targets ({targets.length})
-        </h2>
-        {targets.length > 0 ? (
-          <div className="border border-border rounded-lg divide-y divide-border overflow-hidden">
-            {targets.map((t) => (
-              <div
-                key={t.handle}
-                className="flex items-center justify-between px-4 py-3 hover:bg-accent/50 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Target className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      @{t.handle}
-                      {t.displayName && (
-                        <span className="text-muted-foreground ml-2">
-                          {t.displayName}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t.engageActions.join(", ")} &middot; {t.venture}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {t.engagementCount} engagements
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="border border-border rounded-lg p-6">
-            <EmptyState
-              icon={Target}
-              message="No engagement targets yet. Use the add-target tool to add Twitter accounts."
-            />
-          </div>
-        )}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Gauge className="h-4 w-4" />
+        <span>
+          Operating at <span className="font-medium text-foreground">{Math.round(data.multiplier * 100)}%</span> of X API limits
+        </span>
       </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {budgetItems.map(({ key, label, icon: Icon }) => {
+          const budget = data.dailyBudget[key];
+          const remaining = budget.limit - budget.used;
+          const pct = budget.limit > 0 ? (budget.used / budget.limit) * 100 : 0;
+
+          return (
+            <Card key={key}>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-2xl font-bold tabular-nums">{remaining}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {remaining}/{budget.limit} remaining today
+                  </span>
+                </div>
+                <RateLimitBar pct={pct} />
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RateLimitBar({ pct }: { pct: number }) {
+  const color =
+    pct < 50
+      ? "bg-green-500"
+      : pct < 80
+        ? "bg-yellow-500"
+        : "bg-red-500";
+
+  return (
+    <div className="h-2 rounded-full bg-muted overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${color}`}
+        style={{ width: `${Math.min(100, pct)}%` }}
+      />
+    </div>
+  );
+}
+
+function EngagementBar({ used, total, label }: { used: number; total: number; label: string }) {
+  const pct = total > 0 ? (used / total) * 100 : 0;
+  return (
+    <div>
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full bg-sky-500 transition-all duration-500"
+          style={{ width: `${Math.min(100, pct)}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground mt-1">{label}</p>
+    </div>
+  );
+}
+
+// ── Simple Bar Chart ───────────────────────────────────────────────────────
+
+function SimpleBarChart({
+  data,
+  valueKey,
+  labelKey,
+}: {
+  data: Array<Record<string, unknown>>;
+  valueKey: string;
+  labelKey: string;
+}) {
+  if (data.length === 0) return null;
+
+  const maxVal = Math.max(...data.map((d) => (d[valueKey] as number) || 0), 1);
+
+  return (
+    <div className="flex items-end gap-1 h-32">
+      {data.map((d, i) => {
+        const val = (d[valueKey] as number) || 0;
+        const heightPct = (val / maxVal) * 100;
+        const dateStr = String(d[labelKey]);
+        const shortDate = dateStr.length >= 10
+          ? new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+          : dateStr;
+
+        return (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1">
+            <span className="text-xs tabular-nums text-muted-foreground">{val}</span>
+            <div className="w-full flex items-end justify-center" style={{ height: "80px" }}>
+              <div
+                className="w-full max-w-8 rounded-t bg-sky-500/80 transition-all duration-500"
+                style={{ height: `${Math.max(2, heightPct)}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-muted-foreground">{shortDate}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Rate Multiplier Setting ────────────────────────────────────────────────
+
+function RateMultiplierSetting({ currentMultiplier }: { currentMultiplier?: number }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(currentMultiplier ?? 0.5);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (currentMultiplier !== undefined) setValue(currentMultiplier);
+  }, [currentMultiplier]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (mult: number) => {
+      const res = await fetch("/api/x/oauth/rate-limits/multiplier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ multiplier: mult }),
+      });
+      if (!res.ok) throw new Error("Failed to update multiplier");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["x-analytics", "rate-limits"] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+        <Gauge className="inline h-4 w-4 mr-1.5 -mt-0.5" />
+        Rate Limit Multiplier
+      </h2>
+      <Card>
+        <CardContent className="pt-4 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Controls what percentage of X API rate limits to use. Lower values are safer but slower.
+          </p>
+          <div className="flex items-center gap-4">
+            <input
+              type="range"
+              min={0.1}
+              max={1.0}
+              step={0.1}
+              value={value}
+              onChange={(e) => setValue(parseFloat(e.target.value))}
+              className="flex-1 accent-sky-500"
+            />
+            <span className="text-lg font-bold tabular-nums w-16 text-right">
+              {Math.round(value * 100)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => saveMutation.mutate(value)}
+              disabled={saveMutation.isPending || value === currentMultiplier}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saveMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save Multiplier
+            </button>
+            {saved && (
+              <span className="text-sm text-green-500 flex items-center gap-1">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

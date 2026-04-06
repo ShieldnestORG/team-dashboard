@@ -1,7 +1,6 @@
 // ─── Plugin config ────────────────────────────────────────────────────────────
 
 export type TwitterConfig = {
-  extensionSecret: string;
   defaultVenture: string;
   maxQueueSize: number;
   enableAutoEngage: boolean;
@@ -21,6 +20,9 @@ export type TwitterConfig = {
   breathingPauseMaxActions: number;
   breathingPauseMinSeconds: number;
   breathingPauseMaxSeconds: number;
+  // X API v2 settings
+  xApiEnabled: boolean;
+  rateLimitMultiplier: number;
 };
 
 // ─── Entity data shapes ──────────────────────────────────────────────────────
@@ -43,6 +45,7 @@ export type TweetQueueData = {
   claimedAt?: string;
   completedAt?: string;
   tweetUrl?: string;
+  tweetId?: string;
   error?: string;
   retryCount: number;
 };
@@ -126,18 +129,6 @@ export type ActionLogData = {
   performedAt: string;
   durationMs?: number;
   error?: string;
-  extensionSessionId: string;
-};
-
-// ─── Extension session state ─────────────────────────────────────────────────
-
-export type ExtensionSession = {
-  sessionId: string;
-  lastHeartbeat: string;
-  botEnabled: boolean;
-  bearerToken?: string;
-  csrfToken?: string;
-  currentUrl?: string;
 };
 
 // ─── Daily analytics state ───────────────────────────────────────────────────
@@ -155,53 +146,29 @@ export type DailyAnalytics = {
   profileExtractions: number;
 };
 
-// ─── Webhook payloads from extension ─────────────────────────────────────────
+// ─── X API v2 execution types ────────────────────────────────────────────────
 
-export type ExtPollResponse = {
-  queueItem?: {
-    id: string;
-    action: QueueItemAction;
-    text?: string;
-    mediaUrls?: string[];
-    hashtags?: string[];
-    replyToUrl?: string;
-    repostUrl?: string;
-  } | null;
-  mission?: {
-    id: string;
-    steps: MissionStep[];
-    currentStep: number;
-  } | null;
-  targets?: Array<{
-    handle: string;
-    engageActions: string[];
-  }>;
-};
+export interface PostExecutionResult {
+  tweetId: string;
+  tweetUrl: string;
+  postedAt: string;
+  rateLimitRemaining?: number;
+}
 
-export type ExtResultPayload = {
-  type: "post" | "action" | "extract" | "profile";
-  queueItemId?: string;
-  missionId?: string;
+export interface EngagementAction {
+  type: "like" | "reply" | "retweet" | "follow" | "quote";
+  targetTweetId?: string;
+  targetUserId?: string;
+  targetUsername?: string;
+  replyText?: string;
+}
+
+export interface EngagementResult {
+  action: string;
+  targetTweetId?: string;
+  targetUserId?: string;
   success: boolean;
-  tweetUrl?: string;
   error?: string;
-  action?: string;
-  durationMs?: number;
-  extractedData?: unknown;
-  sessionId: string;
-};
-
-export type ExtProgressPayload = {
-  missionId: string;
-  currentStep: number;
-  stepResult?: unknown;
-  sessionId: string;
-};
-
-export type ExtHeartbeatPayload = {
-  sessionId: string;
-  botEnabled: boolean;
-  bearerToken?: string;
-  csrfToken?: string;
-  currentUrl?: string;
-};
+  executedAt: string;
+  delayMs: number;
+}

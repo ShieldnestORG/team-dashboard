@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { contentService } from "./content.js";
 import { seoEngineService } from "./seo-engine.js";
+import { autoGenerateAndQueue } from "./x-api/content-bridge.js";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
@@ -16,27 +17,31 @@ interface ContentCronJob {
   name: string;
   schedule: string;
   personality: string;
+  ownerAgent: string;
   contentType: string;
   nextRun: Date | null;
   running: boolean;
   topicPicker?: "intel-alert";
+  useContentBridge?: boolean;  // Use enriched tweet generation via x-api/content-bridge
 }
 
 const JOB_DEFS: Omit<ContentCronJob, "nextRun" | "running">[] = [
-  // Regular content crons
-  { name: "content:twitter",  schedule: "0 13,15,17,20 * * *", personality: "blaze",  contentType: "tweet" },
-  { name: "content:blog",     schedule: "0 10 * * 2,4",        personality: "cipher", contentType: "blog_post" },
-  { name: "content:linkedin", schedule: "0 14 * * 1-5",        personality: "prism",  contentType: "linkedin" },
-  { name: "content:discord",  schedule: "0 10,16,21 * * *",    personality: "spark",  contentType: "discord" },
-  { name: "content:bluesky",  schedule: "0 14,17,20 * * *",    personality: "spark",  contentType: "bluesky" },
-  { name: "content:reddit",   schedule: "0 15 * * *",          personality: "cipher", contentType: "reddit" },
+  // Regular content crons — ownerAgent matches the personality agent responsible
+  { name: "content:twitter",  schedule: "0 13,15,17,20 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet", useContentBridge: true },
+  // Auto-post cron — every 3 hours during active hours (9am-9pm UTC), cap ~8/day
+  { name: "content:twitter:auto-post", schedule: "0 9,12,15,18,21 * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet", useContentBridge: true },
+  { name: "content:blog",     schedule: "0 10 * * 2,4",        personality: "cipher", ownerAgent: "cipher", contentType: "blog_post" },
+  { name: "content:linkedin", schedule: "0 14 * * 1-5",        personality: "prism",  ownerAgent: "prism",  contentType: "linkedin" },
+  { name: "content:discord",  schedule: "0 10,16,21 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "discord" },
+  { name: "content:bluesky",  schedule: "0 14,17,20 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "bluesky" },
+  { name: "content:reddit",   schedule: "0 15 * * *",          personality: "cipher", ownerAgent: "cipher", contentType: "reddit" },
   // Video script generation — text agents write scripts for visual content
-  { name: "content:video:trend",  schedule: "0 11,14,18 * * *", personality: "blaze",  contentType: "video_script" },
-  { name: "content:video:market", schedule: "0 9 * * 1-5",      personality: "prism",  contentType: "video_script" },
-  { name: "content:video:weekly", schedule: "0 10 * * 6",       personality: "prism",  contentType: "video_script" },
+  { name: "content:video:trend",  schedule: "0 11,14,18 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "video_script" },
+  { name: "content:video:market", schedule: "0 9 * * 1-5",      personality: "prism",  ownerAgent: "prism",  contentType: "video_script" },
+  { name: "content:video:weekly", schedule: "0 10 * * 6",       personality: "prism",  ownerAgent: "prism",  contentType: "video_script" },
   // Intel-alert content — reactive, triggered by hot intel signals
-  { name: "content:intel-alert:twitter",  schedule: "*/45 * * * *", personality: "blaze", contentType: "tweet",   topicPicker: "intel-alert" },
-  { name: "content:intel-alert:bluesky",  schedule: "0 */2 * * *",  personality: "spark", contentType: "bluesky", topicPicker: "intel-alert" },
+  { name: "content:intel-alert:twitter",  schedule: "*/45 * * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet",   topicPicker: "intel-alert", useContentBridge: true },
+  { name: "content:intel-alert:bluesky",  schedule: "0 */2 * * *",  personality: "spark", ownerAgent: "spark", contentType: "bluesky", topicPicker: "intel-alert" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -172,9 +177,11 @@ export function startContentCrons(db: Db) {
   const seoEngine = seoEngineService();
 
   // SEO engine job — daily at 7am, generates blog post from trend signals
+  // Owner: Sage (CMO) — orchestrates content strategy including SEO
   const seoJob = {
     name: "content:seo-engine",
     schedule: "3 7 * * *",
+    ownerAgent: "sage",
     nextRun: null as Date | null,
     running: false,
   };
@@ -211,12 +218,12 @@ export function startContentCrons(db: Db) {
     // SEO engine check
     if (!seoJob.running && seoJob.nextRun && now >= seoJob.nextRun) {
       seoJob.running = true;
-      logger.info({ job: seoJob.name }, "SEO engine cron starting");
+      logger.info({ job: seoJob.name, ownerAgent: seoJob.ownerAgent }, "SEO engine cron starting");
       try {
         const result = await seoEngine.run();
-        logger.info({ job: seoJob.name, result }, "SEO engine cron completed");
+        logger.info({ job: seoJob.name, ownerAgent: seoJob.ownerAgent, result }, "SEO engine cron completed");
       } catch (err) {
-        logger.error({ err, job: seoJob.name }, "SEO engine cron failed");
+        logger.error({ err, job: seoJob.name, ownerAgent: seoJob.ownerAgent }, "SEO engine cron failed");
       } finally {
         seoJob.running = false;
         const parsed = parseCron(seoJob.schedule);
@@ -229,7 +236,7 @@ export function startContentCrons(db: Db) {
       if (!job.nextRun || now < job.nextRun) continue;
 
       job.running = true;
-      logger.info({ job: job.name }, "Content cron job starting");
+      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Content cron job starting");
 
       try {
         let topic: string | null;
@@ -238,24 +245,34 @@ export function startContentCrons(db: Db) {
           topic = await pickIntelAlert(db);
           if (!topic) {
             // No hot intel — skip this cycle
-            logger.info({ job: job.name }, "No hot intel signals, skipping alert content");
+            logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "No hot intel signals, skipping alert content");
             continue;
           }
         } else {
           topic = await pickTopic(db);
         }
 
-        const result = await svc.generate({
-          personalityId: job.personality,
-          contentType: job.contentType,
-          topic,
-        });
-        logger.info(
-          { job: job.name, contentId: result.contentId, topic, isAlert: !!job.topicPicker },
-          "Content cron job completed — item queued as pending",
-        );
+        // Use enriched content bridge for twitter jobs (embedding context + analytics feedback)
+        if (job.useContentBridge && job.contentType === "tweet") {
+          const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+          await autoGenerateAndQueue(db, job.personality, companyId, topic ?? undefined);
+          logger.info(
+            { job: job.name, ownerAgent: job.ownerAgent, topic, isAlert: !!job.topicPicker },
+            "Content cron job completed via content-bridge — tweet queued as draft",
+          );
+        } else {
+          const result = await svc.generate({
+            personalityId: job.personality,
+            contentType: job.contentType,
+            topic: topic!,
+          });
+          logger.info(
+            { job: job.name, ownerAgent: job.ownerAgent, contentId: result.contentId, topic, isAlert: !!job.topicPicker },
+            "Content cron job completed — item queued as pending",
+          );
+        }
       } catch (err) {
-        logger.error({ err, job: job.name }, "Content cron job failed");
+        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Content cron job failed");
       } finally {
         job.running = false;
         const parsed = parseCron(job.schedule);

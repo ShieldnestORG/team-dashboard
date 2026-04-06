@@ -59,6 +59,8 @@ import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { publicReelsRoutes } from "./routes/public-reels.js";
+import { xOauthRoutes } from "./routes/x-oauth.js";
+import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
@@ -197,6 +199,8 @@ export async function createApp(
   api.use("/visual", visualRoutes.router);
   api.use("/system-health", systemHealthRoutes(db));
   api.use(structureRoutes(db));
+  api.use("/x/oauth", xOauthRoutes(db));
+  api.use("/x/analytics", xAnalyticsRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,

@@ -4,7 +4,6 @@ import type {
   ToolResult,
   PluginContext,
   PluginJobContext,
-  PluginWebhookInput,
 } from "@paperclipai/plugin-sdk";
 import type {
   TwitterConfig,
@@ -15,13 +14,16 @@ import type {
   ExtractedTweetData,
   ExtractedProfileData,
   ActionLogData,
-  ExtensionSession,
   DailyAnalytics,
-  ExtPollResponse,
-  ExtResultPayload,
-  ExtProgressPayload,
-  ExtHeartbeatPayload,
 } from "./types.js";
+import {
+  executePost,
+  executeThread,
+  checkXApiConnection,
+  checkDailyBudget,
+  jitteredDelay,
+} from "./executor.js";
+import { executeMission } from "./mission-executor.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +70,6 @@ function randomBetween(min: number, max: number): number {
 async function getConfig(ctx: PluginContext): Promise<TwitterConfig> {
   const raw = await ctx.config.get();
   return {
-    extensionSecret: (raw.extensionSecret as string) || "",
     defaultVenture: (raw.defaultVenture as string) || "coherencedaddy",
     maxQueueSize: (raw.maxQueueSize as number) || 100,
     enableAutoEngage: (raw.enableAutoEngage as boolean) || false,
@@ -87,17 +88,9 @@ async function getConfig(ctx: PluginContext): Promise<TwitterConfig> {
     breathingPauseMaxActions: (raw.breathingPauseMaxActions as number) || 10,
     breathingPauseMinSeconds: (raw.breathingPauseMinSeconds as number) || 30,
     breathingPauseMaxSeconds: (raw.breathingPauseMaxSeconds as number) || 90,
+    xApiEnabled: (raw.xApiEnabled as boolean) || false,
+    rateLimitMultiplier: (raw.rateLimitMultiplier as number) || 0.5,
   };
-}
-
-function validateExtensionAuth(
-  headers: Record<string, string | string[]>,
-  secret: string,
-): boolean {
-  if (!secret) return true; // No secret configured = open
-  const auth = headers["authorization"] || headers["Authorization"];
-  const token = typeof auth === "string" ? auth : Array.isArray(auth) ? auth[0] : "";
-  return token === `Bearer ${secret}` || token === secret;
 }
 
 async function getDailyAnalytics(
@@ -148,16 +141,11 @@ async function incrementAnalytics(
   await saveDailyAnalytics(ctx, analytics);
 }
 
-// ─── Module-level context (for onWebhook / onHealth which don't receive ctx) ─
-
-let currentContext: PluginContext | null = null;
-
 // ─── Plugin definition ────────────────────────────────────────────────────────
 
 const plugin = definePlugin({
   async setup(ctx) {
-    currentContext = ctx;
-    ctx.logger.info("Twitter/X plugin v0.1.0 ready — extension bridge active");
+    ctx.logger.info("Twitter/X plugin v0.2.0 ready — X API v2 direct posting active");
 
     // ══════════════════════════════════════════════════════════════════════════
     // TOOLS — Agent-facing operations
@@ -169,7 +157,7 @@ const plugin = definePlugin({
       "queue-post",
       {
         displayName: "Twitter: Queue Post",
-        description: "Queue a tweet for the extension to post.",
+        description: "Queue a tweet for posting via X API v2.",
         parametersSchema: {
           type: "object",
           required: ["text"],
@@ -298,10 +286,59 @@ const plugin = definePlugin({
         });
 
         await incrementAnalytics(ctx, "postsQueued");
+
+        // ── Immediate execution if X API enabled and no future schedule ──────
+        if (config.xApiEnabled && (!p.scheduledAt || new Date(p.scheduledAt) <= new Date())) {
+          try {
+            const result = await executePost(data);
+            await ctx.entities.upsert({
+              entityType: "tweet-queue",
+              scopeKind: "instance",
+              externalId: id,
+              title: p.text.slice(0, 80),
+              status: "posted",
+              data: {
+                ...data,
+                completedAt: now(),
+                tweetUrl: result.tweetUrl,
+                tweetId: result.tweetId,
+              } as unknown as Record<string, unknown>,
+            });
+            await incrementAnalytics(ctx, "postsSent");
+            ctx.logger.info(`Posted immediately via X API: ${id}`, { tweetId: result.tweetId });
+
+            return {
+              content: `Posted immediately via X API (id: ${id}). Tweet: ${result.tweetUrl}`,
+              data: { queueItemId: id, status: "posted", tweetUrl: result.tweetUrl, tweetId: result.tweetId },
+            };
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            await ctx.entities.upsert({
+              entityType: "tweet-queue",
+              scopeKind: "instance",
+              externalId: id,
+              title: p.text.slice(0, 80),
+              status: "failed",
+              data: {
+                ...data,
+                completedAt: now(),
+                error: errorMsg,
+              } as unknown as Record<string, unknown>,
+            });
+            await incrementAnalytics(ctx, "postsFailed");
+            ctx.logger.error(`Immediate post failed: ${errorMsg}`, { queueItemId: id });
+
+            return {
+              error: `Post queued but immediate execution failed: ${errorMsg}. Item marked as failed.`,
+              data: { queueItemId: id, status: "failed", error: errorMsg },
+            };
+          }
+        }
+
         ctx.logger.info(`Queued post: ${id}`, { text: p.text.slice(0, 50) });
 
         return {
-          content: `Queued tweet (id: ${id}). Scheduled for: ${scheduledAt}. The extension will post it when the time arrives.`,
+          content: `Queued tweet (id: ${id}). Scheduled for: ${scheduledAt}. The post-dispatcher job will post it when the time arrives.`,
           data: { queueItemId: id, status: "pending", scheduledAt },
         };
       },
@@ -347,6 +384,35 @@ const plugin = definePlugin({
           data: data as unknown as Record<string, unknown>,
         });
 
+        // Immediate execution if X API enabled
+        if (config.xApiEnabled) {
+          try {
+            const result = await executePost(data);
+            await ctx.entities.upsert({
+              entityType: "tweet-queue",
+              scopeKind: "instance",
+              externalId: id,
+              title: `Reply: ${p.text.slice(0, 60)}`,
+              status: "posted",
+              data: {
+                ...data,
+                completedAt: now(),
+                tweetUrl: result.tweetUrl,
+                tweetId: result.tweetId,
+              } as unknown as Record<string, unknown>,
+            });
+            await incrementAnalytics(ctx, "postsSent");
+            return {
+              content: `Reply posted via X API (id: ${id}) to ${p.replyToUrl}. Tweet: ${result.tweetUrl}`,
+              data: { queueItemId: id, status: "posted", tweetUrl: result.tweetUrl },
+            };
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            ctx.logger.error(`Reply failed: ${errorMsg}`, { queueItemId: id });
+            // Fall through to queued state
+          }
+        }
+
         return {
           content: `Queued reply (id: ${id}) to ${p.replyToUrl}`,
           data: { queueItemId: id, status: "pending" },
@@ -391,6 +457,34 @@ const plugin = definePlugin({
           status: "pending",
           data: data as unknown as Record<string, unknown>,
         });
+
+        // Immediate execution if X API enabled
+        if (config.xApiEnabled) {
+          try {
+            const result = await executePost(data);
+            await ctx.entities.upsert({
+              entityType: "tweet-queue",
+              scopeKind: "instance",
+              externalId: id,
+              title: `Repost: ${p.repostUrl}`,
+              status: "posted",
+              data: {
+                ...data,
+                completedAt: now(),
+                tweetUrl: result.tweetUrl,
+                tweetId: result.tweetId,
+              } as unknown as Record<string, unknown>,
+            });
+            await incrementAnalytics(ctx, "reposts");
+            return {
+              content: `Reposted via X API (id: ${id}): ${result.tweetUrl}`,
+              data: { queueItemId: id, status: "posted", tweetUrl: result.tweetUrl },
+            };
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            ctx.logger.error(`Repost failed: ${errorMsg}`, { queueItemId: id });
+          }
+        }
 
         return {
           content: `Queued repost (id: ${id}) of ${p.repostUrl}`,
@@ -448,9 +542,6 @@ const plugin = definePlugin({
           .map((e) => (e.data as unknown as TweetQueueData).text!)
           .slice(0, 20);
 
-        // Note: Scraped context from Firecrawl should be fetched by the agent
-        // directly (call Firecrawl query tool), then use the results alongside
-        // this context to write tweets. Plugins cannot call other plugins' tools.
         const scrapedContext: string[] = [];
 
         // Venture-specific hashtag suggestions
@@ -508,7 +599,7 @@ const plugin = definePlugin({
       "create-mission",
       {
         displayName: "Twitter: Create Mission",
-        description: "Define a multi-step engagement mission.",
+        description: "Define a multi-step engagement mission. API-compatible steps execute via X API v2; DOM-specific steps are logged as no-ops.",
         parametersSchema: {
           type: "object",
           required: ["steps"],
@@ -556,7 +647,7 @@ const plugin = definePlugin({
         ctx.logger.info(`Created mission: ${id} with ${p.steps.length} steps`);
 
         return {
-          content: `Created mission (id: ${id}, ${p.steps.length} steps, status: ${initialStatus}).${!config.enableAutoEngage ? " Auto-engage is off — mission is pending until manually activated." : ""}`,
+          content: `Created mission (id: ${id}, ${p.steps.length} steps, status: ${initialStatus}).${!config.enableAutoEngage ? " Auto-engage is off — mission is pending until manually activated or engagement-cycle runs." : ""}`,
           data: { missionId: id, status: initialStatus, stepCount: p.steps.length },
         };
       },
@@ -762,7 +853,7 @@ const plugin = definePlugin({
             };
           });
           return {
-            content: `Found ${profiles.length} extracted profiles:\n${profiles.map((p) => `  @${p.handle} (${p.followers} followers)`).join("\n")}`,
+            content: `Found ${profiles.length} extracted profiles:\n${profiles.map((pr) => `  @${pr.handle} (${pr.followers} followers)`).join("\n")}`,
             data: { profiles, total: profiles.length },
           };
         }
@@ -775,7 +866,7 @@ const plugin = definePlugin({
       "get-queue-status",
       {
         displayName: "Twitter: Queue Status",
-        description: "Check content queue depth.",
+        description: "Check content queue depth and X API connection status.",
         parametersSchema: {
           type: "object",
           properties: { venture: { type: "string" } },
@@ -801,20 +892,28 @@ const plugin = definePlugin({
           if (status in counts) counts[status]++;
         }
 
-        // Check extension health
-        const session = await ctx.state.get({
-          scopeKind: "instance",
-          namespace: "extension-session",
-          stateKey: "current",
-        }) as unknown as ExtensionSession | null;
+        // Check X API connection status
+        const xApiStatus = await checkXApiConnection();
+        const rateLimits = xApiStatus.rateLimits;
 
-        const extensionOnline = session
-          ? Date.now() - new Date(session.lastHeartbeat).getTime() < 2 * 60 * 1000
-          : false;
+        const statusParts = [
+          `Queue: ${counts.pending} pending, ${counts.posted} posted, ${counts.failed} failed.`,
+          `X API: ${xApiStatus.connected ? `connected (@${xApiStatus.username})` : "not connected"}`,
+        ];
+
+        if (rateLimits) {
+          const budget = rateLimits.dailyBudget;
+          statusParts.push(
+            `Rate limits — posts: ${budget.posts.used}/${budget.posts.limit}, likes: ${budget.likes.used}/${budget.likes.limit}, follows: ${budget.follows.used}/${budget.follows.limit}`,
+          );
+          if (rateLimits.panicMode) {
+            statusParts.push("WARNING: panic mode active (429 received recently)");
+          }
+        }
 
         return {
-          content: `Queue: ${counts.pending} pending, ${counts.claimed} claimed, ${counts.posted} posted, ${counts.failed} failed.\nExtension: ${extensionOnline ? "online" : "offline"}${session ? ` (bot ${session.botEnabled ? "enabled" : "disabled"})` : ""}`,
-          data: { counts, extensionOnline, totalItems: items.length },
+          content: statusParts.join("\n"),
+          data: { counts, xApiConnected: xApiStatus.connected, xApiUsername: xApiStatus.username, rateLimits, totalItems: items.length },
         };
       },
     );
@@ -870,7 +969,7 @@ const plugin = definePlugin({
       "queue-thread",
       {
         displayName: "Twitter: Queue Thread",
-        description: "Queue a thread (multiple tweets posted in sequence). Each tweet is max 280 chars. The extension posts them as a connected thread.",
+        description: "Queue a thread (multiple tweets posted in sequence via X API v2).",
         parametersSchema: {
           type: "object",
           required: ["tweets"],
@@ -909,27 +1008,64 @@ const plugin = definePlugin({
         });
 
         await incrementAnalytics(ctx, "postsQueued");
+
+        // Immediate execution if X API enabled
+        if (config.xApiEnabled) {
+          try {
+            const result = await executeThread(p.tweets);
+            await ctx.entities.upsert({
+              entityType: "tweet-queue",
+              scopeKind: "instance",
+              externalId: id,
+              title: `Thread (${p.tweets.length} tweets): ${p.tweets[0].slice(0, 50)}`,
+              status: "posted",
+              data: {
+                ...data,
+                threadTweets: p.tweets,
+                completedAt: now(),
+                tweetUrl: result.tweetUrl,
+                tweetId: result.tweetId,
+              } as unknown as Record<string, unknown>,
+            });
+            await incrementAnalytics(ctx, "postsSent");
+            return {
+              content: `Thread posted via X API (id: ${id}, ${p.tweets.length} tweets). Last tweet: ${result.tweetUrl}`,
+              data: { queueItemId: id, status: "posted", tweetUrl: result.tweetUrl, tweetCount: p.tweets.length },
+            };
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            ctx.logger.error(`Thread post failed: ${errorMsg}`, { queueItemId: id });
+          }
+        }
+
         return {
-          content: `Queued thread (id: ${id}, ${p.tweets.length} tweets). Extension will post on next cycle.`,
+          content: `Queued thread (id: ${id}, ${p.tweets.length} tweets). Post-dispatcher will post on next cycle.`,
           data: { queueItemId: id, status: "pending", tweetCount: p.tweets.length },
         };
       },
     );
 
-    // ── get-bot-config (extension-facing: returns anti-bot settings) ────────
+    // ── get-bot-config ────────────────────────────────────────────────────
 
     ctx.tools.register(
       "get-bot-config",
       {
         displayName: "Twitter: Get Bot Config",
-        description: "Returns the anti-bot behavior settings for the extension (cycle timing, action limits, breathing pauses).",
+        description: "Returns anti-bot behavior settings and X API rate limit status.",
         parametersSchema: { type: "object", properties: {} },
       },
       async (): Promise<ToolResult> => {
         const config = await getConfig(ctx);
+        const xApiStatus = await checkXApiConnection();
+
         return {
           content: "Bot config loaded",
           data: {
+            xApiEnabled: config.xApiEnabled,
+            xApiConnected: xApiStatus.connected,
+            xApiUsername: xApiStatus.username,
+            rateLimitMultiplier: config.rateLimitMultiplier,
+            rateLimits: xApiStatus.rateLimits,
             cycleIntervalMin: config.cycleIntervalMin,
             cycleIntervalMax: config.cycleIntervalMax,
             dailyLimits: {
@@ -949,304 +1085,263 @@ const plugin = definePlugin({
       },
     );
 
-    // ── claim-next-post (extension-facing) ──────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // JOBS — Scheduled execution
+    // ══════════════════════════════════════════════════════════════════════════
 
-    ctx.tools.register(
-      "claim-next-post",
-      {
-        displayName: "Twitter: Claim Next Post",
-        description: "Claim the next pending tweet from the queue. Returns the tweet content for the extension to post. Marks it as claimed.",
-        parametersSchema: { type: "object", properties: {} },
-      },
-      async (): Promise<ToolResult> => {
-        const config = await getConfig(ctx);
+    // ── post-dispatcher (every 2 minutes) ─────────────────────────────────
 
-        // ── Rate enforcement: posting window check ─────────────────────────
-        const currentHour = new Date().getHours();
-        if (currentHour < config.postingWindowStart || currentHour >= config.postingWindowEnd) {
-          return {
-            content: `Outside posting window (${config.postingWindowStart}:00-${config.postingWindowEnd}:00, current: ${currentHour}:00)`,
-            data: { empty: true, reason: "outside_window" },
-          };
-        }
+    ctx.jobs.register("post-dispatcher", async (_job: PluginJobContext) => {
+      const config = await getConfig(ctx);
+      if (!config.xApiEnabled) {
+        ctx.logger.info("post-dispatcher: X API not enabled, skipping");
+        return;
+      }
 
-        const queueItems = await ctx.entities.list({
-          entityType: "tweet-queue",
-          limit: 200,
-        });
+      // Check posting window
+      const currentHour = new Date().getHours();
+      if (currentHour < config.postingWindowStart || currentHour >= config.postingWindowEnd) {
+        ctx.logger.info(`post-dispatcher: outside posting window (${config.postingWindowStart}:00-${config.postingWindowEnd}:00)`);
+        return;
+      }
 
-        // ── Rate enforcement: daily limit check ────────────────────────────
-        const todayStr = todayKey();
-        const todaysPosted = queueItems.filter((e) => {
+      // Check daily budget
+      const budget = await checkDailyBudget("post");
+      if (!budget.allowed) {
+        ctx.logger.info("post-dispatcher: daily post budget exhausted");
+        return;
+      }
+
+      // Get pending items ready for posting
+      const nowStr = now();
+      const queueItems = await ctx.entities.list({
+        entityType: "tweet-queue",
+        limit: 200,
+      });
+
+      const pending = queueItems
+        .filter((e) => e.status === "pending")
+        .filter((e) => {
           const d = e.data as unknown as TweetQueueData;
-          return (e.status === "posted" || e.status === "claimed") &&
-            (d.completedAt?.startsWith(todayStr) || d.claimedAt?.startsWith(todayStr) || d.queuedAt?.startsWith(todayStr));
+          return !d.scheduledAt || d.scheduledAt <= nowStr;
+        })
+        .sort((a, b) => {
+          const aTime = (a.data as unknown as TweetQueueData).queuedAt || "";
+          const bTime = (b.data as unknown as TweetQueueData).queuedAt || "";
+          return aTime.localeCompare(bTime);
         });
-        if (todaysPosted.length >= config.maxPostsPerDay) {
-          return {
-            content: `Daily post limit reached (${todaysPosted.length}/${config.maxPostsPerDay})`,
-            data: { empty: true, reason: "daily_limit" },
-          };
+
+      if (pending.length === 0) {
+        return;
+      }
+
+      // Check minimum gap since last post
+      const recentPosts = queueItems
+        .filter((e) => e.status === "posted")
+        .map((e) => (e.data as unknown as TweetQueueData).completedAt)
+        .filter(Boolean)
+        .sort()
+        .reverse();
+      if (recentPosts.length > 0) {
+        const lastPostTime = new Date(recentPosts[0]!).getTime();
+        const minGapMs = config.minPostGapMinutes * 60 * 1000;
+        if (Date.now() - lastPostTime < minGapMs) {
+          ctx.logger.info("post-dispatcher: too soon since last post, waiting");
+          return;
+        }
+      }
+
+      // Process first ready item
+      const item = pending[0];
+      const d = item.data as unknown as TweetQueueData;
+      const threadTweets = (item.data as Record<string, unknown>).threadTweets as string[] | undefined;
+      const isThread = d.text === "__THREAD__" && threadTweets && threadTweets.length > 0;
+
+      try {
+        let result;
+        if (isThread) {
+          result = await executeThread(threadTweets);
+        } else {
+          result = await executePost(d);
         }
 
-        // ── Rate enforcement: minimum gap check ────────────────────────────
-        const recentPosts = queueItems
-          .filter((e) => e.status === "posted")
-          .map((e) => (e.data as unknown as TweetQueueData).completedAt)
-          .filter(Boolean)
-          .sort()
-          .reverse();
-        if (recentPosts.length > 0) {
-          const lastPostTime = new Date(recentPosts[0]!).getTime();
-          const gapMs = Date.now() - lastPostTime;
-          const minGapMs = config.minPostGapMinutes * 60 * 1000;
-          if (gapMs < minGapMs) {
-            const waitMin = Math.ceil((minGapMs - gapMs) / 60000);
-            return {
-              content: `Rate limited: ${waitMin}min until next post allowed (min gap: ${config.minPostGapMinutes}min)`,
-              data: { empty: true, reason: "rate_limited", waitMinutes: waitMin },
-            };
-          }
-        }
-
-        const nowStr = now();
-        const pending = queueItems
-          .filter((e) => e.status === "pending")
-          .filter((e) => {
-            const d = e.data as unknown as TweetQueueData;
-            return !d.scheduledAt || d.scheduledAt <= nowStr;
-          })
-          .sort((a, b) => {
-            const aTime = (a.data as unknown as TweetQueueData).queuedAt || "";
-            const bTime = (b.data as unknown as TweetQueueData).queuedAt || "";
-            return aTime.localeCompare(bTime);
-          });
-
-        if (pending.length === 0) {
-          return { content: "No pending tweets in queue", data: { empty: true } };
-        }
-
-        const item = pending[0];
-        const d = item.data as unknown as TweetQueueData;
-
-        // Mark as claimed
         await ctx.entities.upsert({
           entityType: "tweet-queue",
           scopeKind: "instance",
           externalId: item.externalId || "",
           title: item.title || "",
-          status: "claimed",
-          data: { ...item.data, claimedAt: now() },
-        });
-
-        // Check if this is a thread
-        const threadTweets = (item.data as Record<string, unknown>).threadTweets as string[] | undefined;
-        const isThread = d.text === "__THREAD__" && threadTweets && threadTweets.length > 0;
-
-        // Build the full text with hashtags
-        let text = d.text || "";
-        if (!isThread && d.hashtags && d.hashtags.length > 0) {
-          const tags = d.hashtags.map((h: string) => h.startsWith("#") ? h : `#${h}`).join(" ");
-          text += `\n\n${tags}`;
-        }
-
-        ctx.logger.info(`Claimed ${isThread ? "thread" : "post"}: ${item.externalId}`);
-
-        return {
-          content: isThread ? threadTweets.join("\n---\n") : text,
-          data: {
-            id: item.externalId,
-            text: isThread ? threadTweets[0] : text,
-            action: d.action,
-            isThread,
-            threadTweets: isThread ? threadTweets : undefined,
-            mediaUrls: d.mediaUrls || [],
-            hashtags: d.hashtags || [],
-            replyToUrl: d.replyToUrl,
-            repostUrl: d.repostUrl,
-          },
-        };
-      },
-    );
-
-    // ── report-post-result (extension-facing) ─────────────────────────────
-
-    ctx.tools.register(
-      "report-post-result",
-      {
-        displayName: "Twitter: Report Post Result",
-        description: "Report the result of a posted tweet back to the dashboard.",
-        parametersSchema: {
-          type: "object",
-          required: ["queueItemId", "success"],
-          properties: {
-            queueItemId: { type: "string" },
-            success: { type: "boolean" },
-            tweetUrl: { type: "string" },
-            error: { type: "string" },
-          },
-        },
-      },
-      async (params: unknown): Promise<ToolResult> => {
-        const p = params as { queueItemId: string; success: boolean; tweetUrl?: string; error?: string };
-
-        const items = await ctx.entities.list({
-          entityType: "tweet-queue",
-          externalId: p.queueItemId,
-          limit: 1,
-        });
-
-        if (items.length === 0) {
-          return { error: `Queue item ${p.queueItemId} not found` };
-        }
-
-        const item = items[0];
-        await ctx.entities.upsert({
-          entityType: "tweet-queue",
-          scopeKind: "instance",
-          externalId: item.externalId || "",
-          title: item.title || "",
-          status: p.success ? "posted" : "failed",
+          status: "posted",
           data: {
             ...item.data,
             completedAt: now(),
-            tweetUrl: p.tweetUrl,
-            error: p.error,
+            tweetUrl: result.tweetUrl,
+            tweetId: result.tweetId,
           },
         });
+        await incrementAnalytics(ctx, "postsSent");
+        ctx.logger.info(`post-dispatcher: posted ${item.externalId}`, { tweetUrl: result.tweetUrl });
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const retryCount = d.retryCount || 0;
 
-        if (p.success) {
-          await incrementAnalytics(ctx, "postsSent");
-        } else {
-          await incrementAnalytics(ctx, "postsFailed");
-        }
-
-        return {
-          content: p.success ? `Posted successfully: ${p.tweetUrl || ""}` : `Failed: ${p.error || "unknown"}`,
-          data: { status: p.success ? "posted" : "failed" },
-        };
-      },
-    );
-
-    // ── claim-next-mission (extension auto-engage bridge) ───────────────────
-
-    ctx.tools.register(
-      "claim-next-mission",
-      {
-        displayName: "Twitter: Claim Next Mission",
-        description: "Claim the next active mission for the extension to execute.",
-        parametersSchema: { type: "object", properties: {} },
-      },
-      async (): Promise<ToolResult> => {
-        const config = await getConfig(ctx);
-        if (!config.enableAutoEngage) {
-          return { content: "Auto-engage is disabled", data: { empty: true, reason: "auto_engage_disabled" } };
-        }
-
-        const missions = await ctx.entities.list({ entityType: "mission", limit: 50 });
-        const active = missions
-          .filter((e) => e.status === "active")
-          .sort((a, b) => {
-            const aTime = (a.data as unknown as MissionData).createdAt || "";
-            const bTime = (b.data as unknown as MissionData).createdAt || "";
-            return aTime.localeCompare(bTime);
-          });
-
-        if (active.length === 0) {
-          return { content: "No active missions", data: { empty: true } };
-        }
-
-        const mission = active[0];
-        const mData = mission.data as unknown as MissionData;
-
-        if (!mData.startedAt) {
-          mData.startedAt = now();
+        if (retryCount < 3) {
+          // Retry later
           await ctx.entities.upsert({
-            entityType: "mission",
+            entityType: "tweet-queue",
             scopeKind: "instance",
-            externalId: mission.externalId || "",
-            title: mission.title || "",
-            status: "active",
-            data: mData as unknown as Record<string, unknown>,
+            externalId: item.externalId || "",
+            title: item.title || "",
+            status: "pending",
+            data: { ...item.data, retryCount: retryCount + 1, lastError: errorMsg },
           });
+          ctx.logger.warn(`post-dispatcher: failed (attempt ${retryCount + 1}/3): ${errorMsg}`);
+        } else {
+          // Max retries exceeded — mark as failed
+          await ctx.entities.upsert({
+            entityType: "tweet-queue",
+            scopeKind: "instance",
+            externalId: item.externalId || "",
+            title: item.title || "",
+            status: "failed",
+            data: { ...item.data, completedAt: now(), error: errorMsg },
+          });
+          await incrementAnalytics(ctx, "postsFailed");
+          ctx.logger.error(`post-dispatcher: permanently failed after 3 attempts: ${errorMsg}`);
+        }
+      }
+    });
+
+    // ── engagement-cycle (every 5 minutes) ────────────────────────────────
+
+    ctx.jobs.register("engagement-cycle", async (_job: PluginJobContext) => {
+      const config = await getConfig(ctx);
+      if (!config.xApiEnabled || !config.enableAutoEngage) {
+        return;
+      }
+
+      // First, execute any active missions
+      const missions = await ctx.entities.list({ entityType: "mission", limit: 10 });
+      const activeMission = missions.find((e) => e.status === "active");
+      if (activeMission) {
+        const mData = activeMission.data as unknown as MissionData;
+        if (mData.currentStep < mData.steps.length) {
+          ctx.logger.info(`engagement-cycle: executing mission ${activeMission.externalId}`);
+          await executeMission(
+            activeMission.externalId || activeMission.id,
+            mData,
+            ctx,
+          );
+          return; // Don't do target engagement in the same cycle as a mission
+        }
+      }
+
+      // Target-based engagement
+      const targets = await ctx.entities.list({ entityType: "target", limit: 100 });
+      const activeTargets = targets.filter((e) => e.status === "active");
+
+      if (activeTargets.length === 0) {
+        return;
+      }
+
+      let actionsThisCycle = 0;
+      const maxActionsPerCycle = Math.floor(
+        randomBetween(config.breathingPauseMinActions, config.breathingPauseMaxActions),
+      );
+
+      for (const target of activeTargets) {
+        if (actionsThisCycle >= maxActionsPerCycle) {
+          ctx.logger.info(`engagement-cycle: breathing pause after ${actionsThisCycle} actions`);
+          break;
         }
 
-        ctx.logger.info(`Claimed mission: ${mission.externalId}`, { name: mData.name, steps: mData.steps.length });
+        const td = target.data as unknown as TargetData;
 
-        return {
-          content: `Mission: ${mData.name || "Unnamed"} (${mData.steps.length} steps, at step ${mData.currentStep})`,
-          data: {
-            missionId: mission.externalId || mission.id,
-            name: mData.name,
-            steps: mData.steps,
-            currentStep: mData.currentStep,
-          },
-        };
-      },
-    );
+        for (const actionType of td.engageActions) {
+          if (actionsThisCycle >= maxActionsPerCycle) break;
 
-    // ── report-mission-result (extension auto-engage bridge) ────────────────
+          // Map action type to budget check
+          const budgetMap: Record<string, "like" | "follow" | "reply" | "post"> = {
+            LIKE: "like",
+            FOLLOW: "follow",
+            REPLY: "reply",
+            REPOST: "post",
+          };
+          const budgetAction = budgetMap[actionType];
+          if (budgetAction) {
+            const budget = await checkDailyBudget(budgetAction);
+            if (!budget.allowed) {
+              ctx.logger.info(`engagement-cycle: daily budget exhausted for ${actionType}`);
+              continue;
+            }
+          }
 
-    ctx.tools.register(
-      "report-mission-result",
-      {
-        displayName: "Twitter: Report Mission Result",
-        description: "Report the completion or failure of a mission.",
-        parametersSchema: {
-          type: "object",
-          required: ["missionId", "success"],
-          properties: {
-            missionId: { type: "string" },
-            success: { type: "boolean" },
-            currentStep: { type: "number" },
-            error: { type: "string" },
-          },
-        },
-      },
-      async (params: unknown): Promise<ToolResult> => {
-        const p = params as { missionId: string; success: boolean; currentStep?: number; error?: string };
+          try {
+            // For LIKE: fetch recent tweets from the target, like one
+            if (actionType === "LIKE") {
+              // We need the user ID to fetch tweets — try to look it up
+              // For now, skip targets where we don't have a userId stored
+              // The target data doesn't store userId by default, so we'll
+              // need to do a best-effort approach
+              ctx.logger.info(`engagement-cycle: LIKE for @${td.handle} — requires userId lookup (skipping for now)`);
+              continue;
+            }
 
-        const missions = await ctx.entities.list({
-          entityType: "mission",
-          externalId: p.missionId,
-          limit: 1,
-        });
+            if (actionType === "FOLLOW") {
+              // Similarly needs userId
+              ctx.logger.info(`engagement-cycle: FOLLOW for @${td.handle} — requires userId lookup (skipping for now)`);
+              continue;
+            }
 
-        if (missions.length === 0) {
-          return { error: `Mission ${p.missionId} not found` };
+            if (actionType === "REPLY" || actionType === "REPOST") {
+              ctx.logger.info(`engagement-cycle: ${actionType} for @${td.handle} — requires userId lookup (skipping for now)`);
+              continue;
+            }
+          } catch (err) {
+            ctx.logger.error(`engagement-cycle: error for @${td.handle} ${actionType}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+
+          actionsThisCycle++;
+
+          // Log the action
+          await ctx.entities.upsert({
+            entityType: "action-log",
+            scopeKind: "instance",
+            externalId: uuid(),
+            title: `${actionType}: @${td.handle}`,
+            status: "success",
+            data: {
+              action: actionType,
+              targetUrl: td.profileUrl,
+              performedAt: now(),
+            } as unknown as Record<string, unknown>,
+          });
+
+          // Update target engagement count
+          td.engagementCount++;
+          td.lastEngagedAt = now();
+          await ctx.entities.upsert({
+            entityType: "target",
+            scopeKind: "instance",
+            externalId: target.externalId || "",
+            title: target.title || "",
+            status: "active",
+            data: td as unknown as Record<string, unknown>,
+          });
+
+          // Jittered delay between actions
+          await jitteredDelay(
+            config.cycleIntervalMin * 1000,
+            config.cycleIntervalMax * 1000,
+          );
         }
+      }
 
-        const mission = missions[0];
-        const mData = mission.data as unknown as MissionData;
+      if (actionsThisCycle > 0) {
+        ctx.logger.info(`engagement-cycle: completed ${actionsThisCycle} actions`);
+      }
+    });
 
-        if (p.currentStep !== undefined) {
-          mData.currentStep = p.currentStep;
-        }
-
-        const isComplete = p.success && mData.currentStep >= mData.steps.length;
-        if (isComplete) {
-          mData.completedAt = now();
-        }
-
-        await ctx.entities.upsert({
-          entityType: "mission",
-          scopeKind: "instance",
-          externalId: mission.externalId || "",
-          title: mission.title || "",
-          status: isComplete ? "completed" : p.success ? "active" : "failed",
-          data: { ...mData as unknown as Record<string, unknown>, error: p.error },
-        });
-
-        return {
-          content: `Mission ${p.missionId}: step ${mData.currentStep}/${mData.steps.length}${isComplete ? " — COMPLETED" : ""}`,
-          data: { missionId: p.missionId, status: isComplete ? "completed" : "active", currentStep: mData.currentStep },
-        };
-      },
-    );
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // JOBS — Scheduled maintenance
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── queue-cleanup (every 6 hours) ──────────────────────────────────────
 
     ctx.jobs.register("queue-cleanup", async (_job: PluginJobContext) => {
       ctx.logger.info("Running queue cleanup");
@@ -1280,353 +1375,43 @@ const plugin = definePlugin({
       ctx.logger.info(`Queue cleanup: archived ${archived} items`);
     });
 
+    // ── analytics-rollup (daily at midnight) ──────────────────────────────
+
     ctx.jobs.register("analytics-rollup", async (_job: PluginJobContext) => {
       ctx.logger.info("Running analytics rollup");
-      // Action logs from today are already counted incrementally.
-      // This job could compute additional aggregates if needed.
       const today = todayKey();
       const analytics = await getDailyAnalytics(ctx, today);
       ctx.logger.info(`Daily analytics for ${today}`, analytics as unknown as Record<string, unknown>);
     });
   },
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // WEBHOOKS — Extension communication endpoints
-  // ══════════════════════════════════════════════════════════════════════════
-
-  async onWebhook(input: PluginWebhookInput): Promise<void> {
-    const ctx = currentContext;
-    if (!ctx) throw new Error("Plugin not initialized");
-
-    const config = await getConfig(ctx);
-
-    // Validate extension auth
-    if (!validateExtensionAuth(input.headers, config.extensionSecret)) {
-      throw new Error("Unauthorized: invalid extension secret");
-    }
-
-    switch (input.endpointKey) {
-      // ── ext-poll: Extension asks for next work item ──────────────────────
-      case "ext-poll": {
-        // Find oldest pending queue item
-        const queueItems = await ctx.entities.list({
-          entityType: "tweet-queue",
-          limit: 50,
-        });
-        const pending = queueItems
-          .filter((e) => e.status === "pending")
-          .sort((a, b) => {
-            const aTime = (a.data as unknown as TweetQueueData).queuedAt || "";
-            const bTime = (b.data as unknown as TweetQueueData).queuedAt || "";
-            return aTime.localeCompare(bTime);
-          });
-
-        // Check for scheduled items — only serve if scheduledAt <= now
-        const nowStr = now();
-        const ready = pending.find((e) => {
-          const d = e.data as unknown as TweetQueueData;
-          return !d.scheduledAt || d.scheduledAt <= nowStr;
-        });
-
-        let queueResponse: ExtPollResponse["queueItem"] = null;
-
-        // ── Rate limit: enforce minimum gap between posts ──────────────────
-        let rateLimited = false;
-        if (ready) {
-          const recentlyPosted = queueItems
-            .filter((e) => e.status === "posted")
-            .map((e) => (e.data as unknown as TweetQueueData).completedAt)
-            .filter(Boolean)
-            .sort()
-            .reverse();
-          if (recentlyPosted.length > 0) {
-            const lastPostTime = new Date(recentlyPosted[0]!).getTime();
-            const minGapMs = config.minPostGapMinutes * 60 * 1000;
-            if (Date.now() - lastPostTime < minGapMs) {
-              rateLimited = true;
-              ctx.logger.info("ext-poll: rate limited, too soon since last post", {
-                lastPost: recentlyPosted[0],
-                minGapMinutes: config.minPostGapMinutes,
-              });
-            }
-          }
-        }
-
-        if (ready && !rateLimited) {
-          const d = ready.data as unknown as TweetQueueData;
-          // Mark as claimed
-          await ctx.entities.upsert({
-            entityType: "tweet-queue",
-            scopeKind: "instance",
-            externalId: ready.externalId || "",
-            title: ready.title || "",
-            status: "claimed",
-            data: { ...ready.data, claimedAt: now() },
-          });
-          queueResponse = {
-            id: ready.externalId || ready.id,
-            action: d.action,
-            text: d.text,
-            mediaUrls: d.mediaUrls,
-            hashtags: d.hashtags,
-            replyToUrl: d.replyToUrl,
-            repostUrl: d.repostUrl,
-          };
-        }
-
-        // Find active missions
-        const missions = await ctx.entities.list({ entityType: "mission", limit: 10 });
-        const activeMission = missions.find((e) => e.status === "active");
-        let missionResponse: ExtPollResponse["mission"] = null;
-        if (activeMission) {
-          const md = activeMission.data as unknown as MissionData;
-          missionResponse = {
-            id: activeMission.externalId || activeMission.id,
-            steps: md.steps,
-            currentStep: md.currentStep,
-          };
-        }
-
-        // Get active targets
-        const targetEntities = await ctx.entities.list({ entityType: "target", limit: 100 });
-        const targets = targetEntities
-          .filter((e) => e.status === "active")
-          .map((e) => {
-            const td = e.data as unknown as TargetData;
-            return { handle: td.handle, engageActions: td.engageActions };
-          });
-
-        // Store the response in state so the host webhook route can return it
-        await ctx.state.set(
-          { scopeKind: "instance", namespace: "webhook-response", stateKey: "ext-poll" },
-          { queueItem: queueResponse, mission: missionResponse, targets } as unknown as Record<string, unknown>,
-        );
-
-        ctx.logger.info("ext-poll served", {
-          hasQueue: !!queueResponse,
-          hasMission: !!missionResponse,
-          targetCount: targets.length,
-        });
-        break;
-      }
-
-      // ── ext-result: Extension reports action outcome ─────────────────────
-      case "ext-result": {
-        const payload = (input.parsedBody || JSON.parse(input.rawBody)) as ExtResultPayload;
-
-        // Log the action
-        const logData: ActionLogData = {
-          action: payload.action || payload.type,
-          targetUrl: payload.tweetUrl,
-          queueItemId: payload.queueItemId,
-          missionId: payload.missionId,
-          performedAt: now(),
-          durationMs: payload.durationMs,
-          error: payload.error,
-          extensionSessionId: payload.sessionId,
-        };
-
-        await ctx.entities.upsert({
-          entityType: "action-log",
-          scopeKind: "instance",
-          externalId: uuid(),
-          title: `${payload.action || payload.type}: ${payload.success ? "ok" : "fail"}`,
-          status: payload.success ? "success" : "failed",
-          data: logData as unknown as Record<string, unknown>,
-        });
-
-        // Update queue item if applicable
-        if (payload.queueItemId) {
-          const items = await ctx.entities.list({
-            entityType: "tweet-queue",
-            externalId: payload.queueItemId,
-            limit: 1,
-          });
-          if (items.length > 0) {
-            const item = items[0];
-            await ctx.entities.upsert({
-              entityType: "tweet-queue",
-              scopeKind: "instance",
-              externalId: item.externalId || "",
-              title: item.title || "",
-              status: payload.success ? "posted" : "failed",
-              data: {
-                ...item.data,
-                completedAt: now(),
-                tweetUrl: payload.tweetUrl,
-                error: payload.error,
-              },
-            });
-
-            if (payload.success) {
-              await incrementAnalytics(ctx, "postsSent");
-            } else {
-              await incrementAnalytics(ctx, "postsFailed");
-            }
-          }
-        }
-
-        // Store extracted data if applicable
-        if (payload.type === "extract" && payload.extractedData) {
-          const extracted = payload.extractedData as Record<string, unknown>;
-          if (Array.isArray(extracted)) {
-            for (const tweet of extracted) {
-              const t = tweet as Record<string, unknown>;
-              await ctx.entities.upsert({
-                entityType: "extracted-tweet",
-                scopeKind: "instance",
-                externalId: (t.tweetUrl as string) || uuid(),
-                title: ((t.text as string) || "").slice(0, 80),
-                status: "active",
-                data: {
-                  ...t,
-                  extractedAt: now(),
-                  missionId: payload.missionId,
-                },
-              });
-            }
-            await incrementAnalytics(ctx, "extractions", (extracted as unknown[]).length);
-          }
-        }
-
-        if (payload.type === "profile" && payload.extractedData) {
-          const profile = payload.extractedData as Record<string, unknown>;
-          await ctx.entities.upsert({
-            entityType: "extracted-profile",
-            scopeKind: "instance",
-            externalId: ((profile.handle as string) || "").toLowerCase() || uuid(),
-            title: (profile.displayName as string) || `@${profile.handle as string}`,
-            status: "active",
-            data: { ...profile, extractedAt: now() },
-          });
-          await incrementAnalytics(ctx, "profileExtractions");
-        }
-
-        // Increment engagement counters
-        if (payload.success && payload.action) {
-          const actionMap: Record<string, keyof Omit<DailyAnalytics, "date">> = {
-            LIKE: "likes",
-            REPOST: "reposts",
-            FOLLOW: "follows",
-            REPLY: "replies",
-          };
-          const field = actionMap[payload.action];
-          if (field) await incrementAnalytics(ctx, field);
-        }
-
-        ctx.logger.info(`ext-result: ${payload.type} ${payload.success ? "ok" : "fail"}`, {
-          queueItemId: payload.queueItemId,
-          missionId: payload.missionId,
-        });
-        break;
-      }
-
-      // ── ext-progress: Extension reports mission step progress ────────────
-      case "ext-progress": {
-        const payload = (input.parsedBody || JSON.parse(input.rawBody)) as ExtProgressPayload;
-
-        const missions = await ctx.entities.list({
-          entityType: "mission",
-          externalId: payload.missionId,
-          limit: 1,
-        });
-
-        if (missions.length > 0) {
-          const mission = missions[0];
-          const mData = mission.data as unknown as MissionData;
-          mData.currentStep = payload.currentStep;
-          if (payload.stepResult) {
-            mData.results.push(payload.stepResult);
-          }
-
-          const isComplete = payload.currentStep >= mData.steps.length;
-          if (isComplete) {
-            mData.completedAt = now();
-          }
-
-          await ctx.entities.upsert({
-            entityType: "mission",
-            scopeKind: "instance",
-            externalId: mission.externalId || "",
-            title: mission.title || "",
-            status: isComplete ? "completed" : "active",
-            data: mData as unknown as Record<string, unknown>,
-          });
-
-          ctx.logger.info(`ext-progress: mission ${payload.missionId} step ${payload.currentStep}/${mData.steps.length}${isComplete ? " — COMPLETED" : ""}`);
-        }
-        break;
-      }
-
-      // ── ext-heartbeat: Extension reports its alive status ────────────────
-      case "ext-heartbeat": {
-        const payload = (input.parsedBody || JSON.parse(input.rawBody)) as ExtHeartbeatPayload;
-
-        const session: ExtensionSession = {
-          sessionId: payload.sessionId,
-          lastHeartbeat: now(),
-          botEnabled: payload.botEnabled,
-          bearerToken: payload.bearerToken,
-          csrfToken: payload.csrfToken,
-          currentUrl: payload.currentUrl,
-        };
-
-        await ctx.state.set(
-          { scopeKind: "instance", namespace: "extension-session", stateKey: "current" },
-          session as unknown as Record<string, unknown>,
-        );
-
-        ctx.logger.info("ext-heartbeat", {
-          sessionId: payload.sessionId,
-          botEnabled: payload.botEnabled,
-        });
-        break;
-      }
-
-      default:
-        throw new Error(`Unknown webhook endpoint: ${input.endpointKey}`);
-    }
-  },
-
   async onHealth() {
-    const ctx = currentContext;
-    if (!ctx) {
-      return { status: "error" as const, message: "Plugin not initialized" };
-    }
+    // Check X API connection health
+    const xApiStatus = await checkXApiConnection();
 
-    const session = await ctx.state.get({
-      scopeKind: "instance",
-      namespace: "extension-session",
-      stateKey: "current",
-    }) as unknown as ExtensionSession | null;
-
-    if (!session) {
+    if (!xApiStatus.connected) {
       return {
         status: "degraded" as const,
-        message: "No extension heartbeat received yet. Install and enable the x-Ext Chrome extension.",
+        message: "X API not connected. Complete OAuth setup at /api/x-oauth/authorize to enable posting.",
       };
     }
 
-    const ageMs = Date.now() - new Date(session.lastHeartbeat).getTime();
-    if (ageMs < 2 * 60 * 1000) {
-      return {
-        status: "ok" as const,
-        message: `Extension online (bot ${session.botEnabled ? "enabled" : "disabled"})`,
-        details: { sessionId: session.sessionId, lastHeartbeat: session.lastHeartbeat },
-      };
-    } else if (ageMs < 10 * 60 * 1000) {
+    const rateLimits = xApiStatus.rateLimits;
+    const isPanic = rateLimits?.panicMode;
+
+    if (isPanic) {
       return {
         status: "degraded" as const,
-        message: `Extension heartbeat stale (${Math.round(ageMs / 60000)}min ago)`,
-        details: { sessionId: session.sessionId, lastHeartbeat: session.lastHeartbeat },
-      };
-    } else {
-      return {
-        status: "error" as const,
-        message: `Extension offline (last seen ${Math.round(ageMs / 60000)}min ago)`,
-        details: { sessionId: session.sessionId, lastHeartbeat: session.lastHeartbeat },
+        message: `X API connected (@${xApiStatus.username}) but in panic mode (429 received). Reduced rate limits active.`,
+        details: { username: xApiStatus.username, rateLimits },
       };
     }
+
+    return {
+      status: "ok" as const,
+      message: `X API connected (@${xApiStatus.username}). Direct posting active.`,
+      details: { username: xApiStatus.username, rateLimits },
+    };
   },
 });
 
