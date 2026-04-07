@@ -104,14 +104,19 @@ Returns posting analytics with daily counts, recent posts (with impression/engag
 ```
 
 ### `GET /extension-status`
-Checks whether the Chrome extension bot (chrome-bot Docker container) is running by probing the noVNC endpoint on port 6080.
+Returns the latest heartbeat from the local Chrome extension bot (`packages/x-bot/`). The extension sends periodic heartbeats via the plugin-twitter `ext-heartbeat` webhook, and this endpoint reads the stored state.
+
+A heartbeat within the last 5 minutes means the extension is "online".
 
 **Response:**
 ```json
 {
-  "running": true,
-  "vncUrl": "http://31.220.61.12:6080",
-  "container": "chrome-bot"
+  "online": true,
+  "lastHeartbeatAt": "2026-04-07T18:30:00.000Z",
+  "sessionId": "login-check",
+  "botEnabled": true,
+  "currentUrl": "https://x.com/home",
+  "ageSeconds": 45
 }
 ```
 
@@ -173,14 +178,13 @@ The Twitter plugin provides 13 agent-callable tools and 4 scheduled jobs for twe
 
 ## Chrome Extension Bot (`packages/x-bot/`)
 
-Standalone Chrome extension ("Tokns Automation Bot") running in a headless Docker container with VNC access.
+Local Chrome extension ("Tokns Automation Bot") that runs in the user's browser. Not a server-side component — the user loads it as an unpacked extension in Chrome.
 
-- **Container:** `chrome-bot` in `docker-compose.yml`
-- **VNC Access:** `http://31.220.61.12:6080` (noVNC web client)
+- **Install:** `chrome://extensions` > Developer Mode > Load Unpacked > select `packages/x-bot/`
 - **How it works:** Injects content scripts into x.com, polls dashboard backend for tasks, executes via X.com's internal GraphQL API + DOM manipulation
 - **Anti-bot:** Jittered timing (12-25s cycles), breathing pauses (30-90s), daily action limits (40 likes, 15 follows, 20 replies, 10 reposts)
 - **Dashboard Backend URL:** `https://team-dashboard-cyan.vercel.app` (proxied to VPS)
-- **Webhook Base:** `/api/plugins/coherencedaddy.twitter/webhooks/ext-heartbeat`
+- **Heartbeat:** Sends periodic `POST /api/plugins/coherencedaddy.twitter/webhooks/ext-heartbeat` — dashboard shows online/offline status based on last heartbeat
 
 ### Related Files
 
@@ -191,6 +195,3 @@ Standalone Chrome extension ("Tokns Automation Bot") running in a headless Docke
 | `packages/x-bot/modules/api.js` | Dashboard API communication + X GraphQL posting |
 | `packages/x-bot/modules/botController.js` | Bot cycle controller (missions, engagement) |
 | `packages/x-bot/modules/constants.js` | Anti-bot timing, daily limits, API URLs |
-| `docker/chrome-bot/Dockerfile` | Docker image (Debian + Chrome + noVNC) |
-| `docker/chrome-bot/entrypoint.sh` | Volume permission fix + supervisord startup |
-| `docker/chrome-bot/start-chrome.sh` | Chrome launch with extension + stale lock cleanup |

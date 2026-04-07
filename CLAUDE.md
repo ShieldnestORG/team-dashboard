@@ -314,7 +314,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `packages/plugins/plugin-twitter/src/worker.ts` | Twitter/X plugin worker (queue, engagement, analytics) |
 | `packages/mcp-server/src/index.ts` | MCP server entry point — registers 35 tools, stdio transport |
 | `packages/mcp-server/src/client.ts` | HTTP client wrapping Team Dashboard REST API for MCP |
-| `docker/chrome-bot/entrypoint.sh` | Chrome-bot entrypoint — fixes /data volume permissions before supervisor |
+| `packages/x-bot/` | Chrome extension for local X/Twitter DOM automation (user's browser) |
 
 ### Updating
 

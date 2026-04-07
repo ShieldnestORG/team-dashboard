@@ -32,26 +32,6 @@ services:
       retries: 3
       start_period: 30s
 
-  chrome-bot:
-    build:
-      context: .
-      dockerfile: docker/chrome-bot/Dockerfile
-    ports:
-      - "6080:6080"
-    volumes:
-      - chrome-profile:/data/chrome-profile
-    environment:
-      - VNC_PASSWORD=${VNC_PASSWORD:-changeme}
-    shm_size: '2gb'
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "google-chrome"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
 volumes:
   paperclip-data:
   paperclip-backups:
-  chrome-profile:

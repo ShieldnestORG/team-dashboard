@@ -44,7 +44,6 @@ import {
   XCircle,
   Activity,
   Monitor,
-  ExternalLink,
 } from "lucide-react";
 
 // ── API helpers ──────────────────────────────────────────────────────────────
@@ -131,9 +130,12 @@ interface ConnectionStatus {
 }
 
 interface ExtensionBotStatus {
-  running: boolean;
-  vncUrl: string | null;
-  container: string;
+  online: boolean;
+  lastHeartbeatAt: string | null;
+  sessionId: string | null;
+  botEnabled: boolean;
+  currentUrl: string | null;
+  ageSeconds: number | null;
 }
 
 interface RateLimitBudgetItem {
@@ -713,44 +715,51 @@ function ConnectionCard({ connection }: { connection: ConnectionStatus }) {
 // ── Extension Bot Card ────────────────────────────────────────────────────
 
 function ExtensionBotCard({ extension }: { extension?: ExtensionBotStatus }) {
-  const running = extension?.running ?? false;
+  const online = extension?.online ?? false;
+
+  function formatAge(seconds: number | null): string {
+    if (seconds == null) return "";
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
 
   return (
     <Card>
       <CardContent className="flex items-center justify-between py-4">
         <div className="flex items-center gap-3">
           <Monitor className="h-5 w-5 text-violet-500" />
-          {running ? (
+          {online ? (
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-green-500" />
               <span className="text-sm font-medium">
-                Extension Bot <span className="text-violet-500">Running</span>
+                Extension Bot <span className="text-violet-500">Online</span>
               </span>
-              <span className="text-xs text-muted-foreground">chrome-bot container</span>
+              {extension?.botEnabled && (
+                <Badge variant="outline" className="text-xs">Bot Active</Badge>
+              )}
+              <span className="text-xs text-muted-foreground">
+                last seen {formatAge(extension?.ageSeconds ?? null)}
+              </span>
+            </div>
+          ) : extension?.lastHeartbeatAt ? (
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-yellow-500" />
+              <span className="text-sm text-muted-foreground">
+                Extension Bot Disconnected
+              </span>
+              <span className="text-xs text-muted-foreground">
+                last seen {formatAge(extension?.ageSeconds ?? null)}
+              </span>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-red-500" />
-              <span className="text-sm text-muted-foreground">Extension Bot Offline</span>
+              <span className="h-2 w-2 rounded-full bg-zinc-500" />
+              <span className="text-sm text-muted-foreground">
+                Extension Bot — No heartbeat received
+              </span>
             </div>
-          )}
-        </div>
-        <div>
-          {running && extension?.vncUrl ? (
-            <a
-              href={extension.vncUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-violet-500 text-white hover:bg-violet-600 transition-colors"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open VNC
-            </a>
-          ) : (
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-muted text-muted-foreground">
-              <XCircle className="h-3.5 w-3.5" />
-              Not Available
-            </span>
           )}
         </div>
       </CardContent>

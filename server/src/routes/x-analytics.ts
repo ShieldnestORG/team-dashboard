@@ -152,31 +152,49 @@ export function xAnalyticsRoutes(db: Db) {
   });
 
   // ── Extension Bot Status ─────────────────────────────────────────────────
+  // Reads the latest heartbeat from the local Chrome extension (stored by
+  // the plugin-twitter ext-heartbeat webhook handler in plugin_state).
   router.get("/extension-status", async (_req, res) => {
     try {
-      // Probe chrome-bot noVNC — try Docker service name first (container-to-container),
-      // then localhost (when server runs outside Docker)
-      const probeUrls = ["http://chrome-bot:6080/", "http://localhost:6080/"];
-      let healthy = false;
+      const result = await db.execute(sql`
+        SELECT ps.value_json, ps.updated_at
+        FROM plugin_state ps
+        JOIN plugins p ON p.id = ps.plugin_id
+        WHERE p.plugin_key = 'coherencedaddy.twitter'
+          AND ps.scope_kind = 'instance'
+          AND ps.namespace = 'extension'
+          AND ps.state_key = 'ext-heartbeat'
+        LIMIT 1
+      `);
 
-      for (const url of probeUrls) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2000);
-        try {
-          const probe = await fetch(url, { signal: controller.signal });
-          if (probe.ok) { healthy = true; break; }
-        } catch {
-          // try next
-        } finally {
-          clearTimeout(timeout);
-        }
+      const rows = result as unknown as Array<{ value_json: Record<string, unknown>; updated_at: string }>;
+      const row = rows[0];
+
+      if (row) {
+        const heartbeat = row.value_json;
+        const lastSeen = (heartbeat.lastHeartbeatAt as string) || row.updated_at;
+        const ageMs = Date.now() - new Date(lastSeen).getTime();
+        // Consider the extension "online" if heartbeat received within 5 minutes
+        const online = ageMs < 5 * 60 * 1000;
+
+        res.json({
+          online,
+          lastHeartbeatAt: lastSeen,
+          sessionId: heartbeat.sessionId ?? null,
+          botEnabled: heartbeat.botEnabled ?? false,
+          currentUrl: heartbeat.currentUrl ?? null,
+          ageSeconds: Math.round(ageMs / 1000),
+        });
+      } else {
+        res.json({
+          online: false,
+          lastHeartbeatAt: null,
+          sessionId: null,
+          botEnabled: false,
+          currentUrl: null,
+          ageSeconds: null,
+        });
       }
-
-      res.json({
-        running: healthy,
-        vncUrl: healthy ? `http://31.220.61.12:6080` : null,
-        container: "chrome-bot",
-      });
     } catch (err) {
       logger.error({ err }, "Failed to get extension bot status");
       res.status(500).json({ error: "Failed to get extension bot status" });
