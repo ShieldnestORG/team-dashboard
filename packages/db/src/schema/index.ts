@@ -67,3 +67,4 @@ export { xTweetAnalytics } from "./x_tweet_analytics.js";
 export { pulseTweets } from "./pulse_tweets.js";
 export { pulseAggregations } from "./pulse_aggregations.js";
 export { pulseXrplBridge } from "./pulse_xrpl_bridge.js";
+export { mediaDrops } from "./media_drops.js";

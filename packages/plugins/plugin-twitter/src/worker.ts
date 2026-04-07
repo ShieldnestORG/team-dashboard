@@ -1085,6 +1085,80 @@ const plugin = definePlugin({
       },
     );
 
+    // ── get-media-drops ─────────────────────────────────────────────────────
+
+    ctx.tools.register(
+      "get-media-drops",
+      {
+        displayName: "Twitter: Get Media Drops",
+        description:
+          "Fetch available media drops (images/videos uploaded for posting). " +
+          "Returns drops with captions, hashtags, and file URLs ready for queue-post. " +
+          "After queuing a drop, call this tool's mark-used endpoint or PATCH the drop status to 'queued'.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            status: { type: "string", default: "available", description: "Filter by status: available, queued, posted" },
+            platform: { type: "string", default: "twitter" },
+            limit: { type: "number", default: 10 },
+          },
+        },
+      },
+      async (params: unknown): Promise<ToolResult> => {
+        const p = params as { status?: string; platform?: string; limit?: number };
+        const baseUrl = process.env.PAPERCLIP_API_URL || process.env.PAPERCLIP_PUBLIC_URL || "http://localhost:3100";
+        const apiKey = process.env.CONTENT_API_KEY;
+        if (!apiKey) {
+          return { content: "CONTENT_API_KEY not set — cannot fetch media drops.", data: { error: true } };
+        }
+
+        const qs = new URLSearchParams();
+        qs.set("status", p.status || "available");
+        qs.set("platform", p.platform || "twitter");
+        qs.set("limit", String(p.limit || 10));
+
+        const resp = await fetch(`${baseUrl}/api/media/drops?${qs}`, {
+          headers: { "Content-API-Key": apiKey },
+        });
+
+        if (!resp.ok) {
+          return { content: `Failed to fetch media drops: ${resp.status}`, data: { error: true } };
+        }
+
+        const body = (await resp.json()) as {
+          drops: Array<{
+            id: string;
+            caption: string | null;
+            hashtags: string[] | null;
+            platform: string;
+            status: string;
+            files: Array<{ index: number; filename: string; contentType: string; byteSize: number; url: string }>;
+            createdAt: string;
+          }>;
+          total: number;
+        };
+
+        if (body.drops.length === 0) {
+          return { content: "No media drops available.", data: { drops: [], total: 0 } };
+        }
+
+        const summary = body.drops.map((d) => {
+          const fileList = d.files.map((f) => `  [${f.index}] ${f.filename} (${f.contentType}, ${Math.round(f.byteSize / 1024)}KB)`).join("\n");
+          // Build absolute URLs for the x-bot extension to fetch
+          const mediaUrls = d.files.map((f) => `${baseUrl}${f.url}`);
+          return {
+            text: `Drop ${d.id}:\n  Caption: ${d.caption || "(none)"}\n  Hashtags: ${d.hashtags?.join(", ") || "(none)"}\n  Platform: ${d.platform}\n  Files:\n${fileList}`,
+            data: { ...d, mediaUrls },
+          };
+        });
+
+        return {
+          content: `${body.total} media drop(s) found:\n\n${summary.map((s) => s.text).join("\n\n")}`,
+          data: { drops: summary.map((s) => s.data), total: body.total },
+        };
+      },
+    );
+
     // ══════════════════════════════════════════════════════════════════════════
     // JOBS — Scheduled execution
     // ══════════════════════════════════════════════════════════════════════════

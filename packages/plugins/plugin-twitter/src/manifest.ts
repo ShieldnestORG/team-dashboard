@@ -486,6 +486,32 @@ const manifest: PaperclipPluginManifestV1 = {
       description: "Returns anti-bot behavior settings and X API rate limit status.",
       parametersSchema: { type: "object", properties: {} },
     },
+    {
+      name: "get-media-drops",
+      displayName: "Twitter: Get Media Drops",
+      description:
+        "Fetch available media drops (images/videos uploaded for posting). Returns drops with captions, hashtags, and file URLs. Use with queue-post to post media content.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            description: "Filter by status: available, queued, posted.",
+            default: "available",
+          },
+          platform: {
+            type: "string",
+            description: "Filter by platform.",
+            default: "twitter",
+          },
+          limit: {
+            type: "number",
+            description: "Max drops to return.",
+            default: 10,
+          },
+        },
+      },
+    },
   ],
 };
 
