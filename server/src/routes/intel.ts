@@ -78,8 +78,10 @@ export function intelRoutes(db: Db) {
   router.get("/companies", async (req, res) => {
     try {
       const directory = req.query.directory as string | undefined;
-      const companies = await svc.listCompanies(directory);
-      res.json({ companies, directory: directory ?? "all" });
+      const limit = parseInt(req.query.limit as string ?? "100", 10) || 100;
+      const offset = parseInt(req.query.offset as string ?? "0", 10) || 0;
+      const result = await svc.listCompanies(directory, limit, offset);
+      res.json({ companies: result.items, total: result.total, limit: result.limit, offset: result.offset, directory: directory ?? "all" });
     } catch (err) {
       logger.error({ err }, "Intel list companies error");
       res.status(500).json({ error: "Failed to list companies" });
@@ -273,6 +275,61 @@ export function intelRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "Intel feed error");
       res.status(500).json({ error: "Feed unavailable" });
+    }
+  });
+
+  // ---- Company sub-resource endpoints (public, no auth) ----
+
+  router.get("/company/:slug/price-history", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const range = (req.query.range as string | undefined) ?? "30d";
+      const allowed = ["7d", "30d", "90d", "1y"];
+      if (!allowed.includes(range)) {
+        res.status(400).json({ error: `Invalid range. Allowed: ${allowed.join(", ")}` });
+        return;
+      }
+      const result = await svc.getPriceHistory(slug, range);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Intel price-history error");
+      res.status(500).json({ error: "Failed to fetch price history" });
+    }
+  });
+
+  router.get("/company/:slug/news", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit as string ?? "10", 10) || 10), 50);
+      const result = await svc.getCompanyNews(slug, limit);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Intel company news error");
+      res.status(500).json({ error: "Failed to fetch company news" });
+    }
+  });
+
+  router.get("/company/:slug/social", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit as string ?? "10", 10) || 10), 50);
+      const result = await svc.getCompanySocial(slug, limit);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Intel company social error");
+      res.status(500).json({ error: "Failed to fetch company social data" });
+    }
+  });
+
+  router.get("/company/:slug/related", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit as string ?? "10", 10) || 10), 20);
+      const result = await svc.getRelatedCompanies(slug, limit);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Intel related companies error");
+      res.status(500).json({ error: "Failed to fetch related companies" });
     }
   });
 

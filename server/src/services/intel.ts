@@ -189,13 +189,29 @@ export function intelService(db: Db) {
 
   // ------ Companies ------
 
-  async function listCompanies(directory?: string) {
-    if (directory) {
-      return db.select().from(intelCompanies)
-        .where(eq(intelCompanies.directory, directory))
-        .orderBy(intelCompanies.name);
-    }
-    return db.select().from(intelCompanies).orderBy(intelCompanies.name);
+  async function listCompanies(directory?: string, limit = 100, offset = 0) {
+    const qLimit = Math.min(Math.max(1, limit), 500);
+    const qOffset = Math.max(0, offset);
+
+    const rows = directory
+      ? await rawQuery<Record<string, unknown>>(sql`
+          SELECT * FROM intel_companies
+          WHERE directory = ${directory}
+          ORDER BY name ASC
+          LIMIT ${qLimit} OFFSET ${qOffset}
+        `)
+      : await rawQuery<Record<string, unknown>>(sql`
+          SELECT * FROM intel_companies
+          ORDER BY name ASC
+          LIMIT ${qLimit} OFFSET ${qOffset}
+        `);
+
+    const countCondition = directory
+      ? sql`SELECT COUNT(*) AS total FROM intel_companies WHERE directory = ${directory}`
+      : sql`SELECT COUNT(*) AS total FROM intel_companies`;
+    const [{ total }] = await rawQuery<{ total: string }>(countCondition);
+
+    return { items: rows, total: Number(total), limit: qLimit, offset: qOffset };
   }
 
   async function getCompany(slug: string) {
@@ -943,6 +959,96 @@ export function intelService(db: Db) {
     return { processed, errors };
   }
 
+  // ------ Price History (time series for charts) ------
+
+  async function getPriceHistory(slug: string, range: string) {
+    const rangeMap: Record<string, string> = {
+      "7d": "7 days",
+      "30d": "30 days",
+      "90d": "90 days",
+      "1y": "365 days",
+    };
+    const interval = rangeMap[range] ?? rangeMap["30d"];
+
+    const rows = await rawQuery<{
+      captured_at: string;
+      body: string;
+    }>(sql`
+      SELECT captured_at, body
+      FROM intel_reports
+      WHERE company_slug = ${slug}
+        AND report_type = 'price'
+        AND captured_at > NOW() - ${interval}::interval
+      ORDER BY captured_at ASC
+    `);
+
+    const prices = rows.map((r) => {
+      try {
+        const data = typeof r.body === "string" ? JSON.parse(r.body) : r.body;
+        return {
+          timestamp: r.captured_at,
+          price_usd: data.price_usd ?? null,
+          market_cap_usd: data.market_cap_usd ?? null,
+          volume_24h_usd: data.volume_24h_usd ?? null,
+          price_change_24h_pct: data.price_change_24h_pct ?? null,
+        };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+
+    return { slug, range: range || "30d", prices };
+  }
+
+  // ------ News for a company ------
+
+  async function getCompanyNews(slug: string, limit: number) {
+    const qLimit = Math.min(Math.max(1, limit), 50);
+    const rows = await rawQuery<Record<string, unknown>>(sql`
+      SELECT id, headline, body, source_url, captured_at
+      FROM intel_reports
+      WHERE company_slug = ${slug}
+        AND report_type = 'news'
+      ORDER BY captured_at DESC
+      LIMIT ${qLimit}
+    `);
+    return { slug, news: rows };
+  }
+
+  // ------ Social / Twitter for a company ------
+
+  async function getCompanySocial(slug: string, limit: number) {
+    const qLimit = Math.min(Math.max(1, limit), 50);
+    const rows = await rawQuery<Record<string, unknown>>(sql`
+      SELECT id, headline, body, source_url, captured_at
+      FROM intel_reports
+      WHERE company_slug = ${slug}
+        AND report_type = 'twitter'
+      ORDER BY captured_at DESC
+      LIMIT ${qLimit}
+    `);
+    return { slug, social: rows };
+  }
+
+  // ------ Related companies (same directory/category) ------
+
+  async function getRelatedCompanies(slug: string, limit = 10) {
+    const qLimit = Math.min(Math.max(1, limit), 20);
+    const rows = await rawQuery<Record<string, unknown>>(sql`
+      SELECT c2.slug, c2.name, c2.category, c2.directory, c2.description, c2.website, c2.twitter_handle
+      FROM intel_companies c1
+      JOIN intel_companies c2
+        ON c2.directory = c1.directory
+        AND c2.slug != c1.slug
+      WHERE c1.slug = ${slug}
+      ORDER BY
+        CASE WHEN c2.category = c1.category THEN 0 ELSE 1 END,
+        c2.name ASC
+      LIMIT ${qLimit}
+    `);
+    return { slug, related: rows };
+  }
+
   return {
     listCompanies,
     getCompany,
@@ -955,6 +1061,10 @@ export function intelService(db: Db) {
     ingestGithub,
     ingestReddit,
     backfillNewCompanies,
+    getPriceHistory,
+    getCompanyNews,
+    getCompanySocial,
+    getRelatedCompanies,
   };
 }
 
