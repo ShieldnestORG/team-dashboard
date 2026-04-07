@@ -40,7 +40,8 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Intel Dashboard** — admin UI page at `/intel` with tabbed tables (Overview/Crypto/AI-ML/DeFi/DevTools), searchable company lists, stats cards
 - **Public Article Generator** — rate-limited public endpoint (`POST /api/content/public/generate`) for users to generate AI-powered articles with Coherence Daddy metadata attribution. Powered by Ollama + intel context, supports all platforms (tweet, blog, linkedin, reddit, etc.)
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
-- **Plugin system** — adapter packages for AI providers
+- **Discord Bot** — community moderation and ticketing bot (plugin-discord) for the Next.ai Discord server. Auto-mod (banned words, spam, invite links), escalating warning system (3=mute, 5=kick), support ticketing with private threads and auto-close, 17 mod commands, onboarding role assignment. Dashboard page at `/discord` with bot status, ticket queue, and mod action feed. 8 agent tools for AI-powered community management
+- **Plugin system** — adapter packages for AI providers, plus Paperclip plugin SDK with Firecrawl, Twitter/X, and Discord plugins
 - **API layer** — backend at port 3100, proxied from UI dev server
 - **System Health dashboard** — eval results, alerting, log aggregation, ladder pipeline status
 - **TX Ecosystem page** — tokns.fi validator promotion, ecosystem cross-links
@@ -136,6 +137,8 @@ packages/
   brand-guide/        # Coherence Daddy brand guidelines (standalone HTML)
   plugins/
     plugin-firecrawl/ # Firecrawl scraping plugin (scrape, crawl, extract, etc.)
+    plugin-twitter/   # Twitter/X automation plugin (queue, missions, engagement)
+    plugin-discord/   # Discord bot plugin (moderation, ticketing, commands)
     sdk/              # Plugin SDK for building plugins
 cli/                  # CLI tool (paperclipai command)
 docs/
@@ -234,7 +237,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr). All 24 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr), discord (2 plugin jobs: ticket-cleanup + daily-stats). All 26 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -261,6 +264,12 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/services/structure.ts` | Company structure diagram service (Mermaid, versioned) |
 | `server/src/routes/structure.ts` | Structure diagram API (`/api/companies/:id/structure`) |
 | `ui/src/pages/Structure.tsx` | Architecture diagram page with zoom, fullscreen, revisions |
+| `packages/plugins/plugin-discord/src/worker.ts` | Discord bot plugin worker (Discord.js client, tools, jobs) |
+| `packages/plugins/plugin-discord/src/manifest.ts` | Discord plugin manifest (config, 8 tools, 2 jobs) |
+| `packages/plugins/plugin-discord/src/moderation.ts` | Auto-mod, warnings, spam detection |
+| `packages/plugins/plugin-discord/src/ticketing.ts` | Ticket lifecycle, auto-close, log embeds |
+| `packages/plugins/plugin-discord/src/commands.ts` | 17 `!` commands (warn, mute, kick, ban, etc.) |
+| `ui/src/pages/Discord.tsx` | Discord dashboard — bot status, tickets, mod feed |
 
 ### Updating
 
@@ -310,6 +319,16 @@ git push origin master
 | `TWITTER_ACCESS_TOKEN/SECRET` | Optional | VPS | Twitter/X OAuth tokens |
 | `INSTAGRAM_ACCESS_TOKEN` | Optional | VPS | Instagram Graph API |
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Optional | VPS | Instagram business account |
+| **Discord Bot** | | | |
+| `DISCORD_TOKEN` | Yes | VPS | Discord bot token from Developer Portal |
+| `DISCORD_GUILD_ID` | Yes | VPS | Discord server ID (Next.ai: `1481053410152288422`) |
+| `DISCORD_TICKET_CHANNEL_ID` | Yes | VPS | #submit-a-ticket channel for ticket threads |
+| `DISCORD_TICKET_LOG_CHANNEL_ID` | Yes | VPS | #ticket-logs channel for status embeds |
+| `DISCORD_ANNOUNCEMENTS_CHANNEL_ID` | Optional | VPS | #moderators-updates for mod action logs |
+| `DISCORD_WELCOME_CHANNEL_ID` | Optional | VPS | #welcome channel |
+| `DISCORD_ROLE_MEMBER` | Optional | VPS | Auto-assigned role on join |
+| `DISCORD_ROLE_MODERATOR` | Optional | VPS | Role for mod commands |
+| `DISCORD_ROLE_ADMIN` | Optional | VPS | Role for admin commands |
 | **Intel Engine** | | | |
 | `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
 | `MINTSCAN_API_KEY` | Optional | VPS | Cosmostation Mintscan API for Cosmos chain metrics (APR, validators) |

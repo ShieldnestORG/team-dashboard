@@ -650,6 +650,39 @@ function handleLiveEvent(
       gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
     }
   }
+
+  // ── Discord bot events ──────────────────────────────────────────────────
+  if (
+    event.type === "discord.moderation" ||
+    event.type === "discord.ticket.opened" ||
+    event.type === "discord.ticket.closed" ||
+    event.type === "discord.ticket.updated" ||
+    event.type === "discord.bot.status"
+  ) {
+    // Invalidate Discord-related queries
+    queryClient.invalidateQueries({ queryKey: ["discord"] });
+
+    if (event.type === "discord.ticket.opened") {
+      const ticketNum = readString(payload.ticketNumber);
+      gatedPushToast(gate, pushToast, "discord-ticket", {
+        title: "Discord Ticket Opened",
+        body: `Ticket #${ticketNum ?? "?"} — ${readString(payload.category) ?? "General"}`,
+      });
+    } else if (event.type === "discord.ticket.closed") {
+      const ticketNum = readString(payload.ticketNumber);
+      gatedPushToast(gate, pushToast, "discord-ticket", {
+        title: "Discord Ticket Closed",
+        body: `Ticket #${ticketNum ?? "?"}`,
+      });
+    } else if (event.type === "discord.moderation") {
+      const action = readString(payload.action);
+      gatedPushToast(gate, pushToast, "discord-mod", {
+        title: "Discord Moderation",
+        body: `${action ?? "Action"} — ${readString(payload.targetUserTag) ?? "user"}`,
+      });
+    }
+    return;
+  }
 }
 
 export const __liveUpdatesTestUtils = {

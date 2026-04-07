@@ -1,0 +1,25 @@
+{
+  "name": "@paperclipai/plugin-discord",
+  "version": "0.1.0",
+  "description": "Discord community moderation and ticketing bot for ShieldNest/TOKNS — auto-mod, warnings, support tickets, and role management as a Paperclip plugin",
+  "type": "module",
+  "private": true,
+  "paperclipPlugin": {
+    "manifest": "./dist/manifest.js",
+    "worker": "./dist/worker.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@paperclipai/plugin-sdk": "workspace:*",
+    "discord.js": "^14.25.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "typescript": "^5.7.3"
+  }
+}

@@ -317,6 +317,11 @@ export const LIVE_EVENT_TYPES = [
   "plugin.ui.updated",
   "plugin.worker.crashed",
   "plugin.worker.restarted",
+  "discord.moderation",
+  "discord.ticket.opened",
+  "discord.ticket.closed",
+  "discord.ticket.updated",
+  "discord.bot.status",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 

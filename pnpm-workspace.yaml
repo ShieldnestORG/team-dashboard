@@ -5,6 +5,7 @@ packages:
   - packages/plugins/examples/*
   - packages/plugins/plugin-firecrawl
   - packages/plugins/plugin-twitter
+  - packages/plugins/plugin-discord
   - server
   - ui
   - cli
