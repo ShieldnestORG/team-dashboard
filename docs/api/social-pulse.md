@@ -17,6 +17,7 @@ Base path: `/api/pulse`
 | `/pulse/spikes` | GET | Recent volume spike alerts |
 | `/pulse/force-poll` | POST | Manual trigger to poll X API immediately |
 | `/pulse/backfill` | POST | Trigger historical data backfill for gap-filling |
+| `/pulse/stream-status` | GET | Filtered stream connection status (connected, uptime, tweetsPerMinute, lastHeartbeat) |
 
 ## Public Endpoints (no auth, CORS-gated)
 
@@ -40,11 +41,27 @@ Base path: `/api/public/pulse`
 ### Caching
 All public endpoints return `Cache-Control: public, max-age=300` (5 minutes).
 
+## Filtered Stream (Real-time Ingestion)
+
+When `BEARER_TOKEN` is set, the server starts an X API v2 filtered stream (`/2/tweets/search/stream`) on boot. This provides near-instant tweet ingestion instead of 5-minute polling intervals.
+
+**Behavior:**
+- Stream filter rules are auto-synced with the 4 pulse topics (tx, cosmos, xrpl-bridge, tokns)
+- Heartbeat monitoring: X API sends heartbeats every 20s; disconnect detected if nothing received in 30s
+- Auto-reconnect with exponential backoff (1s → 2s → 4s → ... → 5min cap)
+- After 5 failed reconnect attempts, falls back to `pulse:search` polling cron
+- Both stream and polling paths share the same `ingestTweet()` function — data flows into the same tables
+
+**Key files:**
+- `server/src/services/filtered-stream-client.ts` — stream connection, rule CRUD, event emitter
+- `server/src/services/stream-rule-manager.ts` — syncs rules with PULSE_QUERIES
+- `server/src/services/stream-connection-manager.ts` — lifecycle manager (start, stop, health, fallback)
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `BEARER_TOKEN` | Optional | X API v2 bearer token. Social Pulse is disabled if not set. |
+| `BEARER_TOKEN` | Optional | X API v2 bearer token. Social Pulse + filtered stream disabled if not set. |
 
 ## Cron Jobs (7 total, owner: Echo)
 

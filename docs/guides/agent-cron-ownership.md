@@ -54,7 +54,9 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Trend crons | `server/src/services/trend-crons.ts` | 1 | Echo |
 | Pulse crons | `server/src/services/pulse-crons.ts` | 7 | Echo |
 
-**Total: 33 cron jobs across 6 services + 2 plugin jobs (Discord).**
+**Total: 33 cron jobs across 6 services + 2 plugin jobs (Discord) + 4 plugin jobs (Twitter).**
+
+> **Note:** The X API v2 filtered stream is an always-on background service (not a cron job). When the stream is connected and healthy, the `pulse:search` cron auto-skips. See `server/src/services/stream-connection-manager.ts`.
 
 ## Full Agent-to-Cron Mapping
 
@@ -70,7 +72,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | `intel:chain-metrics` | `0 */4 * * *` | intel-crons | Mintscan Cosmos APR data every 4 hours |
 | `intel:backfill` | `0 */12 * * *` | intel-crons | Sparse data catch-up twice daily |
 | `intel:discover` | `0 */6 * * *` | intel-crons | Discover trending projects every 6 hours |
-| `trends:scan` | `0 */6 * * *` | trend-crons | CoinGecko + HackerNews trend signals every 6 hours |
+| `trends:scan` | `0 */6 * * *` | trend-crons | CoinGecko + HackerNews + Google Trends + Bing News trend signals every 6 hours |
 | `pulse:search` | `*/5 * * * *` | pulse-crons | X API social pulse search polling every 5 minutes |
 | `pulse:sentiment` | `*/15 * * * *` | pulse-crons | Keyword-based sentiment scoring every 15 minutes |
 | `pulse:aggregate-hour` | `5 * * * *` | pulse-crons | Hourly aggregation rollups |

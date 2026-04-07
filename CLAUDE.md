@@ -28,7 +28,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 4 content personality agents (Blaze/Cipher/Spark/Prism) + Mermaid (Company Structure Agent). Each agent's AGENTS.md documents its cron responsibilities. See `docs/guides/agent-cron-ownership.md` for the full mapping
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
 - **Content engine** — Ollama-powered text content generation with 4 personality agents, PostgreSQL-backed content queue (`content_items` table), blog publishing API, multi-platform distribution. Admin feedback system (`content_feedback` table) with like/dislike ratings that feed back into generation prompts as training signal
-- **SEO engine** — trend scanner (CoinGecko + HackerNews every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
+- **SEO engine** — trend scanner (CoinGecko + HackerNews + Google Trends RSS + Bing News every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
 - **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, PostgreSQL-backed visual content queue (`visual_content_items` + `visual_content_assets` tables) with review workflow, Content Studio UI with Text/Visual mode toggle
 - **Public Reels API** — unauthenticated `/api/reels` endpoint serving approved visual content for coherencedaddy.com. Stream, download (with Content-Disposition), and thumbnail endpoints
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
@@ -37,7 +37,8 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
 - **Mintscan Chain Metrics** — Cosmostation Mintscan API integration for Cosmos ecosystem (staking APR, validator data) tracking cosmos/osmosis/txhuman
-- **Social Pulse Engine** — real-time X/Twitter monitoring for TX Blockchain, Cosmos, XRPL Bridge, and Tokns ecosystem. Computed per-topic sentiment analysis, hourly/daily aggregations, volume spike detection, XRPL bridge mention tracking, 12h backfill for historical gap-filling. 7 cron jobs (5min–12hr cycles), authenticated dashboard at `/social-pulse`, public API at `/api/public/pulse/*` for tokns.fi widget embeds
+- **Social Pulse Engine** — real-time X/Twitter monitoring for TX Blockchain, Cosmos, XRPL Bridge, and Tokns ecosystem. Dual ingestion: X API v2 filtered stream (real-time) with automatic fallback to polling. Computed per-topic sentiment analysis, hourly/daily aggregations, volume spike detection, XRPL bridge mention tracking, 12h backfill for historical gap-filling. 7 cron jobs (5min–12hr cycles), authenticated dashboard at `/social-pulse`, public API at `/api/public/pulse/*` for tokns.fi widget embeds
+- **MCP Server** — `packages/mcp-server/` Model Context Protocol server exposing 35 tools across 9 entities (Issues, Projects, Milestones, Labels, Teams, WorkflowStates, Comments, IssueRelations, Initiatives). Wraps Team Dashboard REST API for use by Claude, Codex, and other MCP-compatible agents. Stdio transport, configurable via `PAPERCLIP_API_URL` and `PAPERCLIP_API_TOKEN`
 - **Media Drop** — file upload and media management for content pipeline. Multer-based upload (up to 4 files), S3/local storage backends, per-company media libraries. Routes at `/api/media/*`, schema in `media_drops` table
 - **Intel Dashboard** — admin UI page at `/intel` with tabbed tables (Overview/Crypto/AI-ML/DeFi/DevTools), searchable company lists, stats cards
 - **Public Article Generator** — rate-limited public endpoint (`POST /api/content/public/generate`) for users to generate AI-powered articles with Coherence Daddy metadata attribution. Powered by Ollama + intel context, supports all platforms (tweet, blog, linkedin, reddit, etc.)
@@ -87,9 +88,15 @@ server/
       watermark.ts                  # Brand watermark utility + metadata helper
       structure.ts                  # Company structure diagram service (Mermaid, versioned via documents table)
       content-feedback.ts           # Admin like/dislike feedback for content training
+      trend-scanner.ts              # CoinGecko + HackerNews + Google Trends + Bing News trend signals
+      seo-engine.ts                 # Claude-powered blog generation from trends + publish + IndexNow
+      trend-crons.ts                # Trend scanning cron scheduler (6hr cycle)
       social-pulse.ts               # Social Pulse service (polling, sentiment, aggregation, spikes)
       social-pulse-client.ts        # X API v2 client for tweet search
-      pulse-crons.ts                # 6 pulse cron jobs (Echo-owned)
+      filtered-stream-client.ts     # X API v2 filtered stream client (real-time tweets)
+      stream-rule-manager.ts        # Sync X API stream filter rules with pulse topics
+      stream-connection-manager.ts  # Filtered stream lifecycle manager (connect, reconnect, fallback)
+      pulse-crons.ts                # 7 pulse cron jobs (Echo-owned)
       platform-publishers/          # Automated social media publishing
         types.ts                    # PlatformPublisher interface
         youtube.ts                  # YouTube Shorts (Data API v3)
@@ -103,9 +110,10 @@ server/
       visual-content.ts             # Visual content API (/api/visual/*)
       public-reels.ts               # Public reels API (/api/reels/* — no auth)
       structure.ts                  # Structure diagram API (/api/companies/:id/structure)
-      social-pulse.ts               # Authenticated pulse API (/api/pulse/*)
+      social-pulse.ts               # Authenticated pulse API (/api/pulse/* + stream-status)
       public-pulse.ts               # Public pulse API (/api/public/pulse/* — no auth)
       media-drop.ts                 # Media upload/management API (/api/media/*)
+      trends.ts                     # Trend signals + SEO engine API (/api/trends/*)
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
@@ -120,6 +128,7 @@ ui/
       XrplBridgeShowcase.tsx # XRPL bridge analytics showcase component
       SocialPulseWidget.tsx     # Internal social pulse summary widget
       SocialPulseWidgetEmbed.tsx # Embeddable social pulse widget for tokns.fi
+      HowToGuide.tsx            # Reusable collapsible help/tutorial component
     context/          # ThemeContext, CompanyContext, DialogContext, etc.
     hooks/            # Custom React hooks
     lib/              # Utilities, router, agent config
@@ -153,6 +162,7 @@ packages/
   shared/             # Shared types, constants, validators, API path constants
   adapter-utils/      # Shared adapter utilities
   adapters/           # Agent adapter implementations (Claude, Codex, Cursor, etc.)
+  mcp-server/         # MCP server — 35 tools wrapping Team Dashboard REST API
   brand-guide/        # Coherence Daddy brand guidelines (standalone HTML)
   plugins/
     plugin-firecrawl/ # Firecrawl scraping plugin (scrape, crawl, extract, etc.)
@@ -256,7 +266,8 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr), pulse (7 jobs: search + sentiment + aggregate-hour + aggregate-day + xrpl-bridge + spike-detect + backfill), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily). All 37 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr), pulse (7 jobs: search + sentiment + aggregate-hour + aggregate-day + xrpl-bridge + spike-detect + backfill), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily). All 37 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`. Note: `pulse:search` auto-skips when the X API filtered stream is connected and healthy
+- **Filtered Stream**: X API v2 filtered stream (`/2/tweets/search/stream`) runs as a background service on startup when `BEARER_TOKEN` is set. Auto-reconnects with exponential backoff (1s–5min). Falls back to `pulse:search` polling if stream fails after 5 retries. Status at `GET /api/pulse/stream-status`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -269,9 +280,12 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/routes/content.ts` | Text content generation + queue API |
 | `server/src/routes/visual-content.ts` | Visual content generation + queue + asset serving API |
 | `server/src/content-templates/*.ts` | Personality prompt templates (text + video_script) |
-| `server/src/services/trend-scanner.ts` | CoinGecko + HackerNews trend scanner |
+| `server/src/services/trend-scanner.ts` | CoinGecko + HackerNews + Google Trends + Bing News trend scanner |
 | `server/src/services/seo-engine.ts` | Claude-powered blog generation + publish + IndexNow |
 | `server/src/routes/trends.ts` | Trend signals + SEO engine API (`/api/trends/*`) |
+| `server/src/services/filtered-stream-client.ts` | X API v2 filtered stream client (real-time, event emitter) |
+| `server/src/services/stream-connection-manager.ts` | Filtered stream lifecycle (connect, reconnect, fallback to polling) |
+| `server/src/services/stream-rule-manager.ts` | X API stream filter rule sync with pulse topics |
 | `server/src/services/visual-backends/` | Pluggable visual generation backends (Gemini, Grok, Canva) |
 | `server/src/services/video-assembler.ts` | FFmpeg video pipeline (overlays, watermark, metadata) |
 | `server/src/services/platform-publishers/` | Auto-publishing to YouTube/TikTok/Instagram/Twitter |
@@ -298,6 +312,9 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/routes/media-drop.ts` | Media upload/management API (`/api/media/*`) |
 | `packages/plugins/plugin-twitter/src/manifest.ts` | Twitter/X plugin manifest (13 tools, 4 jobs) |
 | `packages/plugins/plugin-twitter/src/worker.ts` | Twitter/X plugin worker (queue, engagement, analytics) |
+| `packages/mcp-server/src/index.ts` | MCP server entry point — registers 35 tools, stdio transport |
+| `packages/mcp-server/src/client.ts` | HTTP client wrapping Team Dashboard REST API for MCP |
+| `docker/chrome-bot/entrypoint.sh` | Chrome-bot entrypoint — fixes /data volume permissions before supervisor |
 
 ### Updating
 
