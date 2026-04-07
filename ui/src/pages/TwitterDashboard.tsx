@@ -189,7 +189,7 @@ export function TwitterDashboard() {
     queryFn: () =>
       executeTool<QueueStatusData>("get-queue-status", {}, selectedCompanyId!),
     enabled: !!selectedCompanyId,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const { data: targetsData } = useQuery({
@@ -667,47 +667,28 @@ function ConnectionCard({ connection }: { connection: ConnectionStatus }) {
 // ── X API Toggle ──────────────────────────────────────────────────────────
 
 function XApiToggle({ companyId }: { companyId: string }) {
-  const [enabled, setEnabled] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    executeTool<{ config: { xApiEnabled?: boolean } }>("get-bot-config", {}, companyId)
-      .then((res) => {
-        setEnabled(res.result?.data?.config?.xApiEnabled ?? false);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [companyId]);
+  const { data: configData, isLoading: loading } = useQuery({
+    queryKey: ["twitter", "config"],
+    queryFn: () => pluginsApi.getConfig(PLUGIN_ID),
+  });
 
-  const toggle = async () => {
-    setSaving(true);
-    const newValue = !enabled;
-    try {
-      await fetch("/api/plugins/tools/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          tool: `${PLUGIN_ID}:get-bot-config`,
-          parameters: {},
-          runContext: {
-            agentId: "dashboard-ui",
-            runId: `ui-${Date.now()}`,
-            companyId,
-            projectId: companyId,
-          },
-        }),
+  const enabled = (configData?.configJson as Record<string, unknown>)?.xApiEnabled === true;
+
+  const toggleMutation = useMutation({
+    mutationFn: async (newValue: boolean) => {
+      await pluginsApi.saveConfig(PLUGIN_ID, {
+        ...(configData?.configJson ?? {}),
+        xApiEnabled: newValue,
       });
-      // Save config via plugin config API
-      await pluginsApi.saveConfig(PLUGIN_ID, { xApiEnabled: newValue });
-      setEnabled(newValue);
-    } catch {
-      // ignore
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["twitter", "config"] });
+    },
+  });
+
+  const saving = toggleMutation.isPending;
 
   return (
     <Card>
@@ -726,7 +707,7 @@ function XApiToggle({ companyId }: { companyId: string }) {
             </p>
           </div>
           <button
-            onClick={toggle}
+            onClick={() => toggleMutation.mutate(!enabled)}
             disabled={loading || saving}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
               enabled ? "bg-sky-500" : "bg-muted"
