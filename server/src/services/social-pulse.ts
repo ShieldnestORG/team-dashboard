@@ -38,6 +38,53 @@ const NEGATIVE_WORDS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Shared tweet ingestion — used by both polling and filtered stream
+// ---------------------------------------------------------------------------
+
+export interface TweetData {
+  id: string;
+  text: string;
+  authorId: string;
+  createdAt: string;
+  publicMetrics: {
+    like_count: number;
+    retweet_count: number;
+    reply_count: number;
+    impression_count: number;
+  } | null;
+}
+
+export interface AuthorData {
+  username: string;
+  name: string | null;
+}
+
+export async function ingestTweet(
+  db: Db,
+  tweet: TweetData,
+  topic: string,
+  author: AuthorData,
+): Promise<void> {
+  await db
+    .insert(pulseTweets)
+    .values({
+      tweetId: tweet.id,
+      authorId: tweet.authorId,
+      authorUsername: author.username,
+      authorName: author.name,
+      text: tweet.text,
+      tweetCreatedAt: new Date(tweet.createdAt),
+      topic,
+      metricsLikes: tweet.publicMetrics?.like_count ?? 0,
+      metricsRetweets: tweet.publicMetrics?.retweet_count ?? 0,
+      metricsReplies: tweet.publicMetrics?.reply_count ?? 0,
+      metricsImpressions: tweet.publicMetrics?.impression_count ?? 0,
+      sourceQuery: topic, // tag with topic for stream-sourced tweets
+    })
+    .onConflictDoNothing({ target: pulseTweets.tweetId });
+}
+
+// ---------------------------------------------------------------------------
 // sinceId tracking — survives across poll cycles within same process
 // ---------------------------------------------------------------------------
 
@@ -74,27 +121,25 @@ export function socialPulseService(db: Db) {
           sinceIdMap.set(topic, res.meta.newest_id);
         }
 
-        // Upsert tweets
+        // Upsert tweets using shared ingestTweet
         for (const tweet of res.data) {
           const author = userMap.get(tweet.author_id);
           try {
-            await db
-              .insert(pulseTweets)
-              .values({
-                tweetId: tweet.id,
-                authorId: tweet.author_id,
-                authorUsername: author?.username ?? "unknown",
-                authorName: author?.name ?? null,
+            await ingestTweet(
+              db,
+              {
+                id: tweet.id,
                 text: tweet.text,
-                tweetCreatedAt: new Date(tweet.created_at),
-                topic,
-                metricsLikes: tweet.public_metrics?.like_count ?? 0,
-                metricsRetweets: tweet.public_metrics?.retweet_count ?? 0,
-                metricsReplies: tweet.public_metrics?.reply_count ?? 0,
-                metricsImpressions: tweet.public_metrics?.impression_count ?? 0,
-                sourceQuery: query,
-              })
-              .onConflictDoNothing({ target: pulseTweets.tweetId });
+                authorId: tweet.author_id,
+                createdAt: tweet.created_at,
+                publicMetrics: tweet.public_metrics ?? null,
+              },
+              topic,
+              {
+                username: author?.username ?? "unknown",
+                name: author?.name ?? null,
+              },
+            );
             totalNew++;
           } catch {
             // duplicate — skip

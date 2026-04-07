@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { socialPulseService } from "../services/social-pulse.js";
+import { streamConnectionManager } from "../services/stream-connection-manager.js";
 import { logger } from "../middleware/logger.js";
 
 export function socialPulseRoutes(db: Db) {
@@ -93,6 +94,16 @@ export function socialPulseRoutes(db: Db) {
       res.json({ success: true, ...result });
     } catch (err) {
       res.status(500).json({ error: "Failed to force poll" });
+    }
+  });
+
+  // GET /pulse/stream-status — filtered stream connection status
+  router.get("/stream-status", (_req, res) => {
+    try {
+      const status = streamConnectionManager.getStatus();
+      res.json(status);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to get stream status" });
     }
   });
 

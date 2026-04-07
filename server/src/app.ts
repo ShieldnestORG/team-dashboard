@@ -41,6 +41,7 @@ import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
 import { startPulseCrons } from "./services/pulse-crons.js";
+import { streamConnectionManager } from "./services/stream-connection-manager.js";
 import { trendRoutes } from "./routes/trends.js";
 import { logAvailableBackends } from "./services/visual-backends/index.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -334,6 +335,8 @@ export async function createApp(
   const stopContentCrons = startContentCrons(db);
   const stopTrendCrons = startTrendCrons(db);
   const stopPulseCrons = startPulseCrons(db);
+  // Start filtered stream (if BEARER_TOKEN is set)
+  streamConnectionManager.startStream(db);
   logAvailableBackends();
   logConfiguredPublishers();
   void toolDispatcher.initialize().catch((err) => {
@@ -363,6 +366,7 @@ export async function createApp(
     stopContentCrons();
     stopTrendCrons();
     stopPulseCrons();
+    streamConnectionManager.stopStream();
     visualRoutes.stopPolling();
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();
