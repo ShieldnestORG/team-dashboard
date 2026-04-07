@@ -296,11 +296,17 @@ export function startPriceFeedPoller(
       if (res.ok) {
         const data = await res.json() as { reports: IntelReport[] };
         if (data.reports && data.reports.length > 0) {
+          // Filter by configured token slugs (if set)
+          const slugFiltered = config.priceFilterSlugs && config.priceFilterSlugs.length > 0
+            ? data.reports.filter((r) => config.priceFilterSlugs.includes(r.company_slug))
+            : data.reports;
+
           // Filter for significant moves (headline usually contains percentage)
-          const significant = data.reports.filter((r) => {
+          const threshold = config.priceThresholdPct || 3;
+          const significant = slugFiltered.filter((r) => {
             const match = r.headline.match(/([+-]?\d+\.?\d*)%/);
             if (!match) return true; // include if no % found (unusual headline)
-            return Math.abs(parseFloat(match[1])) >= 5;
+            return Math.abs(parseFloat(match[1])) >= threshold;
           });
 
           const sorted = [...significant].sort((a, b) => new Date(a.captured_at).getTime() - new Date(b.captured_at).getTime());

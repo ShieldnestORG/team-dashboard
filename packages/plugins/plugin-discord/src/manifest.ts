@@ -184,6 +184,19 @@ const manifest: PaperclipPluginManifestV1 = {
         description: "Optional Discord category (channel group) ID to place feed channels under.",
         default: "",
       },
+      priceFilterSlugs: {
+        type: "array",
+        items: { type: "string" },
+        title: "Price Alert Token Filter",
+        description: "Only show price alerts for these company slugs. Empty = show all tokens with >5% moves.",
+        default: ["cosmos", "osmosis", "tx-blockchain", "xrpl-ripple", "keeta", "celestia", "injective", "akash-network", "dydx", "axelar", "sei-network"],
+      },
+      priceThresholdPct: {
+        type: "number",
+        title: "Price Alert Threshold (%)",
+        description: "Minimum absolute % change to trigger a price alert. Default 3.",
+        default: 3,
+      },
     },
   },
 

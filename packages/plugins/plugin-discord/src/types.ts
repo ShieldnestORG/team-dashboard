@@ -28,6 +28,8 @@ export type DiscordConfig = {
   priceFeedChannelId: string;
   intelFeedChannelId: string;
   feedCategoryId: string;
+  priceFilterSlugs: string[];
+  priceThresholdPct: number;
 };
 
 // ─── Warning data ─────────────────────────────────────────────────────────────

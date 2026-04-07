@@ -82,6 +82,8 @@ async function getConfig(ctx: PluginContext): Promise<DiscordConfig> {
     priceFeedChannelId: (raw.priceFeedChannelId as string) || "",
     intelFeedChannelId: (raw.intelFeedChannelId as string) || "",
     feedCategoryId: (raw.feedCategoryId as string) || "",
+    priceFilterSlugs: (raw.priceFilterSlugs as string[]) || [],
+    priceThresholdPct: (raw.priceThresholdPct as number) || 3,
   };
 }
 
