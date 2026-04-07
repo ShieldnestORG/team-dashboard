@@ -46,6 +46,7 @@ import {
   Camera,
   MonitorPlay,
 } from "lucide-react";
+import { HowToGuide } from "../components/HowToGuide";
 
 // ── Query Keys ──────────────────────────────────────────────────────────────
 
@@ -815,6 +816,44 @@ export function ContentReview() {
           </p>
         </div>
       </div>
+
+      {/* ── How-To Guide ──────────────────────────────────────────────── */}
+      <HowToGuide
+        sections={[
+          {
+            heading: "Generating Content",
+            steps: [
+              { title: "Pick a platform", description: "Use the tabs (Twitter, Blog, LinkedIn, etc.) to filter by where you want to post." },
+              { title: "AI generates drafts", description: "Our 4 AI personalities (Blaze, Cipher, Spark, Prism) auto-generate content on a schedule. New items appear here." },
+              { title: "Review and approve", description: "Read through the draft. If it looks good, approve it. If not, flag it with a note so the AI learns." },
+            ],
+          },
+          {
+            heading: "Visual Content (Images & Videos)",
+            steps: [
+              { title: "Switch to Visual mode", description: "Toggle between Text and Visual tabs to see AI-generated images and video reels." },
+              { title: "Review visuals", description: "Check the generated image or video. Approve to publish or flag to reject." },
+              { title: "Published content goes live", description: "Approved visuals are available via the public reels API for coherencedaddy.com." },
+            ],
+          },
+          {
+            heading: "Posting Canva Designs to Twitter",
+            steps: [
+              { title: "Export from Canva", description: "Download your design as PNG, JPG, or MP4 from Canva." },
+              { title: "Upload to Media Drops", description: "Use the Media Drops API to upload your files with a caption and hashtags." },
+              { title: "Agent picks it up", description: "The AI agent sees your drop and queues it as a tweet with your images attached." },
+              { title: "X-bot extension posts it", description: "The Chrome extension bot grabs the queued post and publishes it to X/Twitter." },
+            ],
+          },
+          {
+            heading: "Training the AI",
+            steps: [
+              { title: "Like or dislike content", description: "Use the thumbs up/down buttons on any piece of content." },
+              { title: "Add a reason", description: "Tell the AI why you liked or disliked it. This feedback trains future generations." },
+            ],
+          },
+        ]}
+      />
 
       {/* ── Stats Cards ────────────────────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

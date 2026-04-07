@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   XCircle,
 } from "lucide-react";
+import { HowToGuide } from "../components/HowToGuide";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,36 @@ export function Discord() {
           Community moderation, ticketing, and bot status for ShieldNest x TOKNS
         </p>
       </div>
+
+      {/* ── How-To Guide ──────────────────────────────────────────────── */}
+      <HowToGuide
+        sections={[
+          {
+            heading: "What This Page Shows",
+            steps: [
+              { title: "Bot status", description: "Whether the Discord bot is online and connected to the Next.ai server." },
+              { title: "Support tickets", description: "Members create tickets in #submit-a-ticket. Tickets show up here with status and who's assigned." },
+              { title: "Moderation feed", description: "Recent mod actions — warnings, mutes, kicks, bans — are logged here for transparency." },
+            ],
+          },
+          {
+            heading: "Managing Tickets",
+            steps: [
+              { title: "View open tickets", description: "Scroll down to see all open support tickets with their status and age." },
+              { title: "Tickets auto-close", description: "Tickets with no activity for 72 hours are automatically closed by the bot." },
+              { title: "Check ticket logs", description: "Closed ticket summaries are posted to #ticket-logs in Discord." },
+            ],
+          },
+          {
+            heading: "Moderation",
+            steps: [
+              { title: "Auto-mod is active", description: "The bot catches banned words, spam, and invite links automatically." },
+              { title: "Warning escalation", description: "3 warnings = auto-mute, 5 warnings = auto-kick. Admins can override." },
+              { title: "Use Discord commands", description: "Mods can use !warn, !mute, !kick, !ban and 13 other commands directly in Discord." },
+            ],
+          },
+        ]}
+      />
 
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

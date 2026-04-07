@@ -24,7 +24,7 @@ RUN useradd -m -s /bin/bash botuser && \
     chown -R botuser:botuser /data
 
 # Copy extension
-COPY packages/x-ext/ /opt/x-ext/
+COPY packages/x-bot/ /opt/x-ext/
 
 # Copy configs
 COPY docker/chrome-bot/supervisord.conf /etc/supervisor/conf.d/chrome-bot.conf

@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
+import { HowToGuide } from "../components/HowToGuide";
 
 // ---------------------------------------------------------------------------
 // Types & constants
@@ -114,6 +115,34 @@ export function SocialPulse() {
           />
         </Tabs>
       </div>
+
+      <HowToGuide
+        sections={[
+          {
+            heading: "What This Page Shows",
+            steps: [
+              { title: "Real-time X/Twitter monitoring", description: "We automatically track tweets about TX Blockchain, Cosmos, XRPL Bridge, and Tokns every 5 minutes." },
+              { title: "Sentiment scoring", description: "Each tweet is scored 0-1 for positive/negative sentiment so you can spot shifts in community mood." },
+              { title: "Volume spikes", description: "When tweet volume jumps significantly, you'll see spike alerts — great for catching viral moments." },
+            ],
+          },
+          {
+            heading: "Using the Tabs",
+            steps: [
+              { title: "Overview", description: "High-level stats — total tweets, sentiment averages, and topic breakdowns at a glance." },
+              { title: "TX / Cosmos / XRPL Bridge feeds", description: "Click a topic tab to see that topic's tweet feed with the most engaging posts first." },
+              { title: "All Tweets", description: "Unfiltered chronological feed of everything we're tracking." },
+            ],
+          },
+          {
+            heading: "Tips",
+            steps: [
+              { title: "Check after announcements", description: "After any TX or Cosmos announcement, check here to see how the community reacted." },
+              { title: "Use for content ideas", description: "Trending tweets and hot topics make great starting points for new content in the Content Studio." },
+            ],
+          },
+        ]}
+      />
 
       {tab === "overview" && (
         <OverviewPanel

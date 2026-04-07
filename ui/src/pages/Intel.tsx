@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { Database, Search, Building2, BarChart3, Clock } from "lucide-react";
+import { HowToGuide } from "../components/HowToGuide";
 
 type DirectoryTab = "overview" | "crypto" | "ai-ml" | "defi" | "devtools";
 
@@ -96,6 +97,35 @@ export function Intel() {
           />
         </Tabs>
       </div>
+
+      <HowToGuide
+        sections={[
+          {
+            heading: "What This Page Shows",
+            steps: [
+              { title: "508+ blockchain companies", description: "Across 4 directories — Crypto, AI/ML, DeFi, and DevTools. Each company has auto-collected data." },
+              { title: "Data is collected automatically", description: "Cron jobs pull price data, news, GitHub activity, Twitter mentions, and Reddit posts every 30 min to 4 hours." },
+              { title: "Powers the public directory", description: "This data feeds coherencedaddy.com/directory — the public-facing blockchain project directory." },
+            ],
+          },
+          {
+            heading: "Browsing Companies",
+            steps: [
+              { title: "Pick a directory tab", description: "Click Crypto, AI/ML, DeFi, or DevTools to browse that category." },
+              { title: "Search", description: "Use the search bar to find a specific company by name." },
+              { title: "Overview tab", description: "See total counts and high-level stats across all directories." },
+            ],
+          },
+          {
+            heading: "Behind the Scenes",
+            steps: [
+              { title: "Intel Discovery", description: "New trending projects are auto-discovered from CoinGecko and GitHub trending. High-confidence finds are added automatically." },
+              { title: "Backfill", description: "Newly added companies get historical data backfilled automatically so they don't start empty." },
+              { title: "Vector embeddings", description: "All intel reports are embedded with BGE-M3 for semantic search — agents use this for context when generating content." },
+            ],
+          },
+        ]}
+      />
 
       {tab === "overview" && <OverviewPanel stats={stats ?? null} />}
 
