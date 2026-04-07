@@ -245,23 +245,40 @@ export function intelRoutes(db: Db) {
       const types = typeFilter ? typeFilter.split(",").map((t: string) => t.trim()) : null;
 
       const { sql: sqlTag } = await import("drizzle-orm");
-      const result = await db.execute(sqlTag`
-        SELECT
-          r.id,
-          r.company_slug,
-          c.name AS company_name,
-          r.report_type,
-          r.headline,
-          LEFT(r.body, 300) AS body,
-          r.source_url,
-          r.captured_at
-        FROM intel_reports r
-        LEFT JOIN intel_companies c ON c.slug = r.company_slug
-        WHERE r.captured_at > ${since}::timestamptz
-        ${types ? sqlTag`AND r.report_type = ANY(${types})` : sqlTag``}
-        ORDER BY r.captured_at DESC
-        LIMIT ${limit}
-      `);
+      const result = types
+        ? await db.execute(sqlTag`
+            SELECT
+              r.id,
+              r.company_slug,
+              c.name AS company_name,
+              r.report_type,
+              r.headline,
+              LEFT(r.body, 300) AS body,
+              r.source_url,
+              r.captured_at
+            FROM intel_reports r
+            LEFT JOIN intel_companies c ON c.slug = r.company_slug
+            WHERE r.captured_at > ${since}::timestamptz
+              AND r.report_type = ANY(${types}::text[])
+            ORDER BY r.captured_at DESC
+            LIMIT ${limit}
+          `)
+        : await db.execute(sqlTag`
+            SELECT
+              r.id,
+              r.company_slug,
+              c.name AS company_name,
+              r.report_type,
+              r.headline,
+              LEFT(r.body, 300) AS body,
+              r.source_url,
+              r.captured_at
+            FROM intel_reports r
+            LEFT JOIN intel_companies c ON c.slug = r.company_slug
+            WHERE r.captured_at > ${since}::timestamptz
+            ORDER BY r.captured_at DESC
+            LIMIT ${limit}
+          `);
 
       res.json({ reports: result as unknown as Record<string, unknown>[] });
     } catch (err) {
