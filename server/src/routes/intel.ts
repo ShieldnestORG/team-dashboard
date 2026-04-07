@@ -245,40 +245,29 @@ export function intelRoutes(db: Db) {
       const types = typeFilter ? typeFilter.split(",").map((t: string) => t.trim()) : null;
 
       const { sql: sqlTag } = await import("drizzle-orm");
-      const result = types
-        ? await db.execute(sqlTag`
-            SELECT
-              r.id,
-              r.company_slug,
-              c.name AS company_name,
-              r.report_type,
-              r.headline,
-              LEFT(r.body, 300) AS body,
-              r.source_url,
-              r.captured_at
-            FROM intel_reports r
-            LEFT JOIN intel_companies c ON c.slug = r.company_slug
-            WHERE r.captured_at > ${since}::timestamptz
-              AND r.report_type = ANY(${types}::text[])
-            ORDER BY r.captured_at DESC
-            LIMIT ${limit}
-          `)
-        : await db.execute(sqlTag`
-            SELECT
-              r.id,
-              r.company_slug,
-              c.name AS company_name,
-              r.report_type,
-              r.headline,
-              LEFT(r.body, 300) AS body,
-              r.source_url,
-              r.captured_at
-            FROM intel_reports r
-            LEFT JOIN intel_companies c ON c.slug = r.company_slug
-            WHERE r.captured_at > ${since}::timestamptz
-            ORDER BY r.captured_at DESC
-            LIMIT ${limit}
-          `);
+
+      // Build type filter using sql.join for proper parameterization
+      const typeCondition = types && types.length > 0
+        ? sqlTag`AND r.report_type IN (${sqlTag.join(types.map((t) => sqlTag`${t}`), sqlTag`, `)})`
+        : sqlTag``;
+
+      const result = await db.execute(sqlTag`
+        SELECT
+          r.id,
+          r.company_slug,
+          c.name AS company_name,
+          r.report_type,
+          r.headline,
+          LEFT(r.body, 300) AS body,
+          r.source_url,
+          r.captured_at
+        FROM intel_reports r
+        LEFT JOIN intel_companies c ON c.slug = r.company_slug
+        WHERE r.captured_at > ${since}::timestamptz
+        ${typeCondition}
+        ORDER BY r.captured_at DESC
+        LIMIT ${limit}
+      `);
 
       res.json({ reports: result as unknown as Record<string, unknown>[] });
     } catch (err) {
