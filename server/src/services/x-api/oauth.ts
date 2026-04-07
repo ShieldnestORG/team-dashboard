@@ -19,7 +19,7 @@ const X_CALLBACK_URL = process.env.X_CALLBACK_URL || "";
 const X_TOKEN_ENCRYPTION_KEY = process.env.X_TOKEN_ENCRYPTION_KEY || "";
 
 const TOKEN_ENDPOINT = "https://api.x.com/2/oauth2/token";
-const AUTHORIZE_ENDPOINT = "https://twitter.com/i/oauth2/authorize";
+const AUTHORIZE_ENDPOINT = "https://x.com/i/oauth2/authorize";
 const REVOKE_ENDPOINT = "https://api.x.com/2/oauth2/revoke";
 
 const SCOPES = "tweet.read tweet.write users.read like.read like.write follows.read follows.write offline.access";
