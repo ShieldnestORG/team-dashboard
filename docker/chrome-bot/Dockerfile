@@ -29,8 +29,9 @@ COPY packages/x-bot/ /opt/x-ext/
 # Copy configs
 COPY docker/chrome-bot/supervisord.conf /etc/supervisor/conf.d/chrome-bot.conf
 COPY docker/chrome-bot/start-chrome.sh /usr/local/bin/start-chrome.sh
-RUN chmod +x /usr/local/bin/start-chrome.sh
+COPY docker/chrome-bot/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/start-chrome.sh /usr/local/bin/entrypoint.sh
 
 EXPOSE 6080
 
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/chrome-bot.conf"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

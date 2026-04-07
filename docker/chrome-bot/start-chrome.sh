@@ -15,22 +15,15 @@ for i in $(seq 1 30); do
 done
 
 # Clean stale lock files from unclean shutdown
-if [ -f /data/chrome-profile/SingletonLock ]; then
-  echo "[chrome-bot] Removing stale SingletonLock"
-  rm -f /data/chrome-profile/SingletonLock
-fi
-if [ -f /data/chrome-profile/SingletonSocket ]; then
-  rm -f /data/chrome-profile/SingletonSocket
-fi
-if [ -f /data/chrome-profile/SingletonCookie ]; then
-  rm -f /data/chrome-profile/SingletonCookie
-fi
+rm -f /data/chrome-profile/SingletonLock \
+      /data/chrome-profile/SingletonSocket \
+      /data/chrome-profile/SingletonCookie 2>/dev/null || true
 
 # Prevent "Chrome didn't shut down correctly" restore bubble
 PREFS_FILE="/data/chrome-profile/Default/Preferences"
 if [ -f "$PREFS_FILE" ]; then
-  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' "$PREFS_FILE"
-  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' "$PREFS_FILE"
+  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' "$PREFS_FILE" 2>/dev/null || true
+  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' "$PREFS_FILE" 2>/dev/null || true
 fi
 
 echo "[chrome-bot] Launching Chrome with x-ext extension..."
