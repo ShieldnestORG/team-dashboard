@@ -4,6 +4,7 @@ import type {
   ToolResult,
   PluginContext,
   PluginJobContext,
+  PluginWebhookInput,
 } from "@paperclipai/plugin-sdk";
 import type {
   TwitterConfig,
@@ -141,10 +142,15 @@ async function incrementAnalytics(
   await saveDailyAnalytics(ctx, analytics);
 }
 
+// ─── Shared context for lifecycle hooks ───────────────────────────────────────
+
+let currentContext: PluginContext | null = null;
+
 // ─── Plugin definition ────────────────────────────────────────────────────────
 
 const plugin = definePlugin({
   async setup(ctx) {
+    currentContext = ctx;
     ctx.logger.info("Twitter/X plugin v0.2.0 ready — X API v2 direct posting active");
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1486,6 +1492,42 @@ const plugin = definePlugin({
       message: `X API connected (@${xApiStatus.username}). Direct posting active.`,
       details: { username: xApiStatus.username, rateLimits },
     };
+  },
+
+  // ── ext-heartbeat webhook handler ─────────────────────────────────────────
+  async onWebhook(input: PluginWebhookInput) {
+    if (input.endpointKey !== "ext-heartbeat") {
+      return; // ignore unknown endpoints
+    }
+
+    const ctx = currentContext;
+    if (!ctx) {
+      return; // plugin not initialized yet
+    }
+
+    const body = (input.parsedBody ?? {}) as Record<string, unknown>;
+    const sessionId = (body.sessionId as string) || "unknown";
+    const botEnabled = Boolean(body.botEnabled);
+    const currentUrl = (body.currentUrl as string) || "";
+
+    const heartbeat = {
+      sessionId,
+      botEnabled,
+      currentUrl,
+      lastHeartbeatAt: new Date().toISOString(),
+    };
+
+    // Persist the latest heartbeat in plugin instance state
+    await ctx.state.set(
+      {
+        scopeKind: "instance",
+        namespace: "extension",
+        stateKey: "ext-heartbeat",
+      },
+      heartbeat as unknown as Record<string, unknown>,
+    );
+
+    ctx.logger.info("ext-heartbeat received", { sessionId, botEnabled });
   },
 });
 

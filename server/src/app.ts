@@ -62,6 +62,7 @@ import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { publicReelsRoutes } from "./routes/public-reels.js";
+import { sitemapRoutes } from "./routes/sitemap.js";
 import { socialPulseRoutes } from "./routes/social-pulse.js";
 import { publicPulseRoutes } from "./routes/public-pulse.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
@@ -266,6 +267,8 @@ export async function createApp(
   app.use("/api/reels", publicReelsRoutes(db, opts.storageService, "default"));
   // Public pulse API — unauthenticated, for tokns.fi consumption
   app.use("/api/public/pulse", publicPulseRoutes(db));
+  // Sitemap + robots — unauthenticated, for search engine crawlers
+  app.use("/", sitemapRoutes(db));
 
   app.use("/api", api);
   app.use("/api", (_req, res) => {

@@ -18,6 +18,7 @@ const manifest: PaperclipPluginManifestV1 = {
     "plugin.state.read",
     "plugin.state.write",
     "jobs.schedule",
+    "webhooks.receive",
   ],
   entrypoints: {
     worker: "./dist/worker.js",
@@ -151,6 +152,18 @@ const manifest: PaperclipPluginManifestV1 = {
       },
     },
   },
+
+  // ── Webhooks ─────────────────────────────────────────────────────────────
+
+  webhooks: [
+    {
+      endpointKey: "ext-heartbeat",
+      displayName: "Extension Heartbeat",
+      description:
+        "Receives periodic heartbeat pings from the Chrome extension bot. " +
+        "Acknowledges the call and persists the latest session status in plugin state.",
+    },
+  ],
 
   // ── Scheduled jobs ───────────────────────────────────────────────────────
 
