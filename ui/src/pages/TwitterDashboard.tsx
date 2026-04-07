@@ -251,6 +251,7 @@ export function TwitterDashboard() {
   const targets = targetsData?.result?.data?.targets ?? [];
   const analytics = analyticsData?.result?.data?.totals;
   const connection = connectionData ?? { connected: false };
+  const [activeTab, setActiveTab] = useState("overview");
 
   return (
     <div className="space-y-6">
@@ -258,7 +259,7 @@ export function TwitterDashboard() {
       <ConnectionCard connection={connection} />
 
       {/* Tabs */}
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -582,6 +583,7 @@ export function TwitterDashboard() {
 
         {/* ── Settings Tab ──────────────────────────────────────────────── */}
         <TabsContent value="settings" className="space-y-6">
+          <XApiToggle companyId={selectedCompanyId} />
           <RateMultiplierSetting currentMultiplier={rateLimitData?.multiplier} />
           <PostingSettings />
         </TabsContent>
@@ -656,6 +658,92 @@ function ConnectionCard({ connection }: { connection: ConnectionStatus }) {
             </a>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── X API Toggle ──────────────────────────────────────────────────────────
+
+function XApiToggle({ companyId }: { companyId: string }) {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    executeTool<{ config: { xApiEnabled?: boolean } }>("get-bot-config", {}, companyId)
+      .then((res) => {
+        setEnabled(res.result?.data?.config?.xApiEnabled ?? false);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [companyId]);
+
+  const toggle = async () => {
+    setSaving(true);
+    const newValue = !enabled;
+    try {
+      await fetch("/api/plugins/tools/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          tool: `${PLUGIN_ID}:get-bot-config`,
+          parameters: {},
+          runContext: {
+            agentId: "dashboard-ui",
+            runId: `ui-${Date.now()}`,
+            companyId,
+            projectId: companyId,
+          },
+        }),
+      });
+      // Save config via plugin config API
+      await pluginsApi.saveConfig(PLUGIN_ID, { xApiEnabled: newValue });
+      setEnabled(newValue);
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Bird className="h-4 w-4" />
+          X API Auto-Posting
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Enable automated posting & engagement</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              When enabled, the system will auto-generate tweets, post them via X API, and engage with targets.
+            </p>
+          </div>
+          <button
+            onClick={toggle}
+            disabled={loading || saving}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              enabled ? "bg-sky-500" : "bg-muted"
+            } ${loading || saving ? "opacity-50" : ""}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+        {enabled && (
+          <div className="mt-3 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs text-green-600">Active — posting & engagement crons running</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
