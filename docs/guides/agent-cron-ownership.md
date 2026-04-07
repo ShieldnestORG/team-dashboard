@@ -52,13 +52,13 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Eval crons | `server/src/services/eval-crons.ts` | 1 | Nova |
 | Alert crons | `server/src/services/alert-crons.ts` | 2 | Nova |
 | Trend crons | `server/src/services/trend-crons.ts` | 1 | Echo |
-| Pulse crons | `server/src/services/pulse-crons.ts` | 6 | Echo |
+| Pulse crons | `server/src/services/pulse-crons.ts` | 7 | Echo |
 
-**Total: 32 cron jobs across 6 services + 2 plugin jobs (Discord).**
+**Total: 33 cron jobs across 6 services + 2 plugin jobs (Discord).**
 
 ## Full Agent-to-Cron Mapping
 
-### Echo (Data Engineer) — 15 jobs
+### Echo (Data Engineer) — 16 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
@@ -77,6 +77,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | `pulse:aggregate-day` | `10 0 * * *` | pulse-crons | Daily aggregation rollups |
 | `pulse:xrpl-bridge` | `*/10 * * * *` | pulse-crons | XRPL bridge mention tagging every 10 minutes |
 | `pulse:spike-detect` | `*/15 * * * *` | pulse-crons | Volume spike detection + alerting every 15 minutes |
+| `pulse:backfill` | `0 */12 * * *` | pulse-crons | Historical data backfill every 12 hours |
 
 ### Sage (CMO) — 1 job (orchestrator)
 

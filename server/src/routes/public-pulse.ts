@@ -41,11 +41,40 @@ export function publicPulseRoutes(db: Db) {
     try {
       const summary = await svc.getSummary(24);
 
-      // Add trend indicator per topic based on recent aggregations
+      // Per-topic sentiment from real data
+      const breakdown = await svc.getTopicBreakdown();
+      const sentimentMap = new Map(
+        breakdown.map((b) => [b.topic, b.avgSentiment])
+      );
+
+      // Compute trend direction per topic from recent aggregations
+      const trendResults = await Promise.all(
+        summary.topics.map(async (t) => {
+          const agg = await svc.getAggregations(t.name, "hour", 12);
+          let trend: "up" | "down" | "flat" = "flat";
+          if (agg.length >= 4) {
+            const mid = Math.floor(agg.length / 2);
+            const prior = agg.slice(0, mid);
+            const recent = agg.slice(mid);
+            const avgCount = (arr: typeof agg) =>
+              arr.reduce((s, d) => s + (d.tweetCount ?? 0), 0) / arr.length;
+            const priorAvg = avgCount(prior);
+            const recentAvg = avgCount(recent);
+            if (priorAvg > 0) {
+              const change = (recentAvg - priorAvg) / priorAvg;
+              if (change >= 0.1) trend = "up";
+              else if (change <= -0.1) trend = "down";
+            }
+          }
+          return { name: t.name, trend };
+        })
+      );
+      const trendMap = new Map(trendResults.map((r) => [r.name, r.trend]));
+
       const topics = summary.topics.map((t) => ({
         ...t,
-        avgSentiment: 0.5, // TODO: compute per-topic
-        trend: "flat" as "up" | "down" | "flat",
+        avgSentiment: sentimentMap.get(t.name) ?? 0.5,
+        trend: (trendMap.get(t.name) ?? "flat") as "up" | "down" | "flat",
       }));
 
       // Get top tweet

@@ -16,6 +16,7 @@ Base path: `/api/pulse`
 | `/pulse/topics` | GET | Per-topic breakdown with sentiment |
 | `/pulse/spikes` | GET | Recent volume spike alerts |
 | `/pulse/force-poll` | POST | Manual trigger to poll X API immediately |
+| `/pulse/backfill` | POST | Trigger historical data backfill for gap-filling |
 
 ## Public Endpoints (no auth, CORS-gated)
 
@@ -45,16 +46,17 @@ All public endpoints return `Cache-Control: public, max-age=300` (5 minutes).
 |----------|----------|-------------|
 | `BEARER_TOKEN` | Optional | X API v2 bearer token. Social Pulse is disabled if not set. |
 
-## Cron Jobs (6 total, owner: Echo)
+## Cron Jobs (7 total, owner: Echo)
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
 | `pulse:search` | `*/5 * * * *` | Poll X API for new tweets |
-| `pulse:sentiment` | `*/15 * * * *` | Score unscored tweets (keyword-based) |
+| `pulse:sentiment` | `*/15 * * * *` | Score unscored tweets (computed per-topic sentiment, not hardcoded) |
 | `pulse:aggregate-hour` | `5 * * * *` | Compute hourly rollups |
 | `pulse:aggregate-day` | `10 0 * * *` | Compute daily rollups |
 | `pulse:xrpl-bridge` | `*/10 * * * *` | Tag bridge mentions with direction/token/staking |
 | `pulse:spike-detect` | `*/15 * * * *` | Detect >2x volume anomalies |
+| `pulse:backfill` | `0 */12 * * *` | Historical data backfill for gaps |
 
 ## Topics Tracked
 

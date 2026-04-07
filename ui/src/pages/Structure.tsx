@@ -182,7 +182,7 @@ const DEFAULT_DIAGRAM = `graph TB
         PULSE_AGG(["Aggregation Engine"])
         PULSE_SPIKE(["Spike Detector"])
         PULSE_XRPL(["XRPL Bridge Tagger"])
-        PULSE_CRON{{"6 Pulse Crons"}}:::cronNode
+        PULSE_CRON{{"7 Pulse Crons"}}:::cronNode
       end
 
       subgraph PluginSys["Plugin System"]

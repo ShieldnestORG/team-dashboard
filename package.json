@@ -42,7 +42,7 @@
     "cross-env": "^10.1.0",
     "esbuild": "^0.27.3",
     "typescript": "^5.7.3",
-    "vitest": "^3.0.5"
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=20"
@@ -50,7 +50,15 @@
   "packageManager": "pnpm@9.15.4",
   "pnpm": {
     "overrides": {
-      "axios": "1.14.0"
+      "axios": "1.14.0",
+      "rollup": ">=4.59.0",
+      "multer": ">=2.1.0",
+      "picomatch": ">=4.0.4",
+      "path-to-regexp": ">=8.4.0",
+      "lodash-es": ">=4.18.0",
+      "kysely": ">=0.28.12",
+      "fast-xml-parser": ">=5.5.7",
+      "defu": ">=6.1.5"
     },
     "patchedDependencies": {
       "embedded-postgres@18.1.0-beta.16": "patches/embedded-postgres@18.1.0-beta.16.patch"

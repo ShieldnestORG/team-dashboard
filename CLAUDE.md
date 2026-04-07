@@ -37,7 +37,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
 - **Mintscan Chain Metrics** — Cosmostation Mintscan API integration for Cosmos ecosystem (staking APR, validator data) tracking cosmos/osmosis/txhuman
-- **Social Pulse Engine** — real-time X/Twitter monitoring for TX Blockchain, Cosmos, XRPL Bridge, and Tokns ecosystem. Keyword-based sentiment analysis, hourly/daily aggregations, volume spike detection, XRPL bridge mention tracking. 6 cron jobs (5min–daily cycles), authenticated dashboard at `/social-pulse`, public API at `/api/public/pulse/*` for tokns.fi widget embeds
+- **Social Pulse Engine** — real-time X/Twitter monitoring for TX Blockchain, Cosmos, XRPL Bridge, and Tokns ecosystem. Computed per-topic sentiment analysis, hourly/daily aggregations, volume spike detection, XRPL bridge mention tracking, 12h backfill for historical gap-filling. 7 cron jobs (5min–12hr cycles), authenticated dashboard at `/social-pulse`, public API at `/api/public/pulse/*` for tokns.fi widget embeds
 - **Intel Dashboard** — admin UI page at `/intel` with tabbed tables (Overview/Crypto/AI-ML/DeFi/DevTools), searchable company lists, stats cards
 - **Public Article Generator** — rate-limited public endpoint (`POST /api/content/public/generate`) for users to generate AI-powered articles with Coherence Daddy metadata attribution. Powered by Ollama + intel context, supports all platforms (tweet, blog, linkedin, reddit, etc.)
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
@@ -115,6 +115,8 @@ ui/
       PulseTopicCard.tsx    # Pulse topic summary card component
       PulseTweetCard.tsx    # Pulse tweet display card component
       XrplBridgeShowcase.tsx # XRPL bridge analytics showcase component
+      SocialPulseWidget.tsx     # Internal social pulse summary widget
+      SocialPulseWidgetEmbed.tsx # Embeddable social pulse widget for tokns.fi
     context/          # ThemeContext, CompanyContext, DialogContext, etc.
     hooks/            # Custom React hooks
     lib/              # Utilities, router, agent config
@@ -251,7 +253,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr), pulse (6 jobs: search + sentiment + aggregate-hour + aggregate-day + xrpl-bridge + spike-detect), discord (2 plugin jobs: ticket-cleanup + daily-stats). All 32 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr), pulse (7 jobs: search + sentiment + aggregate-hour + aggregate-day + xrpl-bridge + spike-detect + backfill), discord (2 plugin jobs: ticket-cleanup + daily-stats). All 33 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -286,7 +288,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `ui/src/pages/Discord.tsx` | Discord dashboard — bot status, tickets, mod feed |
 | `server/src/services/social-pulse.ts` | Social Pulse service (polling, sentiment, aggregation, spike detection) |
 | `server/src/services/social-pulse-client.ts` | X API v2 client for tweet search |
-| `server/src/services/pulse-crons.ts` | 6 pulse cron jobs (Echo-owned) |
+| `server/src/services/pulse-crons.ts` | 7 pulse cron jobs (Echo-owned) |
 | `server/src/routes/social-pulse.ts` | Authenticated pulse API (`/api/pulse/*`) |
 | `server/src/routes/public-pulse.ts` | Public pulse API (`/api/public/pulse/*` — no auth) |
 | `ui/src/pages/SocialPulse.tsx` | Social Pulse dashboard — 5-tab view with topic cards, tweet feed, XRPL bridge |
@@ -358,6 +360,13 @@ git push origin master
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
 | **Social Pulse** | | | |
 | `BEARER_TOKEN` | Optional | VPS | X API v2 bearer token for Social Pulse (disables feature if missing) |
+| `CONSUMER_KEY` | Optional | VPS | X API consumer key for OAuth 1.0a |
+| `SECRET_KEY` | Optional | VPS | X API consumer secret for OAuth 1.0a |
+| `X_ACCESS_TOKEN` | Optional | VPS | X API OAuth access token |
+| `X_ACCESS_TOKEN_SECRET` | Optional | VPS | X API OAuth access token secret |
+| **Payments** | | | |
+| `STRIPE_SECRET_KEY` | Optional | VPS | Stripe API secret key for donations |
+| `STRIPE_WEBHOOK_SECRET` | Optional | VPS | Stripe webhook signature verification |
 | **Monitoring** | | | |
 | `SITE_METRICS_KEY` | Yes | VPS + coherencedaddy | Site analytics ingestion auth |
 | `SMTP_HOST/PORT/USER/PASS` | Optional | VPS | Email alerting (Proton Mail) |

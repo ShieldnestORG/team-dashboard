@@ -1,4 +1,4 @@
-import { sql, eq } from "drizzle-orm";
+import { sql, eq, and, gte, lt } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { pulseTweets, pulseAggregations, pulseXrplBridge } from "@paperclipai/db";
 import {
@@ -297,6 +297,136 @@ export function socialPulseService(db: Db) {
     return { tagged };
   }
 
+  // ── Historical backfill ────────────────────────────────────────────────
+
+  async function backfillAggregations(): Promise<{ reScored: number; hourlyFilled: number; dailyFilled: number }> {
+    // 1. Re-score any unscored tweets
+    const reScored = await scoreSentiment();
+
+    const now = new Date();
+    const topics = ["tx", "cosmos", "xrpl-bridge", "tokns"];
+
+    // 2. Fill missing hourly aggregations for last 7 days (168 hours)
+    let hourlyFilled = 0;
+    for (let h = 0; h < 168; h++) {
+      const periodStart = new Date(now.getTime() - (h + 1) * 3600000);
+      periodStart.setMinutes(0, 0, 0); // floor to hour
+      const periodEnd = new Date(periodStart.getTime() + 3600000);
+
+      for (const topic of topics) {
+        const existing = await db
+          .select()
+          .from(pulseAggregations)
+          .where(
+            and(
+              eq(pulseAggregations.period, "hour"),
+              eq(pulseAggregations.topic, topic),
+              eq(pulseAggregations.periodStart, periodStart),
+            ),
+          )
+          .limit(1);
+
+        if (existing.length === 0) {
+          const tweets = await db
+            .select({
+              count: sql<number>`COUNT(*)::int`,
+              avgSentiment: sql<number>`AVG(sentiment_score)::real`,
+              totalLikes: sql<number>`COALESCE(SUM(metrics_likes), 0)::int`,
+              totalRetweets: sql<number>`COALESCE(SUM(metrics_retweets), 0)::int`,
+              totalImpressions: sql<number>`COALESCE(SUM(metrics_impressions), 0)::int`,
+            })
+            .from(pulseTweets)
+            .where(
+              and(
+                eq(pulseTweets.topic, topic),
+                gte(pulseTweets.tweetCreatedAt, periodStart),
+                lt(pulseTweets.tweetCreatedAt, periodEnd),
+              ),
+            );
+
+          if (tweets[0] && tweets[0].count > 0) {
+            await db
+              .insert(pulseAggregations)
+              .values({
+                period: "hour",
+                periodStart,
+                topic,
+                tweetCount: tweets[0].count,
+                avgSentiment: tweets[0].avgSentiment,
+                totalLikes: tweets[0].totalLikes,
+                totalRetweets: tweets[0].totalRetweets,
+                totalImpressions: tweets[0].totalImpressions,
+                computedAt: new Date(),
+              })
+              .onConflictDoNothing();
+            hourlyFilled++;
+          }
+        }
+      }
+    }
+
+    // 3. Fill missing daily aggregations for last 30 days
+    let dailyFilled = 0;
+    for (let d = 0; d < 30; d++) {
+      const periodStart = new Date(now.getTime() - (d + 1) * 86400000);
+      periodStart.setHours(0, 0, 0, 0);
+      const periodEnd = new Date(periodStart.getTime() + 86400000);
+
+      for (const topic of topics) {
+        const existing = await db
+          .select()
+          .from(pulseAggregations)
+          .where(
+            and(
+              eq(pulseAggregations.period, "day"),
+              eq(pulseAggregations.topic, topic),
+              eq(pulseAggregations.periodStart, periodStart),
+            ),
+          )
+          .limit(1);
+
+        if (existing.length === 0) {
+          const tweets = await db
+            .select({
+              count: sql<number>`COUNT(*)::int`,
+              avgSentiment: sql<number>`AVG(sentiment_score)::real`,
+              totalLikes: sql<number>`COALESCE(SUM(metrics_likes), 0)::int`,
+              totalRetweets: sql<number>`COALESCE(SUM(metrics_retweets), 0)::int`,
+              totalImpressions: sql<number>`COALESCE(SUM(metrics_impressions), 0)::int`,
+            })
+            .from(pulseTweets)
+            .where(
+              and(
+                eq(pulseTweets.topic, topic),
+                gte(pulseTweets.tweetCreatedAt, periodStart),
+                lt(pulseTweets.tweetCreatedAt, periodEnd),
+              ),
+            );
+
+          if (tweets[0] && tweets[0].count > 0) {
+            await db
+              .insert(pulseAggregations)
+              .values({
+                period: "day",
+                periodStart,
+                topic,
+                tweetCount: tweets[0].count,
+                avgSentiment: tweets[0].avgSentiment,
+                totalLikes: tweets[0].totalLikes,
+                totalRetweets: tweets[0].totalRetweets,
+                totalImpressions: tweets[0].totalImpressions,
+                computedAt: new Date(),
+              })
+              .onConflictDoNothing();
+            dailyFilled++;
+          }
+        }
+      }
+    }
+
+    return { reScored: reScored.scored, hourlyFilled, dailyFilled };
+  }
+
   // ── Query methods for API ─────────────────────────────────────────────
 
   async function getSummary(hours = 24) {
@@ -514,6 +644,7 @@ export function socialPulseService(db: Db) {
     computeAggregations,
     detectVolumeSpikes,
     tagXrplBridgeMentions,
+    backfillAggregations,
     getSummary,
     getTrendingTweets,
     getXrplBridgeStats,

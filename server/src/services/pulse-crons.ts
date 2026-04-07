@@ -30,6 +30,7 @@ export function startPulseCrons(db: Db) {
     { name: "pulse:aggregate-day",  schedule: "10 0 * * *",    ownerAgent: "echo", run: () => svc.computeAggregations("day"),  nextRun: null, running: false },
     { name: "pulse:xrpl-bridge",    schedule: "*/10 * * * *",  ownerAgent: "echo", run: () => svc.tagXrplBridgeMentions(),     nextRun: null, running: false },
     { name: "pulse:spike-detect",   schedule: "*/15 * * * *",  ownerAgent: "echo", run: () => svc.detectVolumeSpikes(),        nextRun: null, running: false },
+    { name: "pulse:backfill",      schedule: "0 */12 * * *",  ownerAgent: "echo", run: () => svc.backfillAggregations(),     nextRun: null, running: false },
   ];
 
   // Compute initial next-run times

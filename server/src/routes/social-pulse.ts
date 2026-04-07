@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { socialPulseService } from "../services/social-pulse.js";
+import { logger } from "../middleware/logger.js";
 
 export function socialPulseRoutes(db: Db) {
   const router = Router();
@@ -92,6 +93,17 @@ export function socialPulseRoutes(db: Db) {
       res.json({ success: true, ...result });
     } catch (err) {
       res.status(500).json({ error: "Failed to force poll" });
+    }
+  });
+
+  // POST /pulse/backfill — manual backfill trigger
+  router.post("/backfill", async (_req, res) => {
+    try {
+      const result = await svc.backfillAggregations();
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "pulse backfill error");
+      res.status(500).json({ error: "backfill failed" });
     }
   });
 
