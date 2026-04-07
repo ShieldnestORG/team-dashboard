@@ -21,6 +21,13 @@ export type DiscordConfig = {
   ticketAutoCloseMinutes: number;
   warningsBeforeMute: number;
   warningsBeforeKick: number;
+  // Feed system
+  enableFeeds: boolean;
+  dashboardApiUrl: string;
+  twitterFeedChannelId: string;
+  priceFeedChannelId: string;
+  intelFeedChannelId: string;
+  feedCategoryId: string;
 };
 
 // ─── Warning data ─────────────────────────────────────────────────────────────
@@ -121,3 +128,35 @@ export type BotStatus = {
 // ─── Onboarding role map ──────────────────────────────────────────────────────
 
 export type OnboardingRoleMap = Record<string, string>;
+
+// ─── Feed channel IDs ────────────────────────────────────────────────────────
+
+export type FeedChannelIds = {
+  twitterFeed: string;
+  priceAlerts: string;
+  intelFeed: string;
+};
+
+// ─── Feed data shapes (from API responses) ───────────────────────────────────
+
+export type IntelReport = {
+  id: string;
+  company_slug: string;
+  company_name: string | null;
+  report_type: string;
+  headline: string;
+  body: string | null;
+  source_url: string | null;
+  captured_at: string;
+};
+
+export type TweetPost = {
+  tweet_id: string;
+  tweet_text: string;
+  posted_at: string;
+  like_count: number;
+  retweet_count: number;
+  reply_count: number;
+  impression_count: number;
+  quote_count: number;
+};

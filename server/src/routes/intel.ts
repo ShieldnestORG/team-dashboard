@@ -230,5 +230,45 @@ export function intelRoutes(db: Db) {
     }
   });
 
+  // ── Feed endpoint (recent reports for Discord/external polling) ──────────
+
+  router.get("/feed", async (req, res) => {
+    try {
+      const since = req.query.since as string | undefined;
+      if (!since) {
+        res.status(400).json({ error: "since parameter required (ISO timestamp)" });
+        return;
+      }
+      const typeFilter = req.query.type as string | undefined;
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string ?? "20", 10) || 20));
+
+      const types = typeFilter ? typeFilter.split(",").map((t: string) => t.trim()) : null;
+
+      const { sql: sqlTag } = await import("drizzle-orm");
+      const result = await db.execute(sqlTag`
+        SELECT
+          r.id,
+          r.company_slug,
+          c.name AS company_name,
+          r.report_type,
+          r.headline,
+          LEFT(r.body, 300) AS body,
+          r.source_url,
+          r.captured_at
+        FROM intel_reports r
+        LEFT JOIN intel_companies c ON c.slug = r.company_slug
+        WHERE r.captured_at > ${since}::timestamptz
+        ${types ? sqlTag`AND r.report_type = ANY(${types})` : sqlTag``}
+        ORDER BY r.captured_at DESC
+        LIMIT ${limit}
+      `);
+
+      res.json({ reports: result as unknown as Record<string, unknown>[] });
+    } catch (err) {
+      logger.error({ err }, "Intel feed error");
+      res.status(500).json({ error: "Feed unavailable" });
+    }
+  });
+
   return router;
 }

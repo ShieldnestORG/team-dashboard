@@ -180,5 +180,39 @@ export function xAnalyticsRoutes(db: Db) {
     }
   });
 
+  // ── Recent Posts Feed (for Discord polling) ──────────────────────────────
+  router.get("/recent-posts", async (req, res) => {
+    try {
+      const since = req.query.since as string | undefined;
+      if (!since) {
+        res.status(400).json({ error: "since parameter required (ISO timestamp)" });
+        return;
+      }
+      const limit = Math.min(30, Math.max(1, parseInt(req.query.limit as string ?? "10", 10) || 10));
+
+      const posts = await db.execute(sql`
+        SELECT
+          tweet_id,
+          tweet_text,
+          posted_at,
+          like_count,
+          retweet_count,
+          reply_count,
+          impression_count,
+          quote_count
+        FROM x_tweet_analytics
+        WHERE company_id = ${COMPANY_ID}
+          AND posted_at > ${since}::timestamptz
+        ORDER BY posted_at DESC
+        LIMIT ${limit}
+      `);
+
+      res.json({ posts: posts as unknown as Record<string, unknown>[] });
+    } catch (err) {
+      logger.error({ err }, "Failed to get recent posts feed");
+      res.status(500).json({ error: "Failed to get recent posts" });
+    }
+  });
+
   return router;
 }

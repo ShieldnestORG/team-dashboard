@@ -35,6 +35,13 @@ import {
   startAutoCloseTimer,
 } from "./ticketing.js";
 import { handleCommand } from "./commands.js";
+import {
+  ensureFeedChannels,
+  startTwitterFeedPoller,
+  startIntelFeedPoller,
+  startPriceFeedPoller,
+  stopFeedPollers,
+} from "./feeds.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -69,6 +76,12 @@ async function getConfig(ctx: PluginContext): Promise<DiscordConfig> {
     ticketAutoCloseMinutes: (raw.ticketAutoCloseMinutes as number) || 5,
     warningsBeforeMute: (raw.warningsBeforeMute as number) || 3,
     warningsBeforeKick: (raw.warningsBeforeKick as number) || 5,
+    enableFeeds: (raw.enableFeeds as boolean) || false,
+    dashboardApiUrl: (raw.dashboardApiUrl as string) || "http://localhost:3100/api",
+    twitterFeedChannelId: (raw.twitterFeedChannelId as string) || "",
+    priceFeedChannelId: (raw.priceFeedChannelId as string) || "",
+    intelFeedChannelId: (raw.intelFeedChannelId as string) || "",
+    feedCategoryId: (raw.feedCategoryId as string) || "",
   };
 }
 
@@ -135,7 +148,7 @@ const plugin = definePlugin({
 
     // ── Bot ready ───────────────────────────────────────────────────────────
 
-    client.once(Events.ClientReady, () => {
+    client.once(Events.ClientReady, async () => {
       botStartedAt = now();
       ctx.logger.info(`Discord bot online as ${client.user?.tag}`);
       client.user?.setActivity("Protecting ShieldNest x TOKNS", { type: 3 });
@@ -144,6 +157,19 @@ const plugin = definePlugin({
       updateBotStatus(ctx, client, config).catch(() => {});
 
       ctx.logger.info("Discord bot online", { username: client.user?.tag ?? null });
+
+      // Start live feeds if enabled
+      if (config.enableFeeds) {
+        try {
+          const channelIds = await ensureFeedChannels(client, config, ctx);
+          startTwitterFeedPoller(client, config, channelIds, ctx);
+          startIntelFeedPoller(client, config, channelIds, ctx);
+          startPriceFeedPoller(client, config, channelIds, ctx);
+          ctx.logger.info("Live feeds started", { channels: channelIds });
+        } catch (err) {
+          ctx.logger.error("Failed to start live feeds", { error: String(err) });
+        }
+      }
     });
 
     // ── Onboarding role assignment ──────────────────────────────────────────
@@ -594,6 +620,7 @@ const plugin = definePlugin({
   },
 
   async onShutdown() {
+    stopFeedPollers();
     if (discordClient) {
       discordClient.destroy();
       discordClient = null;
