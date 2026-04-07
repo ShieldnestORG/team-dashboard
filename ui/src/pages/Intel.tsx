@@ -10,7 +10,7 @@ import { PageTabBar } from "../components/PageTabBar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
-import { Database, Search, Building2, BarChart3, Clock } from "lucide-react";
+import { Database, Search, Building2, BarChart3, Clock, CheckCircle2, AlertTriangle, TrendingUp, Activity } from "lucide-react";
 import { HowToGuide } from "../components/HowToGuide";
 
 type DirectoryTab = "overview" | "crypto" | "ai-ml" | "defi" | "devtools";
@@ -163,46 +163,151 @@ export function Intel() {
   );
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  price: "Prices",
+  news: "News",
+  twitter: "Twitter",
+  github: "GitHub",
+  reddit: "Reddit",
+  "chain-metrics": "Chain Metrics",
+};
+
+function healthColor(lastIngested: string | undefined, maxAgeHours: number): string {
+  if (!lastIngested) return "text-muted-foreground";
+  const ageHours = (Date.now() - new Date(lastIngested).getTime()) / 3_600_000;
+  if (ageHours <= maxAgeHours) return "text-emerald-500";
+  if (ageHours <= maxAgeHours * 2) return "text-yellow-500";
+  return "text-red-500";
+}
+
+const SOURCE_MAX_AGE: Record<string, number> = {
+  price: 1.5,
+  news: 1.5,
+  twitter: 1,
+  github: 5,
+  reddit: 2.5,
+  "chain-metrics": 5,
+};
+
 function OverviewPanel({ stats }: { stats: IntelStats | null }) {
   const directories = stats?.directories ?? {};
   const directoryEntries = Object.entries(directories);
+  const ingestionHealth = stats?.ingestion_health ?? {};
+  const healthEntries = Object.entries(ingestionHealth);
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          icon={Building2}
-          label="Total Companies"
-          value={stats?.totalCompanies ?? 0}
-        />
-        <StatCard
-          icon={BarChart3}
-          label="Total Reports"
-          value={stats?.totalReports ?? 0}
-        />
-        <StatCard
-          icon={Database}
-          label="Directories"
-          value={directoryEntries.length}
-        />
+      {/* Top stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard icon={Building2} label="Total Companies" value={stats?.coverage.total_companies ?? 0} />
+        <StatCard icon={BarChart3} label="Total Reports" value={stats?.total_reports ?? 0} />
+        <StatCard icon={TrendingUp} label="Reports (24h)" value={stats?.reports_by_window.last_24h ?? 0} />
         <StatCard
           icon={Clock}
-          label="Last Ingestion"
-          value={stats?.lastIngestion ? relativeTimeShort(stats.lastIngestion) : "N/A"}
+          label="Freshness"
+          value={stats ? `${stats.freshness.freshness_pct}%` : "N/A"}
           isText
+          hint={stats ? `${stats.freshness.companies_with_recent_data} of ${stats.freshness.total_companies} companies active in 7d` : undefined}
         />
       </div>
 
+      {/* Per-source pipeline health */}
+      {healthEntries.length > 0 && (
+        <div className="border border-border">
+          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+            <Activity className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-medium">Pipeline Health</h3>
+            <span className="text-xs text-muted-foreground ml-auto">
+              {stats?.generated_at ? `as of ${relativeTimeShort(stats.generated_at)}` : ""}
+            </span>
+          </div>
+          <div className="divide-y divide-border">
+            {healthEntries.map(([type, health]) => {
+              const maxAge = SOURCE_MAX_AGE[type] ?? 2;
+              const color = healthColor(health.last_ingested, maxAge);
+              const isHealthy = color === "text-emerald-500";
+              return (
+                <div key={type} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    {isHealthy
+                      ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      : <AlertTriangle className={`h-4 w-4 ${color}`} />
+                    }
+                    <span className="text-sm font-medium">{SOURCE_LABELS[type] ?? type}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>{health.count_last_24h} in 24h</span>
+                    <span className={color}>
+                      last: {health.last_ingested ? relativeTimeShort(health.last_ingested) : "never"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Activity windows */}
+      {stats && (
+        <div className="border border-border">
+          <div className="px-4 py-3 border-b border-border">
+            <h3 className="text-sm font-medium">Ingestion Activity</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
+            {[
+              { label: "Last hour", value: stats.reports_by_window.last_hour },
+              { label: "Last 24h", value: stats.reports_by_window.last_24h },
+              { label: "Last 7d", value: stats.reports_by_window.last_7d },
+              { label: "Last 30d", value: stats.reports_by_window.last_30d },
+            ].map(({ label, value }) => (
+              <div key={label} className="px-4 py-3 text-center">
+                <p className="text-xl font-bold tabular-nums">{value.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Directory breakdown */}
       {directoryEntries.length > 0 && (
         <div className="border border-border">
           <div className="px-4 py-3 border-b border-border">
-            <h3 className="text-sm font-medium">Directory Breakdown</h3>
+            <h3 className="text-sm font-medium">Directories</h3>
           </div>
           <div className="divide-y divide-border">
-            {directoryEntries.map(([dir, count]) => (
-              <div key={dir} className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm">{dir}</span>
-                <Badge variant="secondary">{String(count)}</Badge>
+            {directoryEntries.map(([dir, stat]) => {
+              const s = typeof stat === "object" && stat !== null ? stat as { companies: number; reports: number; fresh_companies: number } : null;
+              return (
+                <div key={dir} className="flex items-center justify-between px-4 py-3">
+                  <span className="text-sm capitalize">{dir}</span>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {s && <span>{s.companies} companies</span>}
+                    {s && <span>{s.reports.toLocaleString()} reports</span>}
+                    {s && <Badge variant="secondary">{s.fresh_companies} fresh</Badge>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Coverage */}
+      {stats?.coverage && (
+        <div className="border border-border">
+          <div className="px-4 py-3 border-b border-border">
+            <h3 className="text-sm font-medium">Source Coverage</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {stats.coverage.companies_with_data} of {stats.coverage.total_companies} companies have at least one data source
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-border">
+            {Object.entries(stats.coverage.sources).map(([src, count]) => (
+              <div key={src} className="px-4 py-3 text-center">
+                <p className="text-lg font-bold tabular-nums">{count}</p>
+                <p className="text-xs text-muted-foreground capitalize mt-0.5">{src}</p>
               </div>
             ))}
           </div>
@@ -217,11 +322,13 @@ function StatCard({
   label,
   value,
   isText = false,
+  hint,
 }: {
   icon: typeof Building2;
   label: string;
   value: number | string;
   isText?: boolean;
+  hint?: string;
 }) {
   return (
     <Card>
@@ -235,6 +342,7 @@ function StatCard({
         <p className={isText ? "text-lg font-semibold" : "text-2xl font-bold tabular-nums"}>
           {typeof value === "number" ? value.toLocaleString() : value}
         </p>
+        {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
       </CardContent>
     </Card>
   );
