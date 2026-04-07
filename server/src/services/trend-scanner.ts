@@ -6,6 +6,8 @@ export interface TrendSignals {
   timestamp: string;
   crypto_movers: Array<{ coin: string; change_24h: number; price: number; volume: number }>;
   trending_tech: Array<{ title: string; score: number; category: string; url: string; comments: number }>;
+  google_trends?: Array<{ keyword: string; traffic: string; related: string[]; region: string }>;
+  bing_news?: Array<{ title: string; url: string; description: string; provider: string; category: string; datePublished: string }>;
 }
 
 // Fallback coins if DB is unavailable
@@ -13,6 +15,12 @@ const FALLBACK_COIN_IDS = "dogecoin,shiba-inu,pepe,dogwifhat,bonk,floki,brett,tu
 
 const HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json";
 const HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item";
+
+const GOOGLE_TRENDS_RSS_URL = "https://trends.google.com/trending/rss?geo=US";
+const BING_NEWS_API_URL = "https://api.bing.microsoft.com/v7.0/news/search";
+const BING_NEWS_KEY = process.env.BING_NEWS_KEY || "";
+
+const CRYPTO_TECH_KEYWORDS = /\b(crypto|bitcoin|btc|ethereum|eth|solana|blockchain|defi|nft|token|web3|ai|artificial.?intelligence|llm|gpt|machine.?learn|neural|deep.?learn|openai|anthropic|chatbot|agent)\b/i;
 
 function categorize(title: string): string {
   const t = title.toLowerCase();
@@ -48,19 +56,28 @@ export function trendScannerService(db?: Db) {
 
   return {
     async scan(): Promise<TrendSignals> {
-      const [crypto, tech] = await Promise.allSettled([
+      const [crypto, tech, gtrends, bing] = await Promise.allSettled([
         this.scanCrypto(),
         this.scanTech(),
+        this.scanGoogleTrends(),
+        this.scanBingNews(),
       ]);
 
       const signals: TrendSignals = {
         timestamp: new Date().toISOString(),
         crypto_movers: crypto.status === "fulfilled" ? crypto.value : [],
         trending_tech: tech.status === "fulfilled" ? tech.value : [],
+        google_trends: gtrends.status === "fulfilled" ? gtrends.value : [],
+        bing_news: bing.status === "fulfilled" ? bing.value : [],
       };
 
       logger.info(
-        { crypto_movers: signals.crypto_movers.length, trending_tech: signals.trending_tech.length },
+        {
+          crypto_movers: signals.crypto_movers.length,
+          trending_tech: signals.trending_tech.length,
+          google_trends: (signals.google_trends || []).length,
+          bing_news: (signals.bing_news || []).length,
+        },
         "Trend scan completed",
       );
 
@@ -111,6 +128,88 @@ export function trendScannerService(db?: Db) {
         .filter((s) => ["AI/ML", "Crypto", "Programming"].includes(s.category))
         .sort((a, b) => b.score - a.score)
         .slice(0, 10);
+    },
+
+    async scanGoogleTrends(): Promise<NonNullable<TrendSignals["google_trends"]>> {
+      try {
+        const res = await fetch(GOOGLE_TRENDS_RSS_URL);
+        if (!res.ok) {
+          logger.warn({ status: res.status }, "Google Trends RSS request failed");
+          return [];
+        }
+        const xml = await res.text();
+
+        // Parse <item> blocks from RSS XML using regex (no new deps)
+        const items: NonNullable<TrendSignals["google_trends"]> = [];
+        const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+        let match: RegExpExecArray | null;
+        while ((match = itemRegex.exec(xml)) !== null) {
+          const block = match[1]!;
+          const title = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/)?.[1] || "";
+          const traffic = block.match(/<ht:approx_traffic>(.*?)<\/ht:approx_traffic>/)?.[1] || "";
+          const newsItems = block.match(/<ht:news_item_title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/ht:news_item_title>/g) || [];
+          const related = newsItems
+            .map((n) => n.replace(/<\/?ht:news_item_title>|<!\[CDATA\[|\]\]>/g, ""))
+            .slice(0, 3);
+
+          // Only keep items relevant to crypto/tech/AI
+          const combined = `${title} ${related.join(" ")}`;
+          if (CRYPTO_TECH_KEYWORDS.test(combined)) {
+            items.push({ keyword: title, traffic, related, region: "US" });
+          }
+        }
+
+        return items.slice(0, 10);
+      } catch (err) {
+        logger.warn({ err }, "Google Trends scan failed (non-critical)");
+        return [];
+      }
+    },
+
+    async scanBingNews(): Promise<NonNullable<TrendSignals["bing_news"]>> {
+      if (!BING_NEWS_KEY) return [];
+
+      try {
+        const queries = ["cryptocurrency blockchain", "artificial intelligence"];
+        const allResults: NonNullable<TrendSignals["bing_news"]> = [];
+
+        for (const q of queries) {
+          const url = `${BING_NEWS_API_URL}?q=${encodeURIComponent(q)}&count=10&freshness=Day&mkt=en-US`;
+          const res = await fetch(url, {
+            headers: { "Ocp-Apim-Subscription-Key": BING_NEWS_KEY },
+          });
+          if (!res.ok) {
+            logger.warn({ status: res.status, query: q }, "Bing News request failed");
+            continue;
+          }
+          const data = (await res.json()) as {
+            value: Array<{
+              name: string;
+              url: string;
+              description: string;
+              provider: Array<{ name: string }>;
+              category?: string;
+              datePublished: string;
+            }>;
+          };
+
+          for (const article of data.value || []) {
+            allResults.push({
+              title: article.name,
+              url: article.url,
+              description: article.description,
+              provider: article.provider?.[0]?.name || "Unknown",
+              category: article.category || (q.includes("crypto") ? "Crypto" : "AI/ML"),
+              datePublished: article.datePublished,
+            });
+          }
+        }
+
+        return allResults.slice(0, 15);
+      } catch (err) {
+        logger.warn({ err }, "Bing News scan failed (non-critical)");
+        return [];
+      }
     },
   };
 }

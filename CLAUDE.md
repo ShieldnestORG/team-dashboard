@@ -364,6 +364,7 @@ git push origin master
 | `EMBED_URL` | Yes | VPS | Embedding service (`http://31.220.61.12:8000`) |
 | `EMBED_API_KEY` | Yes | VPS | Embedding service auth |
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
+| `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |
 | **Social Pulse** | | | |
 | `BEARER_TOKEN` | Optional | VPS | X API v2 bearer token for Social Pulse (disables feature if missing) |
 | `CONSUMER_KEY` | Optional | VPS | X API consumer key for OAuth 1.0a |

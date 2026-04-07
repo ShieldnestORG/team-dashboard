@@ -96,13 +96,39 @@ function pickSignal(signals: TrendSignals): { type: "crypto" | "ai-agents" | "to
     };
   }
 
-  // Priority 2: AI/ML trending story with >200 score
+  // Priority 2: Google Trends keyword matching crypto/AI with high traffic
+  const gtCryptoAi = (signals.google_trends || []).find((g) => {
+    const trafficNum = parseInt(g.traffic.replace(/[^0-9]/g, ""), 10) || 0;
+    return trafficNum >= 50000 && /crypto|bitcoin|btc|ethereum|blockchain|ai|artificial.?intelligence|llm|gpt/i.test(g.keyword);
+  });
+  if (gtCryptoAi) {
+    const isCrypto = /crypto|bitcoin|btc|ethereum|blockchain/i.test(gtCryptoAi.keyword);
+    return {
+      type: isCrypto ? "crypto" : "ai-agents",
+      topic: `${gtCryptoAi.keyword} trending on Google (${gtCryptoAi.traffic} searches)`,
+      details: `Related: ${gtCryptoAi.related.slice(0, 2).join(", ")}`,
+    };
+  }
+
+  // Priority 3: AI/ML trending story with >200 score
   const aiStory = signals.trending_tech.find((s: TrendSignals["trending_tech"][number]) => s.category === "AI/ML" && s.score > 200);
   if (aiStory) {
     return { type: "ai-agents", topic: aiStory.title, details: `Score: ${aiStory.score}, ${aiStory.comments} comments` };
   }
 
-  // Priority 3: Any crypto mover
+  // Priority 4: Bing News headline matching crypto/AI category
+  const bingHit = (signals.bing_news || []).find((b) =>
+    b.category === "Crypto" || b.category === "AI/ML",
+  );
+  if (bingHit) {
+    return {
+      type: bingHit.category === "Crypto" ? "crypto" : "ai-agents",
+      topic: bingHit.title,
+      details: `Source: ${bingHit.provider}, Published: ${bingHit.datePublished.slice(0, 10)}`,
+    };
+  }
+
+  // Priority 5: Any crypto mover
   if (signals.crypto_movers.length > 0) {
     const top = signals.crypto_movers[0]!;
     return {
@@ -112,7 +138,7 @@ function pickSignal(signals: TrendSignals): { type: "crypto" | "ai-agents" | "to
     };
   }
 
-  // Priority 4: Any tech trend
+  // Priority 6: Any tech trend
   const techStory = signals.trending_tech[0];
   if (techStory) {
     return { type: "tools", topic: techStory.title, details: `Score: ${techStory.score}` };
