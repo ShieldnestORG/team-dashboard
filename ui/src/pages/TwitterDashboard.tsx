@@ -177,6 +177,8 @@ export function TwitterDashboard() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
 
+  const [activeTab, setActiveTab] = useState("overview");
+
   useEffect(() => {
     setBreadcrumbs([{ label: "Twitter/X" }]);
   }, [setBreadcrumbs]);
@@ -251,7 +253,6 @@ export function TwitterDashboard() {
   const targets = targetsData?.result?.data?.targets ?? [];
   const analytics = analyticsData?.result?.data?.totals;
   const connection = connectionData ?? { connected: false };
-  const [activeTab, setActiveTab] = useState("overview");
 
   return (
     <div className="space-y-6">
