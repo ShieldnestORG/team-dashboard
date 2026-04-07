@@ -9,6 +9,7 @@ import { join } from "path";
 interface EvalCronJob {
   name: string;
   schedule: string;
+  ownerAgent: string;
   run: () => Promise<unknown>;
   nextRun: Date | null;
   running: boolean;
@@ -105,6 +106,7 @@ export function startEvalCrons() {
     {
       name: "eval:smoke",
       schedule: "0 6 * * *",
+      ownerAgent: "nova",
       run: () => runSmokeEval(),
       nextRun: null,
       running: false,
@@ -141,12 +143,12 @@ export function startEvalCrons() {
       if (!job.nextRun || now < job.nextRun) continue;
 
       job.running = true;
-      logger.info({ job: job.name }, "Eval cron job starting");
+      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Eval cron job starting");
 
       try {
         await job.run();
       } catch (err) {
-        logger.error({ err, job: job.name }, "Eval cron job failed");
+        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Eval cron job failed");
       } finally {
         job.running = false;
         const parsed = parseCron(job.schedule);

@@ -85,6 +85,16 @@ A marketing task is done when the content, campaign, or strategy is published/la
 - 50+ subscribers to any product
 - Pre-launch community for Coherence Token
 
+## Cron Responsibilities
+
+Sage owns the SEO engine cron (1 job) and orchestrates the 4 content personality agents (Blaze, Cipher, Spark, Prism) who each own their own content crons. Defined in `server/src/services/content-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `content:seo-engine` | `3 7 * * *` (daily 7:03am) | Claude-powered blog generation from trend signals, auto-publish + IndexNow |
+
+Sage's content personality agents collectively run 11 additional content crons — see each agent's AGENTS.md for their specific schedules.
+
 ## Safety
 
 - Never make false claims about products or capabilities

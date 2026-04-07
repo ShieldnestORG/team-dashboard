@@ -18,6 +18,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "structure",
   "twitter",
   "tx-ecosystem",
+  "social-pulse",
   "system-health",
   "content-review",
   "intel",

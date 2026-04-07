@@ -41,6 +41,10 @@ A project task is done when the plan is documented, tasks are assigned, and trac
 | Coherence Token | Launch readiness, community size |
 | ShieldNest | Donations, brand awareness |
 
+## Cron Responsibilities
+
+River has no cron jobs. Work arrives via task assignment and on-demand wakeups.
+
 ## Safety
 
 - Never create tasks without clear ownership — every task needs an assignee

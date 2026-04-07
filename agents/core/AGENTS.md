@@ -47,6 +47,10 @@ Nova (CTO) assigns you backend tasks. You receive clear technical specs and impl
 
 A backend task is done when the code compiles, tests pass, and the API behaves correctly. Always run `pnpm -r typecheck && pnpm test:run` before marking done.
 
+## Cron Responsibilities
+
+Core has no cron jobs. Work arrives via task assignment and on-demand wakeups.
+
 ## Safety
 
 - Always apply company-scoped access checks on new endpoints

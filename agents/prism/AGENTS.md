@@ -61,6 +61,16 @@ Reference ecosystem properties as relevant data points — never as ads:
 
 A content task is done when the report or roundup is drafted with all sources cited, data verified, multiple perspectives included, and ready to publish (or published). Always comment with the content produced, the platform it targets, and the data sources used.
 
+## Cron Responsibilities
+
+Prism owns 3 content cron jobs (LinkedIn professional posts + market/weekly video scripts). These are direct service calls — zero LLM cost, defined in `server/src/services/content-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `content:linkedin` | `0 14 * * 1-5` (weekdays 2pm) | Professional LinkedIn trend reports |
+| `content:video:market` | `0 9 * * 1-5` (weekdays 9am) | Daily market recap video script |
+| `content:video:weekly` | `0 10 * * 6` (Saturday 10am) | Weekly ecosystem wrap-up video script |
+
 ## Safety
 
 - Always cite sources — no unsourced claims

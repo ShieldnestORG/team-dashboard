@@ -62,6 +62,16 @@ Promote ecosystem properties through excitement and community:
 
 A content task is done when the community-facing content is drafted, reviewed for tone and inclusivity, and ready to publish (or published). Always comment with the content produced, the platform it targets, and the engagement strategy.
 
+## Cron Responsibilities
+
+Spark owns 3 content cron jobs (community engagement on Discord + Bluesky + reactive intel alerts). These are direct service calls — zero LLM cost, defined in `server/src/services/content-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `content:discord` | `0 10,16,21 * * *` (3x daily) | Community-focused Discord content |
+| `content:bluesky` | `0 14,17,20 * * *` (3x daily) | Bluesky social posts |
+| `content:intel-alert:bluesky` | `0 */2 * * *` (every 2h) | Reactive Bluesky posts from hot intel signals |
+
 ## Safety
 
 - Inclusive language always — no exclusionary or alienating content

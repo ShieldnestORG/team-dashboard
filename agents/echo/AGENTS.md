@@ -52,6 +52,28 @@ Nova (CTO) assigns data pipeline tasks. Sage (CMO) may request specific content 
 
 A data task is done when the pipeline is running, data is being indexed, and quality metrics are acceptable. Always comment with: what was scraped, how much data, freshness interval, and any quality issues.
 
+## Cron Responsibilities
+
+Echo owns all data ingestion, trend scanning, and social pulse cron jobs (15 total). These are direct service calls — zero LLM cost, defined in `server/src/services/intel-crons.ts`, `trend-crons.ts`, and `pulse-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `intel:prices` | `0 * * * *` (hourly) | Price data ingestion across all directories |
+| `intel:news` | `0 * * * *` (hourly) | News article ingestion |
+| `intel:twitter` | `*/30 * * * *` (every 30m) | Twitter/X data ingestion |
+| `intel:github` | `0 */4 * * *` (every 4h) | GitHub activity ingestion |
+| `intel:reddit` | `0 */2 * * *` (every 2h) | Reddit discussion ingestion |
+| `intel:chain-metrics` | `0 */4 * * *` (every 4h) | Mintscan Cosmos APR/validator data |
+| `intel:backfill` | `0 */12 * * *` (twice daily) | Sparse data catch-up for new companies |
+| `intel:discover` | `0 */6 * * *` (every 6h) | Discover trending projects (CoinGecko + GitHub) |
+| `trends:scan` | `0 */6 * * *` (every 6h) | CoinGecko + HackerNews trend signal scanning |
+| `pulse:search` | `*/5 * * * *` (every 5m) | X API social pulse search polling (TX, Cosmos, XRPL bridge, tokns) |
+| `pulse:sentiment` | `*/15 * * * *` (every 15m) | Keyword-based sentiment scoring |
+| `pulse:aggregate-hour` | `5 * * * *` (hourly) | Hourly tweet volume/sentiment rollups |
+| `pulse:aggregate-day` | `10 0 * * *` (daily) | Daily aggregation rollups |
+| `pulse:xrpl-bridge` | `*/10 * * * *` (every 10m) | XRPL bridge mention tagging and classification |
+| `pulse:spike-detect` | `*/15 * * * *` (every 15m) | Volume spike detection with email alerting |
+
 ## Safety
 
 - Always respect robots.txt — never scrape sites that prohibit it

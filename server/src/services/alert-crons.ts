@@ -6,6 +6,7 @@ import { getLatestEval } from "./eval-store.js";
 interface AlertCronJob {
   name: string;
   schedule: string;
+  ownerAgent: string;
   run: () => Promise<void>;
   nextRun: Date | null;
   running: boolean;
@@ -58,8 +59,8 @@ async function dailyDigest(): Promise<void> {
 
 export function startAlertCrons() {
   const jobs: AlertCronJob[] = [
-    { name: "alert:health-check", schedule: "*/5 * * * *", run: checkHealth, nextRun: null, running: false },
-    { name: "alert:digest", schedule: "0 7 * * *", run: dailyDigest, nextRun: null, running: false },
+    { name: "alert:health-check", schedule: "*/5 * * * *", ownerAgent: "nova", run: checkHealth, nextRun: null, running: false },
+    { name: "alert:digest", schedule: "0 7 * * *", ownerAgent: "nova", run: dailyDigest, nextRun: null, running: false },
   ];
 
   for (const job of jobs) {
@@ -79,11 +80,11 @@ export function startAlertCrons() {
       if (job.running) continue;
       if (!job.nextRun || now < job.nextRun) continue;
       job.running = true;
-      logger.info({ job: job.name }, "Alert cron job starting");
+      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Alert cron job starting");
       try {
         await job.run();
       } catch (err) {
-        logger.error({ err, job: job.name }, "Alert cron job failed");
+        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Alert cron job failed");
       } finally {
         job.running = false;
         const parsed = parseCron(job.schedule);

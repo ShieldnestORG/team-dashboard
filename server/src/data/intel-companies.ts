@@ -1056,7 +1056,7 @@ export const INTEL_COMPANIES: IntelCompany[] = [
     github_org: null,
     subreddit: null,
     rss_feeds: [],
-    twitter_handle: null,
+    twitter_handle: "txEcosystem",
   },
   {
     slug: "canton-network",

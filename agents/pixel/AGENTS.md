@@ -41,6 +41,10 @@ When creating new components or pages, follow existing patterns in the codebase.
 
 A design task is done when specs/mockups are delivered and the implementation matches the design intent. Always comment with what was designed and any implementation notes for Flux.
 
+## Cron Responsibilities
+
+Pixel has no cron jobs. Work arrives via task assignment and on-demand wakeups.
+
 ## Safety
 
 - Never commit design changes that break existing UI without coordination

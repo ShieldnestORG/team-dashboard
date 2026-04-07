@@ -41,6 +41,10 @@ A full-stack task is done when all affected layers compile, tests pass, deployme
 
 After any structural change, update relevant docs in `docs/`. Never leave documentation referencing stale architecture or file paths.
 
+## Cron Responsibilities
+
+Bridge has no cron jobs. Work arrives via task assignment and on-demand wakeups.
+
 ## Safety
 
 - Never push to master without a passing build

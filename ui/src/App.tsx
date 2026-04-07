@@ -42,6 +42,7 @@ import { ContentReview } from "./pages/ContentReview";
 import { Structure } from "./pages/Structure";
 import { Intel } from "./pages/Intel";
 import { Discord } from "./pages/Discord";
+import { SocialPulse } from "./pages/SocialPulse";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -174,6 +175,8 @@ function boardRoutes() {
       <Route path="twitter" element={<TwitterDashboard />} />
       <Route path="discord" element={<Discord />} />
       <Route path="tx-ecosystem" element={<TxEcosystem />} />
+      <Route path="social-pulse" element={<SocialPulse />} />
+      <Route path="social-pulse/:tab" element={<SocialPulse />} />
       <Route path="system-health" element={<SystemHealth />} />
       <Route path="content-review" element={<ContentReview />} />
       <Route path="structure" element={<Structure />} />

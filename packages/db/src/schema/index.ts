@@ -64,3 +64,6 @@ export { contentFeedback } from "./content_feedback.js";
 export { xOauthTokens } from "./x_oauth_tokens.js";
 export { xEngagementLog } from "./x_engagement_log.js";
 export { xTweetAnalytics } from "./x_tweet_analytics.js";
+export { pulseTweets } from "./pulse_tweets.js";
+export { pulseAggregations } from "./pulse_aggregations.js";
+export { pulseXrplBridge } from "./pulse_xrpl_bridge.js";

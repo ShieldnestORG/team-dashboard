@@ -6,6 +6,7 @@ import { logger } from "../middleware/logger.js";
 interface TrendCronJob {
   name: string;
   schedule: string;
+  ownerAgent: string;
   run: () => Promise<unknown>;
   nextRun: Date | null;
   running: boolean;
@@ -25,6 +26,7 @@ export function startTrendCrons(db?: Db) {
     {
       name: "trends:scan",
       schedule: "0 */6 * * *", // Every 6 hours
+      ownerAgent: "echo",
       run: async () => {
         const signals = await svc.scan();
         latestSignals = signals;
@@ -66,13 +68,13 @@ export function startTrendCrons(db?: Db) {
       if (!job.nextRun || now < job.nextRun) continue;
 
       job.running = true;
-      logger.info({ job: job.name }, "Trend cron job starting");
+      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Trend cron job starting");
 
       try {
         const result = await job.run();
-        logger.info({ job: job.name }, "Trend cron job completed");
+        logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Trend cron job completed");
       } catch (err) {
-        logger.error({ err, job: job.name }, "Trend cron job failed");
+        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Trend cron job failed");
       } finally {
         job.running = false;
         const parsed = parseCron(job.schedule);

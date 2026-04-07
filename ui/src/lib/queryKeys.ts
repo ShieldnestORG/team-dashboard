@@ -138,6 +138,15 @@ export const queryKeys = {
     stats: ["intel", "stats"] as const,
     company: (slug: string) => ["intel", "company", slug] as const,
   },
+  pulse: {
+    summary: (hours?: number) => ["pulse", "summary", hours] as const,
+    tweets: (topic?: string, page?: number) => ["pulse", "tweets", topic, page] as const,
+    trending: (topic?: string) => ["pulse", "trending", topic] as const,
+    aggregations: (topic?: string, period?: string) => ["pulse", "aggregations", topic, period] as const,
+    xrplBridge: ["pulse", "xrpl-bridge"] as const,
+    topics: ["pulse", "topics"] as const,
+    spikes: ["pulse", "spikes"] as const,
+  },
   plugins: {
     all: ["plugins"] as const,
     examples: ["plugins", "examples"] as const,

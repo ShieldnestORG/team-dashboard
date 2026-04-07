@@ -174,6 +174,17 @@ const DEFAULT_DIAGRAM = `graph TB
         TrendCrons{{"Trend Crons"}}
       end
 
+      subgraph PulseEngine["Social Pulse Engine"]
+        direction TB
+        PULSE_CLIENT(["X API v2 Client"])
+        PULSE_SVC(["Pulse Service"])
+        PULSE_SENT(["Sentiment Scorer"])
+        PULSE_AGG(["Aggregation Engine"])
+        PULSE_SPIKE(["Spike Detector"])
+        PULSE_XRPL(["XRPL Bridge Tagger"])
+        PULSE_CRON{{"6 Pulse Crons"}}:::cronNode
+      end
+
       subgraph PluginSys["Plugin System"]
         direction TB
         PluginRegistry(["Registry"])
@@ -245,6 +256,7 @@ const DEFAULT_DIAGRAM = `graph TB
       CoinGecko(["CoinGecko"])
       HackerNews(["Hacker News"])
       GitHubAPI(["GitHub API"])
+      XAPIv2(["X / Twitter API v2"])
     end
   end
 
@@ -311,6 +323,17 @@ const DEFAULT_DIAGRAM = `graph TB
   IntelCrons --> IntelSvc
   TrendCrons --> TrendScanner
 
+  %% Pulse flows
+  PULSE_CLIENT --> PULSE_SVC
+  PULSE_SVC --> PULSE_SENT
+  PULSE_SVC --> PULSE_AGG
+  PULSE_SVC --> PULSE_XRPL
+  PULSE_AGG --> PULSE_SPIKE
+  PULSE_CRON --> PULSE_SVC
+  PULSE_SVC --> NeonDB
+  PULSE_CLIENT --> XAPIv2
+  Tokns -->|"public pulse"| PULSE_SVC
+
   %% Plugin flows
   PluginLoader --> PluginRegistry
   PluginLifecycle --> PluginWorkerMgr
@@ -353,7 +376,7 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef cronNode fill:#7c3aed,stroke:#6d28d9,color:#f5f3ff,stroke-width:2px
   classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
 
-  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler cronNode
+  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,PULSE_CRON cronNode
   class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
@@ -366,6 +389,7 @@ const DEFAULT_DIAGRAM = `graph TB
   style ContentPipeline fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#1e5f3a
   style VisualBack fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#1e5f3a
   style IntelEngine fill:#ffedd5,stroke:#f97316,stroke-width:2px,color:#5f3a1e
+  style PulseEngine fill:#fef9c3,stroke:#eab308,stroke-width:2px,color:#713f12
   style PluginSys fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#3a1e5f
   style Monitor fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
   style Finance fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f

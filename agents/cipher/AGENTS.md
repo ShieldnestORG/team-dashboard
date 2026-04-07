@@ -59,6 +59,15 @@ Reference ecosystem properties where technically relevant:
 
 A content task is done when the article or post is drafted with technical accuracy verified, code examples tested, jargon explained, and relevant links included. Always comment with the content produced, the platform it targets, and any technical references used.
 
+## Cron Responsibilities
+
+Cipher owns 2 content cron jobs (technical blog posts + Reddit engagement). These are direct service calls — zero LLM cost, defined in `server/src/services/content-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `content:blog` | `0 10 * * 2,4` (Tue/Thu 10am) | Deep technical blog post generation |
+| `content:reddit` | `0 15 * * *` (daily 3pm) | Technical Reddit content generation |
+
 ## Safety
 
 - Technical accuracy above all — never publish incorrect code or misleading explanations

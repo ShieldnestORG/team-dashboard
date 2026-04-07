@@ -44,6 +44,16 @@ A technical task is done when working, reviewed code is merged and deployed. Com
 - **Deploy**: Vercel (frontend CDN) + VPS Docker 31.220.61.12 (backend)
 - **Monorepo**: pnpm workspaces
 
+## Cron Responsibilities
+
+Nova owns system health monitoring and evaluation cron jobs (3 total). These are direct service calls — zero LLM cost, defined in `server/src/services/eval-crons.ts` and `alert-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `eval:smoke` | `0 6 * * *` (daily 6am) | Run promptfoo eval suite, alert on failures |
+| `alert:health-check` | `*/5 * * * *` (every 5m) | Ping `/api/health/readiness`, alert if down |
+| `alert:digest` | `0 7 * * *` (daily 7am) | Daily digest with eval results + server metrics |
+
 ## Safety
 
 - Never merge to master without a passing build

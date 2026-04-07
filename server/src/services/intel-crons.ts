@@ -12,6 +12,7 @@ import { logger } from "../middleware/logger.js";
 interface IntelCronJob {
   name: string;
   schedule: string;
+  ownerAgent: string;
   run: () => Promise<unknown>;
   nextRun: Date | null;
   running: boolean;
@@ -67,19 +68,20 @@ export function startIntelCrons(db: Db) {
   const discovery = intelDiscoveryService(db);
   const mintscan = mintscanService(db);
 
+  // All intel cron jobs owned by Echo (Data Engineer)
   const jobs: IntelCronJob[] = [
     // Aggressive schedules for near-realtime intel
-    { name: "intel:prices",        schedule: "0 * * * *",      run: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100),   nextRun: null, running: false },
-    { name: "intel:news",          schedule: "0 * * * *",      run: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50),      nextRun: null, running: false },
-    { name: "intel:twitter",       schedule: "*/30 * * * *",   run: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30),   nextRun: null, running: false },
-    { name: "intel:github",        schedule: "0 */4 * * *",    run: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25),    nextRun: null, running: false },
-    { name: "intel:reddit",        schedule: "0 */2 * * *",    run: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30),    nextRun: null, running: false },
+    { name: "intel:prices",        schedule: "0 * * * *",      ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100),   nextRun: null, running: false },
+    { name: "intel:news",          schedule: "0 * * * *",      ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50),      nextRun: null, running: false },
+    { name: "intel:twitter",       schedule: "*/30 * * * *",   ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30),   nextRun: null, running: false },
+    { name: "intel:github",        schedule: "0 */4 * * *",    ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25),    nextRun: null, running: false },
+    { name: "intel:reddit",        schedule: "0 */2 * * *",    ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30),    nextRun: null, running: false },
     // Chain metrics — Mintscan Cosmos ecosystem APR data
-    { name: "intel:chain-metrics", schedule: "0 */4 * * *",    run: () => mintscan.ingestChainMetrics(),                             nextRun: null, running: false },
+    { name: "intel:chain-metrics", schedule: "0 */4 * * *",    ownerAgent: "echo", run: () => mintscan.ingestChainMetrics(),                             nextRun: null, running: false },
     // Backfill — catches companies with sparse data
-    { name: "intel:backfill",      schedule: "0 */12 * * *",   run: () => svc.backfillNewCompanies(),                                nextRun: null, running: false },
+    { name: "intel:backfill",      schedule: "0 */12 * * *",   ownerAgent: "echo", run: () => svc.backfillNewCompanies(),                                nextRun: null, running: false },
     // Discovery — find new trending projects to add to the directory
-    { name: "intel:discover",      schedule: "0 */6 * * *",    run: () => discovery.discoverNewProjects(),                            nextRun: null, running: false },
+    { name: "intel:discover",      schedule: "0 */6 * * *",    ownerAgent: "echo", run: () => discovery.discoverNewProjects(),                            nextRun: null, running: false },
   ];
 
   // Compute initial next-run times
@@ -106,13 +108,13 @@ export function startIntelCrons(db: Db) {
       if (!job.nextRun || now < job.nextRun) continue;
 
       job.running = true;
-      logger.info({ job: job.name }, "Intel cron job starting");
+      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Intel cron job starting");
 
       try {
         const result = await job.run();
-        logger.info({ job: job.name, result }, "Intel cron job completed");
+        logger.info({ job: job.name, ownerAgent: job.ownerAgent, result }, "Intel cron job completed");
       } catch (err) {
-        logger.error({ err, job: job.name }, "Intel cron job failed");
+        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Intel cron job failed");
       } finally {
         job.running = false;
         const parsed = parseCron(job.schedule);

@@ -18,6 +18,7 @@ import {
   GitBranch,
   Database,
   MessageSquare,
+  Radio,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -122,6 +123,7 @@ export function Sidebar() {
           <SidebarNavItem to="/twitter" label="Twitter/X" icon={Bird} />
           <SidebarNavItem to="/discord" label="Discord" icon={MessageSquare} />
           <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
+          <SidebarNavItem to="/social-pulse" label="Social Pulse" icon={Radio} />
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
           <SidebarNavItem to="/content-review" label="Content" icon={Newspaper} />

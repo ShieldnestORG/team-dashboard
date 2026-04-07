@@ -58,6 +58,16 @@ Mention ecosystem properties naturally — never force it. Examples:
 
 A content task is done when the content is drafted, reviewed for factual accuracy, and ready to publish (or published). Always comment with the content produced, the platform it targets, and the data sources cited.
 
+## Cron Responsibilities
+
+Blaze owns 3 content cron jobs (hot-take tweets + video trend scripts + reactive intel alerts). These are direct service calls — zero LLM cost, defined in `server/src/services/content-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `content:twitter` | `0 13,15,17,20 * * *` (4x daily) | Hot-take tweet generation |
+| `content:video:trend` | `0 11,14,18 * * *` (3x daily) | Trend-based video script generation |
+| `content:intel-alert:twitter` | `*/45 * * * *` (every 45m) | Reactive tweets from hot intel signals (>10% price moves, new releases) |
+
 ## Safety
 
 - Never make false claims — every hot take must be backed by verifiable data
