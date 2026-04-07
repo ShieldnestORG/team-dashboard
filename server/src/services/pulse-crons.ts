@@ -1,5 +1,6 @@
 import type { Db } from "@paperclipai/db";
 import { socialPulseService } from "./social-pulse.js";
+import { streamConnectionManager } from "./stream-connection-manager.js";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
@@ -24,7 +25,13 @@ export function startPulseCrons(db: Db) {
   const svc = socialPulseService(db);
 
   const jobs: PulseCronJob[] = [
-    { name: "pulse:search",         schedule: "*/5 * * * *",   ownerAgent: "echo", run: () => svc.pollSearches(),              nextRun: null, running: false },
+    { name: "pulse:search",         schedule: "*/5 * * * *",   ownerAgent: "echo", run: async () => {
+      if (streamConnectionManager.isStreamHealthy()) {
+        logger.info("Stream active, skipping pulse:search poll");
+        return { skipped: true, reason: "stream_active" };
+      }
+      return svc.pollSearches();
+    },              nextRun: null, running: false },
     { name: "pulse:sentiment",      schedule: "*/15 * * * *",  ownerAgent: "echo", run: () => svc.scoreSentiment(),            nextRun: null, running: false },
     { name: "pulse:aggregate-hour", schedule: "5 * * * *",     ownerAgent: "echo", run: () => svc.computeAggregations("hour"), nextRun: null, running: false },
     { name: "pulse:aggregate-day",  schedule: "10 0 * * *",    ownerAgent: "echo", run: () => svc.computeAggregations("day"),  nextRun: null, running: false },
