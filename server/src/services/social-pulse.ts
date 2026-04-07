@@ -210,6 +210,9 @@ export function socialPulseService(db: Db) {
       periodStart.getTime() + (period === "hour" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000),
     );
 
+    const periodStartIso = periodStart.toISOString();
+    const periodEndIso = periodEnd.toISOString();
+
     const rows = asRows(await db.execute(sql`
       SELECT
         topic,
@@ -220,13 +223,13 @@ export function socialPulseService(db: Db) {
         SUM(metrics_impressions)::int AS total_impressions,
         (SELECT tweet_id FROM pulse_tweets pt2
          WHERE pt2.topic = pulse_tweets.topic
-           AND pt2.tweet_created_at >= ${periodStart}
-           AND pt2.tweet_created_at < ${periodEnd}
+           AND pt2.tweet_created_at >= ${periodStartIso}
+           AND pt2.tweet_created_at < ${periodEndIso}
          ORDER BY (pt2.metrics_likes + pt2.metrics_retweets) DESC
          LIMIT 1) AS top_tweet_id
       FROM pulse_tweets
-      WHERE tweet_created_at >= ${periodStart}
-        AND tweet_created_at < ${periodEnd}
+      WHERE tweet_created_at >= ${periodStartIso}
+        AND tweet_created_at < ${periodEndIso}
       GROUP BY topic
     `));
 
@@ -258,20 +261,20 @@ export function socialPulseService(db: Db) {
     const spikes: Array<{ topic: string; current: number; avg: number }> = [];
 
     const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const oneHourAgoIso = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+    const twentyFourHoursAgoIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
 
     const currentRows = asRows(await db.execute(sql`
       SELECT topic, COUNT(*)::int AS cnt
       FROM pulse_tweets
-      WHERE tweet_created_at >= ${oneHourAgo}
+      WHERE tweet_created_at >= ${oneHourAgoIso}
       GROUP BY topic
     `));
 
     const avgRows = asRows(await db.execute(sql`
       SELECT topic, (COUNT(*)::float / 24)::real AS avg_per_hour
       FROM pulse_tweets
-      WHERE tweet_created_at >= ${twentyFourHoursAgo}
+      WHERE tweet_created_at >= ${twentyFourHoursAgoIso}
       GROUP BY topic
     `));
 
@@ -476,24 +479,25 @@ export function socialPulseService(db: Db) {
 
   async function getSummary(hours = 24) {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const sinceIso = since.toISOString();
 
     const [countRows, sentimentRows, xrplRows] = await Promise.all([
       db.execute(sql`
         SELECT topic, COUNT(*)::int AS cnt
         FROM pulse_tweets
-        WHERE tweet_created_at >= ${since}
+        WHERE tweet_created_at >= ${sinceIso}
         GROUP BY topic
       `),
       db.execute(sql`
         SELECT AVG(sentiment_score)::real AS overall
         FROM pulse_tweets
-        WHERE tweet_created_at >= ${since}
+        WHERE tweet_created_at >= ${sinceIso}
           AND sentiment_score IS NOT NULL
       `),
       db.execute(sql`
         SELECT COUNT(*)::int AS cnt
         FROM pulse_xrpl_bridge_mentions
-        WHERE captured_at >= ${since}
+        WHERE captured_at >= ${sinceIso}
       `),
     ]);
 
@@ -522,13 +526,13 @@ export function socialPulseService(db: Db) {
   }
 
   async function getTrendingTweets(topic?: string, limit = 10) {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     let rows;
     if (topic) {
       rows = asRows(await db.execute(sql`
         SELECT * FROM pulse_tweets
-        WHERE tweet_created_at >= ${since}
+        WHERE tweet_created_at >= ${sinceIso}
           AND topic = ${topic}
         ORDER BY (metrics_likes + metrics_retweets + metrics_replies) DESC
         LIMIT ${limit}
@@ -536,7 +540,7 @@ export function socialPulseService(db: Db) {
     } else {
       rows = asRows(await db.execute(sql`
         SELECT * FROM pulse_tweets
-        WHERE tweet_created_at >= ${since}
+        WHERE tweet_created_at >= ${sinceIso}
         ORDER BY (metrics_likes + metrics_retweets + metrics_replies) DESC
         LIMIT ${limit}
       `));
@@ -546,29 +550,29 @@ export function socialPulseService(db: Db) {
   }
 
   async function getXrplBridgeStats() {
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const oneDayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const [day1, day7, stakingResult, breakdownResult] = await Promise.all([
       db.execute(sql`
         SELECT COUNT(*)::int AS cnt FROM pulse_xrpl_bridge_mentions
-        WHERE captured_at >= ${oneDayAgo}
+        WHERE captured_at >= ${oneDayAgoIso}
       `),
       db.execute(sql`
         SELECT COUNT(*)::int AS cnt FROM pulse_xrpl_bridge_mentions
-        WHERE captured_at >= ${sevenDaysAgo}
+        WHERE captured_at >= ${sevenDaysAgoIso}
       `),
       db.execute(sql`
         SELECT
           COUNT(*)::int AS total,
           SUM(CASE WHEN staking_mentioned THEN 1 ELSE 0 END)::int AS staking
         FROM pulse_xrpl_bridge_mentions
-        WHERE captured_at >= ${oneDayAgo}
+        WHERE captured_at >= ${oneDayAgoIso}
       `),
       db.execute(sql`
         SELECT bridge_type, COUNT(*)::int AS cnt
         FROM pulse_xrpl_bridge_mentions
-        WHERE captured_at >= ${sevenDaysAgo}
+        WHERE captured_at >= ${sevenDaysAgoIso}
         GROUP BY bridge_type
       `),
     ]);
@@ -601,7 +605,7 @@ export function socialPulseService(db: Db) {
   }
 
   async function getTopicBreakdown() {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     const rows = asRows(await db.execute(sql`
       SELECT
@@ -609,7 +613,7 @@ export function socialPulseService(db: Db) {
         COUNT(*)::int AS tweet_count,
         AVG(sentiment_score)::real AS avg_sentiment
       FROM pulse_tweets
-      WHERE tweet_created_at >= ${since}
+      WHERE tweet_created_at >= ${sinceIso}
       GROUP BY topic
       ORDER BY tweet_count DESC
     `));
@@ -630,7 +634,7 @@ export function socialPulseService(db: Db) {
   }
 
   async function getAggregations(topic?: string, period = "hour", hours = 24) {
-    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const sinceIso = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
     let rows;
     if (topic) {
@@ -638,7 +642,7 @@ export function socialPulseService(db: Db) {
         SELECT period_start AS time, tweet_count, avg_sentiment
         FROM pulse_aggregations
         WHERE period = ${period}
-          AND period_start >= ${since}
+          AND period_start >= ${sinceIso}
           AND topic = ${topic}
         ORDER BY period_start ASC
       `));
@@ -647,7 +651,7 @@ export function socialPulseService(db: Db) {
         SELECT period_start AS time, SUM(tweet_count)::int AS tweet_count, AVG(avg_sentiment)::real AS avg_sentiment
         FROM pulse_aggregations
         WHERE period = ${period}
-          AND period_start >= ${since}
+          AND period_start >= ${sinceIso}
         GROUP BY period_start
         ORDER BY period_start ASC
       `));
