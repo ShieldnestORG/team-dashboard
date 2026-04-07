@@ -9,9 +9,10 @@
     },
     {
       "name": "ui-only",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@paperclipai/ui", "dev"],
-      "port": 5173
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/Users/exe/.local/share/fnm/node-versions/v22.22.0/installation/bin:$PATH && pnpm --filter @paperclipai/ui dev"],
+      "port": 5173,
+      "autoPort": true
     },
     {
       "name": "brand-guide",
@@ -24,6 +25,12 @@
       "runtimeExecutable": "/bin/zsh",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/exe/Downloads/Claude/coherencedaddy-landing && npm run dev"],
       "port": 3000
+    },
+    {
+      "name": "tokns",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/exe/Downloads/Cursor/v1_shieldnest_org && /opt/homebrew/Cellar/node@22/22.22.0_1/bin/npx next dev -p 3008"],
+      "port": 3008
     }
   ]
 }

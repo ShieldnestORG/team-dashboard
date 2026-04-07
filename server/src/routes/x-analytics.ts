@@ -151,6 +151,36 @@ export function xAnalyticsRoutes(db: Db) {
     }
   });
 
+  // ── Extension Bot Status ─────────────────────────────────────────────────
+  router.get("/extension-status", async (_req, res) => {
+    try {
+      // Check chrome-bot container health via Docker socket on VPS
+      // The chrome-bot exposes noVNC on port 6080 — check if it responds
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      let healthy = false;
+      try {
+        const probe = await fetch("http://localhost:6080/", {
+          signal: controller.signal,
+        });
+        healthy = probe.ok;
+      } catch {
+        healthy = false;
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      res.json({
+        running: healthy,
+        vncUrl: healthy ? `http://31.220.61.12:6080` : null,
+        container: "chrome-bot",
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to get extension bot status");
+      res.status(500).json({ error: "Failed to get extension bot status" });
+    }
+  });
+
   // ── Connection Status ────────────────────────────────────────────────────
   router.get("/connection", async (_req, res) => {
     try {

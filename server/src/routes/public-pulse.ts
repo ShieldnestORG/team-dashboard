@@ -156,7 +156,15 @@ export function publicPulseRoutes(db: Db) {
         updatedAt: summary.updatedAt,
       });
     } catch (err) {
-      res.status(500).json({ error: "Failed to get widget data" });
+      // Return empty payload instead of 500 so embeds show zeros rather than "unavailable"
+      // (tables may not exist yet during migration; data will populate once they do)
+      console.error("[public-pulse/widget] error:", err instanceof Error ? err.message : err);
+      res.json({
+        tx: { tweets24h: 0, sentiment: 0.5, topTweet: null },
+        xrplBridge: { mentions24h: 0, stakingPct: 0 },
+        overall: { tweets24h: 0, sentiment: 0.5 },
+        updatedAt: new Date().toISOString(),
+      });
     }
   });
 

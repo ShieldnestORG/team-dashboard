@@ -6,6 +6,8 @@ import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { pluginsApi } from "../api/plugins";
+import type { PluginHealthCheckResult } from "../api/plugins";
+import { queryKeys } from "../lib/queryKeys";
 import {
   Card,
   CardContent,
@@ -39,6 +41,10 @@ import {
   MessageSquare,
   Eye,
   TrendingUp,
+  XCircle,
+  Activity,
+  Monitor,
+  ExternalLink,
 } from "lucide-react";
 
 // ── API helpers ──────────────────────────────────────────────────────────────
@@ -122,6 +128,12 @@ interface ConnectionStatus {
   userId?: string;
   expiresAt?: string;
   connectedAt?: string;
+}
+
+interface ExtensionBotStatus {
+  running: boolean;
+  vncUrl: string | null;
+  container: string;
 }
 
 interface RateLimitBudgetItem {
@@ -223,6 +235,12 @@ export function TwitterDashboard() {
     refetchInterval: 60000,
   });
 
+  const { data: extensionData } = useQuery({
+    queryKey: ["x-analytics", "extension-status"],
+    queryFn: () => apiFetch<ExtensionBotStatus>("/api/x/analytics/extension-status"),
+    refetchInterval: 30000,
+  });
+
   const { data: rateLimitData } = useQuery({
     queryKey: ["x-analytics", "rate-limits"],
     queryFn: () => apiFetch<RateLimitStatus>("/api/x/analytics/rate-limits"),
@@ -241,6 +259,19 @@ export function TwitterDashboard() {
     refetchInterval: 60000,
   });
 
+  // Config + health for posting diagnostics
+  const { data: configData } = useQuery({
+    queryKey: ["twitter", "config"],
+    queryFn: () => pluginsApi.getConfig(PLUGIN_ID),
+    refetchInterval: 30000,
+  });
+
+  const { data: pluginHealthData } = useQuery<PluginHealthCheckResult>({
+    queryKey: queryKeys.plugins.health(PLUGIN_ID),
+    queryFn: () => pluginsApi.health(PLUGIN_ID),
+    refetchInterval: 30000,
+  });
+
   if (!selectedCompanyId) {
     return <EmptyState icon={Bird} message="Select a company to view the Twitter dashboard." />;
   }
@@ -253,11 +284,15 @@ export function TwitterDashboard() {
   const targets = targetsData?.result?.data?.targets ?? [];
   const analytics = analyticsData?.result?.data?.totals;
   const connection = connectionData ?? { connected: false };
+  const twitterConfig = configData?.configJson as Record<string, unknown> | undefined;
 
   return (
     <div className="space-y-6">
-      {/* OAuth Connection Card */}
-      <ConnectionCard connection={connection} />
+      {/* Connection Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ConnectionCard connection={connection} />
+        <ExtensionBotCard extension={extensionData} />
+      </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -272,6 +307,17 @@ export function TwitterDashboard() {
 
         {/* ── Overview Tab ──────────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-6">
+          {/* Posting health diagnostics */}
+          <PostingHealthCard
+            pluginHealth={pluginHealthData}
+            config={twitterConfig}
+            connection={connection}
+            rateLimitData={rateLimitData}
+            queue={queue}
+            lastPostAt={postingData?.recentPosts?.[0]?.posted_at}
+            onNavigateTab={setActiveTab}
+          />
+
           {/* Queue metrics */}
           <div>
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
@@ -659,6 +705,257 @@ function ConnectionCard({ connection }: { connection: ConnectionStatus }) {
             </a>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Extension Bot Card ────────────────────────────────────────────────────
+
+function ExtensionBotCard({ extension }: { extension?: ExtensionBotStatus }) {
+  const running = extension?.running ?? false;
+
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between py-4">
+        <div className="flex items-center gap-3">
+          <Monitor className="h-5 w-5 text-violet-500" />
+          {running ? (
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-green-500" />
+              <span className="text-sm font-medium">
+                Extension Bot <span className="text-violet-500">Running</span>
+              </span>
+              <span className="text-xs text-muted-foreground">chrome-bot container</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-red-500" />
+              <span className="text-sm text-muted-foreground">Extension Bot Offline</span>
+            </div>
+          )}
+        </div>
+        <div>
+          {running && extension?.vncUrl ? (
+            <a
+              href={extension.vncUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-violet-500 text-white hover:bg-violet-600 transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open VNC
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-muted text-muted-foreground">
+              <XCircle className="h-3.5 w-3.5" />
+              Not Available
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Posting Health Card ──────────────────────────────────────────────────
+
+interface HealthCheck {
+  key: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+  critical: boolean;
+  action?: { label: string; onClick?: () => void; href?: string };
+}
+
+function PostingHealthCard({
+  pluginHealth,
+  config,
+  connection,
+  rateLimitData,
+  queue,
+  lastPostAt,
+  onNavigateTab,
+}: {
+  pluginHealth?: PluginHealthCheckResult;
+  config?: Record<string, unknown>;
+  connection: ConnectionStatus;
+  rateLimitData?: RateLimitStatus;
+  queue?: QueueStatusData;
+  lastPostAt?: string;
+  onNavigateTab: (tab: string) => void;
+}) {
+  const windowStart = (config?.postingWindowStart as number) ?? 6;
+  const windowEnd = (config?.postingWindowEnd as number) ?? 24;
+  const minGap = (config?.minPostGapMinutes as number) ?? 30;
+  const currentHour = new Date().getHours();
+
+  const checks: HealthCheck[] = [
+    {
+      key: "plugin",
+      label: "Plugin running",
+      passed: pluginHealth?.status === "ready",
+      detail: pluginHealth?.status === "ready"
+        ? "Plugin is active"
+        : `Plugin status: ${pluginHealth?.status ?? "unknown"}${pluginHealth?.lastError ? ` — ${pluginHealth.lastError}` : ""}`,
+      critical: true,
+    },
+    {
+      key: "xapi",
+      label: "X API enabled",
+      passed: config?.xApiEnabled === true,
+      detail: config?.xApiEnabled ? "Auto-posting is on" : "Auto-posting is disabled",
+      critical: true,
+      action: config?.xApiEnabled
+        ? undefined
+        : { label: "Go to Settings", onClick: () => onNavigateTab("settings") },
+    },
+    {
+      key: "oauth",
+      label: "Account connected",
+      passed: connection.connected,
+      detail: connection.connected
+        ? `Connected as @${connection.username}`
+        : "X account not linked",
+      critical: true,
+      action: connection.connected
+        ? undefined
+        : { label: "Connect Account", href: "/api/x/oauth/authorize" },
+    },
+    {
+      key: "window",
+      label: "Posting window",
+      passed: currentHour >= windowStart && currentHour < windowEnd,
+      detail:
+        currentHour >= windowStart && currentHour < windowEnd
+          ? `Active (${windowStart}:00–${windowEnd}:00)`
+          : `Outside window (${windowStart}:00–${windowEnd}:00). Resumes at ${windowStart}:00`,
+      critical: false,
+    },
+    {
+      key: "budget",
+      label: "Daily budget",
+      passed: rateLimitData
+        ? rateLimitData.dailyBudget.posts.used < rateLimitData.dailyBudget.posts.limit
+        : true,
+      detail: rateLimitData
+        ? `${rateLimitData.dailyBudget.posts.used}/${rateLimitData.dailyBudget.posts.limit} posts used`
+        : "Loading...",
+      critical: false,
+    },
+    (() => {
+      if (!lastPostAt) {
+        return {
+          key: "gap",
+          label: "Post gap cleared",
+          passed: true,
+          detail: "No recent posts",
+          critical: false,
+        };
+      }
+      const minutesSince = Math.round(
+        (Date.now() - new Date(lastPostAt).getTime()) / 60000,
+      );
+      const cleared = minutesSince >= minGap;
+      return {
+        key: "gap",
+        label: "Post gap cleared",
+        passed: cleared,
+        detail: cleared
+          ? `${minutesSince}min since last post (${minGap}min min)`
+          : `${minutesSince}min since last post, need ${minGap}min`,
+        critical: false,
+      };
+    })(),
+    {
+      key: "queue",
+      label: "Queue has items",
+      passed: (queue?.counts?.pending ?? 0) > 0,
+      detail:
+        (queue?.counts?.pending ?? 0) > 0
+          ? `${queue!.counts.pending} pending`
+          : "Queue is empty — add tweets to start posting",
+      critical: false,
+    },
+  ];
+
+  const criticalFail = checks.some((c) => c.critical && !c.passed);
+  const anyFail = checks.some((c) => !c.passed);
+
+  let overallLabel: string;
+  let overallVariant: "default" | "destructive" | "secondary" | "outline";
+  let overallClass: string;
+  if (criticalFail) {
+    overallLabel = "Posting Blocked";
+    overallVariant = "destructive";
+    overallClass = "";
+  } else if (anyFail) {
+    overallLabel = "Waiting";
+    overallVariant = "outline";
+    overallClass = "border-yellow-500/50 text-yellow-600 dark:text-yellow-400";
+  } else {
+    overallLabel = "Ready to Post";
+    overallVariant = "outline";
+    overallClass = "border-green-500/50 text-green-600 dark:text-green-400";
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Posting Health
+          </span>
+          <Badge variant={overallVariant} className={overallClass}>
+            {overallLabel}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {checks.map((check) => (
+          <div
+            key={check.key}
+            className="flex items-start gap-2.5 py-1.5 text-sm"
+          >
+            {check.passed ? (
+              <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+            ) : check.critical ? (
+              <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <span className={check.passed ? "text-muted-foreground" : "font-medium"}>
+                {check.label}
+              </span>
+              <span className="text-xs text-muted-foreground ml-2">
+                {check.detail}
+              </span>
+              {check.action && !check.passed && (
+                <>
+                  {" "}
+                  {check.action.href ? (
+                    <a
+                      href={check.action.href}
+                      className="text-xs text-sky-500 hover:underline"
+                    >
+                      {check.action.label}
+                    </a>
+                  ) : (
+                    <button
+                      onClick={check.action.onClick}
+                      className="text-xs text-sky-500 hover:underline"
+                    >
+                      {check.action.label}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );
