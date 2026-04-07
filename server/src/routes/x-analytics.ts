@@ -154,20 +154,22 @@ export function xAnalyticsRoutes(db: Db) {
   // ── Extension Bot Status ─────────────────────────────────────────────────
   router.get("/extension-status", async (_req, res) => {
     try {
-      // Check chrome-bot container health via Docker socket on VPS
-      // The chrome-bot exposes noVNC on port 6080 — check if it responds
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
+      // Probe chrome-bot noVNC — try Docker service name first (container-to-container),
+      // then localhost (when server runs outside Docker)
+      const probeUrls = ["http://chrome-bot:6080/", "http://localhost:6080/"];
       let healthy = false;
-      try {
-        const probe = await fetch("http://localhost:6080/", {
-          signal: controller.signal,
-        });
-        healthy = probe.ok;
-      } catch {
-        healthy = false;
-      } finally {
-        clearTimeout(timeout);
+
+      for (const url of probeUrls) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        try {
+          const probe = await fetch(url, { signal: controller.signal });
+          if (probe.ok) { healthy = true; break; }
+        } catch {
+          // try next
+        } finally {
+          clearTimeout(timeout);
+        }
       }
 
       res.json({
