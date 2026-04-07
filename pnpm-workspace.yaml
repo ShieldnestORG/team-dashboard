@@ -6,6 +6,7 @@ packages:
   - packages/plugins/plugin-firecrawl
   - packages/plugins/plugin-twitter
   - packages/plugins/plugin-discord
+  - packages/mcp-server
   - server
   - ui
   - cli
