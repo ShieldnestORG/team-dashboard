@@ -13,6 +13,7 @@ import {
   Settings,
   Bird,
   Coins,
+  Hexagon,
   HeartPulse,
   Newspaper,
   GitBranch,
@@ -124,6 +125,7 @@ export function Sidebar() {
           <SidebarNavItem to="/twitter" label="Twitter/X" icon={Bird} />
           <SidebarNavItem to="/discord" label="Discord" icon={MessageSquare} />
           <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
+          <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />
           <SidebarNavItem to="/social-pulse" label="Social Pulse" icon={Radio} />
           <SidebarNavItem to="/auto-reply" label="Auto-Reply" icon={Reply} />
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />

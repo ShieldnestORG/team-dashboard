@@ -36,13 +36,20 @@ const TOOL_LINKS: Record<string, Array<{ name: string; slug: string }>> = {
     { name: "Base64 Encoder", slug: "base64-encoder" },
     { name: "Markdown Preview", slug: "markdown-preview" },
   ],
+  lifestyle: [
+    { name: "Budget Planner", slug: "budget-planner" },
+    { name: "Habit Tracker", slug: "habit-tracker" },
+    { name: "Goal Setter", slug: "goal-setter" },
+    { name: "Journaling Prompt", slug: "journaling-prompt" },
+    { name: "Readiness Quiz", slug: "readiness-quiz" },
+  ],
 };
 
 interface BlogPost {
   slug: string;
   title: string;
   description: string;
-  category: "ai-agents" | "crypto" | "tools" | "ecosystem";
+  category: "ai-agents" | "crypto" | "tools" | "ecosystem" | "lifestyle";
   keywords: string[];
   content: string;
   reading_time: number;
@@ -85,7 +92,18 @@ async function callClaude(system: string, prompt: string): Promise<string> {
 // Blog post generation
 // ---------------------------------------------------------------------------
 
-function pickSignal(signals: TrendSignals): { type: "crypto" | "ai-agents" | "tools"; topic: string; details: string } | null {
+type SignalType = "crypto" | "ai-agents" | "tools" | "lifestyle";
+
+const LIFESTYLE_CATEGORIES = ["Personal Finance", "Self-Help", "Wellness", "Faith", "Entrepreneurship"];
+
+function categoryToSignalType(category: string): SignalType {
+  if (category === "Crypto") return "crypto";
+  if (category === "AI/ML") return "ai-agents";
+  if (LIFESTYLE_CATEGORIES.includes(category)) return "lifestyle";
+  return "tools";
+}
+
+function pickSignal(signals: TrendSignals): { type: SignalType; topic: string; details: string } | null {
   // Priority 1: crypto mover with >15% change
   const bigMover = signals.crypto_movers.find((c: TrendSignals["crypto_movers"][number]) => Math.abs(c.change_24h) > 15);
   if (bigMover) {
@@ -96,17 +114,19 @@ function pickSignal(signals: TrendSignals): { type: "crypto" | "ai-agents" | "to
     };
   }
 
-  // Priority 2: Google Trends keyword matching crypto/AI with high traffic
-  const gtCryptoAi = (signals.google_trends || []).find((g) => {
+  // Priority 2: Google Trends keyword with high traffic
+  const gtHigh = (signals.google_trends || []).find((g) => {
     const trafficNum = parseInt(g.traffic.replace(/[^0-9]/g, ""), 10) || 0;
-    return trafficNum >= 50000 && /crypto|bitcoin|btc|ethereum|blockchain|ai|artificial.?intelligence|llm|gpt/i.test(g.keyword);
+    return trafficNum >= 50000;
   });
-  if (gtCryptoAi) {
-    const isCrypto = /crypto|bitcoin|btc|ethereum|blockchain/i.test(gtCryptoAi.keyword);
+  if (gtHigh) {
+    const kw = gtHigh.keyword.toLowerCase();
+    const isCrypto = /crypto|bitcoin|btc|ethereum|blockchain/i.test(kw);
+    const isLifestyle = /passive.?income|invest|finance|budget|self.?help|wellness|faith|spiritual|meditation|productivity|entrepreneur|side.?hustle/i.test(kw);
     return {
-      type: isCrypto ? "crypto" : "ai-agents",
-      topic: `${gtCryptoAi.keyword} trending on Google (${gtCryptoAi.traffic} searches)`,
-      details: `Related: ${gtCryptoAi.related.slice(0, 2).join(", ")}`,
+      type: isCrypto ? "crypto" : isLifestyle ? "lifestyle" : "ai-agents",
+      topic: `${gtHigh.keyword} trending on Google (${gtHigh.traffic} searches)`,
+      details: `Related: ${gtHigh.related.slice(0, 2).join(", ")}`,
     };
   }
 
@@ -116,19 +136,25 @@ function pickSignal(signals: TrendSignals): { type: "crypto" | "ai-agents" | "to
     return { type: "ai-agents", topic: aiStory.title, details: `Score: ${aiStory.score}, ${aiStory.comments} comments` };
   }
 
-  // Priority 4: Bing News headline matching crypto/AI category
+  // Priority 4: Lifestyle/finance trending story with >100 score
+  const lifestyleStory = signals.trending_tech.find((s: TrendSignals["trending_tech"][number]) => LIFESTYLE_CATEGORIES.includes(s.category) && s.score > 100);
+  if (lifestyleStory) {
+    return { type: "lifestyle", topic: lifestyleStory.title, details: `Score: ${lifestyleStory.score}, Category: ${lifestyleStory.category}` };
+  }
+
+  // Priority 5: Bing News headline
   const bingHit = (signals.bing_news || []).find((b) =>
-    b.category === "Crypto" || b.category === "AI/ML",
+    b.category === "Crypto" || b.category === "AI/ML" || LIFESTYLE_CATEGORIES.includes(b.category),
   );
   if (bingHit) {
     return {
-      type: bingHit.category === "Crypto" ? "crypto" : "ai-agents",
+      type: categoryToSignalType(bingHit.category),
       topic: bingHit.title,
       details: `Source: ${bingHit.provider}, Published: ${bingHit.datePublished.slice(0, 10)}`,
     };
   }
 
-  // Priority 5: Any crypto mover
+  // Priority 6: Any crypto mover
   if (signals.crypto_movers.length > 0) {
     const top = signals.crypto_movers[0]!;
     return {
@@ -138,10 +164,10 @@ function pickSignal(signals: TrendSignals): { type: "crypto" | "ai-agents" | "to
     };
   }
 
-  // Priority 6: Any tech trend
+  // Priority 7: Any tech trend
   const techStory = signals.trending_tech[0];
   if (techStory) {
-    return { type: "tools", topic: techStory.title, details: `Score: ${techStory.score}` };
+    return { type: categoryToSignalType(techStory.category), topic: techStory.title, details: `Score: ${techStory.score}` };
   }
 
   return null;
@@ -165,7 +191,7 @@ async function generateBlogPost(signal: NonNullable<ReturnType<typeof pickSignal
     .map((t) => `- <a href="https://freetools.coherencedaddy.com/${t.slug}">${t.name}</a>`)
     .join("\n");
 
-  const system = `You are a content writer for Coherence Daddy, a 508(c)(1)(A) faith-driven technology ecosystem. Write engaging, SEO-optimized blog posts about crypto, AI, and tech tools. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags). No markdown.`;
+  const system = `You are a content writer for Coherence Daddy, a 508(c)(1)(A) faith-driven technology ecosystem. Write engaging, SEO-optimized blog posts about crypto, AI, tech tools, personal finance, passive income, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags). No markdown.`;
 
   const prompt = `Write a blog post (600-800 words) about: "${signal.topic}"
 

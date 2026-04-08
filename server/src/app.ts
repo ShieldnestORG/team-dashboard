@@ -41,6 +41,7 @@ import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
 import { startPulseCrons } from "./services/pulse-crons.js";
+import { startMaintenanceCrons } from "./services/maintenance-crons.js";
 import { streamConnectionManager } from "./services/stream-connection-manager.js";
 import { trendRoutes } from "./routes/trends.js";
 import { logAvailableBackends } from "./services/visual-backends/index.js";
@@ -341,6 +342,7 @@ export async function createApp(
   const stopContentCrons = startContentCrons(db);
   const stopTrendCrons = startTrendCrons(db);
   const stopPulseCrons = startPulseCrons(db);
+  const stopMaintenanceCrons = startMaintenanceCrons(db);
   // Start filtered stream (if BEARER_TOKEN is set)
   streamConnectionManager.startStream(db);
   // Initialize auto-reply service
@@ -374,6 +376,7 @@ export async function createApp(
     stopContentCrons();
     stopTrendCrons();
     stopPulseCrons();
+    stopMaintenanceCrons();
     streamConnectionManager.stopStream();
     visualRoutes.stopPolling();
     hostServiceCleanup.disposeAll();

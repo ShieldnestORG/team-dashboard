@@ -20,12 +20,17 @@ const GOOGLE_TRENDS_RSS_URL = "https://trends.google.com/trending/rss?geo=US";
 const BING_NEWS_API_URL = "https://api.bing.microsoft.com/v7.0/news/search";
 const BING_NEWS_KEY = process.env.BING_NEWS_KEY || "";
 
-const CRYPTO_TECH_KEYWORDS = /\b(crypto|bitcoin|btc|ethereum|eth|solana|blockchain|defi|nft|token|web3|ai|artificial.?intelligence|llm|gpt|machine.?learn|neural|deep.?learn|openai|anthropic|chatbot|agent)\b/i;
+const TREND_KEYWORDS = /\b(crypto|bitcoin|btc|ethereum|eth|solana|blockchain|defi|nft|token|web3|ai|artificial.?intelligence|llm|gpt|machine.?learn|neural|deep.?learn|openai|anthropic|chatbot|agent|passive.?income|side.?hustle|investing|stock|real.?estate|personal.?finance|budget|retirement|self.?help|mindset|motivation|wellness|mental.?health|meditation|fitness|faith|spiritual|entrepreneur|startup|productivity|habit)\b/i;
 
 function categorize(title: string): string {
   const t = title.toLowerCase();
   if (/\b(ai|llm|gpt|claude|gemini|machine.?learn|neural|transformer|diffusion|openai|anthropic|model)\b/.test(t)) return "AI/ML";
   if (/\b(crypto|bitcoin|btc|ethereum|eth|solana|blockchain|defi|nft|token|web3)\b/.test(t)) return "Crypto";
+  if (/\b(passive.?income|investing|stock|budget|debt|retirement|real.?estate|side.?hustle|personal.?finance)\b/.test(t)) return "Personal Finance";
+  if (/\b(self.?help|mindset|motivation|productivity|habit|time.?manage)\b/.test(t)) return "Self-Help";
+  if (/\b(wellness|mental.?health|meditation|fitness|health)\b/.test(t)) return "Wellness";
+  if (/\b(faith|prayer|bible|spiritual|church|worship)\b/.test(t)) return "Faith";
+  if (/\b(entrepreneur|founder|solopreneur|hustle)\b/.test(t)) return "Entrepreneurship";
   if (/\b(rust|go|python|typescript|react|node|api|database|sql|devops|docker|kubernetes)\b/.test(t)) return "Programming";
   if (/\b(startup|vc|funding|ipo|acquisition|revenue|saas|b2b)\b/.test(t)) return "Business";
   return "Technology";
@@ -125,7 +130,7 @@ export function trendScannerService(db?: Db) {
           url: s.url || `https://news.ycombinator.com/item?id=${s.id}`,
           comments: s.descendants || 0,
         }))
-        .filter((s) => ["AI/ML", "Crypto", "Programming"].includes(s.category))
+        .filter((s) => ["AI/ML", "Crypto", "Programming", "Personal Finance", "Self-Help", "Wellness", "Faith", "Entrepreneurship", "Business"].includes(s.category))
         .sort((a, b) => b.score - a.score)
         .slice(0, 10);
     },
@@ -152,9 +157,9 @@ export function trendScannerService(db?: Db) {
             .map((n) => n.replace(/<\/?ht:news_item_title>|<!\[CDATA\[|\]\]>/g, ""))
             .slice(0, 3);
 
-          // Only keep items relevant to crypto/tech/AI
+          // Keep items relevant to our tracked topics
           const combined = `${title} ${related.join(" ")}`;
-          if (CRYPTO_TECH_KEYWORDS.test(combined)) {
+          if (TREND_KEYWORDS.test(combined)) {
             items.push({ keyword: title, traffic, related, region: "US" });
           }
         }
@@ -170,7 +175,13 @@ export function trendScannerService(db?: Db) {
       if (!BING_NEWS_KEY) return [];
 
       try {
-        const queries = ["cryptocurrency blockchain", "artificial intelligence"];
+        const queries = [
+          "cryptocurrency blockchain",
+          "artificial intelligence",
+          "passive income side hustle",
+          "personal finance investing",
+          "self-help productivity wellness",
+        ];
         const allResults: NonNullable<TrendSignals["bing_news"]> = [];
 
         for (const q of queries) {
@@ -199,7 +210,7 @@ export function trendScannerService(db?: Db) {
               url: article.url,
               description: article.description,
               provider: article.provider?.[0]?.name || "Unknown",
-              category: article.category || (q.includes("crypto") ? "Crypto" : "AI/ML"),
+              category: article.category || categorize(article.name + " " + q),
               datePublished: article.datePublished,
             });
           }
