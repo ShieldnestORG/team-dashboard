@@ -7,7 +7,8 @@ import { api } from "./client.js";
 export interface AutoReplyConfig {
   id: string;
   companyId: string;
-  targetXUserId: string;
+  targetType: string; // 'account' | 'keyword'
+  targetXUserId: string | null;
   targetXUsername: string;
   enabled: boolean;
   replyMode: string;
@@ -80,8 +81,10 @@ export const autoReplyApi = {
     api.get<{ configs: AutoReplyConfig[] }>("/auto-reply/config"),
 
   createConfig: (data: {
-    targetXUserId: string;
-    targetXUsername: string;
+    target: string; // "@username", "#hashtag", or "keyword"
+    targetXUserId?: string;
+    targetXUsername?: string;
+    targetType?: string;
     replyMode?: string;
     replyTemplates?: string[];
     aiPrompt?: string;
@@ -89,6 +92,12 @@ export const autoReplyApi = {
     minDelaySeconds?: number;
     maxDelaySeconds?: number;
   }) => api.post<{ config: AutoReplyConfig }>("/auto-reply/config", data),
+
+  resolveUsername: (username: string) =>
+    api.post<{ userId: string; username: string; name: string }>(
+      "/auto-reply/resolve-username",
+      { username },
+    ),
 
   updateConfig: (id: string, data: Partial<AutoReplyConfig>) =>
     api.put<{ config: AutoReplyConfig }>(`/auto-reply/config/${id}`, data),

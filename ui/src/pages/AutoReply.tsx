@@ -34,21 +34,22 @@ import {
 
 function AddTargetForm({ onDone }: { onDone: () => void }) {
   const queryClient = useQueryClient();
-  const [username, setUsername] = useState("");
-  const [userId, setUserId] = useState("");
+  const [target, setTarget] = useState("");
   const [mode, setMode] = useState<"template" | "ai">("template");
   const [templates, setTemplates] = useState(
-    "Great insight! The TX ecosystem keeps building.\nExciting developments here! Bullish on TX.\nThis is huge for the community!",
+    "Great insight! The TX ecosystem keeps building.\nExciting to see this! Bullish on what is coming.\nThis is huge for the community! Keep shipping.\nLove where this is heading. TX ecosystem is on fire.\nReally solid update here. The future looks bright.",
   );
   const [aiPrompt, setAiPrompt] = useState(
     "You are a knowledgeable crypto enthusiast who follows TX Blockchain. Write a brief, engaging reply (under 280 chars) to this tweet. Be authentic, add value, avoid sounding like a bot.",
   );
 
+  const isKeyword = target.trim().startsWith("#") || (!target.trim().startsWith("@") && target.trim().length > 0);
+  const isAccount = target.trim().startsWith("@");
+
   const createMutation = useMutation({
     mutationFn: () =>
       autoReplyApi.createConfig({
-        targetXUserId: userId,
-        targetXUsername: username.replace("@", ""),
+        target: target.trim(),
         replyMode: mode,
         replyTemplates: mode === "template" ? templates.split("\n").filter(Boolean) : undefined,
         aiPrompt: mode === "ai" ? aiPrompt : undefined,
@@ -65,22 +66,20 @@ function AddTargetForm({ onDone }: { onDone: () => void }) {
         <CardTitle className="text-base">Add Auto-Reply Target</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">X Username</label>
-            <Input
-              placeholder="@txEcosystem"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">X User ID</label>
-            <Input
-              placeholder="1234567890"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-            />
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">
+            Target (@ for accounts, # for hashtags, or any keyword)
+          </label>
+          <Input
+            placeholder="@txEcosystem, #TXblockchain, or tokns.fi"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            className="text-base"
+          />
+          <div className="mt-1 text-xs text-muted-foreground">
+            {isAccount && "Account target \u2014 will reply to tweets from this user"}
+            {isKeyword && "Keyword target \u2014 will reply to tweets containing this term"}
+            {!target.trim() && "Type @username to watch an account, or #hashtag / keyword to match tweet text"}
           </div>
         </div>
 
@@ -135,7 +134,7 @@ function AddTargetForm({ onDone }: { onDone: () => void }) {
           <Button
             size="sm"
             onClick={() => createMutation.mutate()}
-            disabled={!username || !userId || createMutation.isPending}
+            disabled={!target.trim() || createMutation.isPending}
           >
             {createMutation.isPending ? "Adding..." : "Add Target"}
           </Button>
@@ -182,7 +181,12 @@ function ConfigCard({ config }: { config: AutoReplyConfig }) {
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-medium">@{config.targetXUsername}</span>
+              <span className="font-medium">
+                {config.targetType === "keyword" ? config.targetXUsername : `@${config.targetXUsername}`}
+              </span>
+              <Badge variant={config.targetType === "keyword" ? "default" : "outline"} className="text-xs">
+                {config.targetType === "keyword" ? "keyword" : "account"}
+              </Badge>
               <Badge variant="outline" className="text-xs">
                 {config.replyMode}
               </Badge>
@@ -191,7 +195,7 @@ function ConfigCard({ config }: { config: AutoReplyConfig }) {
               </Badge>
             </div>
             <div className="text-xs text-muted-foreground">
-              ID: {config.targetXUserId} | Delay: {config.minDelaySeconds}-{config.maxDelaySeconds}s
+              {config.targetXUserId ? `ID: ${config.targetXUserId} | ` : ""}Delay: {config.minDelaySeconds}-{config.maxDelaySeconds}s
             </div>
           </div>
         </div>

@@ -19,8 +19,9 @@ import type { TweetData, AuthorData } from "./social-pulse.js";
 interface AutoReplyConfigRow {
   id: string;
   companyId: string;
-  targetXUserId: string;
-  targetXUsername: string;
+  targetType: string; // 'account' | 'keyword'
+  targetXUserId: string | null;
+  targetXUsername: string; // @handle for accounts, keyword/hashtag for keywords
   enabled: boolean;
   replyMode: string;
   replyTemplates: string[] | null;
@@ -79,6 +80,7 @@ class AutoReplyService {
   private db: Db;
   private configsByAuthorId = new Map<string, AutoReplyConfigRow>();
   private configsByUsername = new Map<string, AutoReplyConfigRow>();
+  private keywordConfigs: AutoReplyConfigRow[] = [];
   private replyQueue: Array<{ tweet: TweetData; author: AuthorData; config: AutoReplyConfigRow; source: string }> = [];
   private processing = false;
 
@@ -97,11 +99,13 @@ class AutoReplyService {
 
     this.configsByAuthorId.clear();
     this.configsByUsername.clear();
+    this.keywordConfigs = [];
 
     for (const row of rows) {
       const config: AutoReplyConfigRow = {
         id: row.id,
         companyId: row.companyId,
+        targetType: row.targetType ?? "account",
         targetXUserId: row.targetXUserId,
         targetXUsername: row.targetXUsername,
         enabled: row.enabled,
@@ -112,14 +116,24 @@ class AutoReplyService {
         minDelaySeconds: row.minDelaySeconds,
         maxDelaySeconds: row.maxDelaySeconds,
       };
-      if (row.targetXUserId) {
-        this.configsByAuthorId.set(row.targetXUserId, config);
+
+      if (config.targetType === "keyword") {
+        this.keywordConfigs.push(config);
+      } else {
+        // Account target
+        if (row.targetXUserId) {
+          this.configsByAuthorId.set(row.targetXUserId, config);
+        }
+        this.configsByUsername.set(row.targetXUsername.toLowerCase(), config);
       }
-      this.configsByUsername.set(row.targetXUsername.toLowerCase(), config);
     }
 
     logger.info(
-      { configCount: rows.length, targets: rows.map((r) => r.targetXUsername) },
+      {
+        configCount: rows.length,
+        accounts: rows.filter((r) => (r.targetType ?? "account") === "account").map((r) => r.targetXUsername),
+        keywords: rows.filter((r) => r.targetType === "keyword").map((r) => r.targetXUsername),
+      },
       "Auto-reply configs loaded",
     );
   }
@@ -129,11 +143,24 @@ class AutoReplyService {
     author: AuthorData,
     source: string,
   ): Promise<void> {
-    // Fast path: check if this tweet's author matches any target
+    // Fast path: check if this tweet's author matches any account target
     let config = this.configsByAuthorId.get(tweet.authorId);
     if (!config) {
       config = this.configsByUsername.get(author.username.toLowerCase());
     }
+
+    // Check keyword targets if no account match
+    if (!config) {
+      const textLower = tweet.text.toLowerCase();
+      for (const kw of this.keywordConfigs) {
+        const keyword = kw.targetXUsername.toLowerCase();
+        if (textLower.includes(keyword)) {
+          config = kw;
+          break;
+        }
+      }
+    }
+
     if (!config) return;
 
     // Skip if we're replying to ourselves
@@ -310,8 +337,9 @@ class AutoReplyService {
   // ── Account polling — direct timeline check ────────────────────────
 
   async pollTargetAccounts(): Promise<{ checked: number; newReplies: number }> {
+    // Only poll account-type targets that have valid user IDs (not keyword targets)
     const configs = [...this.configsByAuthorId.values()].filter(
-      (c) => c.enabled && c.targetXUserId,
+      (c) => c.enabled && c.targetXUserId && c.targetType !== "keyword" && !c.targetXUserId.startsWith("pending_"),
     );
 
     if (configs.length === 0) return { checked: 0, newReplies: 0 };
@@ -328,7 +356,7 @@ class AutoReplyService {
 
     for (const config of configs) {
       try {
-        const result = await client.getUserTweets(config.targetXUserId, 5);
+        const result = await client.getUserTweets(config.targetXUserId!, 5);
         if (!result.data || result.data.length === 0) continue;
 
         for (const tweet of result.data) {
@@ -342,7 +370,7 @@ class AutoReplyService {
             {
               id: tweet.id,
               text: tweet.text,
-              authorId: config.targetXUserId,
+              authorId: config.targetXUserId!,
               createdAt: tweet.created_at ?? new Date().toISOString(),
               publicMetrics: null,
             },

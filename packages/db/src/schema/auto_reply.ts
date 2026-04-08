@@ -16,8 +16,9 @@ export const autoReplyConfig = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id),
-    targetXUserId: text("target_x_user_id").notNull(),
-    targetXUsername: text("target_x_username").notNull(),
+    targetType: text("target_type").notNull().default("account"), // 'account' | 'keyword'
+    targetXUserId: text("target_x_user_id"), // nullable for keyword targets
+    targetXUsername: text("target_x_username").notNull(), // @handle for accounts, keyword/hashtag for keywords
     enabled: boolean("enabled").notNull().default(true),
     replyMode: text("reply_mode").notNull().default("template"), // 'template' | 'ai'
     replyTemplates: jsonb("reply_templates").$type<string[]>(),
