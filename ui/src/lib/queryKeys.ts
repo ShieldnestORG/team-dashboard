@@ -146,6 +146,12 @@ export const queryKeys = {
     xrplBridge: ["pulse", "xrpl-bridge"] as const,
     topics: ["pulse", "topics"] as const,
     spikes: ["pulse", "spikes"] as const,
+    diagnostics: ["pulse", "diagnostics"] as const,
+  },
+  autoReply: {
+    configs: ["auto-reply", "configs"] as const,
+    log: (page?: number) => ["auto-reply", "log", page] as const,
+    stats: ["auto-reply", "stats"] as const,
   },
   plugins: {
     all: ["plugins"] as const,

@@ -6,6 +6,7 @@ import {
   PULSE_QUERIES,
   type PulseUser,
 } from "./social-pulse-client.js";
+import { getAutoReplyService } from "./auto-reply.js";
 import { logger } from "../middleware/logger.js";
 import { publishGlobalLiveEvent } from "./live-events.js";
 import { sendAlert } from "./alerting.js";
@@ -124,6 +125,10 @@ export function socialPulseService(db: Db) {
         // Upsert tweets using shared ingestTweet
         for (const tweet of res.data) {
           const author = userMap.get(tweet.author_id);
+          const authorData = {
+            username: author?.username ?? "unknown",
+            name: author?.name ?? null,
+          };
           try {
             await ingestTweet(
               db,
@@ -135,12 +140,25 @@ export function socialPulseService(db: Db) {
                 publicMetrics: tweet.public_metrics ?? null,
               },
               topic,
-              {
-                username: author?.username ?? "unknown",
-                name: author?.name ?? null,
-              },
+              authorData,
             );
             totalNew++;
+
+            // Auto-reply trigger (polling path)
+            const autoReply = getAutoReplyService();
+            if (autoReply) {
+              void autoReply.checkAndReply(
+                {
+                  id: tweet.id,
+                  text: tweet.text,
+                  authorId: tweet.author_id,
+                  createdAt: tweet.created_at,
+                  publicMetrics: tweet.public_metrics ?? null,
+                },
+                authorData,
+                "poll",
+              );
+            }
           } catch {
             // duplicate — skip
           }

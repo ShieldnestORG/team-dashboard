@@ -1,6 +1,7 @@
 import type { Db } from "@paperclipai/db";
 import { socialPulseService } from "./social-pulse.js";
 import { streamConnectionManager } from "./stream-connection-manager.js";
+import { getAutoReplyService } from "./auto-reply.js";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
@@ -38,6 +39,11 @@ export function startPulseCrons(db: Db) {
     { name: "pulse:xrpl-bridge",    schedule: "*/10 * * * *",  ownerAgent: "echo", run: () => svc.tagXrplBridgeMentions(),     nextRun: null, running: false },
     { name: "pulse:spike-detect",   schedule: "*/15 * * * *",  ownerAgent: "echo", run: () => svc.detectVolumeSpikes(),        nextRun: null, running: false },
     { name: "pulse:backfill",      schedule: "0 */12 * * *",  ownerAgent: "echo", run: () => svc.backfillAggregations(),     nextRun: null, running: false },
+    { name: "pulse:account-poll",  schedule: "*/2 * * * *",   ownerAgent: "echo", run: async () => {
+      const autoReply = getAutoReplyService();
+      if (!autoReply) return { skipped: true, reason: "auto_reply_not_initialized" };
+      return autoReply.pollTargetAccounts();
+    },              nextRun: null, running: false },
   ];
 
   // Compute initial next-run times

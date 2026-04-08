@@ -1,12 +1,53 @@
 import { Router } from "express";
+import { sql, gte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { pulseTweets } from "@paperclipai/db";
 import { socialPulseService } from "../services/social-pulse.js";
 import { streamConnectionManager } from "../services/stream-connection-manager.js";
+import { getSocialPulseClient, PULSE_QUERIES } from "../services/social-pulse-client.js";
 import { logger } from "../middleware/logger.js";
 
 export function socialPulseRoutes(db: Db) {
   const router = Router();
   const svc = socialPulseService(db);
+
+  // GET /pulse/diagnostics — combined system health check
+  router.get("/diagnostics", async (_req, res) => {
+    try {
+      const streamStatus = streamConnectionManager.getStatus();
+      const pulseClient = getSocialPulseClient();
+
+      // Count tweets in last hour and 24h
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const [hourCount] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(pulseTweets)
+        .where(gte(pulseTweets.capturedAt, oneHourAgo));
+
+      const [dayCount] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(pulseTweets)
+        .where(gte(pulseTweets.capturedAt, oneDayAgo));
+
+      res.json({
+        stream: streamStatus,
+        polling: {
+          clientActive: !!pulseClient,
+          rateLimit: pulseClient?.getRateLimitStatus() ?? null,
+        },
+        queries: PULSE_QUERIES.map((q) => ({ topic: q.topic, query: q.query })),
+        tweetCounts: {
+          lastHour: hourCount?.count ?? 0,
+          last24h: dayCount?.count ?? 0,
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "pulse diagnostics error");
+      res.status(500).json({ error: "Failed to get diagnostics" });
+    }
+  });
 
   // GET /pulse/summary — full dashboard summary
   router.get("/summary", async (_req, res) => {

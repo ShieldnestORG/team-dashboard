@@ -19,6 +19,7 @@ import {
   Database,
   MessageSquare,
   Radio,
+  Reply,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -124,6 +125,7 @@ export function Sidebar() {
           <SidebarNavItem to="/discord" label="Discord" icon={MessageSquare} />
           <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
           <SidebarNavItem to="/social-pulse" label="Social Pulse" icon={Radio} />
+          <SidebarNavItem to="/auto-reply" label="Auto-Reply" icon={Reply} />
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
           <SidebarNavItem to="/content-review" label="Content" icon={Newspaper} />

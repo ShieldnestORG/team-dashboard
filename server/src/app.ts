@@ -68,6 +68,8 @@ import { publicPulseRoutes } from "./routes/public-pulse.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
+import { autoReplyRoutes } from "./routes/auto-reply.js";
+import { initAutoReplyService } from "./services/auto-reply.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -209,6 +211,7 @@ export async function createApp(
   api.use("/x/oauth", xOauthRoutes(db));
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/pulse", socialPulseRoutes(db));
+  api.use("/auto-reply", autoReplyRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -340,6 +343,8 @@ export async function createApp(
   const stopPulseCrons = startPulseCrons(db);
   // Start filtered stream (if BEARER_TOKEN is set)
   streamConnectionManager.startStream(db);
+  // Initialize auto-reply service
+  void initAutoReplyService(db);
   logAvailableBackends();
   logConfiguredPublishers();
   void toolDispatcher.initialize().catch((err) => {
