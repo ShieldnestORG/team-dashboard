@@ -1,62 +1,28 @@
 import { logger } from "../middleware/logger.js";
 import { getLatestSignals } from "./trend-crons.js";
 import type { TrendSignals } from "./trend-scanner.js";
+import {
+  type BlogPost,
+  makeSlug,
+  publishPost,
+  pingIndexNow,
+  callOllamaBlog,
+  generateBlogPostOllama,
+} from "./blog-publisher.js";
 
 // ---------------------------------------------------------------------------
 // SEO Content Engine — generates blog posts from trend signals and publishes
-// to coherencedaddy.com via the blog API
+// to coherencedaddy.com via the blog API.
+//
+// LLM strategy: Ollama (free, VPS) is tried first. Falls back to Claude if
+// Ollama fails and ANTHROPIC_API_KEY is set.
 // ---------------------------------------------------------------------------
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
-const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://coherencedaddy.com/api/blog/posts";
-const BLOG_API_KEY = process.env.CD_BLOG_API_KEY || "";
-const INDEXNOW_KEY = process.env.INDEXNOW_KEY || "";
-
-// Tool slugs grouped by category for internal linking
-const TOOL_LINKS: Record<string, Array<{ name: string; slug: string }>> = {
-  crypto: [
-    { name: "Meme Coin Tracker", slug: "meme-coin-tracker" },
-    { name: "Crypto Sentiment", slug: "crypto-sentiment" },
-    { name: "Crypto ROI Calculator", slug: "crypto-roi-calculator" },
-    { name: "Yield Farming Calculator", slug: "yield-farming-calculator" },
-    { name: "Wei to Ether Converter", slug: "wei-to-ether-converter" },
-  ],
-  "ai-agents": [
-    { name: "Agent Comparison", slug: "agent-comparison" },
-    { name: "Agent Cost Calculator", slug: "agent-cost-calculator" },
-    { name: "Token Counter", slug: "token-counter" },
-    { name: "Prompt Template Builder", slug: "prompt-template-builder" },
-    { name: "AI Readiness Quiz", slug: "readiness-quiz" },
-  ],
-  tools: [
-    { name: "JSON Formatter", slug: "json-formatter" },
-    { name: "JWT Decoder", slug: "jwt-decoder" },
-    { name: "Regex Tester", slug: "regex-tester" },
-    { name: "Base64 Encoder", slug: "base64-encoder" },
-    { name: "Markdown Preview", slug: "markdown-preview" },
-  ],
-  lifestyle: [
-    { name: "Budget Planner", slug: "budget-planner" },
-    { name: "Habit Tracker", slug: "habit-tracker" },
-    { name: "Goal Setter", slug: "goal-setter" },
-    { name: "Journaling Prompt", slug: "journaling-prompt" },
-    { name: "Readiness Quiz", slug: "readiness-quiz" },
-  ],
-};
-
-interface BlogPost {
-  slug: string;
-  title: string;
-  description: string;
-  category: "ai-agents" | "crypto" | "tools" | "ecosystem" | "lifestyle";
-  keywords: string[];
-  content: string;
-  reading_time: number;
-}
 
 // ---------------------------------------------------------------------------
-// Claude API call
+// Claude API call — fallback when Ollama is unavailable
 // ---------------------------------------------------------------------------
 
 async function callClaude(system: string, prompt: string): Promise<string> {
@@ -89,12 +55,43 @@ async function callClaude(system: string, prompt: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Blog post generation
+// Blog post generation — signal-based prompt (same for Ollama and Claude)
 // ---------------------------------------------------------------------------
 
 type SignalType = "crypto" | "ai-agents" | "tools" | "lifestyle";
 
 const LIFESTYLE_CATEGORIES = ["Personal Finance", "Self-Help", "Wellness", "Faith", "Entrepreneurship"];
+
+const TOOL_LINKS: Record<string, Array<{ name: string; slug: string }>> = {
+  crypto: [
+    { name: "Meme Coin Tracker", slug: "meme-coin-tracker" },
+    { name: "Crypto Sentiment", slug: "crypto-sentiment" },
+    { name: "Crypto ROI Calculator", slug: "crypto-roi-calculator" },
+    { name: "Yield Farming Calculator", slug: "yield-farming-calculator" },
+    { name: "Wei to Ether Converter", slug: "wei-to-ether-converter" },
+  ],
+  "ai-agents": [
+    { name: "Agent Comparison", slug: "agent-comparison" },
+    { name: "Agent Cost Calculator", slug: "agent-cost-calculator" },
+    { name: "Token Counter", slug: "token-counter" },
+    { name: "Prompt Template Builder", slug: "prompt-template-builder" },
+    { name: "AI Readiness Quiz", slug: "readiness-quiz" },
+  ],
+  tools: [
+    { name: "JSON Formatter", slug: "json-formatter" },
+    { name: "JWT Decoder", slug: "jwt-decoder" },
+    { name: "Regex Tester", slug: "regex-tester" },
+    { name: "Base64 Encoder", slug: "base64-encoder" },
+    { name: "Markdown Preview", slug: "markdown-preview" },
+  ],
+  lifestyle: [
+    { name: "Budget Planner", slug: "budget-planner" },
+    { name: "Habit Tracker", slug: "habit-tracker" },
+    { name: "Goal Setter", slug: "goal-setter" },
+    { name: "Journaling Prompt", slug: "journaling-prompt" },
+    { name: "Readiness Quiz", slug: "readiness-quiz" },
+  ],
+};
 
 function categoryToSignalType(category: string): SignalType {
   if (category === "Crypto") return "crypto";
@@ -173,17 +170,8 @@ function pickSignal(signals: TrendSignals): { type: SignalType; topic: string; d
   return null;
 }
 
-function makeSlug(title: string): string {
-  const date = new Date().toISOString().slice(0, 10);
-  const base = title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .slice(0, 60);
-  return `${base}-${date}`;
-}
-
-async function generateBlogPost(signal: NonNullable<ReturnType<typeof pickSignal>>): Promise<BlogPost> {
+// Claude-based blog post generation (fallback)
+async function generateBlogPostClaude(signal: NonNullable<ReturnType<typeof pickSignal>>): Promise<BlogPost> {
   const category = signal.type;
   const relatedTools = TOOL_LINKS[category] || TOOL_LINKS.tools!;
   const toolLinksStr = relatedTools
@@ -212,7 +200,6 @@ Return ONLY a JSON object with these fields (no markdown fences):
 
   const raw = await callClaude(system, prompt);
 
-  // Parse JSON from response (handle potential markdown fences)
   const jsonStr = raw.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
   const parsed = JSON.parse(jsonStr) as { title: string; description: string; keywords: string[]; content: string };
 
@@ -229,69 +216,22 @@ Return ONLY a JSON object with these fields (no markdown fences):
   };
 }
 
-// ---------------------------------------------------------------------------
-// Publish to coherencedaddy blog API
-// ---------------------------------------------------------------------------
-
-async function publishPost(post: BlogPost): Promise<{ success: boolean; error?: string }> {
-  if (!BLOG_API_KEY) {
-    return { success: false, error: "CD_BLOG_API_KEY not set" };
-  }
-
-  const res = await fetch(BLOG_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${BLOG_API_KEY}`,
-    },
-    body: JSON.stringify(post),
-  });
-
-  if (res.ok) {
-    return { success: true };
-  }
-
-  const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error: string };
-
-  // If duplicate slug, append timestamp
-  if (res.status === 409) {
-    post.slug = `${post.slug}-${Date.now()}`;
-    const retry = await fetch(BLOG_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${BLOG_API_KEY}`,
-      },
-      body: JSON.stringify(post),
-    });
-    return { success: retry.ok, error: retry.ok ? undefined : `Retry failed: ${retry.status}` };
-  }
-
-  return { success: false, error: err.error };
-}
-
-// ---------------------------------------------------------------------------
-// IndexNow ping
-// ---------------------------------------------------------------------------
-
-async function pingIndexNow(urls: string[]): Promise<void> {
-  if (urls.length === 0 || !INDEXNOW_KEY) return;
-
+// Primary generator: try Ollama (free), fall back to Claude
+async function generateBlogPost(signal: NonNullable<ReturnType<typeof pickSignal>>): Promise<BlogPost> {
   try {
-    const host = new URL(urls[0]!).host;
-    await fetch("https://api.indexnow.org/indexnow", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        host,
-        key: INDEXNOW_KEY,
-        keyLocation: `https://${host}/${INDEXNOW_KEY}.txt`,
-        urlList: urls,
-      }),
-    });
-    logger.info({ urls }, "IndexNow pinged");
-  } catch (err) {
-    logger.warn({ err }, "IndexNow ping failed (non-critical)");
+    const post = await generateBlogPostOllama(signal);
+    logger.info({ backend: "ollama", title: post.title }, "SEO engine: blog post generated via Ollama");
+    return post;
+  } catch (ollamaErr) {
+    logger.warn({ err: ollamaErr }, "SEO engine: Ollama generation failed, trying Claude fallback");
+
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("Ollama failed and ANTHROPIC_API_KEY not set — no LLM available");
+    }
+
+    const post = await generateBlogPostClaude(signal);
+    logger.info({ backend: "claude", title: post.title }, "SEO engine: blog post generated via Claude");
+    return post;
   }
 }
 
@@ -318,7 +258,7 @@ export function seoEngineService() {
 
       logger.info({ signal: signal.topic, type: signal.type }, "SEO engine: generating post");
 
-      // 3. Generate blog post via Claude
+      // 3. Generate blog post (Ollama first, Claude fallback)
       const post = await generateBlogPost(signal);
 
       // 4. Publish to coherencedaddy
@@ -338,3 +278,7 @@ export function seoEngineService() {
     },
   };
 }
+
+// Re-export shared types for any callers that imported them from here
+export type { BlogPost };
+export { makeSlug, publishPost, pingIndexNow, callOllamaBlog };

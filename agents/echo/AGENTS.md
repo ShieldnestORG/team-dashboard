@@ -54,18 +54,7 @@ A data task is done when the pipeline is running, data is being indexed, and qua
 
 ## Cron Responsibilities
 
-Echo owns all data ingestion, trend scanning, social pulse cron jobs (16 total), and the X API filtered stream background service. These are direct service calls — zero LLM cost, defined in `server/src/services/intel-crons.ts`, `trend-crons.ts`, and `pulse-crons.ts`.
-
-### Filtered Stream (Background Service)
-
-Echo owns the X API v2 filtered stream infrastructure (`filtered-stream-client.ts`, `stream-rule-manager.ts`, `stream-connection-manager.ts`). This is NOT a cron job — it's an always-on background service started on server boot when `BEARER_TOKEN` is set.
-
-- **Real-time ingestion**: Tweets arrive via streaming instead of polling, reducing latency from 5min to near-instant
-- **Auto-reconnect**: Exponential backoff (1s → 5min cap) on disconnect
-- **Fallback to polling**: After 5 failed reconnect attempts, `pulse:search` cron resumes normal polling
-- **Rule sync**: Stream filter rules are auto-synced with `PULSE_QUERIES` topics (tx, cosmos, xrpl-bridge, tokns)
-- **Health monitoring**: `GET /api/pulse/stream-status` returns connection state, uptime, tweets/minute
-- **Shared ingestion**: Both stream and polling path use the same `ingestTweet()` function — tweets flow into the same `pulse_tweets` table regardless of source
+Echo owns all data ingestion and trend scanning cron jobs (9 total). These are direct service calls — zero LLM cost, defined in `server/src/services/intel-crons.ts` and `trend-crons.ts`.
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
@@ -78,13 +67,6 @@ Echo owns the X API v2 filtered stream infrastructure (`filtered-stream-client.t
 | `intel:backfill` | `0 */12 * * *` (twice daily) | Sparse data catch-up for new companies |
 | `intel:discover` | `0 */6 * * *` (every 6h) | Discover trending projects (CoinGecko + GitHub) |
 | `trends:scan` | `0 */6 * * *` (every 6h) | CoinGecko + HackerNews + Google Trends + Bing News trend signal scanning |
-| `pulse:search` | `*/5 * * * *` (every 5m) | X API social pulse search polling (TX, Cosmos, XRPL bridge, tokns) |
-| `pulse:sentiment` | `*/15 * * * *` (every 15m) | Keyword-based sentiment scoring |
-| `pulse:aggregate-hour` | `5 * * * *` (hourly) | Hourly tweet volume/sentiment rollups |
-| `pulse:aggregate-day` | `10 0 * * *` (daily) | Daily aggregation rollups |
-| `pulse:xrpl-bridge` | `*/10 * * * *` (every 10m) | XRPL bridge mention tagging and classification |
-| `pulse:spike-detect` | `*/15 * * * *` (every 15m) | Volume spike detection with email alerting |
-| `pulse:backfill` | `0 */12 * * *` (every 12h) | Historical data backfill for gap-filling |
 
 ## Safety
 

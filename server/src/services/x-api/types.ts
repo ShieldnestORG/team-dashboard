@@ -47,7 +47,10 @@ export interface SearchResponse {
     created_at: string;
     public_metrics?: Record<string, number>;
   }>;
-  meta?: { result_count: number; next_token?: string };
+  includes?: {
+    users?: Array<{ id: string; username: string; name: string }>;
+  };
+  meta?: { result_count: number; newest_id?: string; next_token?: string };
 }
 
 export interface RateLimitInfo {
@@ -59,11 +62,11 @@ export interface RateLimitInfo {
 export interface RateLimitStatus {
   endpoints: Record<string, RateLimitInfo>;
   dailyBudget: {
-    posts: { used: number; limit: number };
-    likes: { used: number; limit: number };
-    follows: { used: number; limit: number };
-    replies: { used: number; limit: number };
+    spentUsd: number;
+    capUsd: number;
+    repliesSent: number;
+    maxReplies: number;
+    readCount: number;
   };
-  multiplier: number;
   panicMode: boolean;
 }

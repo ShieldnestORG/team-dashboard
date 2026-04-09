@@ -13,6 +13,7 @@ import {
   recordRequest,
 } from "./rate-limiter.js";
 import type {
+  SearchResponse,
   TweetCreateParams,
   TweetMetrics,
   TweetResponse,
@@ -222,6 +223,26 @@ export class XApiClient {
     return this.request<TweetMetrics>(
       "GET",
       `/2/tweets/${tweetId}?tweet.fields=public_metrics`,
+    );
+  }
+
+  /** Search recent tweets (last 7 days). */
+  async searchRecent(
+    query: string,
+    opts?: { maxResults?: number; sinceId?: string },
+  ): Promise<SearchResponse> {
+    const params = new URLSearchParams({
+      query,
+      max_results: String(opts?.maxResults ?? 25),
+      "tweet.fields": "created_at,public_metrics",
+      expansions: "author_id",
+      "user.fields": "username,name",
+    });
+    if (opts?.sinceId) params.set("since_id", opts.sinceId);
+
+    return this.request<SearchResponse>(
+      "GET",
+      `/2/tweets/search/recent?${params.toString()}`,
     );
   }
 

@@ -6,7 +6,7 @@ import { Router } from "express";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { autoReplyConfig, autoReplyLog } from "@paperclipai/db";
-import { getAutoReplyService } from "../services/auto-reply.js";
+import { getAutoReplyService, type AutoReplyGlobalSettings } from "../services/auto-reply.js";
 import { XApiClient } from "../services/x-api/client.js";
 import { getDailyBudget } from "../services/x-api/rate-limiter.js";
 import { logger } from "../middleware/logger.js";
@@ -15,6 +15,43 @@ const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-
 
 export function autoReplyRoutes(db: Db) {
   const router = Router();
+
+  // ── Settings ─────────────────────────────────────────────────────
+
+  // GET /auto-reply/settings — get global settings
+  router.get("/settings", async (_req, res) => {
+    try {
+      const svc = getAutoReplyService();
+      if (!svc) {
+        res.json({ settings: null });
+        return;
+      }
+      res.json({ settings: svc.settings });
+    } catch (err) {
+      logger.error({ err }, "Failed to get auto-reply settings");
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // PUT /auto-reply/settings — update global settings
+  router.put("/settings", async (req, res) => {
+    try {
+      const svc = getAutoReplyService();
+      if (!svc) {
+        res.status(503).json({ error: "Auto-reply service not initialized" });
+        return;
+      }
+
+      const updates = req.body as Partial<AutoReplyGlobalSettings>;
+      const settings = await svc.saveSettings(updates);
+      res.json({ settings });
+    } catch (err) {
+      logger.error({ err }, "Failed to update auto-reply settings");
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // ── Username resolution ──────────────────────────────────────────
 
   // POST /auto-reply/resolve-username — look up X user ID from username
   router.post("/resolve-username", async (req, res) => {
@@ -26,9 +63,7 @@ export function autoReplyRoutes(db: Db) {
       }
 
       const clean = username.replace(/^@/, "");
-      const client = new XApiClient(db, COMPANY_ID);
 
-      // X API v2: GET /2/users/by/username/:username
       const result = await fetch(
         `https://api.x.com/2/users/by/username/${encodeURIComponent(clean)}`,
         {
@@ -57,6 +92,8 @@ export function autoReplyRoutes(db: Db) {
     }
   });
 
+  // ── Config CRUD ──────────────────────────────────────────────────
+
   // GET /auto-reply/config — list all configs
   router.get("/config", async (_req, res) => {
     try {
@@ -74,8 +111,6 @@ export function autoReplyRoutes(db: Db) {
   });
 
   // POST /auto-reply/config — create new config
-  // Accepts either: { target: "@username" } or { target: "#hashtag" } or { target: "some keyword" }
-  // Auto-detects type and resolves user IDs for @accounts
   router.post("/config", async (req, res) => {
     try {
       const {
@@ -86,11 +121,11 @@ export function autoReplyRoutes(db: Db) {
         replyMode = "template",
         replyTemplates,
         aiPrompt,
-        maxRepliesPerDay = 5,
-        minDelaySeconds = 3,
-        maxDelaySeconds = 15,
+        maxRepliesPerDay,
+        minDelaySeconds,
+        maxDelaySeconds,
       } = req.body as {
-        target?: string; // simplified input: "@user", "#hashtag", or "keyword"
+        target?: string;
         targetXUserId?: string;
         targetXUsername?: string;
         targetType?: string;
@@ -102,18 +137,19 @@ export function autoReplyRoutes(db: Db) {
         maxDelaySeconds?: number;
       };
 
+      // Get defaults from settings
+      const svc = getAutoReplyService();
+      const defaults = svc?.settings;
+
       let resolvedType = explicitType ?? "account";
       let resolvedUsername = targetXUsername ?? "";
       let resolvedUserId = targetXUserId ?? null;
 
-      // If simplified `target` field is provided, auto-detect type
       if (target) {
         const trimmed = target.trim();
         if (trimmed.startsWith("@")) {
-          // Account target
           resolvedType = "account";
           resolvedUsername = trimmed.replace(/^@/, "");
-          // Try to auto-resolve user ID
           if (!resolvedUserId) {
             try {
               const { getValidToken } = await import("../services/x-api/oauth.js");
@@ -127,19 +163,17 @@ export function autoReplyRoutes(db: Db) {
                 resolvedUserId = lookupData.data?.id ?? null;
               }
             } catch {
-              // Lookup failed — continue without user ID, username matching still works
-              logger.warn({ username: resolvedUsername }, "Auto-resolve user ID failed, continuing with username only");
+              logger.warn({ username: resolvedUsername }, "Auto-resolve user ID failed");
             }
           }
         } else {
-          // Keyword/hashtag target
           resolvedType = "keyword";
           resolvedUsername = trimmed.startsWith("#") ? trimmed : trimmed;
         }
       }
 
       if (!resolvedUsername) {
-        res.status(400).json({ error: "target (e.g. @username, #hashtag, or keyword) is required" });
+        res.status(400).json({ error: "target is required" });
         return;
       }
 
@@ -153,15 +187,14 @@ export function autoReplyRoutes(db: Db) {
           replyMode,
           replyTemplates: replyTemplates ?? null,
           aiPrompt: aiPrompt ?? null,
-          maxRepliesPerDay,
-          minDelaySeconds,
-          maxDelaySeconds,
+          maxRepliesPerDay: maxRepliesPerDay ?? defaults?.defaultMaxRepliesPerTarget ?? 10,
+          minDelaySeconds: minDelaySeconds ?? defaults?.defaultMinDelaySeconds ?? 3,
+          maxDelaySeconds: maxDelaySeconds ?? defaults?.defaultMaxDelaySeconds ?? 15,
         })
         .returning();
 
-      // Reload service configs
-      const svc = getAutoReplyService();
-      if (svc) await svc.loadConfigs();
+      const svc2 = getAutoReplyService();
+      if (svc2) await svc2.loadConfigs();
 
       res.json({ config: row });
     } catch (err) {
@@ -176,7 +209,6 @@ export function autoReplyRoutes(db: Db) {
       const id = req.params.id as string;
       const updates = req.body as Record<string, unknown>;
 
-      // Only allow specific fields
       const allowed: Record<string, unknown> = {};
       for (const key of [
         "targetXUserId", "targetXUsername", "replyMode",
@@ -212,22 +244,16 @@ export function autoReplyRoutes(db: Db) {
     }
   });
 
-  // DELETE /auto-reply/config/:id — delete config
+  // DELETE /auto-reply/config/:id
   router.delete("/config/:id", async (req, res) => {
     try {
       const id = req.params.id as string;
 
-      // Delete log entries first (FK constraint)
-      await db
-        .delete(autoReplyLog)
-        .where(eq(autoReplyLog.configId, id));
+      await db.delete(autoReplyLog).where(eq(autoReplyLog.configId, id));
 
       const deleted = await db
         .delete(autoReplyConfig)
-        .where(and(
-          eq(autoReplyConfig.id, id),
-          eq(autoReplyConfig.companyId, COMPANY_ID),
-        ))
+        .where(and(eq(autoReplyConfig.id, id), eq(autoReplyConfig.companyId, COMPANY_ID)))
         .returning();
 
       if (deleted.length === 0) {
@@ -245,19 +271,15 @@ export function autoReplyRoutes(db: Db) {
     }
   });
 
-  // POST /auto-reply/config/:id/toggle — enable/disable
+  // POST /auto-reply/config/:id/toggle
   router.post("/config/:id/toggle", async (req, res) => {
     try {
       const id = req.params.id as string;
 
-      // Get current state
       const [current] = await db
         .select({ enabled: autoReplyConfig.enabled })
         .from(autoReplyConfig)
-        .where(and(
-          eq(autoReplyConfig.id, id),
-          eq(autoReplyConfig.companyId, COMPANY_ID),
-        ));
+        .where(and(eq(autoReplyConfig.id, id), eq(autoReplyConfig.companyId, COMPANY_ID)));
 
       if (!current) {
         res.status(404).json({ error: "Config not found" });
@@ -280,7 +302,9 @@ export function autoReplyRoutes(db: Db) {
     }
   });
 
-  // GET /auto-reply/log — paginated reply log
+  // ── Log & Stats ──────────────────────────────────────────────────
+
+  // GET /auto-reply/log
   router.get("/log", async (req, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
@@ -302,7 +326,7 @@ export function autoReplyRoutes(db: Db) {
     }
   });
 
-  // GET /auto-reply/stats — daily counts, success rate, avg latency
+  // GET /auto-reply/stats
   router.get("/stats", async (_req, res) => {
     try {
       const svc = getAutoReplyService();
@@ -316,9 +340,16 @@ export function autoReplyRoutes(db: Db) {
 
       res.json({
         ...stats,
-        globalBudget: {
-          repliesUsed: budget.replies.used,
-          repliesLimit: budget.replies.limit,
+        budget: {
+          spentUsd: budget.spentUsd,
+          capUsd: budget.capUsd,
+          repliesSent: budget.repliesSent,
+          maxReplies: budget.maxReplies,
+          readCount: budget.readCount,
+        },
+        settings: {
+          pollIntervalMinutes: svc.settings.pollIntervalMinutes,
+          enabled: svc.settings.enabled,
         },
       });
     } catch (err) {

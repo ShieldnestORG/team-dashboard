@@ -322,8 +322,6 @@ export const LIVE_EVENT_TYPES = [
   "discord.ticket.closed",
   "discord.ticket.updated",
   "discord.bot.status",
-  "pulse.new_tweets",
-  "pulse.spike",
   "auto_reply.sent",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];

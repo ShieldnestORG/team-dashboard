@@ -25,7 +25,6 @@ import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRa
 import { PageSkeleton } from "../components/PageSkeleton";
 import type { Agent, Issue } from "@paperclipai/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
-import { SocialPulseWidget } from "../components/SocialPulseWidget";
 
 function getRecentIssues(issues: Issue[]): Issue[] {
   return [...issues]
@@ -298,8 +297,6 @@ export function Dashboard() {
               <SuccessRateChart runs={runs ?? []} />
             </ChartCard>
           </div>
-
-          <SocialPulseWidget />
 
           <PluginSlotOutlet
             slotTypes={["dashboardWidget"]}

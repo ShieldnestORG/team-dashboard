@@ -37,7 +37,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
 - **Mintscan Chain Metrics** — Cosmostation Mintscan API integration for Cosmos ecosystem (staking APR, validator data) tracking cosmos/osmosis/txhuman
-- **Social Pulse Engine** — real-time X/Twitter monitoring for TX Blockchain, Cosmos, XRPL Bridge, and Tokns ecosystem. Dual ingestion: X API v2 filtered stream (real-time) with automatic fallback to polling. Computed per-topic sentiment analysis, hourly/daily aggregations, volume spike detection, XRPL bridge mention tracking, 12h backfill for historical gap-filling. 7 cron jobs (5min–12hr cycles), authenticated dashboard at `/social-pulse`, public API at `/api/public/pulse/*` for tokns.fi widget embeds
+- **Auto-Reply Engine** — X/Twitter auto-reply system using a single `search/recent` query to cover all enabled targets (accounts + keywords) in one API call. Configurable via admin UI: poll interval (default 30 min), daily dollar spend cap (default $1.00), global max replies/day (default 50), per-target delay range and reply caps. Reply modes: template rotation or AI-generated. Settings persisted in `auto_reply_settings` DB table. Budget tracked in-memory by `rate-limiter.ts` with dollar-based caps ($0.005/read, $0.01/write). Panic mode halves all caps for 1 hour on 429. Admin page at `/auto-reply`
 - **MCP Server** — `packages/mcp-server/` Model Context Protocol server exposing 35 tools across 9 entities (Issues, Projects, Milestones, Labels, Teams, WorkflowStates, Comments, IssueRelations, Initiatives). Wraps Team Dashboard REST API for use by Claude, Codex, and other MCP-compatible agents. Stdio transport, configurable via `PAPERCLIP_API_URL` and `PAPERCLIP_API_TOKEN`
 - **Media Drop** — file upload and media management for content pipeline. Multer-based upload (up to 4 files), S3/local storage backends, per-company media libraries. Routes at `/api/media/*`, schema in `media_drops` table
 - **Intel Dashboard** — admin UI page at `/intel` with tabbed tables (Overview/Crypto/AI-ML/DeFi/DevTools), searchable company lists, stats cards
@@ -91,12 +91,12 @@ server/
       trend-scanner.ts              # CoinGecko + HackerNews + Google Trends + Bing News trend signals
       seo-engine.ts                 # Claude-powered blog generation from trends + publish + IndexNow
       trend-crons.ts                # Trend scanning cron scheduler (6hr cycle)
-      social-pulse.ts               # Social Pulse service (polling, sentiment, aggregation, spikes)
-      social-pulse-client.ts        # X API v2 client for tweet search
-      filtered-stream-client.ts     # X API v2 filtered stream client (real-time tweets)
-      stream-rule-manager.ts        # Sync X API stream filter rules with pulse topics
-      stream-connection-manager.ts  # Filtered stream lifecycle manager (connect, reconnect, fallback)
-      pulse-crons.ts                # 7 pulse cron jobs (Echo-owned)
+      auto-reply.ts                 # X auto-reply engine (search-based polling, settings, configurable cron)
+      x-api/
+        client.ts                   # X API v2 client (searchRecent, getUserTweets, createTweet)
+        rate-limiter.ts             # Dollar-based daily budget tracker ($0.005/read, $0.01/write) + panic mode
+        oauth.ts                    # X OAuth 2.0 PKCE token management
+        types.ts                    # X API type definitions (SearchResponse, TweetData, etc.)
       platform-publishers/          # Automated social media publishing
         types.ts                    # PlatformPublisher interface
         youtube.ts                  # YouTube Shorts (Data API v3)
@@ -110,29 +110,22 @@ server/
       visual-content.ts             # Visual content API (/api/visual/*)
       public-reels.ts               # Public reels API (/api/reels/* — no auth)
       structure.ts                  # Structure diagram API (/api/companies/:id/structure)
-      social-pulse.ts               # Authenticated pulse API (/api/pulse/* + stream-status)
-      public-pulse.ts               # Public pulse API (/api/public/pulse/* — no auth)
       media-drop.ts                 # Media upload/management API (/api/media/*)
       trends.ts                     # Trend signals + SEO engine API (/api/trends/*)
+      auto-reply.ts                 # Auto-reply API (/api/auto-reply/*) — settings, config CRUD, log, stats
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
 ui/
   src/
     api/              # REST API client (auth, companies, agents, etc.)
-      pulse.ts        # Social Pulse API client
     components/
       ui/             # shadcn/ui primitives
-      PulseTopicCard.tsx    # Pulse topic summary card component
-      PulseTweetCard.tsx    # Pulse tweet display card component
-      XrplBridgeShowcase.tsx # XRPL bridge analytics showcase component
-      SocialPulseWidget.tsx     # Internal social pulse summary widget
-      SocialPulseWidgetEmbed.tsx # Embeddable social pulse widget for tokns.fi
       HowToGuide.tsx            # Reusable collapsible help/tutorial component
     context/          # ThemeContext, CompanyContext, DialogContext, etc.
     hooks/            # Custom React hooks
     lib/              # Utilities, router, agent config
-    pages/            # Authenticated dashboard pages (incl. SocialPulse.tsx)
+    pages/            # Authenticated dashboard pages
   public/             # Favicons, service worker
 agents/                 # Per-agent AGENTS.md instruction files
   atlas/              # CEO — strategy, delegation, board comms
@@ -156,9 +149,6 @@ agents/                 # Per-agent AGENTS.md instruction files
 packages/
   db/                 # Drizzle schema, migrations, DB clients
     src/schema/
-      pulse_tweets.ts          # Pulse tweets table schema
-      pulse_aggregations.ts    # Pulse hourly/daily aggregation schema
-      pulse_xrpl_bridge.ts     # XRPL bridge mention tagging schema
   shared/             # Shared types, constants, validators, API path constants
   adapter-utils/      # Shared adapter utilities
   adapters/           # Agent adapter implementations (Claude, Codex, Cursor, etc.)
@@ -266,8 +256,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr), pulse (7 jobs: search + sentiment + aggregate-hour + aggregate-day + xrpl-bridge + spike-detect + backfill), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily). All 37 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`. Note: `pulse:search` auto-skips when the X API filtered stream is connected and healthy
-- **Filtered Stream**: X API v2 filtered stream (`/2/tweets/search/stream`) runs as a background service on startup when `BEARER_TOKEN` is set. Auto-reconnects with exponential backoff (1s–5min). Falls back to `pulse:search` polling if stream fails after 5 retries. Status at `GET /api/pulse/stream-status`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (12 jobs: 6 text + 3 video script + 1 SEO engine + 2 intel-alert), trends (1 job: scan every 6hr), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily). All 30 jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -283,9 +272,6 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/services/trend-scanner.ts` | CoinGecko + HackerNews + Google Trends + Bing News trend scanner |
 | `server/src/services/seo-engine.ts` | Claude-powered blog generation + publish + IndexNow |
 | `server/src/routes/trends.ts` | Trend signals + SEO engine API (`/api/trends/*`) |
-| `server/src/services/filtered-stream-client.ts` | X API v2 filtered stream client (real-time, event emitter) |
-| `server/src/services/stream-connection-manager.ts` | Filtered stream lifecycle (connect, reconnect, fallback to polling) |
-| `server/src/services/stream-rule-manager.ts` | X API stream filter rule sync with pulse topics |
 | `server/src/services/visual-backends/` | Pluggable visual generation backends (Gemini, Grok, Canva) |
 | `server/src/services/video-assembler.ts` | FFmpeg video pipeline (overlays, watermark, metadata) |
 | `server/src/services/platform-publishers/` | Auto-publishing to YouTube/TikTok/Instagram/Twitter |
@@ -293,6 +279,13 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `scripts/canva-generator.py` | Canva Connect API Python bridge |
 | `server/src/services/intel-discovery.ts` | Auto-discovery of trending projects (CoinGecko + GitHub) |
 | `server/src/services/mintscan.ts` | Cosmostation Mintscan API integration (chain APR, validator metrics) |
+| `server/src/services/auto-reply.ts` | Auto-reply engine — search-based polling, settings management, configurable cron interval |
+| `server/src/services/x-api/client.ts` | X API v2 client — `searchRecent()`, `getUserTweets()`, `createTweet()` |
+| `server/src/services/x-api/rate-limiter.ts` | X API rate limiter — dollar-based daily budget ($0.005/read, $0.01/write), panic mode on 429 |
+| `server/src/routes/auto-reply.ts` | Auto-reply REST API — settings GET/PUT, config CRUD, toggle, log, stats |
+| `packages/db/src/schema/auto_reply.ts` | `autoReplyConfig`, `autoReplyLog`, `autoReplySettings` table schemas |
+| `packages/db/src/migrations/0054_auto_reply_settings.sql` | Migration: `auto_reply_settings` table (per-company global settings jsonb) |
+| `ui/src/pages/AutoReply.tsx` | Auto-reply admin UI — settings panel, config cards with inline edit, stats |
 | `ui/src/pages/Intel.tsx` | Intel Dashboard — tabbed admin page for browsing 508 companies |
 | `server/src/services/structure.ts` | Company structure diagram service (Mermaid, versioned) |
 | `server/src/routes/structure.ts` | Structure diagram API (`/api/companies/:id/structure`) |
@@ -303,12 +296,6 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `packages/plugins/plugin-discord/src/ticketing.ts` | Ticket lifecycle, auto-close, log embeds |
 | `packages/plugins/plugin-discord/src/commands.ts` | 17 `!` commands (warn, mute, kick, ban, etc.) |
 | `ui/src/pages/Discord.tsx` | Discord dashboard — bot status, tickets, mod feed |
-| `server/src/services/social-pulse.ts` | Social Pulse service (polling, sentiment, aggregation, spike detection) |
-| `server/src/services/social-pulse-client.ts` | X API v2 client for tweet search |
-| `server/src/services/pulse-crons.ts` | 7 pulse cron jobs (Echo-owned) |
-| `server/src/routes/social-pulse.ts` | Authenticated pulse API (`/api/pulse/*`) |
-| `server/src/routes/public-pulse.ts` | Public pulse API (`/api/public/pulse/*` — no auth) |
-| `ui/src/pages/SocialPulse.tsx` | Social Pulse dashboard — 5-tab view with topic cards, tweet feed, XRPL bridge |
 | `server/src/routes/media-drop.ts` | Media upload/management API (`/api/media/*`) |
 | `packages/plugins/plugin-twitter/src/manifest.ts` | Twitter/X plugin manifest (13 tools, 4 jobs) |
 | `packages/plugins/plugin-twitter/src/worker.ts` | Twitter/X plugin worker (queue, engagement, analytics) |
@@ -382,12 +369,6 @@ git push origin master
 | `EMBED_API_KEY` | Yes | VPS | Embedding service auth |
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
 | `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |
-| **Social Pulse** | | | |
-| `BEARER_TOKEN` | Optional | VPS | X API v2 bearer token for Social Pulse (disables feature if missing) |
-| `CONSUMER_KEY` | Optional | VPS | X API consumer key for OAuth 1.0a |
-| `SECRET_KEY` | Optional | VPS | X API consumer secret for OAuth 1.0a |
-| `X_ACCESS_TOKEN` | Optional | VPS | X API OAuth access token |
-| `X_ACCESS_TOKEN_SECRET` | Optional | VPS | X API OAuth access token secret |
 | **Payments** | | | |
 | `STRIPE_SECRET_KEY` | Optional | VPS | Stripe API secret key for donations |
 | `STRIPE_WEBHOOK_SECRET` | Optional | VPS | Stripe webhook signature verification |

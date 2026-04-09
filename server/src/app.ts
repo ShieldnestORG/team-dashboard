@@ -40,9 +40,7 @@ import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
-import { startPulseCrons } from "./services/pulse-crons.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
-import { streamConnectionManager } from "./services/stream-connection-manager.js";
 import { trendRoutes } from "./routes/trends.js";
 import { logAvailableBackends } from "./services/visual-backends/index.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -64,13 +62,11 @@ import { createPluginHostServiceCleanup } from "./services/plugin-host-service-c
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { publicReelsRoutes } from "./routes/public-reels.js";
 import { sitemapRoutes } from "./routes/sitemap.js";
-import { socialPulseRoutes } from "./routes/social-pulse.js";
-import { publicPulseRoutes } from "./routes/public-pulse.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
-import { initAutoReplyService } from "./services/auto-reply.js";
+import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -211,7 +207,6 @@ export async function createApp(
   api.use(structureRoutes(db));
   api.use("/x/oauth", xOauthRoutes(db));
   api.use("/x/analytics", xAnalyticsRoutes(db));
-  api.use("/pulse", socialPulseRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
@@ -269,8 +264,6 @@ export async function createApp(
   );
   // Public reels API — unauthenticated, serves approved/published visual content
   app.use("/api/reels", publicReelsRoutes(db, opts.storageService, "default"));
-  // Public pulse API — unauthenticated, for tokns.fi consumption
-  app.use("/api/public/pulse", publicPulseRoutes(db));
   // Sitemap + robots — unauthenticated, for search engine crawlers
   app.use("/", sitemapRoutes(db));
 
@@ -341,12 +334,10 @@ export async function createApp(
   const stopAlertCrons = startAlertCrons();
   const stopContentCrons = startContentCrons(db);
   const stopTrendCrons = startTrendCrons(db);
-  const stopPulseCrons = startPulseCrons(db);
   const stopMaintenanceCrons = startMaintenanceCrons(db);
-  // Start filtered stream (if BEARER_TOKEN is set)
-  streamConnectionManager.startStream(db);
-  // Initialize auto-reply service
+  // Initialize auto-reply service + account poll cron
   void initAutoReplyService(db);
+  const stopAutoReplyCron = startAutoReplyCron();
   logAvailableBackends();
   logConfiguredPublishers();
   void toolDispatcher.initialize().catch((err) => {
@@ -375,9 +366,8 @@ export async function createApp(
     stopAlertCrons();
     stopContentCrons();
     stopTrendCrons();
-    stopPulseCrons();
     stopMaintenanceCrons();
-    streamConnectionManager.stopStream();
+    stopAutoReplyCron();
     visualRoutes.stopPolling();
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();

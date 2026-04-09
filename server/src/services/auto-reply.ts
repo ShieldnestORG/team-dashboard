@@ -1,16 +1,61 @@
 // ---------------------------------------------------------------------------
-// Auto-Reply Service — watches for tweets from target accounts and replies
+// Auto-Reply Service — watches for tweets via search and replies
 // ---------------------------------------------------------------------------
 
 import { eq, and, sql, gte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { autoReplyConfig, autoReplyLog } from "@paperclipai/db";
+import { autoReplyConfig, autoReplyLog, autoReplySettings } from "@paperclipai/db";
 import { XApiClient } from "./x-api/client.js";
 import { loadTokens } from "./x-api/oauth.js";
-import { canUseDailyBudget } from "./x-api/rate-limiter.js";
+import { canUseDailyBudget, canAffordRead, recordReadCost, updateBudgetConfig } from "./x-api/rate-limiter.js";
 import { publishGlobalLiveEvent } from "./live-events.js";
 import { logger } from "../middleware/logger.js";
-import type { TweetData, AuthorData } from "./social-pulse.js";
+
+// ---------------------------------------------------------------------------
+// Tweet types
+// ---------------------------------------------------------------------------
+
+export interface TweetData {
+  id: string;
+  text: string;
+  authorId: string;
+  createdAt: string;
+  publicMetrics: {
+    like_count: number;
+    retweet_count: number;
+    reply_count: number;
+    impression_count: number;
+  } | null;
+}
+
+export interface AuthorData {
+  username: string;
+  name: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+export interface AutoReplyGlobalSettings {
+  pollIntervalMinutes: number;
+  dailySpendCapUsd: number;
+  globalMaxRepliesPerDay: number;
+  defaultMinDelaySeconds: number;
+  defaultMaxDelaySeconds: number;
+  defaultMaxRepliesPerTarget: number;
+  enabled: boolean;
+}
+
+const DEFAULT_SETTINGS: AutoReplyGlobalSettings = {
+  pollIntervalMinutes: 30,
+  dailySpendCapUsd: 1.0,
+  globalMaxRepliesPerDay: 50,
+  defaultMinDelaySeconds: 3,
+  defaultMaxDelaySeconds: 15,
+  defaultMaxRepliesPerTarget: 10,
+  enabled: true,
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,9 +64,9 @@ import type { TweetData, AuthorData } from "./social-pulse.js";
 interface AutoReplyConfigRow {
   id: string;
   companyId: string;
-  targetType: string; // 'account' | 'keyword'
+  targetType: string;
   targetXUserId: string | null;
-  targetXUsername: string; // @handle for accounts, keyword/hashtag for keywords
+  targetXUsername: string;
   enabled: boolean;
   replyMode: string;
   replyTemplates: string[] | null;
@@ -44,11 +89,7 @@ async function callOllamaForReply(systemPrompt: string, tweetText: string): Prom
   const res = await fetch(`${OLLAMA_URL}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      prompt,
-      stream: false,
-    }),
+    body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false }),
   });
 
   if (!res.ok) {
@@ -58,15 +99,8 @@ async function callOllamaForReply(systemPrompt: string, tweetText: string): Prom
 
   const data = (await res.json()) as { response: string };
   let reply = data.response.trim();
-
-  // Strip markdown and quotes
   reply = reply.replace(/^["']|["']$/g, "").replace(/\*\*/g, "").replace(/^#+\s/gm, "");
-
-  // Truncate to 280 chars
-  if (reply.length > 280) {
-    reply = reply.substring(0, 277) + "...";
-  }
-
+  if (reply.length > 280) reply = reply.substring(0, 277) + "...";
   return reply;
 }
 
@@ -75,17 +109,74 @@ async function callOllamaForReply(systemPrompt: string, tweetText: string): Prom
 // ---------------------------------------------------------------------------
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+const MAX_QUERY_LENGTH = 512;
 
 class AutoReplyService {
   private db: Db;
   private configsByAuthorId = new Map<string, AutoReplyConfigRow>();
   private configsByUsername = new Map<string, AutoReplyConfigRow>();
   private keywordConfigs: AutoReplyConfigRow[] = [];
+  private allConfigs: AutoReplyConfigRow[] = [];
   private replyQueue: Array<{ tweet: TweetData; author: AuthorData; config: AutoReplyConfigRow; source: string }> = [];
   private processing = false;
+  private lastSeenId: string | null = null;
+  settings: AutoReplyGlobalSettings = { ...DEFAULT_SETTINGS };
 
   constructor(db: Db) {
     this.db = db;
+  }
+
+  async loadSettings(): Promise<void> {
+    try {
+      const [row] = await this.db
+        .select()
+        .from(autoReplySettings)
+        .where(eq(autoReplySettings.companyId, COMPANY_ID))
+        .limit(1);
+
+      if (row?.settings) {
+        this.settings = { ...DEFAULT_SETTINGS, ...(row.settings as AutoReplyGlobalSettings) };
+      }
+    } catch {
+      // Table might not exist yet
+      logger.warn("Auto-reply settings load failed (table may not exist yet)");
+    }
+
+    // Sync budget config with rate limiter
+    updateBudgetConfig({
+      dailySpendCapUsd: this.settings.dailySpendCapUsd,
+      maxRepliesPerDay: this.settings.globalMaxRepliesPerDay,
+    });
+  }
+
+  async saveSettings(updates: Partial<AutoReplyGlobalSettings>): Promise<AutoReplyGlobalSettings> {
+    this.settings = { ...this.settings, ...updates };
+
+    // Upsert settings
+    const existing = await this.db
+      .select({ id: autoReplySettings.id })
+      .from(autoReplySettings)
+      .where(eq(autoReplySettings.companyId, COMPANY_ID))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await this.db
+        .update(autoReplySettings)
+        .set({ settings: this.settings, updatedAt: new Date() })
+        .where(eq(autoReplySettings.companyId, COMPANY_ID));
+    } else {
+      await this.db
+        .insert(autoReplySettings)
+        .values({ companyId: COMPANY_ID, settings: this.settings });
+    }
+
+    // Sync budget config
+    updateBudgetConfig({
+      dailySpendCapUsd: this.settings.dailySpendCapUsd,
+      maxRepliesPerDay: this.settings.globalMaxRepliesPerDay,
+    });
+
+    return this.settings;
   }
 
   async loadConfigs(): Promise<void> {
@@ -100,6 +191,7 @@ class AutoReplyService {
     this.configsByAuthorId.clear();
     this.configsByUsername.clear();
     this.keywordConfigs = [];
+    this.allConfigs = [];
 
     for (const row of rows) {
       const config: AutoReplyConfigRow = {
@@ -117,10 +209,11 @@ class AutoReplyService {
         maxDelaySeconds: row.maxDelaySeconds,
       };
 
+      this.allConfigs.push(config);
+
       if (config.targetType === "keyword") {
         this.keywordConfigs.push(config);
       } else {
-        // Account target
         if (row.targetXUserId) {
           this.configsByAuthorId.set(row.targetXUserId, config);
         }
@@ -138,18 +231,147 @@ class AutoReplyService {
     );
   }
 
+  // ── Build search query covering all targets ───────────────────────
+
+  private buildSearchQueries(): string[] {
+    const parts: string[] = [];
+
+    // Account targets: from:username
+    for (const config of this.allConfigs) {
+      if (config.targetType !== "keyword" && config.targetXUsername) {
+        parts.push(`from:${config.targetXUsername}`);
+      }
+    }
+
+    // Keyword targets: "keyword"
+    for (const config of this.keywordConfigs) {
+      parts.push(`"${config.targetXUsername}"`);
+    }
+
+    if (parts.length === 0) return [];
+
+    // Chunk into queries under 512 chars
+    const queries: string[] = [];
+    let current = "";
+
+    for (const part of parts) {
+      const addition = current ? ` OR ${part}` : part;
+      if ((current + addition).length > MAX_QUERY_LENGTH) {
+        if (current) queries.push(current);
+        current = part;
+      } else {
+        current += addition;
+      }
+    }
+    if (current) queries.push(current);
+
+    return queries;
+  }
+
+  // ── Search-based polling ──────────────────────────────────────────
+
+  async pollViaSearch(): Promise<{ checked: number; found: number; newReplies: number }> {
+    if (!this.settings.enabled) {
+      return { checked: 0, found: 0, newReplies: 0 };
+    }
+
+    const queries = this.buildSearchQueries();
+    if (queries.length === 0) return { checked: 0, found: 0, newReplies: 0 };
+
+    // Check if we can afford reads
+    if (!canAffordRead(25)) {
+      logger.info("Auto-reply poll skipped: daily spend cap would be exceeded");
+      return { checked: 0, found: 0, newReplies: 0 };
+    }
+
+    const tokens = await loadTokens(this.db, COMPANY_ID).catch(() => null);
+    if (!tokens) {
+      logger.warn("Auto-reply poll skipped: no X OAuth tokens");
+      return { checked: 0, found: 0, newReplies: 0 };
+    }
+
+    const client = new XApiClient(this.db, COMPANY_ID);
+    let totalFound = 0;
+    let newReplies = 0;
+
+    for (const query of queries) {
+      try {
+        const result = await client.searchRecent(query, {
+          maxResults: 25,
+          sinceId: this.lastSeenId ?? undefined,
+        });
+
+        // Record read cost
+        const readCount = result.meta?.result_count ?? 0;
+        if (readCount > 0) recordReadCost(readCount);
+
+        // Track newest ID for next poll
+        if (result.meta?.newest_id) {
+          this.lastSeenId = result.meta.newest_id;
+        }
+
+        if (!result.data || result.data.length === 0) continue;
+
+        // Build author lookup from includes
+        const authorMap = new Map<string, { username: string; name: string }>();
+        if (result.includes?.users) {
+          for (const user of result.includes.users) {
+            authorMap.set(user.id, { username: user.username, name: user.name });
+          }
+        }
+
+        totalFound += result.data.length;
+
+        for (const tweet of result.data) {
+          // Skip tweets older than 1 hour
+          if (tweet.created_at) {
+            const age = Date.now() - new Date(tweet.created_at).getTime();
+            if (age > 60 * 60 * 1000) continue;
+          }
+
+          const authorInfo = authorMap.get(tweet.author_id);
+
+          await this.checkAndReply(
+            {
+              id: tweet.id,
+              text: tweet.text,
+              authorId: tweet.author_id,
+              createdAt: tweet.created_at ?? new Date().toISOString(),
+              publicMetrics: tweet.public_metrics ? {
+                like_count: tweet.public_metrics.like_count ?? 0,
+                retweet_count: tweet.public_metrics.retweet_count ?? 0,
+                reply_count: tweet.public_metrics.reply_count ?? 0,
+                impression_count: tweet.public_metrics.impression_count ?? 0,
+              } : null,
+            },
+            {
+              username: authorInfo?.username ?? "unknown",
+              name: authorInfo?.name ?? null,
+            },
+            "search-poll",
+          );
+          newReplies++;
+        }
+      } catch (err) {
+        logger.error({ err, query }, "Auto-reply search poll failed");
+      }
+    }
+
+    return { checked: queries.length, found: totalFound, newReplies };
+  }
+
+  // ── Check and reply ───────────────────────────────────────────────
+
   async checkAndReply(
     tweet: TweetData,
     author: AuthorData,
     source: string,
   ): Promise<void> {
-    // Fast path: check if this tweet's author matches any account target
     let config = this.configsByAuthorId.get(tweet.authorId);
     if (!config) {
       config = this.configsByUsername.get(author.username.toLowerCase());
     }
 
-    // Check keyword targets if no account match
     if (!config) {
       const textLower = tweet.text.toLowerCase();
       for (const kw of this.keywordConfigs) {
@@ -163,11 +385,9 @@ class AutoReplyService {
 
     if (!config) return;
 
-    // Skip if we're replying to ourselves
     const tokens = await loadTokens(this.db, COMPANY_ID).catch(() => null);
     if (tokens && tokens.xUserId === tweet.authorId) return;
 
-    // Check if already replied to this tweet
     const existing = await this.db
       .select({ id: autoReplyLog.id })
       .from(autoReplyLog)
@@ -176,7 +396,6 @@ class AutoReplyService {
 
     if (existing.length > 0) return;
 
-    // Check per-config daily limit
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
 
@@ -190,23 +409,17 @@ class AutoReplyService {
       ));
 
     if ((dailyCount[0]?.count ?? 0) >= config.maxRepliesPerDay) {
-      logger.info(
-        { target: config.targetXUsername, limit: config.maxRepliesPerDay },
-        "Auto-reply daily limit reached for target",
-      );
+      logger.info({ target: config.targetXUsername, limit: config.maxRepliesPerDay }, "Auto-reply daily limit reached for target");
       return;
     }
 
-    // Check global rate limit
     const budget = canUseDailyBudget("reply");
     if (!budget.allowed) {
-      logger.info("Auto-reply skipped: global reply budget exhausted");
-      // Log it as rate_limited
-      await this.logReply(config, tweet, author, "", "rate_limited", "Global rate limit exhausted", 0, source);
+      logger.info("Auto-reply skipped: daily budget exhausted");
+      await this.logReply(config, tweet, author, "", "rate_limited", "Daily budget exhausted", 0, source);
       return;
     }
 
-    // Queue the reply
     this.replyQueue.push({ tweet, author, config, source });
     void this.processQueue();
   }
@@ -221,14 +434,12 @@ class AutoReplyService {
         const startTime = Date.now();
 
         try {
-          // Randomized delay to avoid bot detection
           const { config, tweet, author, source } = item;
           const delay = config.minDelaySeconds * 1000 +
             Math.random() * (config.maxDelaySeconds - config.minDelaySeconds) * 1000;
 
           await new Promise((resolve) => setTimeout(resolve, delay));
 
-          // Generate reply text
           let replyText: string;
           if (config.replyMode === "ai" && config.aiPrompt) {
             replyText = await callOllamaForReply(config.aiPrompt, tweet.text);
@@ -248,56 +459,25 @@ class AutoReplyService {
             continue;
           }
 
-          // Send the reply
           const client = new XApiClient(this.db, COMPANY_ID);
-          const result = await client.createTweet({
-            text: replyText,
-            replyTo: tweet.id,
-          });
-
+          const result = await client.createTweet({ text: replyText, replyTo: tweet.id });
           const latencyMs = Date.now() - startTime;
 
-          await this.logReply(
-            config, tweet, author,
-            replyText, "sent", null,
-            latencyMs, source,
-            result.data?.id,
-          );
+          await this.logReply(config, tweet, author, replyText, "sent", null, latencyMs, source, result.data?.id);
 
           logger.info(
-            {
-              target: config.targetXUsername,
-              tweetId: tweet.id,
-              replyId: result.data?.id,
-              latencyMs,
-              source,
-            },
+            { target: config.targetXUsername, tweetId: tweet.id, replyId: result.data?.id, latencyMs, source },
             "Auto-reply sent",
           );
 
           publishGlobalLiveEvent({
             type: "auto_reply.sent",
-            payload: {
-              target: config.targetXUsername,
-              tweetId: tweet.id,
-              replyId: result.data?.id,
-              latencyMs,
-            },
+            payload: { target: config.targetXUsername, tweetId: tweet.id, replyId: result.data?.id, latencyMs },
           });
         } catch (err) {
           const latencyMs = Date.now() - startTime;
-          const errorMsg = String(err);
-
-          await this.logReply(
-            item.config, item.tweet, item.author,
-            "", "failed", errorMsg,
-            latencyMs, item.source,
-          );
-
-          logger.error(
-            { err, target: item.config.targetXUsername, tweetId: item.tweet.id },
-            "Auto-reply failed",
-          );
+          await this.logReply(item.config, item.tweet, item.author, "", "failed", String(err), latencyMs, item.source);
+          logger.error({ err, target: item.config.targetXUsername, tweetId: item.tweet.id }, "Auto-reply failed");
         }
       }
     } finally {
@@ -306,15 +486,9 @@ class AutoReplyService {
   }
 
   private async logReply(
-    config: AutoReplyConfigRow,
-    tweet: TweetData,
-    author: AuthorData,
-    replyText: string,
-    status: string,
-    error: string | null,
-    latencyMs: number,
-    source: string,
-    replyTweetId?: string,
+    config: AutoReplyConfigRow, tweet: TweetData, author: AuthorData,
+    replyText: string, status: string, error: string | null,
+    latencyMs: number, source: string, replyTweetId?: string,
   ): Promise<void> {
     try {
       await this.db.insert(autoReplyLog).values({
@@ -332,64 +506,6 @@ class AutoReplyService {
     } catch (err) {
       logger.error({ err }, "Failed to log auto-reply");
     }
-  }
-
-  // ── Account polling — direct timeline check ────────────────────────
-
-  async pollTargetAccounts(): Promise<{ checked: number; newReplies: number }> {
-    // Only poll account-type targets that have valid user IDs (not keyword targets)
-    const configs = [...this.configsByAuthorId.values()].filter(
-      (c) => c.enabled && c.targetXUserId && c.targetType !== "keyword" && !c.targetXUserId.startsWith("pending_"),
-    );
-
-    if (configs.length === 0) return { checked: 0, newReplies: 0 };
-
-    // Verify OAuth tokens exist
-    const tokens = await loadTokens(this.db, COMPANY_ID).catch(() => null);
-    if (!tokens) {
-      logger.warn("Auto-reply account poll skipped: no X OAuth tokens");
-      return { checked: 0, newReplies: 0 };
-    }
-
-    const client = new XApiClient(this.db, COMPANY_ID);
-    let newReplies = 0;
-
-    for (const config of configs) {
-      try {
-        const result = await client.getUserTweets(config.targetXUserId!, 5);
-        if (!result.data || result.data.length === 0) continue;
-
-        for (const tweet of result.data) {
-          // Skip old tweets (more than 1 hour old)
-          if (tweet.created_at) {
-            const age = Date.now() - new Date(tweet.created_at).getTime();
-            if (age > 60 * 60 * 1000) continue;
-          }
-
-          await this.checkAndReply(
-            {
-              id: tweet.id,
-              text: tweet.text,
-              authorId: config.targetXUserId!,
-              createdAt: tweet.created_at ?? new Date().toISOString(),
-              publicMetrics: null,
-            },
-            {
-              username: config.targetXUsername,
-              name: null,
-            },
-            "account-poll",
-          );
-        }
-      } catch (err) {
-        logger.error(
-          { err, target: config.targetXUsername },
-          "Auto-reply account poll failed for target",
-        );
-      }
-    }
-
-    return { checked: configs.length, newReplies };
   }
 
   // ── Stats ───────────────────────────────────────────────────────────
@@ -413,16 +529,10 @@ class AutoReplyService {
       .where(gte(autoReplyLog.createdAt, todayStart))
       .groupBy(autoReplyLog.status);
 
-    let todaySent = 0;
-    let todayFailed = 0;
-    let todayRateLimited = 0;
-    let avgLatencyMs = 0;
+    let todaySent = 0, todayFailed = 0, todayRateLimited = 0, avgLatencyMs = 0;
 
     for (const row of rows) {
-      if (row.status === "sent") {
-        todaySent = row.count;
-        avgLatencyMs = row.avgLatency ?? 0;
-      }
+      if (row.status === "sent") { todaySent = row.count; avgLatencyMs = row.avgLatency ?? 0; }
       if (row.status === "failed") todayFailed = row.count;
       if (row.status === "rate_limited") todayRateLimited = row.count;
     }
@@ -440,13 +550,65 @@ let _service: AutoReplyService | null = null;
 export async function initAutoReplyService(db: Db): Promise<void> {
   _service = new AutoReplyService(db);
   try {
+    await _service.loadSettings();
     await _service.loadConfigs();
   } catch (err) {
-    // Table might not exist yet — that's OK, configs will be empty
-    logger.warn({ err }, "Auto-reply config load failed (table may not exist yet)");
+    logger.warn({ err }, "Auto-reply init failed (table may not exist yet)");
   }
 }
 
 export function getAutoReplyService(): AutoReplyService | null {
   return _service;
+}
+
+// ---------------------------------------------------------------------------
+// Standalone cron — polls via search at configurable interval
+// ---------------------------------------------------------------------------
+
+export function startAutoReplyCron(): () => void {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let running = false;
+  let currentIntervalMs = 30 * 60 * 1000; // default 30 min
+
+  const tick = async () => {
+    const svc = getAutoReplyService();
+    if (!svc || running) return;
+
+    // Check if interval changed
+    const newIntervalMs = svc.settings.pollIntervalMinutes * 60 * 1000;
+    if (newIntervalMs !== currentIntervalMs && timer) {
+      currentIntervalMs = newIntervalMs;
+      clearInterval(timer);
+      timer = setInterval(tick, currentIntervalMs);
+      logger.info({ intervalMinutes: svc.settings.pollIntervalMinutes }, "Auto-reply poll interval updated");
+    }
+
+    running = true;
+    try {
+      const result = await svc.pollViaSearch();
+      if (result.found > 0) {
+        logger.info(result, "Auto-reply poll completed");
+      }
+    } catch (err) {
+      logger.error({ err }, "Auto-reply poll failed");
+    } finally {
+      running = false;
+    }
+  };
+
+  // Start with default interval, will self-adjust on first tick
+  const svc = getAutoReplyService();
+  if (svc) {
+    currentIntervalMs = svc.settings.pollIntervalMinutes * 60 * 1000;
+  }
+  timer = setInterval(tick, currentIntervalMs);
+
+  // Run first tick after 30s to let service initialize
+  setTimeout(tick, 30_000);
+
+  logger.info({ intervalMinutes: currentIntervalMs / 60_000 }, "Auto-reply cron started (search-based polling)");
+
+  return () => {
+    if (timer) clearInterval(timer);
+  };
 }

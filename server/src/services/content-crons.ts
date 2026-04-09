@@ -1,8 +1,10 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { contentItems } from "@paperclipai/db";
 import { contentService } from "./content.js";
 import { seoEngineService } from "./seo-engine.js";
 import { autoGenerateAndQueue } from "./x-api/content-bridge.js";
+import { publishBlogFromContent } from "./blog-publisher.js";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
@@ -270,6 +272,30 @@ export function startContentCrons(db: Db) {
             { job: job.name, ownerAgent: job.ownerAgent, contentId: result.contentId, topic, isAlert: !!job.topicPicker },
             "Content cron job completed — item queued as pending",
           );
+
+          // Auto-publish blog posts to coherencedaddy.com
+          if (job.contentType === "blog_post") {
+            try {
+              const publishResult = await publishBlogFromContent(result.content, topic!);
+              if (publishResult.success) {
+                await db
+                  .update(contentItems)
+                  .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
+                  .where(eq(contentItems.id, result.contentId));
+                logger.info(
+                  { job: job.name, slug: publishResult.slug, title: publishResult.title },
+                  "Blog post published to coherencedaddy.com",
+                );
+              } else {
+                logger.warn(
+                  { job: job.name, error: publishResult.error },
+                  "Blog publish failed — content stays as draft",
+                );
+              }
+            } catch (publishErr) {
+              logger.error({ err: publishErr, job: job.name }, "Blog publish error — non-critical, content in draft");
+            }
+          }
         }
       } catch (err) {
         logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Content cron job failed");

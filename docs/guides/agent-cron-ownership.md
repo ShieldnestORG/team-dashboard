@@ -52,15 +52,13 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Eval crons | `server/src/services/eval-crons.ts` | 1 | Nova |
 | Alert crons | `server/src/services/alert-crons.ts` | 2 | Nova |
 | Trend crons | `server/src/services/trend-crons.ts` | 1 | Echo |
-| Pulse crons | `server/src/services/pulse-crons.ts` | 7 | Echo |
+| Auto-reply | `server/src/services/auto-reply.ts` | 1 | Core |
 
-**Total: 33 cron jobs across 6 services + 2 plugin jobs (Discord) + 4 plugin jobs (Twitter).**
-
-> **Note:** The X API v2 filtered stream is an always-on background service (not a cron job). When the stream is connected and healthy, the `pulse:search` cron auto-skips. See `server/src/services/stream-connection-manager.ts`.
+**Total: 26 cron jobs across 5 services + 1 auto-reply cron + 2 plugin jobs (Discord) + 4 plugin jobs (Twitter). = 33 total**
 
 ## Full Agent-to-Cron Mapping
 
-### Echo (Data Engineer) — 16 jobs
+### Echo (Data Engineer) — 9 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
@@ -73,13 +71,6 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | `intel:backfill` | `0 */12 * * *` | intel-crons | Sparse data catch-up twice daily |
 | `intel:discover` | `0 */6 * * *` | intel-crons | Discover trending projects every 6 hours |
 | `trends:scan` | `0 */6 * * *` | trend-crons | CoinGecko + HackerNews + Google Trends + Bing News trend signals every 6 hours |
-| `pulse:search` | `*/5 * * * *` | pulse-crons | X API social pulse search polling every 5 minutes |
-| `pulse:sentiment` | `*/15 * * * *` | pulse-crons | Keyword-based sentiment scoring every 15 minutes |
-| `pulse:aggregate-hour` | `5 * * * *` | pulse-crons | Hourly aggregation rollups |
-| `pulse:aggregate-day` | `10 0 * * *` | pulse-crons | Daily aggregation rollups |
-| `pulse:xrpl-bridge` | `*/10 * * * *` | pulse-crons | XRPL bridge mention tagging every 10 minutes |
-| `pulse:spike-detect` | `*/15 * * * *` | pulse-crons | Volume spike detection + alerting every 15 minutes |
-| `pulse:backfill` | `0 */12 * * *` | pulse-crons | Historical data backfill every 12 hours |
 
 ### Sage (CMO) — 1 job (orchestrator)
 
@@ -128,9 +119,15 @@ Sage orchestrates the 4 content personality agents below.
 | `alert:health-check` | `*/5 * * * *` | alert-crons | Readiness probe every 5 minutes |
 | `alert:digest` | `0 7 * * *` | alert-crons | Daily server/eval digest email |
 
+### Core (Backend Dev) — 1 job
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `auto-reply:poll` | configurable (default every 30 min) | auto-reply.ts | Single `search/recent` query covering all enabled account + keyword targets. Interval driven by `AutoReplyGlobalSettings.pollIntervalMinutes`, updated live via settings API. Dollar-budget tracked: $0.005/read, $0.01/write. |
+
 ### Agents with No Cron Jobs
 
-Atlas (CEO), River (PM), Pixel (Designer), Core (Backend Dev), Flux (Frontend Dev), Bridge (Full-Stack Dev), Mermaid (Structure Agent) — work arrives via task assignment and heartbeat wakeups.
+Atlas (CEO), River (PM), Pixel (Designer), Flux (Frontend Dev), Bridge (Full-Stack Dev), Mermaid (Structure Agent) — work arrives via task assignment and heartbeat wakeups.
 
 ## Adding a New Cron Job
 

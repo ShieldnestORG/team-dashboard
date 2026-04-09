@@ -38,6 +38,27 @@ export const autoReplyConfig = pgTable(
   }),
 );
 
+export const autoReplySettings = pgTable(
+  "auto_reply_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id),
+    settings: jsonb("settings").notNull().$type<{
+      pollIntervalMinutes: number;
+      dailySpendCapUsd: number;
+      globalMaxRepliesPerDay: number;
+      defaultMinDelaySeconds: number;
+      defaultMaxDelaySeconds: number;
+      defaultMaxRepliesPerTarget: number;
+      enabled: boolean;
+    }>(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyUq: uniqueIndex("auto_reply_settings_company_uq").on(table.companyId),
+  }),
+);
+
 export const autoReplyLog = pgTable(
   "auto_reply_log",
   {

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { pulseApi } from "../api/pulse";
 import { queryKeys } from "../lib/queryKeys";
 import {
   Card,
@@ -27,9 +26,6 @@ import {
   Wrench,
   Layers,
   Sparkles,
-  Radio,
-  TrendingUp,
-  MessageCircle,
 } from "lucide-react";
 
 // ── Ecosystem Links ─────────────────────────────────────────────────────────
@@ -156,9 +152,6 @@ export function TxEcosystem() {
           </div>
         </div>
       </div>
-
-      {/* ── Social Pulse Widget ────────────────────────────────────────── */}
-      <PulseWidget />
 
       {/* ── Validator Goal Card ───────────────────────────────────────── */}
       <Card className="rounded-xl border-[#00C896]/20 bg-gradient-to-br from-[#00C896]/5 to-transparent">
@@ -321,72 +314,3 @@ export function TxEcosystem() {
   );
 }
 
-// ── Social Pulse Widget ──────────────────────────────────────────────────────
-
-function PulseWidget() {
-  const { data: summary } = useQuery({
-    queryKey: queryKeys.pulse.summary(24),
-    queryFn: () => pulseApi.getSummary(24),
-    refetchInterval: 120_000,
-  });
-
-  const { data: xrpl } = useQuery({
-    queryKey: queryKeys.pulse.xrplBridge,
-    queryFn: () => pulseApi.getXrplBridge(),
-    refetchInterval: 120_000,
-  });
-
-  return (
-    <Card className="rounded-xl border-blue-400/20 bg-gradient-to-br from-blue-500/5 to-purple-500/5">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Radio className="h-4 w-4 text-blue-400" />
-            <CardTitle className="text-sm">Social Pulse</CardTitle>
-            <Badge className="bg-blue-400/10 text-blue-400 border-blue-400/30 text-[10px]">LIVE</Badge>
-          </div>
-          <a href="/social-pulse" className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-            View Dashboard &rarr;
-          </a>
-        </div>
-        <CardDescription className="text-xs">
-          Real-time X/Twitter intelligence for the TX ecosystem
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-              <MessageCircle className="h-3 w-3" />
-              <span className="text-[10px]">Tweets (24h)</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">{summary?.totalTweets24h ?? 0}</p>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-              <TrendingUp className="h-3 w-3" />
-              <span className="text-[10px]">Sentiment</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">
-              {summary ? `${Math.round(summary.overallSentiment * 100)}%` : "--"}
-            </p>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-              <ArrowLeftRight className="h-3 w-3" />
-              <span className="text-[10px]">XRPL Bridge</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">{xrpl?.totalMentions24h ?? 0}</p>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-              <Sparkles className="h-3 w-3" />
-              <span className="text-[10px]">Staking Talk</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">{xrpl?.stakingMentionPct ?? 0}%</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}

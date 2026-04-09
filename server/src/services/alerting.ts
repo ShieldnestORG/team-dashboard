@@ -2,7 +2,7 @@ import { createTransport, type Transporter } from "nodemailer";
 import { logger } from "../middleware/logger.js";
 
 // Alert types
-export type AlertType = "health_down" | "eval_failed" | "agent_error" | "budget_breach" | "backup_failed" | "pulse_spike";
+export type AlertType = "health_down" | "eval_failed" | "agent_error" | "budget_breach" | "backup_failed";
 
 export interface AlertRecord {
   id: string;

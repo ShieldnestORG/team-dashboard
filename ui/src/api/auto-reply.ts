@@ -7,7 +7,7 @@ import { api } from "./client.js";
 export interface AutoReplyConfig {
   id: string;
   companyId: string;
-  targetType: string; // 'account' | 'keyword'
+  targetType: string;
   targetXUserId: string | null;
   targetXUsername: string;
   enabled: boolean;
@@ -36,38 +36,31 @@ export interface AutoReplyLogEntry {
   createdAt: string;
 }
 
+export interface AutoReplyGlobalSettings {
+  pollIntervalMinutes: number;
+  dailySpendCapUsd: number;
+  globalMaxRepliesPerDay: number;
+  defaultMinDelaySeconds: number;
+  defaultMaxDelaySeconds: number;
+  defaultMaxRepliesPerTarget: number;
+  enabled: boolean;
+}
+
 export interface AutoReplyStats {
   todaySent: number;
   todayFailed: number;
   todayRateLimited: number;
   avgLatencyMs: number;
-  globalBudget: {
-    repliesUsed: number;
-    repliesLimit: number;
+  budget: {
+    spentUsd: number;
+    capUsd: number;
+    repliesSent: number;
+    maxReplies: number;
+    readCount: number;
   };
-}
-
-export interface PulseDiagnostics {
-  stream: {
-    connected: boolean;
-    uptime: number;
-    tweetsPerMinute: number;
-    lastHeartbeat: string | null;
-    lastError: string | null;
-    fallbackToPolling: boolean;
-    bearerTokenPresent: boolean;
-    reconnectAttempts: number;
-    totalTweetsIngested: number;
-    startedAt: string | null;
-  };
-  polling: {
-    clientActive: boolean;
-    rateLimit: { remaining: number; resetAt: string } | null;
-  };
-  queries: Array<{ topic: string; query: string }>;
-  tweetCounts: {
-    lastHour: number;
-    last24h: number;
+  settings: {
+    pollIntervalMinutes: number;
+    enabled: boolean;
   };
 }
 
@@ -76,12 +69,19 @@ export interface PulseDiagnostics {
 // ---------------------------------------------------------------------------
 
 export const autoReplyApi = {
+  // Settings
+  getSettings: () =>
+    api.get<{ settings: AutoReplyGlobalSettings | null }>("/auto-reply/settings"),
+
+  updateSettings: (data: Partial<AutoReplyGlobalSettings>) =>
+    api.put<{ settings: AutoReplyGlobalSettings }>("/auto-reply/settings", data),
+
   // Config CRUD
   listConfigs: () =>
     api.get<{ configs: AutoReplyConfig[] }>("/auto-reply/config"),
 
   createConfig: (data: {
-    target: string; // "@username", "#hashtag", or "keyword"
+    target: string;
     targetXUserId?: string;
     targetXUsername?: string;
     targetType?: string;
@@ -116,8 +116,4 @@ export const autoReplyApi = {
 
   getStats: () =>
     api.get<AutoReplyStats>("/auto-reply/stats"),
-
-  // Diagnostics
-  getDiagnostics: () =>
-    api.get<PulseDiagnostics>("/pulse/diagnostics"),
 };
