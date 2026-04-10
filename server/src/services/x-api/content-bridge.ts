@@ -9,6 +9,8 @@ import * as blaze from "../../content-templates/blaze.js";
 import * as cipher from "../../content-templates/cipher.js";
 import * as spark from "../../content-templates/spark.js";
 import * as prism from "../../content-templates/prism.js";
+import * as vanguard from "../../content-templates/vanguard.js";
+import * as forge from "../../content-templates/forge.js";
 
 // ---------------------------------------------------------------------------
 // X/Twitter Content Bridge
@@ -24,7 +26,7 @@ const PERSONALITIES: Record<string, {
   SYSTEM_PROMPT: string;
   CONTENT_TYPE_PROMPTS: Record<string, string>;
   PLATFORM_LIMITS: Record<string, number>;
-}> = { blaze, cipher, spark, prism };
+}> = { blaze, cipher, spark, prism, vanguard, forge };
 
 const MAX_TWEET_CHARS = 280;
 const MAX_TWEETS_PER_DAY = 8; // ~50% of X free-tier 17/day limit

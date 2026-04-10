@@ -9,6 +9,8 @@ import * as blaze from "../content-templates/blaze.js";
 import * as cipher from "../content-templates/cipher.js";
 import * as spark from "../content-templates/spark.js";
 import * as prism from "../content-templates/prism.js";
+import * as vanguard from "../content-templates/vanguard.js";
+import * as forge from "../content-templates/forge.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,6 +65,8 @@ const PERSONALITIES: Record<string, {
   cipher,
   spark,
   prism,
+  vanguard,
+  forge,
 };
 
 // ---------------------------------------------------------------------------

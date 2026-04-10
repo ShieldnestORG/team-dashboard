@@ -51,11 +51,22 @@ export interface BlogPost {
   slug: string;
   title: string;
   description: string;
-  category: "ai-agents" | "crypto" | "tools" | "ecosystem" | "lifestyle";
+  category: "ai-agents" | "crypto" | "tools" | "ecosystem" | "lifestyle" | "xrp" | "comparison";
   keywords: string[];
   content: string;
   reading_time: number;
 }
+
+// tokns.fi / TX ecosystem links — injected into crypto, ecosystem, xrp, comparison posts
+const TOKNS_LINKS: Array<{ name: string; url: string }> = [
+  { name: "tokns.fi Dashboard", url: "https://app.tokns.fi" },
+  { name: "Stake TX Tokens", url: "https://app.tokns.fi/staking" },
+  { name: "TX NFT Marketplace", url: "https://app.tokns.fi/nfts" },
+  { name: "Token Swaps", url: "https://app.tokns.fi/swap" },
+  { name: "Multi-Wallet Tracker", url: "https://app.tokns.fi/wallets" },
+  { name: "TX Blockchain", url: "https://tokns.fi" },
+  { name: "TX Chain Explorer", url: "https://tx.org" },
+];
 
 // ---------------------------------------------------------------------------
 // Slug generator
@@ -121,7 +132,10 @@ Category: ${category}
 
 Include these internal tool links naturally in the content:
 ${toolLinksStr}
-
+${["crypto", "ecosystem", "xrp", "comparison"].includes(category) ? `
+Also include these TX ecosystem links naturally:
+${TOKNS_LINKS.slice(0, 4).map((t) => `- <a href="${t.url}">${t.name}</a>`).join("\n")}
+` : ""}
 Return ONLY a JSON object with these fields (no markdown fences, no extra text):
 {
   "title": "catchy SEO title under 70 chars",
@@ -349,9 +363,12 @@ export async function publishBlogFromContent(
   const anySuccess = results.cd?.success || results.sn?.success;
 
   if (anySuccess) {
-    // Only ping IndexNow for CD (public blog, search-indexed)
+    // Ping IndexNow for published targets
     if (results.cd?.success) {
       await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
+    }
+    if (results.sn?.success) {
+      await pingIndexNow([`https://app.tokns.fi/chain-updates/${post.slug}`]);
     }
 
     const errors: string[] = [];

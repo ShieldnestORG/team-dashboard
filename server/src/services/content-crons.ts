@@ -19,7 +19,7 @@ interface ContentJobDef {
   personality: string;
   ownerAgent: string;
   contentType: string;
-  topicPicker?: "intel-alert" | "chain-metrics";
+  topicPicker?: "intel-alert" | "chain-metrics" | "xrp-focus" | "comparison" | "tokns-promo";
   useContentBridge?: boolean;
   publishTarget?: PublishTarget;
 }
@@ -43,6 +43,17 @@ const JOB_DEFS: ContentJobDef[] = [
   { name: "content:intel-alert:bluesky",  schedule: "0 */2 * * *",  personality: "spark", ownerAgent: "spark", contentType: "bluesky", topicPicker: "intel-alert" },
   // TX chain daily — daily chain metrics article published to ShieldNest
   { name: "content:tx-chain-daily", schedule: "0 8 * * *", personality: "prism", ownerAgent: "prism", contentType: "blog_post", topicPicker: "chain-metrics", publishTarget: "sn" },
+  // XRP-focused content — Vanguard personality (institutional XRP analyst)
+  { name: "content:xrp:blog",     schedule: "0 9 * * 1,3,5",      personality: "vanguard", ownerAgent: "vanguard", contentType: "blog_post", topicPicker: "xrp-focus", publishTarget: "all" },
+  { name: "content:xrp:twitter",  schedule: "0 11,16,19 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "xrp-focus", useContentBridge: true },
+  { name: "content:xrp:linkedin", schedule: "0 13 * * 2,4",       personality: "vanguard", ownerAgent: "vanguard", contentType: "linkedin",  topicPicker: "xrp-focus" },
+  { name: "content:xrp-alert:twitter", schedule: "0 */3 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "intel-alert", useContentBridge: true },
+  // Comparison blogs — Forge personality (AEO-optimized TX vs L1s)
+  { name: "content:comparison:blog",   schedule: "0 10 * * 3,6",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "comparison", publishTarget: "all" },
+  // AEO-optimized general content — Forge personality
+  { name: "content:aeo:blog",          schedule: "0 11 * * 1,4",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", publishTarget: "all" },
+  // tokns.fi promotional blogs — Forge for structured content
+  { name: "content:tokns-promo:blog",  schedule: "0 14 * * 2,5",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "tokns-promo", publishTarget: "all" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -242,6 +253,140 @@ async function pickChainMetricsTopic(db: Db): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
+// XRP-focused topic picker — pulls XRP/Ripple intel for Vanguard personality
+// ---------------------------------------------------------------------------
+
+async function pickXrpTopic(db: Db): Promise<string> {
+  try {
+    const rows = (await db.execute(sql`
+      SELECT headline, report_type, captured_at,
+        EXP(-EXTRACT(EPOCH FROM (NOW() - captured_at)) / 43200.0) AS recency_score
+      FROM intel_reports
+      WHERE company_slug = 'xrpl-ripple'
+        AND captured_at > NOW() - INTERVAL '48 hours'
+        AND report_type != 'discovery'
+      ORDER BY EXP(-EXTRACT(EPOCH FROM (NOW() - captured_at)) / 43200.0) DESC
+      LIMIT 10
+    `)) as unknown as Array<{ headline: string; report_type: string; recency_score: number }>;
+
+    if (rows.length > 0) {
+      // Weighted random pick by recency
+      const totalWeight = rows.reduce((sum, r) => sum + Number(r.recency_score), 0);
+      let rand = Math.random() * totalWeight;
+      for (const row of rows) {
+        rand -= Number(row.recency_score);
+        if (rand <= 0) return row.headline;
+      }
+      return rows[0]!.headline;
+    }
+  } catch (err) {
+    logger.warn({ err }, "Failed to pick XRP topic from intel, using fallback");
+  }
+
+  const fallbacks = [
+    "XRP regulatory developments and SEC implications for crypto markets",
+    "XRPL DeFi ecosystem growth and new AMM liquidity pools",
+    "Ripple ODL corridor expansion and cross-border payment adoption",
+    "XRP price analysis: institutional accumulation and market structure",
+    "XRPL NFT ecosystem and tokenization use cases",
+    "Ripple partnerships and enterprise blockchain adoption trends",
+  ];
+  return fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
+}
+
+// ---------------------------------------------------------------------------
+// Comparison topic picker — TX blockchain vs competitor L1s with real data
+// ---------------------------------------------------------------------------
+
+const COMPETITOR_L1S = ["solana", "avalanche-2", "matic-network", "arbitrum", "optimism", "sei-network", "injective-protocol", "celestia"];
+
+async function pickComparisonTopic(db: Db): Promise<string> {
+  try {
+    // Get TX chain metrics
+    const txMetrics = (await db.execute(sql`
+      SELECT body FROM intel_reports
+      WHERE company_slug IN ('cosmos', 'txhuman')
+        AND report_type = 'chain-metrics'
+      ORDER BY captured_at DESC
+      LIMIT 2
+    `)) as unknown as Array<{ body: string }>;
+
+    let txContext = "";
+    if (txMetrics.length > 0) {
+      const parsed = JSON.parse(txMetrics[0]!.body) as { apr?: number | null; validator_count?: number | null };
+      const parts: string[] = [];
+      if (parsed.apr != null) parts.push(`APR ${parsed.apr.toFixed(2)}%`);
+      if (parsed.validator_count != null) parts.push(`${parsed.validator_count} validators`);
+      if (parts.length > 0) txContext = `TX Blockchain metrics: ${parts.join(", ")}. `;
+    }
+
+    // Pick a random competitor and get their latest price data
+    const competitor = COMPETITOR_L1S[Math.floor(Math.random() * COMPETITOR_L1S.length)]!;
+    const compData = (await db.execute(sql`
+      SELECT headline, body FROM intel_reports
+      WHERE company_slug = ${competitor}
+        AND report_type = 'price'
+      ORDER BY captured_at DESC
+      LIMIT 1
+    `)) as unknown as Array<{ headline: string; body: string }>;
+
+    const compName = competitor.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    let compContext = "";
+    if (compData.length > 0) {
+      compContext = `Competitor data: ${compData[0]!.headline}. `;
+    }
+
+    return `${txContext}${compContext}Write a detailed comparison of TX Blockchain (Cosmos SDK, IBC-enabled) vs ${compName}. Compare: transaction speed, staking APR, validator decentralization, cross-chain interoperability (IBC vs bridges), ecosystem size, and developer experience. Include an HTML comparison table. Show why TX's Cosmos SDK foundation and IBC connectivity give it advantages. Reference app.tokns.fi for staking and portfolio tracking.`;
+  } catch (err) {
+    logger.warn({ err }, "Failed to build comparison topic, using fallback");
+  }
+
+  const fallbacks = [
+    "TX Blockchain vs Solana: Which L1 offers better interoperability and staking rewards? Compare IBC cross-chain vs Wormhole bridges, validator economics, and ecosystem growth. Include comparison table.",
+    "TX Blockchain advantages over Ethereum L2s: Why a sovereign Cosmos SDK chain beats rollups for cross-chain DeFi. Compare finality, fees, IBC connectivity, and sovereignty.",
+    "Why TX Blockchain's Cosmos SDK foundation matters: Comparing TX to monolithic L1s on interoperability, governance, and staking APR. Reference app.tokns.fi for staking.",
+    "TX vs Avalanche: Subnet architecture vs IBC — which cross-chain approach wins? Compare validator requirements, staking yields, and ecosystem composability.",
+  ];
+  return fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
+}
+
+// ---------------------------------------------------------------------------
+// tokns.fi promo topic picker — feature spotlights enriched with live data
+// ---------------------------------------------------------------------------
+
+async function pickToknsPromoTopic(db: Db): Promise<string> {
+  // Pull latest TX chain metrics for real numbers
+  let metricsContext = "";
+  try {
+    const latest = (await db.execute(sql`
+      SELECT body FROM intel_reports
+      WHERE company_slug = 'txhuman' AND report_type = 'chain-metrics'
+      ORDER BY captured_at DESC LIMIT 1
+    `)) as unknown as Array<{ body: string }>;
+
+    if (latest.length > 0) {
+      const parsed = JSON.parse(latest[0]!.body) as { apr?: number | null; validator_count?: number | null };
+      const parts: string[] = [];
+      if (parsed.apr != null) parts.push(`current staking APR is ${parsed.apr.toFixed(2)}%`);
+      if (parsed.validator_count != null) parts.push(`${parsed.validator_count} active validators`);
+      if (parts.length > 0) metricsContext = ` Live data: ${parts.join(", ")}.`;
+    }
+  } catch {
+    // Non-critical — proceed with static topic
+  }
+
+  const topics = [
+    `How to stake TX tokens on app.tokns.fi: Step-by-step guide to earning passive rewards.${metricsContext} Cover: connecting wallet, choosing a validator (recommend tokns.fi validator), delegating, claiming rewards. Include FAQ section with common staking questions.`,
+    `Why tokns.fi is the best TX ecosystem dashboard: Feature comparison with alternatives.${metricsContext} Cover: NFT marketplace, multi-wallet tracking, token swaps, staking — all in one app. Include comparison table vs generic block explorers.`,
+    `app.tokns.fi feature spotlight: Multi-wallet portfolio tracking for the TX ecosystem.${metricsContext} Cover: how to add multiple wallets, track NFTs across wallets, monitor staking rewards, view transaction history. Explain why privacy-first design matters.`,
+    `tokns.fi NFT marketplace guide: How to buy, sell, and trade TX NFTs.${metricsContext} Cover: listing process, ShieldNest 1% fee advantage, on-chain verification, and how NFT trading supports the ecosystem validator.`,
+    `Earning with tokns.fi: Staking rewards, validator delegation, and ecosystem participation.${metricsContext} Cover: how every TX delegated to the tokns.fi validator funds free community tools and infrastructure. Reference coherencedaddy.com 523+ free tools.`,
+    `tokns.fi token swaps: How to swap tokens on the TX blockchain with low fees.${metricsContext} Cover: swap interface, supported pairs, slippage settings, and why Cosmos IBC makes cross-chain swaps possible.`,
+  ];
+  return topics[Math.floor(Math.random() * topics.length)]!;
+}
+
+// ---------------------------------------------------------------------------
 // Register all content cron jobs
 // ---------------------------------------------------------------------------
 
@@ -284,6 +429,12 @@ export function startContentCrons(db: Db) {
             logger.info({ job: def.name, ownerAgent: def.ownerAgent }, "No chain metrics data, skipping daily chain report");
             return;
           }
+        } else if (def.topicPicker === "xrp-focus") {
+          topic = await pickXrpTopic(db);
+        } else if (def.topicPicker === "comparison") {
+          topic = await pickComparisonTopic(db);
+        } else if (def.topicPicker === "tokns-promo") {
+          topic = await pickToknsPromoTopic(db);
         } else {
           topic = await pickTopic(db);
         }
@@ -310,7 +461,11 @@ export function startContentCrons(db: Db) {
           // Auto-publish blog posts to target(s)
           if (def.contentType === "blog_post") {
             const target = def.publishTarget || "cd";
-            const category = def.topicPicker === "chain-metrics" ? "crypto" as const : "ecosystem" as const;
+            const category = def.topicPicker === "chain-metrics" || def.topicPicker === "xrp-focus"
+              ? "crypto" as const
+              : def.topicPicker === "comparison"
+                ? "ecosystem" as const
+                : "ecosystem" as const;
             try {
               const publishResult = await publishBlogFromContent(result.content, topic!, category, target);
               if (publishResult.success) {
