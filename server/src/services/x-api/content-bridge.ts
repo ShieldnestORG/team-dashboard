@@ -3,6 +3,8 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { contentItems, contentFeedback, xTweetAnalytics } from "@paperclipai/db";
 import { getEmbedding } from "../intel-embeddings.js";
+import { XApiClient } from "./client.js";
+import { canUseDailyBudget } from "./rate-limiter.js";
 import { logger } from "../../middleware/logger.js";
 
 import * as blaze from "../../content-templates/blaze.js";
@@ -388,8 +390,34 @@ export async function autoGenerateAndQueue(
 
   const result = await generateTweetWithContext(db, resolvedTopic, personality, companyId);
 
-  logger.info(
-    { contentId: result.id, personality, topic: result.topic, todayCount: todayCount + 1, maxPerDay: MAX_TWEETS_PER_DAY },
-    "content-bridge: auto-generated tweet queued as draft",
-  );
+  // Auto-post if X API budget allows
+  const budget = canUseDailyBudget("post");
+  if (budget.allowed) {
+    try {
+      const client = new XApiClient(db, companyId);
+      const tweetResult = await client.createTweet({ text: result.content });
+      const tweetId = tweetResult?.data?.id;
+
+      // Update status to published
+      await db
+        .update(contentItems)
+        .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
+        .where(eq(contentItems.id, result.id));
+
+      logger.info(
+        { contentId: result.id, tweetId, personality, topic: result.topic, todayCount: todayCount + 1, remaining: budget.remaining - 1 },
+        "content-bridge: tweet posted to X",
+      );
+    } catch (postErr) {
+      logger.warn(
+        { err: postErr, contentId: result.id, personality },
+        "content-bridge: failed to post tweet — stays as draft",
+      );
+    }
+  } else {
+    logger.info(
+      { contentId: result.id, personality, remaining: budget.remaining },
+      "content-bridge: daily budget exhausted — tweet saved as draft",
+    );
+  }
 }
