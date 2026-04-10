@@ -62,6 +62,7 @@ export { contentItems } from "./content_items.js";
 export { visualContentItems, visualContentAssets } from "./visual_content_items.js";
 export { contentFeedback } from "./content_feedback.js";
 export { xOauthTokens } from "./x_oauth_tokens.js";
+export { canvaOauthTokens } from "./canva_oauth_tokens.js";
 export { xEngagementLog } from "./x_engagement_log.js";
 export { xTweetAnalytics } from "./x_tweet_analytics.js";
 export { mediaDrops } from "./media_drops.js";

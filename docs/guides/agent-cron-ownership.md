@@ -48,13 +48,16 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Service | File | Job Count | Owner Agent(s) |
 |---------|------|-----------|----------------|
 | Intel crons | `server/src/services/intel-crons.ts` | 8 | Echo |
-| Content crons | `server/src/services/content-crons.ts` | 21 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
+| Content crons | `server/src/services/content-crons.ts` | 23 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
 | Eval crons | `server/src/services/eval-crons.ts` | 1 | Nova |
 | Alert crons | `server/src/services/alert-crons.ts` | 2 | Nova |
 | Trend crons | `server/src/services/trend-crons.ts` | 1 | Echo |
+| Maintenance crons | `server/src/services/maintenance-crons.ts` | 2 | Bridge |
 | Auto-reply | `server/src/services/auto-reply.ts` | 1 | Core |
 
-**Total: 35 cron jobs across 5 services + 1 auto-reply cron + 2 plugin jobs (Discord) + 4 plugin jobs (Twitter). = 42 total**
+**Total: 38 system cron jobs across 7 services + 6 plugin jobs (Discord 2 + Twitter 4) = 44 total**
+
+> **Planned (not activated):** `content:canva-media:morning` and `content:canva-media:evening` owned by Sage — posts Canva designs as image tweets 2x/day once Canva OAuth is connected.
 
 ## Full Agent-to-Cron Mapping
 
@@ -80,7 +83,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 
 Sage orchestrates the 4 content personality agents below.
 
-### Blaze (Hot-Take Analyst) — 4 jobs
+### Blaze (Hot-Take Analyst) — 5 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
@@ -88,6 +91,7 @@ Sage orchestrates the 4 content personality agents below.
 | `content:twitter:auto-post` | `0 9,12,15,18,21 * * *` | content-crons | Auto-post tweets every 3hr during active hours |
 | `content:video:trend` | `0 11,14,18 * * *` | content-crons | Trend video scripts 3x daily |
 | `content:intel-alert:twitter` | `*/45 * * * *` | content-crons | Reactive tweets from hot intel signals |
+| `content:retweet-cycle` | `0 */4 * * *` | content-crons | Retweet ecosystem accounts every 4 hours |
 
 ### Cipher (Technical Deep-Diver) — 2 jobs
 
@@ -144,9 +148,16 @@ Sage orchestrates the 4 content personality agents below.
 |-----|----------|---------|-------------|
 | `auto-reply:poll` | configurable (default every 30 min) | auto-reply.ts | Single `search/recent` query covering all enabled account + keyword targets. Interval driven by `AutoReplyGlobalSettings.pollIntervalMinutes`, updated live via settings API. Dollar-budget tracked: $0.005/read, $0.01/write. |
 
+### Bridge (Full-Stack Dev) — 2 jobs
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `maintenance:stale-content` | `0 3 * * *` | maintenance-crons | Reset stuck content items daily |
+| `maintenance:health-check` | `0 */4 * * *` | maintenance-crons | System health probe every 4 hours |
+
 ### Agents with No Cron Jobs
 
-Atlas (CEO), River (PM), Pixel (Designer), Flux (Frontend Dev), Bridge (Full-Stack Dev), Mermaid (Structure Agent) — work arrives via task assignment and heartbeat wakeups.
+Atlas (CEO), River (PM), Pixel (Designer), Flux (Frontend Dev), Mermaid (Structure Agent) — work arrives via task assignment and heartbeat wakeups.
 
 ## Adding a New Cron Job
 

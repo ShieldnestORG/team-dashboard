@@ -64,6 +64,9 @@ import { pluginRegistryService } from "./services/plugin-registry.js";
 import { publicReelsRoutes } from "./routes/public-reels.js";
 import { sitemapRoutes } from "./routes/sitemap.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
+import { canvaOauthRoutes } from "./routes/canva-oauth.js";
+// NOT ACTIVATED — uncomment when Canva OAuth is connected and tested:
+// import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
@@ -213,6 +216,7 @@ export async function createApp(
   api.use(structureRoutes(db));
   api.use("/x/oauth", xOauthRoutes(db));
   api.use("/x/analytics", xAnalyticsRoutes(db));
+  api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
@@ -342,6 +346,8 @@ export async function createApp(
   startContentCrons(db);
   startTrendCrons(db);
   startMaintenanceCrons(db);
+  // NOT ACTIVATED — uncomment when Canva OAuth is connected and tested:
+  // startCanvaMediaCrons(db);
   initVpsMonitor(db);
   // Sync registry to DB + start the single cron scheduler
   void syncCronRegistry(db).catch((err) => {

@@ -256,7 +256,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (21 jobs: 1 SEO engine + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge), trends (1 job: scan every 6hr), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily). All 36 cron + 6 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily). All 38 cron + 6 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -276,7 +276,11 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/services/video-assembler.ts` | FFmpeg video pipeline (overlays, watermark, metadata) |
 | `server/src/services/platform-publishers/` | Auto-publishing to YouTube/TikTok/Instagram/Twitter |
 | `server/src/routes/public-reels.ts` | Public reels API (no auth) for coherencedaddy.com |
-| `scripts/canva-generator.py` | Canva Connect API Python bridge |
+| `scripts/canva-generator.py` | Canva visual backend Python bridge (legacy) |
+| `server/src/services/canva-connect.ts` | Canva Connect API client (OAuth + design export) |
+| `server/src/routes/canva-oauth.ts` | Canva OAuth + design listing routes (`/api/canva/oauth/*`) |
+| `server/src/services/canva-media-cron.ts` | Canva design-to-tweet service (not yet activated) |
+| `server/src/services/x-api/retweet-service.ts` | Smart retweet service — single-query polling + intel save |
 | `server/src/services/intel-discovery.ts` | Auto-discovery of trending projects (CoinGecko + GitHub) |
 | `server/src/services/mintscan.ts` | Cosmostation Mintscan API integration (chain APR, validator metrics) |
 | `server/src/services/auto-reply.ts` | Auto-reply engine — search-based polling, settings management, configurable cron interval |
@@ -343,6 +347,10 @@ git push origin master
 | `GEMINI_API_KEY` | Optional | VPS | Enables Gemini visual backend (Imagen 3 + Veo 2) |
 | `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI backend (grok-2-image + grok-imagine-video) |
 | `CANVA_API_KEY` | Optional | VPS | Enables Canva template backend (Python bridge) |
+| `CANVA_CLIENT_ID` | Optional | VPS | Canva Connect API client ID (OAuth 2.0) |
+| `CANVA_CLIENT_SECRET` | Optional | VPS | Canva Connect API client secret |
+| `CANVA_CALLBACK_URL` | Optional | VPS | Canva OAuth callback URL |
+| `CANVA_MEDIA_FOLDER_ID` | Optional | VPS | Canva folder to pull designs from for media tweets |
 | **Platform Publishing** | | | |
 | `YOUTUBE_CLIENT_ID/SECRET` | Optional | VPS | YouTube Shorts auto-publishing |
 | `YOUTUBE_REFRESH_TOKEN` | Optional | VPS | YouTube OAuth refresh token |
