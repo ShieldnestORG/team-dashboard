@@ -54,8 +54,8 @@ These are set automatically by the server when invoking agents:
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | (none) | Anthropic API key (Claude for agent runtime) |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Default Claude model |
-| `OLLAMA_URL` | `http://168.231.127.180:11434` | Ollama LLM for text content generation |
-| `OLLAMA_MODEL` | `qwen2.5:1.5b` | Ollama model for content generation |
+| `OLLAMA_URL` | `http://172.17.0.1:11434` | Ollama LLM for text content generation (local via Docker bridge) |
+| `OLLAMA_MODEL` | `gemma4:26b` | Ollama model for content generation |
 | `OPENAI_API_KEY` | (none) | OpenAI API key (for Codex Local adapter) |
 
 ## Content Generation
@@ -83,7 +83,7 @@ Both are optional — backends auto-enable when their API key is set.
 |----------|---------|-------------|
 | `INTEL_INGEST_KEY` | (none) | Auth for intel data ingestion API |
 | `GITHUB_TOKEN` | (none) | GitHub API access for intel GitHub source |
-| `EMBED_URL` | `http://31.220.61.12:8000` | BGE-M3 vector embedding service |
+| `EMBED_URL` | `http://147.79.78.251:8000` | BGE-M3 vector embedding service |
 | `EMBED_API_KEY` | (none) | Embedding service auth key |
 
 ## Site Metrics Integration

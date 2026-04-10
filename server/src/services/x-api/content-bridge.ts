@@ -16,8 +16,8 @@ import * as prism from "../../content-templates/prism.js";
 // and engagement feedback from tweet analytics.
 // ---------------------------------------------------------------------------
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:1.5b";
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
 const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 const PERSONALITIES: Record<string, {

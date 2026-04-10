@@ -5,8 +5,8 @@ import { logger } from "../middleware/logger.js";
 // Used by seo-engine.ts (signal-based) and content-crons.ts (Ollama content queue)
 // ---------------------------------------------------------------------------
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:1.5b";
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
 const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://coherencedaddy.com/api/blog/posts";
 const BLOG_API_KEY = process.env.CD_BLOG_API_KEY || "";
 const SN_BLOG_API_URL = process.env.SN_BLOG_API_URL || "";

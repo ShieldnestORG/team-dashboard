@@ -145,7 +145,7 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph ContentPipeline["Content Pipeline"]
         direction TB
         ContentSvc(["Content Service"])
-        ContentCrons{{"Content Crons — 9 jobs"}}
+        ContentCrons{{"Content Crons — 14 jobs"}}
         ContentDB[("content_items")]
         VisualContent(["Visual Content"])
         VisualDB[("visual_content_items")]
@@ -153,6 +153,7 @@ const DEFAULT_DIAGRAM = `graph TB
         Templates(["Blaze / Cipher / Spark / Prism"])
         VideoAssembler(["Video Assembler"])
         SEOEngine(["SEO Engine"])
+        BlogPublisher(["Blog Publisher"])
         Publishers(["Platform Publishers"])
         FeedbackSvc(["Feedback Service"])
         FeedbackDB[("content_feedback")]
@@ -168,10 +169,34 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph IntelEngine["Intel Engine"]
         direction TB
         IntelSvc(["Intel Service"])
-        IntelCrons{{"Intel Crons — 5 jobs"}}
+        IntelCrons{{"Intel Crons — 9 jobs"}}
+        IntelDiscovery(["Intel Discovery"])
         Embeddings[("Vector Embeddings — BGE-M3")]
         TrendScanner(["Trend Scanner"])
-        TrendCrons{{"Trend Crons"}}
+        TrendCrons{{"Trend Crons — 6hr"}}
+        Mintscan(["Mintscan Chain Metrics"])
+      end
+
+      subgraph AutoReplyEngine["Auto-Reply Engine"]
+        direction TB
+        AutoReplySvc(["Auto-Reply Service"])
+        AutoReplyCron{{"Poll Cron — 30min"}}
+        XClient(["X API v2 Client"])
+        RateLimiter(["Dollar-Based Rate Limiter"])
+        AutoReplyDB[("auto_reply_settings")]
+      end
+
+      subgraph PluginApps["Plugin Apps"]
+        direction TB
+        DiscordBot(["Discord Bot"])
+        TwitterPlugin(["Twitter/X Plugin"])
+        FirecrawlPlugin(["Firecrawl Plugin"])
+      end
+
+      subgraph MCPServer["MCP Server"]
+        direction TB
+        MCPTools(["35 Tools — 9 Entities"])
+        MCPTransport(["Stdio Transport"])
       end
 
       subgraph PulseEngine["Social Pulse Engine"]
@@ -219,34 +244,36 @@ const DEFAULT_DIAGRAM = `graph TB
   subgraph Infra["Infrastructure"]
     direction TB
 
-    subgraph VPS["VPS — 31.220.61.12"]
+    subgraph VPS1["VPS_1 — 31.220.61.12 (31GB RAM)"]
       direction TB
       Docker(["Docker Container"])
       ExpressRuntime(["Express.js :3200"])
       AgentRuntime(["Agent Runtime"])
+      OllamaSvc(["Ollama — gemma4:26b :11434"])
+    end
+
+    subgraph VPS3["VPS_3 — 147.79.78.251 (15GB RAM)"]
+      direction TB
+      EmbedSvc(["BGE-M3 Embeddings :8000"])
+      VoskSvc(["Vosk STT :2700"])
+      OllamaVPS3(["Ollama :11434"])
+    end
+
+    subgraph VPS2["VPS_2 — 168.231.127.180"]
+      direction TB
+      FirecrawlSvc(["Firecrawl — Scraping :3002"])
+      DirectoryAPI(["Directory API :4000"])
     end
 
     subgraph VercelInfra["Vercel"]
       direction TB
       VercelUI(["React SPA — ui/dist"])
-      VercelRewrites(["API Rewrites → VPS"])
+      VercelRewrites(["API Rewrites → VPS_1"])
     end
 
     subgraph NeonInfra["Neon"]
       direction TB
       NeonDB[("PostgreSQL")]
-    end
-
-    subgraph SelfHosted["Self-Hosted Services — 168.231.127.180"]
-      direction TB
-      FirecrawlSvc(["Firecrawl — Scraping"])
-      OllamaSvc(["Ollama — qwen2.5:1.5b"])
-      DirectoryAPI(["Directory API :4000"])
-    end
-
-    subgraph EmbedInfra["31.220.61.12:8000"]
-      direction TB
-      EmbedSvc(["Embedding Service — BGE-M3"])
     end
 
     subgraph ExtAPIs["External APIs"]
@@ -269,6 +296,7 @@ const DEFAULT_DIAGRAM = `graph TB
   Docker --> ExpressRuntime
   ExpressRuntime --> NeonDB
   ExpressRuntime --> AgentRuntime
+  ExpressRuntime -->|"Docker bridge"| OllamaSvc
 
   %% Vercel serves frontend, rewrites API to VPS
   VercelUI -->|"serves"| CD
@@ -280,15 +308,20 @@ const DEFAULT_DIAGRAM = `graph TB
   CDReels -->|"/api/reels"| VisualContent
   CD -->|"site metrics"| SiteMetrics
 
-  %% Content pipeline → External
+  %% Content pipeline → Ollama (local on VPS_1)
   ContentSvc --> OllamaSvc
   ContentSvc --> Embeddings
   SEOEngine --> TrendScanner
-  IntelSvc --> FirecrawlSvc
+  SEOEngine --> BlogPublisher
+  BlogPublisher --> OllamaSvc
   Embeddings --> EmbedSvc
   TrendScanner --> CoinGecko
   TrendScanner --> HackerNews
+
+  %% Intel → External
+  IntelSvc --> FirecrawlSvc
   IntelSvc --> GitHubAPI
+  Mintscan --> TXChain
 
   %% Visual backends → External APIs
   GeminiBack --> GeminiAPI
@@ -297,6 +330,7 @@ const DEFAULT_DIAGRAM = `graph TB
   %% Agent execution
   Agents --> Heartbeat
   Heartbeat --> WorkspaceRuntime
+  Heartbeat --> OllamaSvc
   Issues --> IssueWakeup
   IssueWakeup --> Heartbeat
 
@@ -322,6 +356,15 @@ const DEFAULT_DIAGRAM = `graph TB
   %% Intel flows
   IntelCrons --> IntelSvc
   TrendCrons --> TrendScanner
+  IntelDiscovery --> IntelSvc
+
+  %% Auto-Reply flows
+  AutoReplyCron --> AutoReplySvc
+  AutoReplySvc --> XClient
+  XClient --> XAPIv2
+  AutoReplySvc --> RateLimiter
+  AutoReplySvc --> OllamaSvc
+  AutoReplySvc --> AutoReplyDB
 
   %% Pulse flows
   PULSE_CLIENT --> PULSE_SVC
@@ -339,6 +382,12 @@ const DEFAULT_DIAGRAM = `graph TB
   PluginLifecycle --> PluginWorkerMgr
   PluginJobScheduler --> PluginLifecycle
   PluginToolDispatch --> PluginWorkerMgr
+  DiscordBot --> PluginLifecycle
+  TwitterPlugin --> PluginLifecycle
+  FirecrawlPlugin --> PluginLifecycle
+
+  %% MCP Server
+  MCPTools --> ExpressRuntime
 
   %% Monitoring
   AlertCrons --> Alerting
@@ -376,8 +425,8 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef cronNode fill:#7c3aed,stroke:#6d28d9,color:#f5f3ff,stroke-width:2px
   classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
 
-  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,PULSE_CRON cronNode
-  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB storeNode
+  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,PULSE_CRON,AutoReplyCron cronNode
+  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
   style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
@@ -394,11 +443,14 @@ const DEFAULT_DIAGRAM = `graph TB
   style Monitor fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
   style Finance fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f
   style Infra fill:#f8fafc,stroke:#64748b,stroke-width:2px,color:#1e293b
-  style VPS fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+  style AutoReplyEngine fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+  style PluginApps fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3a1e5f
+  style MCPServer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+  style VPS1 fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+  style VPS2 fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
+  style VPS3 fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#064e3b
   style VercelInfra fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#312e81
   style NeonInfra fill:#cffafe,stroke:#0891b2,stroke-width:2px,color:#164e63
-  style SelfHosted fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
-  style EmbedInfra fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
   style ExtAPIs fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12
 `;
 

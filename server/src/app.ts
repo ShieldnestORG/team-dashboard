@@ -67,6 +67,7 @@ import { xOauthRoutes } from "./routes/x-oauth.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
+import { agentOpsRoutes } from "./routes/agent-ops.js";
 import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
 import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
 import { initVpsMonitor } from "./services/vps-monitor.js";
@@ -197,6 +198,7 @@ export async function createApp(
   api.use(costRoutes(db));
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
+  api.use(agentOpsRoutes(db));
   api.use(sidebarBadgeRoutes(db));
   api.use(instanceSettingsRoutes(db));
   api.use(siteMetricsRoutes(db));

@@ -45,6 +45,7 @@ import { Intel } from "./pages/Intel";
 import { Discord } from "./pages/Discord";
 import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
+import { AgentOps } from "./pages/AgentOps";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -180,6 +181,7 @@ function boardRoutes() {
       <Route path="tokns" element={<Tokns />} />
       <Route path="auto-reply" element={<AutoReply />} />
       <Route path="system-health" element={<SystemHealth />} />
+      <Route path="agent-ops" element={<AgentOps />} />
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
       <Route path="structure" element={<Structure />} />

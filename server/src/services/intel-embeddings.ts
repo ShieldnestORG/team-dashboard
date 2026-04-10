@@ -1,4 +1,4 @@
-const EMBED_URL = process.env.EMBED_URL || "http://31.220.61.12:8000";
+const EMBED_URL = process.env.EMBED_URL || "http://147.79.78.251:8000";
 const EMBED_API_KEY = process.env.EMBED_API_KEY || "";
 
 interface EmbeddingResult {

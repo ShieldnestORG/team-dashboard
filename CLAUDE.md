@@ -246,9 +246,9 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Backend**: VPS Docker at `31.220.61.12:3200` — Express.js API, agent runtime
 - **Database**: Neon PostgreSQL — managed by Vercel integration
 - **Firecrawl**: Self-hosted at `168.231.127.180` — scraping, crawling, data extraction
-- **Embeddings**: `31.220.61.12:8000` — vector embedding service
+- **Embeddings**: `147.79.78.251:8000` — BGE-M3 vector embedding service (VPS_3)
 - **Directory API**: `168.231.127.180:4000` — data sync from Firecrawl
-- **Ollama**: `168.231.127.180:11434` — local LLM for content generation and summarization (qwen2.5:1.5b)
+- **Ollama**: `31.220.61.12:11434` (VPS_1, local) — Gemma 4 26B MoE for content generation and summarization (11.6 tok/s)
 - **Content API Key**: `CONTENT_API_KEY` env var for content generation auth (text + visual)
 - **Visual Backends**: `GEMINI_API_KEY` (Imagen 3 + Veo 2), `GROK_API_KEY` (xAI images via grok-2-image + video via grok-imagine-video) — optional, auto-enabled when set
 - **Company ID**: `TEAM_DASHBOARD_COMPANY_ID=8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy)
@@ -333,8 +333,8 @@ git push origin master
 | **AI / LLM** | | | |
 | `ANTHROPIC_API_KEY` | Yes | VPS | Claude API for agent runtime |
 | `ANTHROPIC_MODEL` | Optional | VPS | Default model (default: claude-haiku-4-5-20251001) |
-| `OLLAMA_URL` | Yes | VPS | Ollama LLM for content generation (`http://168.231.127.180:11434`) |
-| `OLLAMA_MODEL` | Optional | VPS | Ollama model (default: qwen2.5:1.5b) |
+| `OLLAMA_URL` | Yes | VPS | Ollama LLM for content generation (`http://172.17.0.1:11434` — local via Docker bridge) |
+| `OLLAMA_MODEL` | Optional | VPS | Ollama model (default: gemma4:26b) |
 | **Visual Content** | | | |
 | `CONTENT_API_KEY` | Yes | VPS | Auth for content, visual content, and trend endpoints |
 | `CD_BLOG_API_URL` | Optional | VPS | Blog publish endpoint (default: `https://coherencedaddy.com/api/blog/posts`) |
@@ -365,7 +365,7 @@ git push origin master
 | `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
 | `MINTSCAN_API_KEY` | Optional | VPS | Cosmostation Mintscan API for Cosmos chain metrics (APR, validators) |
 | `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |
-| `EMBED_URL` | Yes | VPS | Embedding service (`http://31.220.61.12:8000`) |
+| `EMBED_URL` | Yes | VPS | Embedding service (`http://147.79.78.251:8000`) |
 | `EMBED_API_KEY` | Yes | VPS | Embedding service auth |
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
 | `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |

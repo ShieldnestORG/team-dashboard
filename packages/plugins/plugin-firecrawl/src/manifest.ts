@@ -57,7 +57,7 @@ const manifest: PaperclipPluginManifestV1 = {
       embeddingApiUrl: {
         type: "string",
         title: "Embedding API URL",
-        description: "URL of the embedding service for vector search (e.g. http://31.220.61.12:8000).",
+        description: "URL of the embedding service for vector search (e.g. http://147.79.78.251:8000).",
         default: "",
       },
       embeddingApiKey: {
@@ -69,14 +69,14 @@ const manifest: PaperclipPluginManifestV1 = {
       ollamaUrl: {
         type: "string",
         title: "Ollama URL",
-        description: "URL of Ollama instance for local summarization (e.g. http://168.231.127.180:11434). Saves Claude tokens on bulk processing.",
+        description: "URL of Ollama instance for local summarization (e.g. http://172.17.0.1:11434). Saves Claude tokens on bulk processing.",
         default: "",
       },
       ollamaModel: {
         type: "string",
         title: "Ollama Model",
-        description: "Model to use for summarization. Defaults to qwen2.5:1.5b.",
-        default: "qwen2.5:1.5b",
+        description: "Model to use for summarization. Defaults to gemma4:26b.",
+        default: "gemma4:26b",
       },
     },
   },

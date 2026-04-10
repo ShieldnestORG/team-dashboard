@@ -69,8 +69,8 @@ const PERSONALITIES: Record<string, {
 // Ollama client
 // ---------------------------------------------------------------------------
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:1.5b";
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
 
 async function callOllama(prompt: string): Promise<string> {
   const res = await fetch(`${OLLAMA_URL}/api/generate`, {

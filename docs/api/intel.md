@@ -540,7 +540,7 @@ The search endpoint uses semantic vector search powered by BGE-M3 embeddings and
 
 **Embedding Model:** BGE-M3 (BAAI/bge-m3), producing 1024-dimensional dense vectors.
 
-**Embedding Service:** Self-hosted at `31.220.61.12:8000`. Accepts `POST /embed` with a JSON body `{ "texts": ["..."] }` and returns `{ "dense": [[...]] }`.
+**Embedding Service:** Self-hosted at `147.79.78.251:8000`. Accepts `POST /embed` with a JSON body `{ "texts": ["..."] }` and returns `{ "dense": [[...]] }`.
 
 **Storage:** Embeddings are stored in the `intel_reports.embedding` column as pgvector `vector(1024)` type, indexed with an IVFFlat index using cosine distance.
 
@@ -561,7 +561,7 @@ The search endpoint uses semantic vector search powered by BGE-M3 embeddings and
 | Variable          | Required         | Default                        | Description                                    |
 |-------------------|------------------|--------------------------------|------------------------------------------------|
 | `INTEL_INGEST_KEY`| Yes (for writes) | --                             | Shared secret for seed and ingest endpoints    |
-| `EMBED_URL`       | No               | `http://31.220.61.12:8000`     | BGE-M3 embedding service URL                   |
+| `EMBED_URL`       | No               | `http://147.79.78.251:8000`     | BGE-M3 embedding service URL                   |
 | `EMBED_API_KEY`   | No               | --                             | API key for the embedding service (X-API-Key header) |
 | `GITHUB_TOKEN`    | No               | --                             | GitHub PAT; increases rate limit from 60 to 5000 req/hr |
 

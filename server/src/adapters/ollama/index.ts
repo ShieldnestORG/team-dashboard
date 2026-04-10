@@ -33,11 +33,11 @@ const defaultModels: AdapterModel[] = [
 // ---------------------------------------------------------------------------
 
 function getOllamaUrl(config: Record<string, unknown>): string {
-  return (config.ollamaUrl as string) || process.env.OLLAMA_URL || "http://168.231.127.180:11434";
+  return (config.ollamaUrl as string) || process.env.OLLAMA_URL || "http://172.17.0.1:11434";
 }
 
 function getModel(config: Record<string, unknown>): string {
-  return (config.model as string) || process.env.OLLAMA_AGENT_MODEL || "qwen2.5:7b";
+  return (config.model as string) || process.env.OLLAMA_AGENT_MODEL || "gemma4:26b";
 }
 
 function getTemperature(config: Record<string, unknown>): number {
@@ -236,7 +236,7 @@ async function testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<Adap
 // ---------------------------------------------------------------------------
 
 async function listModels(): Promise<AdapterModel[]> {
-  const ollamaUrl = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
+  const ollamaUrl = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
   try {
     const res = await fetch(`${ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(5000) });
     if (res.ok) {
@@ -270,8 +270,8 @@ export const ollamaLocalAdapter: ServerAdapterModule = {
 Connects to a local Ollama instance for LLM inference. Free — no API costs.
 
 ### Configuration
-- **ollamaUrl**: Ollama API base URL (default: env OLLAMA_URL or http://168.231.127.180:11434)
-- **model**: Model to use (default: qwen2.5:7b, or env OLLAMA_AGENT_MODEL)
+- **ollamaUrl**: Ollama API base URL (default: env OLLAMA_URL or http://172.17.0.1:11434)
+- **model**: Model to use (default: gemma4:26b, or env OLLAMA_AGENT_MODEL)
 - **temperature**: Sampling temperature 0-2 (default: 0.7)
 - **maxTokens**: Max tokens to generate (default: 4096)
 

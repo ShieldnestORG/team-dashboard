@@ -100,8 +100,8 @@ export const INFRA_COSTS: Array<{ name: string; cost: ServiceCost }> = [
 
 function getServiceChecks(): ServiceCheck[] {
   const port = process.env.PORT || "3100";
-  const ollamaUrl = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
-  const embedUrl = process.env.EMBED_URL || "http://31.220.61.12:8000";
+  const ollamaUrl = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
+  const embedUrl = process.env.EMBED_URL || "http://147.79.78.251:8000";
 
   return [
     { name: "Backend API", url: `http://127.0.0.1:${port}/api/health/readiness` },
@@ -258,7 +258,7 @@ async function getDockerContainerStats(): Promise<ServiceResources | null> {
 }
 
 async function getOllamaResources(): Promise<ServiceResources | null> {
-  const ollamaUrl = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
+  const ollamaUrl = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
   try {
     const resp = await fetch(`${ollamaUrl}/api/ps`, {
       signal: AbortSignal.timeout(5_000),

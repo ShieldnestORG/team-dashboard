@@ -567,7 +567,7 @@ const plugin = definePlugin({
           return { error: "Ollama not configured. Set Ollama URL in Settings -> Plugins -> Firecrawl." };
         }
 
-        const model = config.ollamaModel || "qwen2.5:1.5b";
+        const model = config.ollamaModel || "gemma4:26b";
         const defaultPrompt = "Summarize this page in exactly 3 concise sentences. Focus on what the product/service does, its key differentiators, and its target audience.";
         const summaryPrompt = p.prompt || defaultPrompt;
         const urls = p.urls.slice(0, 20); // cap at 20

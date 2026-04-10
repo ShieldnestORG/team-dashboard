@@ -57,7 +57,7 @@ export function OllamaLocalConfigFields({
           }
           immediate
           className={inputClass}
-          placeholder="http://168.231.127.180:11434"
+          placeholder="http://172.17.0.1:11434"
         />
       </Field>
 
