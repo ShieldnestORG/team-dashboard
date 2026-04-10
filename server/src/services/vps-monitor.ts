@@ -24,6 +24,14 @@ export interface ServiceStatus {
   lastDownAt: string | null;
   error: string | null;
   consecutiveFailures: number;
+  resources?: ServiceResources | null;
+}
+
+export interface ServiceResources {
+  cpuPercent: number | null;
+  memMb: number | null;
+  memPercent: number | null;
+  detail?: string;
 }
 
 export interface SystemMetrics {
@@ -184,22 +192,114 @@ function collectSystemMetrics(): SystemMetrics {
 }
 
 // ---------------------------------------------------------------------------
+// Per-service resource collection
+// ---------------------------------------------------------------------------
+
+async function getDockerContainerStats(): Promise<ServiceResources | null> {
+  try {
+    const out = execSync(
+      'docker stats --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}" $(docker ps -q -f "ancestor=ghcr.io/shieldnestorg/team-dashboard:latest" 2>/dev/null || docker ps -q --filter "publish=3200" 2>/dev/null) 2>/dev/null || echo ""',
+      { timeout: 10_000, stdio: "pipe" },
+    ).toString().trim();
+    if (!out) return null;
+    const [cpuStr, memStr, memPctStr] = out.split("|");
+    const cpuPercent = parseFloat(cpuStr?.replace("%", "") ?? "");
+    const memPercent = parseFloat(memPctStr?.replace("%", "") ?? "");
+    // Parse mem like "245.3MiB / 31.1GiB"
+    let memMb: number | null = null;
+    const memMatch = memStr?.match(/([\d.]+)\s*(MiB|GiB|KiB)/);
+    if (memMatch) {
+      const val = parseFloat(memMatch[1]!);
+      if (memMatch[2] === "GiB") memMb = Math.round(val * 1024);
+      else if (memMatch[2] === "KiB") memMb = Math.round(val / 1024);
+      else memMb = Math.round(val);
+    }
+    return {
+      cpuPercent: isNaN(cpuPercent) ? null : Math.round(cpuPercent * 10) / 10,
+      memMb,
+      memPercent: isNaN(memPercent) ? null : Math.round(memPercent * 10) / 10,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function getOllamaResources(): Promise<ServiceResources | null> {
+  const ollamaUrl = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
+  try {
+    const resp = await fetch(`${ollamaUrl}/api/ps`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { models?: Array<{ name: string; size: number; size_vram?: number }> };
+    const models = data.models ?? [];
+    if (models.length === 0) return { cpuPercent: null, memMb: null, memPercent: null, detail: "idle (no models loaded)" };
+    const totalBytes = models.reduce((sum, m) => sum + (m.size || 0), 0);
+    const memMb = Math.round(totalBytes / 1_048_576);
+    const names = models.map((m) => m.name).join(", ");
+    return { cpuPercent: null, memMb, memPercent: null, detail: `models loaded: ${names} (${memMb}MB)` };
+  } catch {
+    return null;
+  }
+}
+
+async function getEmbeddingResources(): Promise<ServiceResources | null> {
+  // Embedding service runs on same VPS as backend — use process lookup
+  try {
+    const out = execSync(
+      'ps aux | grep -E "[e]mbedding|[u]vicorn.*8000" | head -1 | awk \'{print $3 "|" $6}\'',
+      { timeout: 5_000, stdio: "pipe" },
+    ).toString().trim();
+    if (!out) return null;
+    const [cpuStr, rssKb] = out.split("|");
+    return {
+      cpuPercent: parseFloat(cpuStr ?? "0") || null,
+      memMb: Math.round(parseInt(rssKb ?? "0", 10) / 1024) || null,
+      memPercent: null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function collectServiceResources(): Promise<Map<string, ServiceResources>> {
+  const resources = new Map<string, ServiceResources>();
+  const [docker, ollama, embedding] = await Promise.allSettled([
+    getDockerContainerStats(),
+    getOllamaResources(),
+    getEmbeddingResources(),
+  ]);
+  if (docker.status === "fulfilled" && docker.value) resources.set("Backend API", docker.value);
+  if (ollama.status === "fulfilled" && ollama.value) resources.set("Ollama LLM", ollama.value);
+  if (embedding.status === "fulfilled" && embedding.value) resources.set("Embedding Service", embedding.value);
+  return resources;
+}
+
+// ---------------------------------------------------------------------------
 // Main check function
 // ---------------------------------------------------------------------------
 
 async function checkAllServices(db: Db): Promise<void> {
   const checks = getServiceChecks();
 
-  // Run all HTTP checks in parallel + DB check
-  const results = await Promise.allSettled([
-    ...checks.map((svc) => checkService(svc)),
-    checkDatabase(db),
+  // Run all HTTP checks + DB check + resource collection in parallel
+  const [httpResults, resourceMap] = await Promise.all([
+    Promise.allSettled([
+      ...checks.map((svc) => checkService(svc)),
+      checkDatabase(db),
+    ]),
+    collectServiceResources(),
   ]);
+
+  const results = httpResults;
 
   for (const result of results) {
     if (result.status === "fulfilled") {
       const svc = result.value;
       const prev = previousStatus.get(svc.name);
+
+      // Attach per-service resource data
+      svc.resources = resourceMap.get(svc.name) ?? null;
 
       // Update state
       serviceStatuses.set(svc.name, svc);

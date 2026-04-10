@@ -436,11 +436,16 @@ export function SystemHealth() {
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
                       {svc.latencyMs !== null && <span>{svc.latencyMs}ms</span>}
+                      {svc.resources?.cpuPercent != null && <span>CPU {svc.resources.cpuPercent}%</span>}
+                      {svc.resources?.memMb != null && <span>RAM {svc.resources.memMb >= 1024 ? `${(svc.resources.memMb / 1024).toFixed(1)}GB` : `${svc.resources.memMb}MB`}</span>}
                       {svc.error && <span className="text-red-400 truncate">{svc.error}</span>}
                       {svc.consecutiveFailures > 0 && (
                         <span className="text-red-400">{svc.consecutiveFailures} failures</span>
                       )}
                     </div>
+                    {svc.resources?.detail && (
+                      <div className="text-[9px] text-muted-foreground/70 mt-0.5 truncate">{svc.resources.detail}</div>
+                    )}
                   </div>
                 </div>
               ))}

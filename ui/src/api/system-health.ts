@@ -81,6 +81,13 @@ export interface LogEntry {
   metadata?: Record<string, unknown>;
 }
 
+export interface ServiceResourcesInfo {
+  cpuPercent: number | null;
+  memMb: number | null;
+  memPercent: number | null;
+  detail?: string;
+}
+
 export interface ServiceStatusInfo {
   name: string;
   url: string;
@@ -91,6 +98,7 @@ export interface ServiceStatusInfo {
   lastDownAt: string | null;
   error: string | null;
   consecutiveFailures: number;
+  resources?: ServiceResourcesInfo | null;
 }
 
 export interface SystemMetricsInfo {
