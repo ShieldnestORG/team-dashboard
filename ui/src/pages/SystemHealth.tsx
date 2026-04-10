@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { systemHealthApi } from "../api/system-health";
-import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry } from "../api/system-health";
+import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, SystemMetricsInfo } from "../api/system-health";
 import {
   Card,
   CardContent,
@@ -29,6 +29,10 @@ import {
   ScrollText,
   Mail,
   MailX,
+  Server,
+  HardDrive,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 // ── Query Keys ──────────────────────────────────────────────────────────────
@@ -322,6 +326,12 @@ export function SystemHealth() {
     refetchInterval: 30_000,
   });
 
+  const { data: servicesData } = useQuery({
+    queryKey: ["system-health", "services"] as const,
+    queryFn: () => systemHealthApi.services(),
+    refetchInterval: 30_000,
+  });
+
   if (isLoading) {
     return (
       <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -379,6 +389,109 @@ export function SystemHealth() {
           </p>
         </div>
       </div>
+
+      {/* ── Service Status ──────────────────────────────────────────────── */}
+      {servicesData && (
+        <Card className="rounded-xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Server className="h-4 w-4 text-muted-foreground" />
+              VPS Service Status
+            </CardTitle>
+            <CardDescription>Real-time health of all monitored services (checks every 3 min)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {(servicesData.services ?? []).map((svc: ServiceStatusInfo) => (
+                <div
+                  key={svc.name}
+                  className={`flex items-center gap-3 rounded-lg border p-3 ${
+                    svc.status === "up" ? "border-emerald-500/20 bg-emerald-500/5" :
+                    svc.status === "down" ? "border-red-500/20 bg-red-500/5" :
+                    svc.status === "degraded" ? "border-yellow-500/20 bg-yellow-500/5" :
+                    "border-border bg-muted/20"
+                  }`}
+                >
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                    svc.status === "up" ? "bg-emerald-500/20" :
+                    svc.status === "down" ? "bg-red-500/20" :
+                    svc.status === "degraded" ? "bg-yellow-500/20" :
+                    "bg-muted"
+                  }`}>
+                    {svc.status === "up" ? <Wifi className="h-4 w-4 text-emerald-400" /> :
+                     svc.status === "down" ? <WifiOff className="h-4 w-4 text-red-400" /> :
+                     <AlertTriangle className="h-4 w-4 text-yellow-400" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{svc.name}</span>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                        svc.status === "up" ? "text-emerald-400 border-emerald-500/30" :
+                        svc.status === "down" ? "text-red-400 border-red-500/30" :
+                        svc.status === "degraded" ? "text-yellow-400 border-yellow-500/30" :
+                        ""
+                      }`}>
+                        {svc.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
+                      {svc.latencyMs !== null && <span>{svc.latencyMs}ms</span>}
+                      {svc.error && <span className="text-red-400 truncate">{svc.error}</span>}
+                      {svc.consecutiveFailures > 0 && (
+                        <span className="text-red-400">{svc.consecutiveFailures} failures</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {servicesData.metrics && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t">
+                <div className="text-center">
+                  <HardDrive className="h-3.5 w-3.5 mx-auto text-muted-foreground mb-1" />
+                  <div className={`text-lg font-bold tabular-nums ${
+                    (servicesData.metrics.diskUsedPercent ?? 0) > 85 ? "text-red-400" :
+                    (servicesData.metrics.diskUsedPercent ?? 0) > 70 ? "text-yellow-400" :
+                    "text-emerald-400"
+                  }`}>
+                    {servicesData.metrics.diskUsedPercent ?? "--"}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    Disk ({servicesData.metrics.diskFreeGb ?? "--"}GB free)
+                  </div>
+                </div>
+                <div className="text-center">
+                  <Cpu className="h-3.5 w-3.5 mx-auto text-muted-foreground mb-1" />
+                  <div className={`text-lg font-bold tabular-nums ${
+                    servicesData.metrics.memUsedPercent > 85 ? "text-red-400" :
+                    servicesData.metrics.memUsedPercent > 70 ? "text-yellow-400" :
+                    "text-emerald-400"
+                  }`}>
+                    {servicesData.metrics.memUsedPercent}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    Memory ({servicesData.metrics.memFreeGb}GB free)
+                  </div>
+                </div>
+                <div className="text-center">
+                  <Activity className="h-3.5 w-3.5 mx-auto text-muted-foreground mb-1" />
+                  <div className="text-lg font-bold tabular-nums">
+                    {servicesData.metrics.cpuLoad1m}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">CPU Load (1m)</div>
+                </div>
+                <div className="text-center">
+                  <Clock className="h-3.5 w-3.5 mx-auto text-muted-foreground mb-1" />
+                  <div className="text-lg font-bold tabular-nums">
+                    {servicesData.metrics.uptimeHours}h
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Uptime</div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── A. Health Grade Card ────────────────────────────────────────── */}
       <Card className={`rounded-xl border ${gradeBg(grade)}`}>

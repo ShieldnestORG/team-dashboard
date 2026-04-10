@@ -563,6 +563,9 @@ export function getAutoReplyService(): AutoReplyService | null {
 
 // ---------------------------------------------------------------------------
 // Standalone cron — polls via search at configurable interval
+// Note: This cron manages its own dynamic interval (self-adjusting based on
+// settings), so it keeps its own timer rather than using the central scheduler.
+// It's registered in the cron registry for visibility in the admin UI.
 // ---------------------------------------------------------------------------
 
 export function startAutoReplyCron(): () => void {

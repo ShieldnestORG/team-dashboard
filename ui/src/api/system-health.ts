@@ -81,6 +81,29 @@ export interface LogEntry {
   metadata?: Record<string, unknown>;
 }
 
+export interface ServiceStatusInfo {
+  name: string;
+  url: string;
+  status: "up" | "down" | "degraded" | "unknown";
+  latencyMs: number | null;
+  lastCheckedAt: string | null;
+  lastUpAt: string | null;
+  lastDownAt: string | null;
+  error: string | null;
+  consecutiveFailures: number;
+}
+
+export interface SystemMetricsInfo {
+  diskUsedPercent: number | null;
+  diskFreeGb: number | null;
+  memUsedPercent: number;
+  memFreeGb: number;
+  memTotalGb: number;
+  cpuLoad1m: number;
+  cpuLoad5m: number;
+  uptimeHours: number;
+}
+
 export const systemHealthApi = {
   overview: () =>
     api.get<SystemHealthOverview>("/system-health/overview"),
@@ -98,4 +121,6 @@ export const systemHealthApi = {
     api.get<{ logs: LogEntry[] }>(
       `/system-health/logs?${new URLSearchParams({ ...(level ? { level } : {}), ...(limit ? { limit: String(limit) } : {}) })}`,
     ),
+  services: () =>
+    api.get<{ services: ServiceStatusInfo[]; metrics: SystemMetricsInfo | null }>("/system-health/services"),
 };

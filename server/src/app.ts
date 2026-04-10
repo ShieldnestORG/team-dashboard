@@ -33,6 +33,7 @@ import { intelRoutes } from "./routes/intel.js";
 import { contentRoutes } from "./routes/content.js";
 import { visualContentRoutes } from "./routes/visual-content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
+import { systemCronRoutes } from "./routes/system-crons.js";
 import { structureRoutes } from "./routes/structure.js";
 import { mediaDropRoutes } from "./routes/media-drop.js";
 import { startIntelCrons } from "./services/intel-crons.js";
@@ -67,6 +68,8 @@ import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
 import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
+import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
+import { initVpsMonitor } from "./services/vps-monitor.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -204,6 +207,7 @@ export async function createApp(
   api.use("/visual", visualRoutes.router);
   api.use("/media", mediaDropRoutes(db, opts.storageService));
   api.use("/system-health", systemHealthRoutes(db));
+  api.use("/system-crons", systemCronRoutes(db));
   api.use(structureRoutes(db));
   api.use("/x/oauth", xOauthRoutes(db));
   api.use("/x/analytics", xAnalyticsRoutes(db));
@@ -329,13 +333,20 @@ export async function createApp(
 
   jobCoordinator.start();
   scheduler.start();
-  const stopIntelCrons = startIntelCrons(db);
-  const stopEvalCrons = startEvalCrons();
-  const stopAlertCrons = startAlertCrons();
-  const stopContentCrons = startContentCrons(db);
-  const stopTrendCrons = startTrendCrons(db);
-  const stopMaintenanceCrons = startMaintenanceCrons(db);
-  // Initialize auto-reply service + account poll cron
+  // Register all cron jobs with the central registry (no timers started yet)
+  startIntelCrons(db);
+  startEvalCrons();
+  startAlertCrons();
+  startContentCrons(db);
+  startTrendCrons(db);
+  startMaintenanceCrons(db);
+  initVpsMonitor(db);
+  // Sync registry to DB + start the single cron scheduler
+  void syncCronRegistry(db).catch((err) => {
+    logger.error({ err }, "Failed to sync cron registry to DB");
+  });
+  const stopCronScheduler = startCronScheduler(db);
+  // Initialize auto-reply service + its own dynamic-interval poll cron
   void initAutoReplyService(db);
   const stopAutoReplyCron = startAutoReplyCron();
   logAvailableBackends();
@@ -361,12 +372,7 @@ export async function createApp(
   });
   process.once("exit", () => {
     devWatcher?.close();
-    stopIntelCrons();
-    stopEvalCrons();
-    stopAlertCrons();
-    stopContentCrons();
-    stopTrendCrons();
-    stopMaintenanceCrons();
+    stopCronScheduler();
     stopAutoReplyCron();
     visualRoutes.stopPolling();
     hostServiceCleanup.disposeAll();

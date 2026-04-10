@@ -1,19 +1,10 @@
-import { parseCron, nextCronTick } from "./cron.js";
+import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 import { appendEvalResult } from "./eval-store.js";
 import { sendAlert } from "./alerting.js";
 import { execSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-
-interface EvalCronJob {
-  name: string;
-  schedule: string;
-  ownerAgent: string;
-  run: () => Promise<unknown>;
-  nextRun: Date | null;
-  running: boolean;
-}
 
 async function runSmokeEval(): Promise<void> {
   const evalDir = join(process.cwd(), "evals", "promptfoo");
@@ -102,63 +93,7 @@ async function runSmokeEval(): Promise<void> {
 }
 
 export function startEvalCrons() {
-  const jobs: EvalCronJob[] = [
-    {
-      name: "eval:smoke",
-      schedule: "0 6 * * *",
-      ownerAgent: "nova",
-      run: () => runSmokeEval(),
-      nextRun: null,
-      running: false,
-    },
-  ];
+  registerCronJob({ jobName: "eval:smoke", schedule: "0 6 * * *", ownerAgent: "nova", sourceFile: "eval-crons.ts", handler: runSmokeEval });
 
-  // Compute initial next-run times
-  for (const job of jobs) {
-    const parsed = parseCron(job.schedule);
-    if (parsed) {
-      job.nextRun = nextCronTick(parsed, new Date());
-    }
-  }
-
-  logger.info(
-    {
-      jobs: jobs.map((j) => ({
-        name: j.name,
-        schedule: j.schedule,
-        nextRun: j.nextRun?.toISOString(),
-      })),
-    },
-    "Eval cron scheduler started",
-  );
-
-  // Tick every 30 seconds
-  const TICK_INTERVAL_MS = 30_000;
-
-  const interval = setInterval(async () => {
-    const now = new Date();
-
-    for (const job of jobs) {
-      if (job.running) continue;
-      if (!job.nextRun || now < job.nextRun) continue;
-
-      job.running = true;
-      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Eval cron job starting");
-
-      try {
-        await job.run();
-      } catch (err) {
-        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Eval cron job failed");
-      } finally {
-        job.running = false;
-        const parsed = parseCron(job.schedule);
-        if (parsed) {
-          job.nextRun = nextCronTick(parsed, new Date());
-        }
-      }
-    }
-  }, TICK_INTERVAL_MS);
-
-  // Return cleanup function
-  return () => clearInterval(interval);
+  logger.info({ count: 1 }, "Eval cron jobs registered");
 }

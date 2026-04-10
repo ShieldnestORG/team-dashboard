@@ -5,29 +5,25 @@ import { contentService } from "./content.js";
 import { seoEngineService } from "./seo-engine.js";
 import { autoGenerateAndQueue } from "./x-api/content-bridge.js";
 import { publishBlogFromContent } from "./blog-publisher.js";
-import { parseCron, nextCronTick } from "./cron.js";
+import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
 // Content generation cron jobs
-// Pattern: same as intel-crons.ts — tick-based, 30s interval, prevents
-// concurrent runs. Each job picks a topic and calls contentService.generate()
-// so content lands in the queue as "pending" (NOT auto-published).
+// Pattern: register with central cron-registry, no local setInterval.
 // ---------------------------------------------------------------------------
 
-interface ContentCronJob {
+interface ContentJobDef {
   name: string;
   schedule: string;
   personality: string;
   ownerAgent: string;
   contentType: string;
-  nextRun: Date | null;
-  running: boolean;
   topicPicker?: "intel-alert";
-  useContentBridge?: boolean;  // Use enriched tweet generation via x-api/content-bridge
+  useContentBridge?: boolean;
 }
 
-const JOB_DEFS: Omit<ContentCronJob, "nextRun" | "running">[] = [
+const JOB_DEFS: ContentJobDef[] = [
   // Regular content crons — ownerAgent matches the personality agent responsible
   { name: "content:twitter",  schedule: "0 13,15,17,20 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet", useContentBridge: true },
   // Auto-post cron — every 3 hours during active hours (9am-9pm UTC), cap ~8/day
@@ -171,110 +167,67 @@ async function pickIntelAlert(db: Db): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Scheduler
+// Register all content cron jobs
 // ---------------------------------------------------------------------------
 
 export function startContentCrons(db: Db) {
   const svc = contentService(db);
   const seoEngine = seoEngineService();
 
-  // SEO engine job — daily at 7am, generates blog post from trend signals
-  // Owner: Sage (CMO) — orchestrates content strategy including SEO
-  const seoJob = {
-    name: "content:seo-engine",
+  // SEO engine job — daily at 7:03am
+  registerCronJob({
+    jobName: "content:seo-engine",
     schedule: "3 7 * * *",
     ownerAgent: "sage",
-    nextRun: null as Date | null,
-    running: false,
-  };
-  {
-    const parsed = parseCron(seoJob.schedule);
-    if (parsed) seoJob.nextRun = nextCronTick(parsed, new Date());
-  }
+    sourceFile: "content-crons.ts",
+    handler: async () => {
+      const result = await seoEngine.run();
+      logger.info({ result }, "SEO engine cron completed");
+      return result;
+    },
+  });
 
-  const jobs: ContentCronJob[] = JOB_DEFS.map((def) => ({
-    ...def,
-    nextRun: null,
-    running: false,
-  }));
-
-  // Compute initial next-run times
-  for (const job of jobs) {
-    const parsed = parseCron(job.schedule);
-    if (parsed) {
-      job.nextRun = nextCronTick(parsed, new Date());
-    }
-  }
-
-  logger.info(
-    { jobs: jobs.map((j) => ({ name: j.name, schedule: j.schedule, nextRun: j.nextRun?.toISOString() })) },
-    "Content cron scheduler started",
-  );
-
-  // Tick every 30 seconds
-  const TICK_INTERVAL_MS = 30_000;
-
-  const interval = setInterval(async () => {
-    const now = new Date();
-
-    // SEO engine check
-    if (!seoJob.running && seoJob.nextRun && now >= seoJob.nextRun) {
-      seoJob.running = true;
-      logger.info({ job: seoJob.name, ownerAgent: seoJob.ownerAgent }, "SEO engine cron starting");
-      try {
-        const result = await seoEngine.run();
-        logger.info({ job: seoJob.name, ownerAgent: seoJob.ownerAgent, result }, "SEO engine cron completed");
-      } catch (err) {
-        logger.error({ err, job: seoJob.name, ownerAgent: seoJob.ownerAgent }, "SEO engine cron failed");
-      } finally {
-        seoJob.running = false;
-        const parsed = parseCron(seoJob.schedule);
-        if (parsed) seoJob.nextRun = nextCronTick(parsed, new Date());
-      }
-    }
-
-    for (const job of jobs) {
-      if (job.running) continue;
-      if (!job.nextRun || now < job.nextRun) continue;
-
-      job.running = true;
-      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Content cron job starting");
-
-      try {
+  // Register all content generation jobs
+  for (const def of JOB_DEFS) {
+    registerCronJob({
+      jobName: def.name,
+      schedule: def.schedule,
+      ownerAgent: def.ownerAgent,
+      sourceFile: "content-crons.ts",
+      handler: async () => {
         let topic: string | null;
 
-        if (job.topicPicker === "intel-alert") {
+        if (def.topicPicker === "intel-alert") {
           topic = await pickIntelAlert(db);
           if (!topic) {
-            // No hot intel — skip this cycle
-            logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "No hot intel signals, skipping alert content");
-            continue;
+            logger.info({ job: def.name, ownerAgent: def.ownerAgent }, "No hot intel signals, skipping alert content");
+            return;
           }
         } else {
           topic = await pickTopic(db);
         }
 
-        // Use enriched content bridge for twitter jobs (embedding context + analytics feedback)
-        if (job.useContentBridge && job.contentType === "tweet") {
+        // Use enriched content bridge for twitter jobs
+        if (def.useContentBridge && def.contentType === "tweet") {
           const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
-          await autoGenerateAndQueue(db, job.personality, companyId, topic ?? undefined);
+          await autoGenerateAndQueue(db, def.personality, companyId, topic ?? undefined);
           logger.info(
-            { job: job.name, ownerAgent: job.ownerAgent, topic, isAlert: !!job.topicPicker },
-            "Content cron job completed via content-bridge — tweet queued as draft",
+            { job: def.name, ownerAgent: def.ownerAgent, topic, isAlert: !!def.topicPicker },
+            "Content cron completed via content-bridge — tweet queued as draft",
           );
         } else {
           const result = await svc.generate({
-            personalityId: job.personality,
-            contentType: job.contentType,
+            personalityId: def.personality,
+            contentType: def.contentType,
             topic: topic!,
           });
           logger.info(
-            { job: job.name, ownerAgent: job.ownerAgent, contentId: result.contentId, topic, isAlert: !!job.topicPicker },
-            "Content cron job completed — item queued as pending",
+            { job: def.name, ownerAgent: def.ownerAgent, contentId: result.contentId, topic, isAlert: !!def.topicPicker },
+            "Content cron completed — item queued as pending",
           );
 
           // Auto-publish blog posts to coherencedaddy.com
-          if (job.contentType === "blog_post") {
+          if (def.contentType === "blog_post") {
             try {
               const publishResult = await publishBlogFromContent(result.content, topic!);
               if (publishResult.success) {
@@ -283,32 +236,23 @@ export function startContentCrons(db: Db) {
                   .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
                   .where(eq(contentItems.id, result.contentId));
                 logger.info(
-                  { job: job.name, slug: publishResult.slug, title: publishResult.title },
+                  { job: def.name, slug: publishResult.slug, title: publishResult.title },
                   "Blog post published to coherencedaddy.com",
                 );
               } else {
                 logger.warn(
-                  { job: job.name, error: publishResult.error },
+                  { job: def.name, error: publishResult.error },
                   "Blog publish failed — content stays as draft",
                 );
               }
             } catch (publishErr) {
-              logger.error({ err: publishErr, job: job.name }, "Blog publish error — non-critical, content in draft");
+              logger.error({ err: publishErr, job: def.name }, "Blog publish error — non-critical, content in draft");
             }
           }
         }
-      } catch (err) {
-        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Content cron job failed");
-      } finally {
-        job.running = false;
-        const parsed = parseCron(job.schedule);
-        if (parsed) {
-          job.nextRun = nextCronTick(parsed, new Date());
-        }
-      }
-    }
-  }, TICK_INTERVAL_MS);
+      },
+    });
+  }
 
-  // Return cleanup function
-  return () => clearInterval(interval);
+  logger.info({ count: JOB_DEFS.length + 1 }, "Content cron jobs registered");
 }

@@ -6,6 +6,7 @@ import * as ladder from "../services/ladder.js";
 import { getEvalHistory, getLatestEval } from "../services/eval-store.js";
 import { getRecentAlerts } from "../services/alerting.js";
 import { getRecentLogs } from "../services/log-store.js";
+import { getServiceStatuses, getSystemMetrics } from "../services/vps-monitor.js";
 
 export function systemHealthRoutes(db: Db) {
   const router = Router();
@@ -136,6 +137,19 @@ export function systemHealthRoutes(db: Db) {
   // GET /api/system-health/alerts
   router.get("/alerts", (_req, res) => {
     res.json({ alerts: getRecentAlerts() });
+  });
+
+  // GET /api/system-health/services — VPS service statuses + system metrics
+  router.get("/services", (_req, res) => {
+    try {
+      res.json({
+        services: getServiceStatuses(),
+        metrics: getSystemMetrics(),
+      });
+    } catch (err) {
+      console.error("system-health services error:", err);
+      res.status(500).json({ error: "Failed to read service statuses" });
+    }
   });
 
   // GET /api/system-health/logs

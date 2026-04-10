@@ -1,16 +1,7 @@
-import { parseCron, nextCronTick } from "./cron.js";
+import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 import { sendAlert } from "./alerting.js";
 import { getLatestEval } from "./eval-store.js";
-
-interface AlertCronJob {
-  name: string;
-  schedule: string;
-  ownerAgent: string;
-  run: () => Promise<void>;
-  nextRun: Date | null;
-  running: boolean;
-}
 
 async function checkHealth(): Promise<void> {
   try {
@@ -58,40 +49,8 @@ async function dailyDigest(): Promise<void> {
 }
 
 export function startAlertCrons() {
-  const jobs: AlertCronJob[] = [
-    { name: "alert:health-check", schedule: "*/5 * * * *", ownerAgent: "nova", run: checkHealth, nextRun: null, running: false },
-    { name: "alert:digest", schedule: "0 7 * * *", ownerAgent: "nova", run: dailyDigest, nextRun: null, running: false },
-  ];
+  registerCronJob({ jobName: "alert:health-check", schedule: "*/5 * * * *", ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: checkHealth });
+  registerCronJob({ jobName: "alert:digest",       schedule: "0 7 * * *",   ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: dailyDigest });
 
-  for (const job of jobs) {
-    const parsed = parseCron(job.schedule);
-    if (parsed) job.nextRun = nextCronTick(parsed, new Date());
-  }
-
-  logger.info(
-    { jobs: jobs.map((j) => ({ name: j.name, schedule: j.schedule, nextRun: j.nextRun?.toISOString() })) },
-    "Alert cron scheduler started",
-  );
-
-  const TICK_INTERVAL_MS = 30_000;
-  const interval = setInterval(async () => {
-    const now = new Date();
-    for (const job of jobs) {
-      if (job.running) continue;
-      if (!job.nextRun || now < job.nextRun) continue;
-      job.running = true;
-      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Alert cron job starting");
-      try {
-        await job.run();
-      } catch (err) {
-        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Alert cron job failed");
-      } finally {
-        job.running = false;
-        const parsed = parseCron(job.schedule);
-        if (parsed) job.nextRun = nextCronTick(parsed, new Date());
-      }
-    }
-  }, TICK_INTERVAL_MS);
-
-  return () => clearInterval(interval);
+  logger.info({ count: 2 }, "Alert cron jobs registered");
 }

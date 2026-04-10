@@ -2,21 +2,12 @@ import type { Db } from "@paperclipai/db";
 import { intelService } from "./intel.js";
 import { intelDiscoveryService } from "./intel-discovery.js";
 import { mintscanService } from "./mintscan.js";
-import { parseCron, nextCronTick } from "./cron.js";
+import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface IntelCronJob {
-  name: string;
-  schedule: string;
-  ownerAgent: string;
-  run: () => Promise<unknown>;
-  nextRun: Date | null;
-  running: boolean;
-}
 
 interface IngestResult {
   success: boolean;
@@ -60,7 +51,7 @@ async function paginatedIngest(
 }
 
 // ---------------------------------------------------------------------------
-// Cron scheduler
+// Register intel cron jobs (all owned by Echo — Data Engineer)
 // ---------------------------------------------------------------------------
 
 export function startIntelCrons(db: Db) {
@@ -68,63 +59,14 @@ export function startIntelCrons(db: Db) {
   const discovery = intelDiscoveryService(db);
   const mintscan = mintscanService(db);
 
-  // All intel cron jobs owned by Echo (Data Engineer)
-  const jobs: IntelCronJob[] = [
-    // Aggressive schedules for near-realtime intel
-    { name: "intel:prices",        schedule: "0 * * * *",      ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100),   nextRun: null, running: false },
-    { name: "intel:news",          schedule: "0 * * * *",      ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50),      nextRun: null, running: false },
-    { name: "intel:twitter",       schedule: "*/30 * * * *",   ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30),   nextRun: null, running: false },
-    { name: "intel:github",        schedule: "0 */4 * * *",    ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25),    nextRun: null, running: false },
-    { name: "intel:reddit",        schedule: "0 */2 * * *",    ownerAgent: "echo", run: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30),    nextRun: null, running: false },
-    // Chain metrics — Mintscan Cosmos ecosystem APR data
-    { name: "intel:chain-metrics", schedule: "0 */4 * * *",    ownerAgent: "echo", run: () => mintscan.ingestChainMetrics(),                             nextRun: null, running: false },
-    // Backfill — catches companies with sparse data
-    { name: "intel:backfill",      schedule: "0 */12 * * *",   ownerAgent: "echo", run: () => svc.backfillNewCompanies(),                                nextRun: null, running: false },
-    // Discovery — find new trending projects to add to the directory
-    { name: "intel:discover",      schedule: "0 */6 * * *",    ownerAgent: "echo", run: () => discovery.discoverNewProjects(),                            nextRun: null, running: false },
-  ];
+  registerCronJob({ jobName: "intel:prices",        schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100) });
+  registerCronJob({ jobName: "intel:news",           schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50) });
+  registerCronJob({ jobName: "intel:twitter",        schedule: "*/30 * * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30) });
+  registerCronJob({ jobName: "intel:github",         schedule: "0 */4 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25) });
+  registerCronJob({ jobName: "intel:reddit",         schedule: "0 */2 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30) });
+  registerCronJob({ jobName: "intel:chain-metrics",  schedule: "0 */4 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => mintscan.ingestChainMetrics() });
+  registerCronJob({ jobName: "intel:backfill",       schedule: "0 */12 * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => svc.backfillNewCompanies() });
+  registerCronJob({ jobName: "intel:discover",       schedule: "0 */6 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => discovery.discoverNewProjects() });
 
-  // Compute initial next-run times
-  for (const job of jobs) {
-    const parsed = parseCron(job.schedule);
-    if (parsed) {
-      job.nextRun = nextCronTick(parsed, new Date());
-    }
-  }
-
-  logger.info(
-    { jobs: jobs.map((j) => ({ name: j.name, schedule: j.schedule, nextRun: j.nextRun?.toISOString() })) },
-    "Intel cron scheduler started (aggressive schedules)",
-  );
-
-  // Tick every 30 seconds
-  const TICK_INTERVAL_MS = 30_000;
-
-  const interval = setInterval(async () => {
-    const now = new Date();
-
-    for (const job of jobs) {
-      if (job.running) continue;
-      if (!job.nextRun || now < job.nextRun) continue;
-
-      job.running = true;
-      logger.info({ job: job.name, ownerAgent: job.ownerAgent }, "Intel cron job starting");
-
-      try {
-        const result = await job.run();
-        logger.info({ job: job.name, ownerAgent: job.ownerAgent, result }, "Intel cron job completed");
-      } catch (err) {
-        logger.error({ err, job: job.name, ownerAgent: job.ownerAgent }, "Intel cron job failed");
-      } finally {
-        job.running = false;
-        const parsed = parseCron(job.schedule);
-        if (parsed) {
-          job.nextRun = nextCronTick(parsed, new Date());
-        }
-      }
-    }
-  }, TICK_INTERVAL_MS);
-
-  // Return cleanup function
-  return () => clearInterval(interval);
+  logger.info({ count: 8 }, "Intel cron jobs registered");
 }
