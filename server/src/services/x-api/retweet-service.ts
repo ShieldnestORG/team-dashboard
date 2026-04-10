@@ -40,12 +40,21 @@ function resetDailyIfNeeded(): void {
 // Save tweet data to intel_reports for content context
 // ---------------------------------------------------------------------------
 
+// Map Twitter handles to intel_companies slugs
+const HANDLE_TO_SLUG: Record<string, string> = {
+  txecosystem: "txhuman",
+  tokns_fi: "txhuman",
+  txdevhub: "txhuman",
+  ripple: "xrpl-ripple",
+};
+
 async function saveTweetAsIntel(
   db: Db,
   tweet: { id: string; text: string; author_username?: string; created_at?: string },
 ): Promise<void> {
   try {
-    const companySlug = tweet.author_username?.toLowerCase() || "unknown";
+    const handle = tweet.author_username?.toLowerCase() || "unknown";
+    const companySlug = HANDLE_TO_SLUG[handle] || "txhuman";
     await db.execute(sql`
       INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, captured_at)
       VALUES (
