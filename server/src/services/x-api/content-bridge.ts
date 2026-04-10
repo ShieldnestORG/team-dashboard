@@ -31,7 +31,7 @@ const PERSONALITIES: Record<string, {
 }> = { blaze, cipher, spark, prism, vanguard, forge };
 
 const MAX_TWEET_CHARS = 280;
-const MAX_TWEETS_PER_DAY = 8; // ~50% of X free-tier 17/day limit
+const MAX_TWEETS_PER_DAY = 12; // ~70% of X free-tier 17/day limit
 
 // ---------------------------------------------------------------------------
 // Ollama client — same pattern as content.ts
