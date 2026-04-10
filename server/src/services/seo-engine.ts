@@ -5,6 +5,7 @@ import {
   type BlogPost,
   makeSlug,
   publishPost,
+  publishToTargets,
   pingIndexNow,
   callOllamaBlog,
   generateBlogPostOllama,
@@ -261,20 +262,27 @@ export function seoEngineService() {
       // 3. Generate blog post (Ollama first, Claude fallback)
       const post = await generateBlogPost(signal);
 
-      // 4. Publish to coherencedaddy
-      const result = await publishPost(post);
+      // 4. Publish to coherencedaddy + app.tokns.fi
+      const results = await publishToTargets(post, "all");
+      const anySuccess = results.cd?.success || results.sn?.success;
 
-      if (result.success) {
-        logger.info({ title: post.title, slug: post.slug }, "SEO engine: post published");
+      if (anySuccess) {
+        logger.info({ title: post.title, slug: post.slug, cd: results.cd?.success, sn: results.sn?.success }, "SEO engine: post published");
 
-        // 5. Ping IndexNow
-        await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
+        // 5. Ping IndexNow (CD only — public, search-indexed)
+        if (results.cd?.success) {
+          await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
+        }
 
         return { posted: true, title: post.title, slug: post.slug };
       }
 
-      logger.error({ error: result.error }, "SEO engine: failed to publish");
-      return { posted: false, error: result.error };
+      const allErrors = [
+        results.cd?.error && `cd: ${results.cd.error}`,
+        results.sn?.error && `sn: ${results.sn.error}`,
+      ].filter(Boolean).join(", ");
+      logger.error({ error: allErrors }, "SEO engine: failed to publish");
+      return { posted: false, error: allErrors };
     },
   };
 }

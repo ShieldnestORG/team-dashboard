@@ -29,7 +29,7 @@ const JOB_DEFS: ContentJobDef[] = [
   { name: "content:twitter",  schedule: "0 13,15,17,20 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet", useContentBridge: true },
   // Auto-post cron — every 3 hours during active hours (9am-9pm UTC), cap ~8/day
   { name: "content:twitter:auto-post", schedule: "0 9,12,15,18,21 * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet", useContentBridge: true },
-  { name: "content:blog",     schedule: "0 10 * * 2,4",        personality: "cipher", ownerAgent: "cipher", contentType: "blog_post" },
+  { name: "content:blog",     schedule: "0 10 * * 2,4",        personality: "cipher", ownerAgent: "cipher", contentType: "blog_post", publishTarget: "all" },
   { name: "content:linkedin", schedule: "0 14 * * 1-5",        personality: "prism",  ownerAgent: "prism",  contentType: "linkedin" },
   { name: "content:discord",  schedule: "0 10,16,21 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "discord" },
   { name: "content:bluesky",  schedule: "0 14,17,20 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "bluesky" },
