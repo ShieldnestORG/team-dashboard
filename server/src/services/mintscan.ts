@@ -32,6 +32,8 @@ interface ChainMetricsPayload {
   apr: number | null;
   validator_apr: number | null;
   validator_address: string | null;
+  validator_count: number | null;
+  block_height: number | null;
   captured_at: string;
 }
 
@@ -130,15 +132,42 @@ export function mintscanService(db: Db) {
       try {
         const apr = await getChainAPR(network);
 
+        // Fetch validator count (bonded validators)
+        let validatorCount: number | null = null;
+        try {
+          const validators = await mintscanFetch<Array<Record<string, unknown>>>(
+            `/v1/${network}/validators?status=BOND_STATUS_BONDED`,
+          );
+          validatorCount = Array.isArray(validators) ? validators.length : null;
+        } catch {
+          logger.debug({ network }, "Validator count fetch failed (non-critical)");
+        }
+
+        // Fetch latest block height
+        let blockHeight: number | null = null;
+        try {
+          const blocks = await mintscanFetch<Array<{ height?: number }>>(
+            `/v1/${network}/blocks?limit=1`,
+          );
+          blockHeight = Array.isArray(blocks) && blocks[0]?.height ? blocks[0].height : null;
+        } catch {
+          logger.debug({ network }, "Block height fetch failed (non-critical)");
+        }
+
         const payload: ChainMetricsPayload = {
           network,
           apr,
           validator_apr: null,
           validator_address: null,
+          validator_count: validatorCount,
+          block_height: blockHeight,
           captured_at: new Date().toISOString(),
         };
 
-        const headline = `Chain metrics: ${network} — APR ${apr != null ? `${apr.toFixed(2)}%` : "unavailable"}`;
+        const parts = [`APR ${apr != null ? `${apr.toFixed(2)}%` : "N/A"}`];
+        if (validatorCount != null) parts.push(`${validatorCount} validators`);
+        if (blockHeight != null) parts.push(`block #${blockHeight.toLocaleString()}`);
+        const headline = `Chain metrics: ${network} — ${parts.join(", ")}`;
         const body = JSON.stringify(payload);
 
         const embedding = await getEmbedding(`${headline} ${body}`);
@@ -157,7 +186,7 @@ export function mintscanService(db: Db) {
         `);
 
         processed++;
-        logger.info({ network, apr }, "Mintscan chain metrics ingested");
+        logger.info({ network, apr, validatorCount, blockHeight }, "Mintscan chain metrics ingested");
       } catch (err) {
         const msg = `${network}: ${String(err)}`;
         errors.push(msg);

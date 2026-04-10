@@ -1,7 +1,7 @@
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
-// Blog Publisher — shared utilities for publishing to coherencedaddy.com blog
+// Blog Publisher — multi-target publishing to coherencedaddy.com + shieldnest.io
 // Used by seo-engine.ts (signal-based) and content-crons.ts (Ollama content queue)
 // ---------------------------------------------------------------------------
 
@@ -9,7 +9,11 @@ const OLLAMA_URL = process.env.OLLAMA_URL || "http://168.231.127.180:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:1.5b";
 const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://coherencedaddy.com/api/blog/posts";
 const BLOG_API_KEY = process.env.CD_BLOG_API_KEY || "";
+const SN_BLOG_API_URL = process.env.SN_BLOG_API_URL || "";
+const SN_BLOG_API_KEY = process.env.SN_BLOG_API_KEY || "";
 const INDEXNOW_KEY = process.env.INDEXNOW_KEY || "";
+
+export type PublishTarget = "cd" | "sn" | "all";
 
 // Tool slugs grouped by category for internal linking
 const TOOL_LINKS: Record<string, Array<{ name: string; slug: string }>> = {
@@ -240,6 +244,70 @@ export async function publishPost(post: BlogPost): Promise<{ success: boolean; e
 }
 
 // ---------------------------------------------------------------------------
+// Publish BlogPost to ShieldNest articles API
+// ---------------------------------------------------------------------------
+
+export async function publishToShieldNest(post: BlogPost): Promise<{ success: boolean; error?: string }> {
+  if (!SN_BLOG_API_URL || !SN_BLOG_API_KEY) {
+    return { success: false, error: "SN_BLOG_API_URL or SN_BLOG_API_KEY not set" };
+  }
+
+  try {
+    const res = await fetch(SN_BLOG_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SN_BLOG_API_KEY}`,
+      },
+      body: JSON.stringify(post),
+    });
+
+    if (res.ok) {
+      logger.info({ slug: post.slug, target: "shieldnest" }, "Blog published to ShieldNest");
+      return { success: true };
+    }
+
+    const err = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error: string };
+    return { success: false, error: err.error };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Publish to multiple targets in parallel
+// ---------------------------------------------------------------------------
+
+interface MultiTargetResult {
+  cd?: { success: boolean; error?: string };
+  sn?: { success: boolean; error?: string };
+}
+
+export async function publishToTargets(
+  post: BlogPost,
+  target: PublishTarget = "cd",
+): Promise<MultiTargetResult> {
+  const results: MultiTargetResult = {};
+
+  const promises: Promise<void>[] = [];
+
+  if (target === "cd" || target === "all") {
+    promises.push(
+      publishPost(post).then((r) => { results.cd = r; }),
+    );
+  }
+
+  if (target === "sn" || target === "all") {
+    promises.push(
+      publishToShieldNest(post).then((r) => { results.sn = r; }),
+    );
+  }
+
+  await Promise.allSettled(promises);
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // IndexNow ping — notify search engines of new content
 // ---------------------------------------------------------------------------
 
@@ -266,21 +334,46 @@ export async function pingIndexNow(urls: string[]): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // publishBlogFromContent — high-level helper for content-crons
-// Takes raw HTML content + topic, formats, publishes, pings IndexNow
+// Takes raw HTML content + topic, formats, publishes to target(s), pings IndexNow
 // ---------------------------------------------------------------------------
 
 export async function publishBlogFromContent(
   htmlContent: string,
   topic: string,
   category: BlogPost["category"] = "ecosystem",
+  target: PublishTarget = "cd",
 ): Promise<{ success: boolean; slug?: string; title?: string; error?: string }> {
   const post = buildBlogPostFromContent(htmlContent, topic, category);
-  const result = await publishPost(post);
+  const results = await publishToTargets(post, target);
 
-  if (result.success) {
-    await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
-    return { success: true, slug: post.slug, title: post.title };
+  const anySuccess = results.cd?.success || results.sn?.success;
+
+  if (anySuccess) {
+    // Only ping IndexNow for CD (public blog, search-indexed)
+    if (results.cd?.success) {
+      await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
+    }
+
+    const errors: string[] = [];
+    if (results.cd && !results.cd.success && (target === "cd" || target === "all")) {
+      errors.push(`cd: ${results.cd.error}`);
+    }
+    if (results.sn && !results.sn.success && (target === "sn" || target === "all")) {
+      errors.push(`sn: ${results.sn.error}`);
+    }
+
+    return {
+      success: true,
+      slug: post.slug,
+      title: post.title,
+      error: errors.length > 0 ? `Partial: ${errors.join(", ")}` : undefined,
+    };
   }
 
-  return { success: false, error: result.error };
+  const allErrors = [
+    results.cd?.error && `cd: ${results.cd.error}`,
+    results.sn?.error && `sn: ${results.sn.error}`,
+  ].filter(Boolean).join(", ");
+
+  return { success: false, error: allErrors || "All targets failed" };
 }
