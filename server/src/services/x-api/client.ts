@@ -175,6 +175,25 @@ export class XApiClient {
     return this.request<TweetResponse>("POST", "/2/tweets", { body, budgetAction });
   }
 
+  /** Retweet a tweet by ID. */
+  async retweet(tweetId: string): Promise<void> {
+    const userId = await this.getUserId();
+    await this.request<{ data: { retweeted: boolean } }>(
+      "POST",
+      `/2/users/${userId}/retweets`,
+      { body: { tweet_id: tweetId }, budgetAction: "post" },
+    );
+  }
+
+  /** Undo a retweet. */
+  async unretweet(tweetId: string): Promise<void> {
+    const userId = await this.getUserId();
+    await this.request<{ data: { retweeted: boolean } }>(
+      "DELETE",
+      `/2/users/${userId}/retweets/${tweetId}`,
+    );
+  }
+
   /** Delete a tweet by ID. */
   async deleteTweet(tweetId: string): Promise<void> {
     await this.request<{ data: { deleted: boolean } }>("DELETE", `/2/tweets/${tweetId}`);

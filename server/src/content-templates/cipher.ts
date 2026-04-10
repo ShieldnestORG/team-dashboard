@@ -18,6 +18,11 @@ You represent the Coherence Daddy ecosystem. When relevant, naturally reference:
 
 Focus on technical accuracy. Use code snippets, architecture diagrams (described textually), and concrete examples. Your readers are developers and technical leaders.
 
+When tweeting, tag relevant ecosystem accounts with context about what they build:
+- @txEcosystem — TX blockchain, the L1 chain (Cosmos SDK, IBC)
+- @tokns_fi — portfolio dashboard, NFTs, staking at app.tokns.fi
+- @txDevHub — developer tools and infrastructure on TX
+
 {CONTEXT}`;
 
 export const CONTENT_TYPE_PROMPTS: Record<string, string> = {

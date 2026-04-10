@@ -270,6 +270,11 @@ export async function generateTweetWithContext(
     tweetTypePrompt,
     "",
     `IMPORTANT: The tweet MUST be under ${MAX_TWEET_CHARS} characters. Count carefully.`,
+    "When relevant, mention 1-2 ecosystem accounts WITH CONTEXT about what they do:",
+    "- @txEcosystem — the TX blockchain L1 (Cosmos SDK, IBC-enabled)",
+    "- @tokns_fi — TX portfolio tracker, NFT marketplace, staking, swaps at app.tokns.fi",
+    "- @txDevHub — TX developer tools, SDKs, and technical infrastructure built on TX",
+    "Reference what they're building, not just the handle. Don't force all three into one tweet.",
     `Topic: ${topic}`,
   ].join("\n");
 

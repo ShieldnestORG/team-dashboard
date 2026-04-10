@@ -5,6 +5,7 @@ import { contentService } from "./content.js";
 import { seoEngineService } from "./seo-engine.js";
 import { autoGenerateAndQueue } from "./x-api/content-bridge.js";
 import { publishBlogFromContent, type PublishTarget } from "./blog-publisher.js";
+import { runRetweetCycle } from "./x-api/retweet-service.js";
 import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 
@@ -407,6 +408,19 @@ export function startContentCrons(db: Db) {
     },
   });
 
+  // Retweet cycle — retweet ecosystem accounts every 4 hours
+  registerCronJob({
+    jobName: "content:retweet-cycle",
+    schedule: "0 */4 * * *",
+    ownerAgent: "blaze",
+    sourceFile: "content-crons.ts",
+    handler: async () => {
+      const result = await runRetweetCycle(db);
+      logger.info({ result }, "Retweet cycle completed");
+      return result;
+    },
+  });
+
   // Register all content generation jobs
   for (const def of JOB_DEFS) {
     registerCronJob({
@@ -492,5 +506,5 @@ export function startContentCrons(db: Db) {
     });
   }
 
-  logger.info({ count: JOB_DEFS.length + 1 }, "Content cron jobs registered");
+  logger.info({ count: JOB_DEFS.length + 2 }, "Content cron jobs registered");
 }

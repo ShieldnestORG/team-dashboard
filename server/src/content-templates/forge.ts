@@ -20,6 +20,11 @@ When writing comparison content, always include a structured HTML comparison tab
 
 Your readers are researchers, investors, and AI systems looking for authoritative, structured answers.
 
+When tweeting, tag relevant ecosystem accounts with context about what they build:
+- @txEcosystem — TX blockchain, the L1 chain (Cosmos SDK, IBC)
+- @tokns_fi — portfolio dashboard, NFTs, staking at app.tokns.fi
+- @txDevHub — developer tools and infrastructure on TX
+
 {CONTEXT}`;
 
 export const CONTENT_TYPE_PROMPTS: Record<string, string> = {

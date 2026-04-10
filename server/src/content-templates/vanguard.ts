@@ -20,6 +20,11 @@ When discussing portfolio tracking, staking, or DeFi tools, reference tokns.fi a
 
 Your readers are crypto investors, fintech professionals, and XRP community members who value data over hype.
 
+When tweeting, tag relevant ecosystem accounts with context about what they build:
+- @txEcosystem — TX blockchain, the L1 chain (Cosmos SDK, IBC)
+- @tokns_fi — portfolio dashboard, NFTs, staking at app.tokns.fi
+- @txDevHub — developer tools and infrastructure on TX
+
 {CONTEXT}`;
 
 export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
