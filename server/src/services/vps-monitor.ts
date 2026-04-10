@@ -14,6 +14,12 @@ import { logger } from "../middleware/logger.js";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface ServiceCost {
+  monthlyCents: number;
+  label: string;
+  tier?: string;
+}
+
 export interface ServiceStatus {
   name: string;
   url: string;
@@ -25,6 +31,7 @@ export interface ServiceStatus {
   error: string | null;
   consecutiveFailures: number;
   resources?: ServiceResources | null;
+  cost?: ServiceCost | null;
 }
 
 export interface ServiceResources {
@@ -64,6 +71,32 @@ interface ServiceCheck {
   url: string;
   timeoutMs?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Service cost mapping (monthly estimates in cents)
+// ---------------------------------------------------------------------------
+
+const SERVICE_COSTS: Record<string, ServiceCost> = {
+  "Backend API":      { monthlyCents: 2800, label: "$28/mo", tier: "VPS_1 (31.220.61.12) — Contabo VPS L" },
+  "Ollama LLM":       { monthlyCents: 1500, label: "$15/mo", tier: "VPS_2 (31.220.61.14) — Contabo VPS M" },
+  "Firecrawl":        { monthlyCents: 0,    label: "free",   tier: "Self-hosted on VPS_2" },
+  "Embedding Service":{ monthlyCents: 0,    label: "free",   tier: "Self-hosted on VPS_1" },
+  "Database":         { monthlyCents: 0,    label: "free",   tier: "Neon free tier" },
+};
+
+// Infrastructure costs not tied to a health-checked service
+export const INFRA_COSTS: Array<{ name: string; cost: ServiceCost }> = [
+  { name: "VPS_1 (Backend)",     cost: { monthlyCents: 2800, label: "$28/mo", tier: "Contabo VPS L — 8 vCPU, 30GB RAM, 200GB NVMe" } },
+  { name: "VPS_2 (Ollama)",      cost: { monthlyCents: 1500, label: "$15/mo", tier: "Contabo VPS M — 4 vCPU, 16GB RAM, 200GB NVMe" } },
+  { name: "Neon PostgreSQL",     cost: { monthlyCents: 0,    label: "free",   tier: "Free tier — 0.5 GiB storage" } },
+  { name: "Vercel (Frontend)",   cost: { monthlyCents: 0,    label: "free",   tier: "Hobby plan" } },
+  { name: "GitHub",              cost: { monthlyCents: 0,    label: "free",   tier: "Free (private repo)" } },
+  { name: "Anthropic API",       cost: { monthlyCents: 0,    label: "pay-per-use", tier: "Claude Haiku — tracked in Costs page" } },
+  { name: "Gemini API",          cost: { monthlyCents: 0,    label: "pay-per-use", tier: "Imagen 3 + Veo 2 — tracked in Costs page" } },
+  { name: "Grok/xAI API",        cost: { monthlyCents: 0,    label: "pay-per-use", tier: "grok-2-image — tracked in Costs page" } },
+  { name: "X API (Twitter)",     cost: { monthlyCents: 0,    label: "pay-per-use", tier: "Basic tier — $1/day budget cap" } },
+  { name: "Proton Mail (SMTP)",  cost: { monthlyCents: 0,    label: "free",   tier: "Included in Proton plan" } },
+];
 
 function getServiceChecks(): ServiceCheck[] {
   const port = process.env.PORT || "3100";
@@ -298,8 +331,9 @@ async function checkAllServices(db: Db): Promise<void> {
       const svc = result.value;
       const prev = previousStatus.get(svc.name);
 
-      // Attach per-service resource data
+      // Attach per-service resource data and costs
       svc.resources = resourceMap.get(svc.name) ?? null;
+      svc.cost = SERVICE_COSTS[svc.name] ?? null;
 
       // Update state
       serviceStatuses.set(svc.name, svc);

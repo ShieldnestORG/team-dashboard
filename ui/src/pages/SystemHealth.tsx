@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { systemHealthApi } from "../api/system-health";
-import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, SystemMetricsInfo } from "../api/system-health";
+import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, SystemMetricsInfo, InfraCostItem } from "../api/system-health";
 import {
   Card,
   CardContent,
@@ -433,6 +433,11 @@ export function SystemHealth() {
                       }`}>
                         {svc.status}
                       </Badge>
+                      {svc.cost && (
+                        <span className={`text-[10px] font-mono ${svc.cost.monthlyCents > 0 ? "text-amber-400" : "text-muted-foreground/60"}`} title={svc.cost.tier}>
+                          {svc.cost.label}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
                       {svc.latencyMs !== null && <span>{svc.latencyMs}ms</span>}
@@ -491,6 +496,34 @@ export function SystemHealth() {
                     {servicesData.metrics.uptimeHours}h
                   </div>
                   <div className="text-[10px] text-muted-foreground">Uptime</div>
+                </div>
+              </div>
+            )}
+
+            {/* Infrastructure cost breakdown */}
+            {servicesData.infraCosts && servicesData.infraCosts.length > 0 && (
+              <div className="pt-2 border-t">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">Infrastructure Costs</span>
+                  <span className="text-sm font-bold text-amber-400 tabular-nums">
+                    ${((servicesData.totalMonthlyCents ?? 0) / 100).toFixed(0)}/mo
+                  </span>
+                </div>
+                <div className="grid gap-1.5">
+                  {servicesData.infraCosts.map((item: InfraCostItem) => (
+                    <div key={item.name} className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`inline-block h-1.5 w-1.5 rounded-full ${item.cost.monthlyCents > 0 ? "bg-amber-400" : "bg-emerald-400"}`} />
+                        <span className="text-muted-foreground truncate">{item.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-muted-foreground/60 text-[10px] truncate max-w-[180px]" title={item.cost.tier}>{item.cost.tier}</span>
+                        <span className={`font-mono tabular-nums ${item.cost.monthlyCents > 0 ? "text-amber-400" : "text-muted-foreground/60"}`}>
+                          {item.cost.label}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

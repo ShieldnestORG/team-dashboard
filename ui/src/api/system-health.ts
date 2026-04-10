@@ -88,6 +88,17 @@ export interface ServiceResourcesInfo {
   detail?: string;
 }
 
+export interface ServiceCostInfo {
+  monthlyCents: number;
+  label: string;
+  tier?: string;
+}
+
+export interface InfraCostItem {
+  name: string;
+  cost: ServiceCostInfo;
+}
+
 export interface ServiceStatusInfo {
   name: string;
   url: string;
@@ -99,6 +110,7 @@ export interface ServiceStatusInfo {
   error: string | null;
   consecutiveFailures: number;
   resources?: ServiceResourcesInfo | null;
+  cost?: ServiceCostInfo | null;
 }
 
 export interface SystemMetricsInfo {
@@ -130,5 +142,5 @@ export const systemHealthApi = {
       `/system-health/logs?${new URLSearchParams({ ...(level ? { level } : {}), ...(limit ? { limit: String(limit) } : {}) })}`,
     ),
   services: () =>
-    api.get<{ services: ServiceStatusInfo[]; metrics: SystemMetricsInfo | null }>("/system-health/services"),
+    api.get<{ services: ServiceStatusInfo[]; metrics: SystemMetricsInfo | null; infraCosts?: InfraCostItem[]; totalMonthlyCents?: number }>("/system-health/services"),
 };
