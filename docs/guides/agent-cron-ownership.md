@@ -48,13 +48,13 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Service | File | Job Count | Owner Agent(s) |
 |---------|------|-----------|----------------|
 | Intel crons | `server/src/services/intel-crons.ts` | 8 | Echo |
-| Content crons | `server/src/services/content-crons.ts` | 12 | Sage, Blaze, Cipher, Spark, Prism |
+| Content crons | `server/src/services/content-crons.ts` | 21 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
 | Eval crons | `server/src/services/eval-crons.ts` | 1 | Nova |
 | Alert crons | `server/src/services/alert-crons.ts` | 2 | Nova |
 | Trend crons | `server/src/services/trend-crons.ts` | 1 | Echo |
 | Auto-reply | `server/src/services/auto-reply.ts` | 1 | Core |
 
-**Total: 26 cron jobs across 5 services + 1 auto-reply cron + 2 plugin jobs (Discord) + 4 plugin jobs (Twitter). = 33 total**
+**Total: 35 cron jobs across 5 services + 1 auto-reply cron + 2 plugin jobs (Discord) + 4 plugin jobs (Twitter). = 42 total**
 
 ## Full Agent-to-Cron Mapping
 
@@ -80,11 +80,12 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 
 Sage orchestrates the 4 content personality agents below.
 
-### Blaze (Hot-Take Analyst) — 3 jobs
+### Blaze (Hot-Take Analyst) — 4 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
 | `content:twitter` | `0 13,15,17,20 * * *` | content-crons | Hot-take tweets 4x daily |
+| `content:twitter:auto-post` | `0 9,12,15,18,21 * * *` | content-crons | Auto-post tweets every 3hr during active hours |
 | `content:video:trend` | `0 11,14,18 * * *` | content-crons | Trend video scripts 3x daily |
 | `content:intel-alert:twitter` | `*/45 * * * *` | content-crons | Reactive tweets from hot intel signals |
 
@@ -103,13 +104,31 @@ Sage orchestrates the 4 content personality agents below.
 | `content:bluesky` | `0 14,17,20 * * *` | content-crons | Bluesky posts 3x daily |
 | `content:intel-alert:bluesky` | `0 */2 * * *` | content-crons | Reactive Bluesky posts from hot intel |
 
-### Prism (Trend Reporter) — 3 jobs
+### Prism (Trend Reporter) — 4 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
 | `content:linkedin` | `0 14 * * 1-5` | content-crons | LinkedIn trend reports weekdays |
 | `content:video:market` | `0 9 * * 1-5` | content-crons | Market recap video scripts weekdays |
 | `content:video:weekly` | `0 10 * * 6` | content-crons | Weekly wrap-up video script Saturday |
+| `content:tx-chain-daily` | `0 8 * * *` | content-crons | Daily TX chain metrics article → ShieldNest |
+
+### Vanguard (XRP/Ripple Analyst) — 4 jobs
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `content:xrp:blog` | `0 9 * * 1,3,5` | content-crons | XRP analysis blog Mon/Wed/Fri → CD + tokns |
+| `content:xrp:twitter` | `0 11,16,19 * * *` | content-crons | XRP insight tweets 3x daily |
+| `content:xrp:linkedin` | `0 13 * * 2,4` | content-crons | XRP LinkedIn posts Tue/Thu |
+| `content:xrp-alert:twitter` | `0 */3 * * *` | content-crons | Reactive XRP tweets from hot intel signals |
+
+### Forge (AEO/Comparison Architect) — 3 jobs
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `content:comparison:blog` | `0 10 * * 3,6` | content-crons | TX vs L1 comparison blogs Wed/Sat → CD + tokns |
+| `content:aeo:blog` | `0 11 * * 1,4` | content-crons | AEO-optimized blogs Mon/Thu → CD + tokns |
+| `content:tokns-promo:blog` | `0 14 * * 2,5` | content-crons | tokns.fi feature spotlight blogs Tue/Fri → CD + tokns |
 
 ### Nova (CTO) — 3 jobs
 
