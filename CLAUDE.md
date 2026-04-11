@@ -40,6 +40,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Auto-Reply Engine** — X/Twitter auto-reply system using a single `search/recent` query to cover all enabled targets (accounts + keywords) in one API call. Configurable via admin UI: poll interval (default 30 min), daily dollar spend cap (default $1.00), global max replies/day (default 50), per-target delay range and reply caps. Reply modes: template rotation or AI-generated. Settings persisted in `auto_reply_settings` DB table. Budget tracked in-memory by `rate-limiter.ts` with dollar-based caps ($0.005/read, $0.01/write). Panic mode halves all caps for 1 hour on 429. Admin page at `/auto-reply`
 - **MCP Server** — `packages/mcp-server/` Model Context Protocol server exposing 35 tools across 9 entities (Issues, Projects, Milestones, Labels, Teams, WorkflowStates, Comments, IssueRelations, Initiatives). Wraps Team Dashboard REST API for use by Claude, Codex, and other MCP-compatible agents. Stdio transport, configurable via `PAPERCLIP_API_URL` and `PAPERCLIP_API_TOKEN`
 - **Media Drop** — file upload and media management for content pipeline. Multer-based upload (up to 4 files), S3/local storage backends, per-company media libraries. Routes at `/api/media/*`, schema in `media_drops` table
+- **AEO Partner Network** — B2B lead-gen system that drives traffic to local business partners through CD's content engine. Partners are local businesses (gyms, restaurants, salons, etc.) whose info gets woven into content naturally. Redirect link tracking (`/api/go/:slug`), click metrics, public partner dashboard (token-authenticated), content mention tracking. Admin page at `/partners`, public dashboard at `/partner-dashboard/:slug?token=xxx`. Revenue model: free proof tier → performance-based fees ($10-15/client/mo) → premium retainer
 - **Intel Dashboard** — admin UI page at `/intel` with tabbed tables (Overview/Crypto/AI-ML/DeFi/DevTools), searchable company lists, stats cards
 - **Public Article Generator** — rate-limited public endpoint (`POST /api/content/public/generate`) for users to generate AI-powered articles with Coherence Daddy metadata attribution. Powered by Ollama + intel context, supports all platforms (tweet, blog, linkedin, reddit, etc.)
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
@@ -92,6 +93,7 @@ server/
       seo-engine.ts                 # Claude-powered blog generation from trends + publish + IndexNow
       trend-crons.ts                # Trend scanning cron scheduler (6hr cycle)
       auto-reply.ts                 # X auto-reply engine (search-based polling, settings, configurable cron)
+      partner-content.ts            # Partner content injection (industry matching, prompt context)
       x-api/
         client.ts                   # X API v2 client (searchRecent, getUserTweets, createTweet)
         rate-limiter.ts             # Dollar-based daily budget tracker ($0.005/read, $0.01/write) + panic mode
@@ -113,6 +115,8 @@ server/
       media-drop.ts                 # Media upload/management API (/api/media/*)
       trends.ts                     # Trend signals + SEO engine API (/api/trends/*)
       auto-reply.ts                 # Auto-reply API (/api/auto-reply/*) — settings, config CRUD, log, stats
+      partner.ts                    # Partner CRUD + metrics API (/api/partners/*)
+      partner-go.ts                 # Public redirect endpoint (/api/go/:slug — no auth)
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard
     adapters/         # HTTP/process adapter runners
@@ -125,7 +129,7 @@ ui/
     context/          # ThemeContext, CompanyContext, DialogContext, etc.
     hooks/            # Custom React hooks
     lib/              # Utilities, router, agent config
-    pages/            # Authenticated dashboard pages
+    pages/            # Authenticated dashboard pages (incl. Partners.tsx, PartnerDashboard.tsx)
   public/             # Favicons, service worker
 agents/                 # Per-agent AGENTS.md instruction files
   atlas/              # CEO — strategy, delegation, board comms
@@ -306,6 +310,13 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `packages/mcp-server/src/index.ts` | MCP server entry point — registers 35 tools, stdio transport |
 | `packages/mcp-server/src/client.ts` | HTTP client wrapping Team Dashboard REST API for MCP |
 | `packages/x-bot/` | Chrome extension for local X/Twitter DOM automation (user's browser) |
+| `packages/db/src/schema/partners.ts` | `partnerCompanies` + `partnerClicks` table schemas |
+| `packages/db/src/migrations/0057_partner_network.sql` | Migration: partner network tables |
+| `server/src/services/partner-content.ts` | Partner context injection for content generation prompts |
+| `server/src/routes/partner.ts` | Partner CRUD + metrics API (`/api/partners/*`) |
+| `server/src/routes/partner-go.ts` | Public redirect endpoint (`/api/go/:slug` — no auth) |
+| `ui/src/pages/Partners.tsx` | Partner admin page — CRUD, metrics, dashboard links |
+| `ui/src/pages/PartnerDashboard.tsx` | Public partner metrics dashboard (token-auth, light theme) |
 
 ### Updating
 

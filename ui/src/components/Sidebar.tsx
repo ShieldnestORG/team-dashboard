@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Reply,
   Clock,
+  Handshake,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -131,6 +132,7 @@ export function Sidebar() {
           <SidebarNavItem to="/agent-ops" label="Agent Ops" icon={Radar} />
           <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
+          <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
           <SidebarNavItem to="/content-review" label="Content" icon={Newspaper} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />

@@ -70,6 +70,8 @@ import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
+import { partnerRoutes } from "./routes/partner.js";
+import { partnerGoRoutes } from "./routes/partner-go.js";
 import { agentOpsRoutes } from "./routes/agent-ops.js";
 import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
 import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
@@ -218,6 +220,7 @@ export async function createApp(
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
+  api.use("/partners", partnerRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -274,6 +277,8 @@ export async function createApp(
   );
   // Public reels API — unauthenticated, serves approved/published visual content
   app.use("/api/reels", publicReelsRoutes(db, opts.storageService, "default"));
+  // Public partner redirect — unauthenticated, tracks clicks and redirects to partner website
+  app.use("/api/go", partnerGoRoutes(db));
   // Sitemap + robots — unauthenticated, for search engine crawlers
   app.use("/", sitemapRoutes(db));
 

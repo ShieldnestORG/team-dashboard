@@ -11,6 +11,7 @@ import * as spark from "../content-templates/spark.js";
 import * as prism from "../content-templates/prism.js";
 import * as vanguard from "../content-templates/vanguard.js";
 import * as forge from "../content-templates/forge.js";
+import { getPartnerInjection } from "./partner-content.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -275,9 +276,12 @@ export function contentService(db: Db) {
     // Fetch admin feedback for training
     const feedbackContext = await buildFeedbackContext(db, companyId, opts.personalityId, platform);
 
+    // Fetch partner context for natural mentions
+    const partnerContext = await getPartnerInjection(db, opts.topic);
+
     // Build the full prompt
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context);
-    const fullPrompt = `${systemPrompt}${feedbackContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
+    const fullPrompt = `${systemPrompt}${feedbackContext}${partnerContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
     // Call Ollama
     const generatedText = await callOllama(fullPrompt);

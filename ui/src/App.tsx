@@ -46,6 +46,8 @@ import { Discord } from "./pages/Discord";
 import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
 import { AgentOps } from "./pages/AgentOps";
+import { Partners } from "./pages/Partners";
+import { PartnerDashboard } from "./pages/PartnerDashboard";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -185,6 +187,7 @@ function boardRoutes() {
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
       <Route path="structure" element={<Structure />} />
+      <Route path="partners" element={<Partners />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
@@ -313,6 +316,7 @@ export function App() {
         <Route path="board-claim/:token" element={<BoardClaimPage />} />
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
+        <Route path="partner-dashboard/:slug" element={<PartnerDashboard />} />
 
         <Route element={<CloudAccessGate />}>
           <Route index element={<CompanyRootRedirect />} />
