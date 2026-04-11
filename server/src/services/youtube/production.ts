@@ -22,7 +22,7 @@ import { logger } from "../../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 const VISUAL_MODE = process.env.YT_VISUAL_MODE || "presentation";
-const ASSETS_DIR = join(process.cwd(), "data", "youtube-assets");
+const ASSETS_DIR = join("/tmp", "yt-assets");
 
 function ensureDir(dir: string) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

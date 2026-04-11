@@ -21,7 +21,7 @@ const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || "";
 const GOOGLE_TTS_VOICE = process.env.GOOGLE_TTS_VOICE || "en-US-Neural2-J";
 const GOOGLE_TTS_LANGUAGE = process.env.GOOGLE_TTS_LANGUAGE || "en-US";
 
-const AUDIO_DIR = join(process.cwd(), "data", "youtube-audio");
+const AUDIO_DIR = join("/tmp", "yt-audio");
 
 export interface TTSResult {
   audioPath: string;

@@ -13,8 +13,8 @@ import { join } from "path";
 import { logger } from "../../middleware/logger.js";
 
 const execAsync = promisify(exec);
-const TEMP_DIR = join(process.cwd(), "data", "youtube-temp");
-const VIDEO_DIR = join(process.cwd(), "data", "youtube-videos");
+const TEMP_DIR = join("/tmp", "yt-temp");
+const VIDEO_DIR = join("/tmp", "yt-videos");
 
 function ensureDir(dir: string) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
