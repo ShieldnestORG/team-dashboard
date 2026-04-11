@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
+import type { Db } from "@paperclipai/db";
 import { getLatestSignals } from "../services/trend-crons.js";
 import { trendScannerService } from "../services/trend-scanner.js";
 import { seoEngineService } from "../services/seo-engine.js";
@@ -21,7 +22,7 @@ function requireContentKey(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-export function trendRoutes() {
+export function trendRoutes(db?: Db) {
   const router = Router();
 
   // GET /api/trends/signals — latest cached signals (no auth, read-only)
@@ -48,7 +49,7 @@ export function trendRoutes() {
   // POST /api/trends/generate — force SEO engine run (requires CONTENT_API_KEY)
   router.post("/trends/generate", requireContentKey, async (_req, res) => {
     try {
-      const engine = seoEngineService();
+      const engine = seoEngineService(db);
       const result = await engine.run();
       res.json(result);
     } catch (err) {

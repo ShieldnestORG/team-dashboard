@@ -218,45 +218,100 @@ export function isGoodEnoughForContext(score: QualityScore): boolean {
 
 // ---------------------------------------------------------------------------
 // 4. FEEDBACK LOOP — downrank intel when content gets flagged
-// When a content item gets a "dislike", find the intel reports that were used
-// as context and record negative signals
+// Persisted to content_quality_signals DB table with in-memory LRU cache.
+// When a content item gets a "dislike", the source company's intel is penalized.
 // ---------------------------------------------------------------------------
 
-// In-memory downrank cache — persists for the life of the server process
-// Maps company_slug to a penalty factor (0.0 = fully downranked, 1.0 = normal)
-const downrankCache = new Map<string, { penalty: number; updatedAt: number }>();
+// In-memory LRU cache backed by content_quality_signals table
+// Cache entries expire after 5 minutes to stay fresh with DB
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CACHE_SIZE = 100;
+const penaltyCache = new Map<string, { penalty: number; updatedAt: number; cachedAt: number }>();
+
+// DB handle — set once via initFeedbackDb()
+let feedbackDb: Db | null = null;
+
+export function initFeedbackDb(db: Db): void {
+  feedbackDb = db;
+  // Pre-load existing penalties from DB
+  db.execute(sql`SELECT company_slug, penalty, updated_at FROM content_quality_signals`)
+    .then((rows) => {
+      for (const row of rows as unknown as Array<{ company_slug: string; penalty: string; updated_at: string }>) {
+        penaltyCache.set(row.company_slug, {
+          penalty: parseFloat(row.penalty),
+          updatedAt: new Date(row.updated_at).getTime(),
+          cachedAt: Date.now(),
+        });
+      }
+      logger.info({ count: penaltyCache.size }, "Intel quality: loaded feedback penalties from DB");
+    })
+    .catch((err) => logger.warn({ err }, "Intel quality: failed to load penalties from DB"));
+}
 
 export function getDownrankPenalty(companySlug: string): number {
-  const entry = downrankCache.get(companySlug);
+  const entry = penaltyCache.get(companySlug);
   if (!entry) return 1.0;
   // Decay penalty over 7 days
   const ageMs = Date.now() - entry.updatedAt;
   const decayDays = ageMs / (7 * 24 * 60 * 60 * 1000);
   if (decayDays >= 1.0) {
-    downrankCache.delete(companySlug);
+    penaltyCache.delete(companySlug);
+    // Clean up DB row asynchronously
+    if (feedbackDb) {
+      feedbackDb.execute(sql`DELETE FROM content_quality_signals WHERE company_slug = ${companySlug}`).catch(() => {});
+    }
     return 1.0;
   }
   return entry.penalty + (1.0 - entry.penalty) * decayDays;
 }
 
+function persistPenalty(companySlug: string, penalty: number): void {
+  if (!feedbackDb) return;
+  feedbackDb.execute(sql`
+    INSERT INTO content_quality_signals (company_slug, penalty, updated_at)
+    VALUES (${companySlug}, ${penalty}, NOW())
+    ON CONFLICT (company_slug) DO UPDATE SET penalty = ${penalty}, updated_at = NOW()
+  `).catch((err) => logger.warn({ err, companySlug }, "Intel quality: failed to persist penalty"));
+}
+
+function evictOldestCache(): void {
+  if (penaltyCache.size <= MAX_CACHE_SIZE) return;
+  let oldest: string | null = null;
+  let oldestTime = Infinity;
+  for (const [key, val] of penaltyCache) {
+    if (val.cachedAt < oldestTime) {
+      oldestTime = val.cachedAt;
+      oldest = key;
+    }
+  }
+  if (oldest) penaltyCache.delete(oldest);
+}
+
 export function recordNegativeFeedback(companySlug: string): void {
-  const current = downrankCache.get(companySlug);
+  const current = penaltyCache.get(companySlug);
   const currentPenalty = current?.penalty ?? 1.0;
   // Each dislike reduces quality by 20%
   const newPenalty = Math.max(currentPenalty * 0.80, 0.10);
-  downrankCache.set(companySlug, { penalty: newPenalty, updatedAt: Date.now() });
+  penaltyCache.set(companySlug, { penalty: newPenalty, updatedAt: Date.now(), cachedAt: Date.now() });
+  evictOldestCache();
+  persistPenalty(companySlug, newPenalty);
   logger.info({ companySlug, penalty: newPenalty }, "Intel quality: downranked company due to negative feedback");
 }
 
 export function recordPositiveFeedback(companySlug: string): void {
-  const current = downrankCache.get(companySlug);
+  const current = penaltyCache.get(companySlug);
   if (!current) return;
   // Each like partially restores quality
   const newPenalty = Math.min(current.penalty * 1.10, 1.0);
   if (newPenalty >= 0.95) {
-    downrankCache.delete(companySlug);
+    penaltyCache.delete(companySlug);
+    // Remove from DB — fully recovered
+    if (feedbackDb) {
+      feedbackDb.execute(sql`DELETE FROM content_quality_signals WHERE company_slug = ${companySlug}`).catch(() => {});
+    }
   } else {
-    downrankCache.set(companySlug, { penalty: newPenalty, updatedAt: Date.now() });
+    penaltyCache.set(companySlug, { penalty: newPenalty, updatedAt: Date.now(), cachedAt: Date.now() });
+    persistPenalty(companySlug, newPenalty);
   }
 }
 

@@ -5,6 +5,7 @@ import { contentService } from "./content.js";
 import { seoEngineService } from "./seo-engine.js";
 import { autoGenerateAndQueue } from "./x-api/content-bridge.js";
 import { publishBlogFromContent, buildPartnerFooter, type PublishTarget } from "./blog-publisher.js";
+import { embedPublishedContent } from "./content-embedder.js";
 import { runRetweetCycle } from "./x-api/retweet-service.js";
 import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
@@ -63,6 +64,23 @@ const JOB_DEFS: ContentJobDef[] = [
 
 async function pickTopic(db: Db): Promise<string> {
   try {
+    // Check which report types have historically produced high-engagement content
+    let performanceBoost = new Map<string, number>();
+    try {
+      const perf = (await db.execute(sql`
+        SELECT ci.content_type, AVG(CAST(ci.engagement_score AS FLOAT)) AS avg_score
+        FROM content_items ci
+        WHERE ci.published_at > NOW() - INTERVAL '30 days'
+          AND CAST(ci.engagement_score AS FLOAT) > 0
+        GROUP BY ci.content_type
+      `)) as unknown as Array<{ content_type: string; avg_score: number }>;
+      for (const p of perf) {
+        // Normalize: avg_score > 10 gets a 1.5x boost, > 5 gets 1.2x
+        const boost = Number(p.avg_score) > 10 ? 1.5 : Number(p.avg_score) > 5 ? 1.2 : 1.0;
+        performanceBoost.set(p.content_type, boost);
+      }
+    } catch { /* non-critical */ }
+
     const rows = (await db.execute(sql`
       SELECT
         r.headline,
@@ -94,12 +112,16 @@ async function pickTopic(db: Db): Promise<string> {
         if (dirRows.length > 0) diverse.push(dirRows[0]!);
       }
 
-      // If we have diverse options, weighted random pick
+      // If we have diverse options, weighted random pick (boosted by performance data)
       if (diverse.length > 0) {
-        const totalWeight = diverse.reduce((sum, r) => sum + Number(r.recency_score), 0);
+        const totalWeight = diverse.reduce((sum, r) => {
+          const boost = performanceBoost.get(r.report_type) ?? 1.0;
+          return sum + Number(r.recency_score) * boost;
+        }, 0);
         let rand = Math.random() * totalWeight;
         for (const row of diverse) {
-          rand -= Number(row.recency_score);
+          const boost = performanceBoost.get(row.report_type) ?? 1.0;
+          rand -= Number(row.recency_score) * boost;
           if (rand <= 0) return row.headline;
         }
         return diverse[0]!.headline;
@@ -393,7 +415,7 @@ async function pickToknsPromoTopic(db: Db): Promise<string> {
 
 export function startContentCrons(db: Db) {
   const svc = contentService(db);
-  const seoEngine = seoEngineService();
+  const seoEngine = seoEngineService(db);
 
   // SEO engine job — daily at 7:03am
   registerCronJob({
@@ -496,6 +518,14 @@ export function startContentCrons(db: Db) {
                   { job: def.name, slug: publishResult.slug, title: publishResult.title, target },
                   "Blog post published",
                 );
+                // Embed published content back into intel for future context enrichment
+                await embedPublishedContent(db, {
+                  title: publishResult.title || topic!,
+                  content: result.content,
+                  slug: publishResult.slug || "",
+                  category,
+                  personalityId: def.personality,
+                });
               } else {
                 logger.warn(
                   { job: def.name, error: publishResult.error, target },

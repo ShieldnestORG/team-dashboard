@@ -98,7 +98,7 @@ export async function generateBlogPostOllama(signal: {
   type: "crypto" | "ai-agents" | "tools" | "lifestyle";
   topic: string;
   details: string;
-}): Promise<BlogPost> {
+}, intelContext = ""): Promise<BlogPost> {
   const category = signal.type;
   const relatedTools = TOOL_LINKS[category] || TOOL_LINKS.tools!;
   const toolLinksStr = relatedTools
@@ -106,12 +106,14 @@ export async function generateBlogPostOllama(signal: {
     .map((t) => `- <a href="https://freetools.coherencedaddy.com/${t.slug}">${t.name}</a>`)
     .join("\n");
 
+  const contextBlock = intelContext ? `\nUse this real-time data and analysis to make the article factual and data-backed:\n${intelContext}\n` : "";
+
   const prompt = `You are a content writer for Coherence Daddy, a faith-driven technology ecosystem. Write an SEO-optimized blog post about crypto, AI, tech tools, personal finance, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags only). No markdown.
 
 Write a blog post (600-800 words) about: "${signal.topic}"
 
 Details: ${signal.details}
-
+${contextBlock}
 Category: ${category}
 
 Include these internal tool links naturally in the content:

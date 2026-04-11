@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, numeric, timestamp, index } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 
 export const contentItems = pgTable(
@@ -18,6 +18,8 @@ export const contentItems = pgTable(
     charLimit: integer("char_limit"),
     reviewStatus: text("review_status").notNull().default("pending"),
     reviewComment: text("review_comment"),
+    clickCount: integer("click_count").notNull().default(0),
+    engagementScore: numeric("engagement_score").notNull().default("0"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

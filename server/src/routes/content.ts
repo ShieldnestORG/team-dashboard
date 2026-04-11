@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { contentItems } from "@paperclipai/db";
 import { contentService } from "../services/content.js";
 import { contentFeedbackService } from "../services/content-feedback.js";
 import { recordNegativeFeedback, recordPositiveFeedback } from "../services/intel-quality.js";
@@ -316,6 +317,32 @@ export function contentRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "Content feedback stats error");
       res.status(500).json({ error: "Failed to fetch feedback stats" });
+    }
+  });
+
+  // ---- POST /api/content/:id/track — lightweight performance tracking (no auth) ----
+
+  router.post("/:id/track", async (req, res) => {
+    const contentItemId = req.params.id as string;
+    const { type } = req.body as { type?: string };
+
+    if (!type || !["view", "click", "share"].includes(type)) {
+      res.status(400).json({ error: "type must be view, click, or share" });
+      return;
+    }
+
+    try {
+      const scoreInc = type === "share" ? 3 : type === "click" ? 2 : 1;
+      await db.execute(sql`
+        UPDATE content_items
+        SET click_count = click_count + 1,
+            engagement_score = engagement_score + ${scoreInc}
+        WHERE id = ${contentItemId}
+      `);
+      res.json({ ok: true });
+    } catch (err) {
+      logger.warn({ err, contentItemId }, "Content tracking error");
+      res.status(500).json({ error: "Tracking failed" });
     }
   });
 

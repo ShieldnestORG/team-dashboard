@@ -41,6 +41,7 @@ import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
+import { initFeedbackDb } from "./services/intel-quality.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
 import { startMoltbookCrons } from "./services/moltbook-crons.js";
 import { trendRoutes } from "./routes/trends.js";
@@ -214,7 +215,7 @@ export async function createApp(
   api.use(siteMetricsRoutes(db));
   api.use("/intel", intelRoutes(db));
   api.use("/content", contentRoutes(db));
-  api.use(trendRoutes());
+  api.use(trendRoutes(db));
   const visualRoutes = visualContentRoutes(db, opts.storageService, "default");
   api.use("/visual", visualRoutes.router);
   api.use("/media", mediaDropRoutes(db, opts.storageService));
@@ -357,6 +358,8 @@ export async function createApp(
   jobCoordinator.start();
   scheduler.start();
   // Register all cron jobs with the central registry (no timers started yet)
+  // Initialize feedback persistence (loads penalties from DB)
+  initFeedbackDb(db);
   startIntelCrons(db);
   startEvalCrons();
   startAlertCrons(db);

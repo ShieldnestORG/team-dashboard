@@ -1,3 +1,4 @@
+import type { Db } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { getLatestSignals } from "./trend-crons.js";
 import type { TrendSignals } from "./trend-scanner.js";
@@ -10,6 +11,8 @@ import {
   callOllamaBlog,
   generateBlogPostOllama,
 } from "./blog-publisher.js";
+import { embedPublishedContent } from "./content-embedder.js";
+import { fetchQualityContext } from "./intel-quality.js";
 
 // ---------------------------------------------------------------------------
 // SEO Content Engine — generates blog posts from trend signals and publishes
@@ -172,7 +175,7 @@ function pickSignal(signals: TrendSignals): { type: SignalType; topic: string; d
 }
 
 // Claude-based blog post generation (fallback)
-async function generateBlogPostClaude(signal: NonNullable<ReturnType<typeof pickSignal>>): Promise<BlogPost> {
+async function generateBlogPostClaude(signal: NonNullable<ReturnType<typeof pickSignal>>, intelContext = ""): Promise<BlogPost> {
   const category = signal.type;
   const relatedTools = TOOL_LINKS[category] || TOOL_LINKS.tools!;
   const toolLinksStr = relatedTools
@@ -182,10 +185,12 @@ async function generateBlogPostClaude(signal: NonNullable<ReturnType<typeof pick
 
   const system = `You are a content writer for Coherence Daddy, a 508(c)(1)(A) faith-driven technology ecosystem. Write engaging, SEO-optimized blog posts about crypto, AI, tech tools, personal finance, passive income, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags). No markdown.`;
 
+  const contextBlock = intelContext ? `\n\nUse this real-time data and analysis to make the article factual and data-backed:\n${intelContext}\n` : "";
+
   const prompt = `Write a blog post (600-800 words) about: "${signal.topic}"
 
 Details: ${signal.details}
-
+${contextBlock}
 Category: ${category}
 
 Include these internal tool links naturally in the content:
@@ -218,10 +223,10 @@ Return ONLY a JSON object with these fields (no markdown fences):
 }
 
 // Primary generator: try Ollama (free), fall back to Claude
-async function generateBlogPost(signal: NonNullable<ReturnType<typeof pickSignal>>): Promise<BlogPost> {
+async function generateBlogPost(signal: NonNullable<ReturnType<typeof pickSignal>>, intelContext = ""): Promise<BlogPost> {
   try {
-    const post = await generateBlogPostOllama(signal);
-    logger.info({ backend: "ollama", title: post.title }, "SEO engine: blog post generated via Ollama");
+    const post = await generateBlogPostOllama(signal, intelContext);
+    logger.info({ backend: "ollama", title: post.title, hasContext: !!intelContext }, "SEO engine: blog post generated via Ollama");
     return post;
   } catch (ollamaErr) {
     logger.warn({ err: ollamaErr }, "SEO engine: Ollama generation failed, trying Claude fallback");
@@ -230,8 +235,8 @@ async function generateBlogPost(signal: NonNullable<ReturnType<typeof pickSignal
       throw new Error("Ollama failed and ANTHROPIC_API_KEY not set — no LLM available");
     }
 
-    const post = await generateBlogPostClaude(signal);
-    logger.info({ backend: "claude", title: post.title }, "SEO engine: blog post generated via Claude");
+    const post = await generateBlogPostClaude(signal, intelContext);
+    logger.info({ backend: "claude", title: post.title, hasContext: !!intelContext }, "SEO engine: blog post generated via Claude");
     return post;
   }
 }
@@ -240,7 +245,7 @@ async function generateBlogPost(signal: NonNullable<ReturnType<typeof pickSignal
 // Main engine run
 // ---------------------------------------------------------------------------
 
-export function seoEngineService() {
+export function seoEngineService(db?: Db) {
   return {
     async run(): Promise<{ posted: boolean; title?: string; slug?: string; error?: string }> {
       // 1. Get latest signals
@@ -259,8 +264,18 @@ export function seoEngineService() {
 
       logger.info({ signal: signal.topic, type: signal.type }, "SEO engine: generating post");
 
+      // 2b. Fetch intel context for richer content (if db available)
+      let intelContext = "";
+      if (db) {
+        try {
+          intelContext = await fetchQualityContext(db, signal.topic, 5);
+        } catch (err) {
+          logger.warn({ err }, "SEO engine: intel context fetch failed, generating without context");
+        }
+      }
+
       // 3. Generate blog post (Ollama first, Claude fallback)
-      const post = await generateBlogPost(signal);
+      const post = await generateBlogPost(signal, intelContext);
 
       // 4. Publish to coherencedaddy + app.tokns.fi
       const results = await publishToTargets(post, "all");
@@ -272,6 +287,16 @@ export function seoEngineService() {
         // 5. Ping IndexNow (CD only — public, search-indexed)
         if (results.cd?.success) {
           await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
+        }
+
+        // 6. Embed published content back into intel for future enrichment
+        if (db) {
+          await embedPublishedContent(db, {
+            title: post.title,
+            content: post.content,
+            slug: post.slug,
+            category: signal.type,
+          });
         }
 
         return { posted: true, title: post.title, slug: post.slug };
