@@ -3,6 +3,8 @@
  *
  * Supports both self-hosted Ollama and Ollama Cloud API (with bearer auth).
  * All services should import from here instead of duplicating fetch logic.
+ *
+ * Includes in-memory daily usage tracking (resets at midnight UTC).
  */
 
 import { logger } from "../middleware/logger.js";
@@ -25,26 +27,142 @@ export function ollamaHeaders(): Record<string, string> {
 }
 
 // ---------------------------------------------------------------------------
+// Usage tracking — in-memory daily bucket (resets at midnight UTC)
+// ---------------------------------------------------------------------------
+
+interface DailyUsage {
+  date: string;                // YYYY-MM-DD UTC
+  requests: number;            // total API calls
+  inputTokens: number;         // prompt_eval_count sum
+  outputTokens: number;        // eval_count sum
+  errors: number;              // failed requests
+  totalDurationMs: number;     // cumulative response time
+  byEndpoint: {
+    generate: { requests: number; inputTokens: number; outputTokens: number };
+    chat: { requests: number; inputTokens: number; outputTokens: number };
+  };
+}
+
+function freshUsage(date: string): DailyUsage {
+  return {
+    date,
+    requests: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    byEndpoint: {
+      generate: { requests: 0, inputTokens: 0, outputTokens: 0 },
+      chat: { requests: 0, inputTokens: 0, outputTokens: 0 },
+    },
+  };
+}
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+let daily: DailyUsage = freshUsage(todayUTC());
+
+function ensureToday(): DailyUsage {
+  const today = todayUTC();
+  if (daily.date !== today) {
+    daily = freshUsage(today);
+  }
+  return daily;
+}
+
+function recordUsage(
+  endpoint: "generate" | "chat",
+  inputTokens: number,
+  outputTokens: number,
+  durationMs: number,
+): void {
+  const d = ensureToday();
+  d.requests++;
+  d.inputTokens += inputTokens;
+  d.outputTokens += outputTokens;
+  d.totalDurationMs += durationMs;
+  d.byEndpoint[endpoint].requests++;
+  d.byEndpoint[endpoint].inputTokens += inputTokens;
+  d.byEndpoint[endpoint].outputTokens += outputTokens;
+}
+
+function recordError(): void {
+  ensureToday().errors++;
+}
+
+export interface OllamaUsageStats {
+  date: string;
+  model: string;
+  endpoint: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  errors: number;
+  avgLatencyMs: number;
+  byEndpoint: DailyUsage["byEndpoint"];
+}
+
+/** Returns current daily usage stats for the system health API. */
+export function getOllamaUsageStats(): OllamaUsageStats {
+  const d = ensureToday();
+  return {
+    date: d.date,
+    model: OLLAMA_MODEL,
+    endpoint: OLLAMA_URL,
+    requests: d.requests,
+    inputTokens: d.inputTokens,
+    outputTokens: d.outputTokens,
+    totalTokens: d.inputTokens + d.outputTokens,
+    errors: d.errors,
+    avgLatencyMs: d.requests > 0 ? Math.round(d.totalDurationMs / d.requests) : 0,
+    byEndpoint: d.byEndpoint,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // /api/generate — text completion (used by content services)
 // ---------------------------------------------------------------------------
 
 export async function callOllamaGenerate(prompt: string): Promise<string> {
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: ollamaHeaders(),
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      prompt,
-      stream: false,
-    }),
-  });
+  const start = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(`${OLLAMA_URL}/api/generate`, {
+      method: "POST",
+      headers: ollamaHeaders(),
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        prompt,
+        stream: false,
+      }),
+    });
+  } catch (err) {
+    recordError();
+    throw err;
+  }
 
   if (!res.ok) {
+    recordError();
     const errorText = await res.text().catch(() => "Unknown error");
     throw new Error(`Ollama error (${res.status}): ${errorText}`);
   }
 
-  const data = await res.json() as { response: string };
+  const data = await res.json() as {
+    response: string;
+    prompt_eval_count?: number;
+    eval_count?: number;
+  };
+
+  recordUsage(
+    "generate",
+    data.prompt_eval_count || 0,
+    data.eval_count || 0,
+    Date.now() - start,
+  );
+
   return data.response.trim();
 }
 
@@ -76,22 +194,30 @@ export async function callOllamaChat(
   opts: OllamaChatOptions = {},
 ): Promise<OllamaChatResult> {
   const model = opts.model || OLLAMA_MODEL;
-  const res = await fetch(`${OLLAMA_URL}/api/chat`, {
-    method: "POST",
-    headers: ollamaHeaders(),
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: false,
-      options: {
-        temperature: opts.temperature ?? 0.7,
-        num_predict: opts.maxTokens ?? 4096,
-      },
-    }),
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 300_000),
-  });
+  const start = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: ollamaHeaders(),
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: false,
+        options: {
+          temperature: opts.temperature ?? 0.7,
+          num_predict: opts.maxTokens ?? 4096,
+        },
+      }),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 300_000),
+    });
+  } catch (err) {
+    recordError();
+    throw err;
+  }
 
   if (!res.ok) {
+    recordError();
     const errorText = await res.text().catch(() => "Unknown error");
     throw new Error(`Ollama API error (${res.status}): ${errorText}`);
   }
@@ -103,10 +229,15 @@ export async function callOllamaChat(
     model?: string;
   };
 
+  const inputTokens = data.prompt_eval_count || 0;
+  const outputTokens = data.eval_count || 0;
+
+  recordUsage("chat", inputTokens, outputTokens, Date.now() - start);
+
   return {
     content: data.message?.content || "",
-    promptTokens: data.prompt_eval_count || 0,
-    completionTokens: data.eval_count || 0,
+    promptTokens: inputTokens,
+    completionTokens: outputTokens,
     model: data.model || model,
   };
 }

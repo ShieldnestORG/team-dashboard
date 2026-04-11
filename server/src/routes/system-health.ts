@@ -7,6 +7,7 @@ import { getEvalHistory, getLatestEval } from "../services/eval-store.js";
 import { getRecentAlerts } from "../services/alerting.js";
 import { getRecentLogs } from "../services/log-store.js";
 import { getServiceStatuses, getSystemMetrics, INFRA_COSTS } from "../services/vps-monitor.js";
+import { getOllamaUsageStats } from "../services/ollama-client.js";
 
 export function systemHealthRoutes(db: Db) {
   const router = Router();
@@ -149,6 +150,7 @@ export function systemHealthRoutes(db: Db) {
         metrics: getSystemMetrics(),
         infraCosts: INFRA_COSTS,
         totalMonthlyCents,
+        ollamaUsage: getOllamaUsageStats(),
       });
     } catch (err) {
       console.error("system-health services error:", err);
