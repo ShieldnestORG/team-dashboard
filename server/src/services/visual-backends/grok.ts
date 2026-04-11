@@ -49,7 +49,7 @@ async function generateImage(
       method: "POST",
       headers: grokHeaders(),
       body: JSON.stringify({
-        model: "grok-2-image",
+        model: "grok-imagine-image",
         prompt: opts.prompt,
         n: 1,
         response_format: "b64_json",
