@@ -25,14 +25,14 @@ This is the main company in the dashboard. All agents, content, and data belong 
 
 ## What Lives Here
 
-- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 6 content personality agents (Blaze/Cipher/Spark/Prism/Vanguard/Forge) + Mermaid (Company Structure Agent). Each agent's AGENTS.md documents its cron responsibilities. See `docs/guides/agent-cron-ownership.md` for the full mapping
+- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 6 content personality agents (Blaze/Cipher/Spark/Prism/Vanguard/Forge) + Mermaid (Company Structure Agent) + Moltbook (Social Presence Agent — AI agent social network). Each agent's AGENTS.md documents its cron responsibilities. See `docs/guides/agent-cron-ownership.md` for the full mapping
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
 - **Content engine** — Ollama-powered text content generation with 6 personality agents (Blaze/hot-take analyst, Cipher/technical deep-diver, Spark/community builder, Prism/trend reporter, Vanguard/XRP-Ripple specialist, Forge/AEO-comparison architect), PostgreSQL-backed content queue (`content_items` table), blog publishing API, multi-platform distribution. Admin feedback system (`content_feedback` table) with like/dislike ratings that feed back into generation prompts as training signal
 - **SEO engine** — trend scanner (CoinGecko + HackerNews + Google Trends RSS + Bing News every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
 - **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, PostgreSQL-backed visual content queue (`visual_content_items` + `visual_content_assets` tables) with review workflow, Content Studio UI with Text/Visual mode toggle
 - **Public Reels API** — unauthenticated `/api/reels` endpoint serving approved visual content for coherencedaddy.com. Stream, download (with Content-Disposition), and thumbnail endpoints
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
-- **Directory expansion** — AI/ML (151 entries), DeFi (114), DevTools (155), Crypto (114) — 508 unique companies across 4 directories, all seeded and ingested
+- **Directory expansion** — AI/ML (151 entries), DeFi (113), DevTools (154), Crypto (114) — 532 unique companies across 4 directories, all seeded and ingested
 - **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
@@ -45,7 +45,8 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Public Article Generator** — rate-limited public endpoint (`POST /api/content/public/generate`) for users to generate AI-powered articles with Coherence Daddy metadata attribution. Powered by Ollama + intel context, supports all platforms (tweet, blog, linkedin, reddit, etc.)
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
 - **Discord Bot** — community moderation and ticketing bot (plugin-discord) for the Next.ai Discord server. Auto-mod (banned words, spam, invite links), escalating warning system (3=mute, 5=kick), support ticketing with private threads and auto-close, 17 mod commands, onboarding role assignment. Dashboard page at `/discord` with bot status, ticket queue, and mod action feed. 8 agent tools for AI-powered community management
-- **Plugin system** — adapter packages for AI providers, plus Paperclip plugin SDK with Firecrawl, Twitter/X, and Discord plugins
+- **Moltbook Social Plugin** — AI agent social network integration (`plugin-moltbook`). Safe content posting with 7-layer protection: content filter (blocks credentials/IPs/secrets), rate limiter (0.5x safety multiplier + panic mode), daily budgets (4 posts/20 comments/50 votes), approval queue (manual review by default), domain lockdown (www.moltbook.com only), audit logging, verification challenge solver. 11 agent tools, 3 scheduled jobs. Agent profile at `agents/moltbook/AGENTS.md`
+- **Plugin system** — adapter packages for AI providers, plus Paperclip plugin SDK with Firecrawl, Twitter/X, Discord, and Moltbook plugins
 - **API layer** — backend at port 3100, proxied from UI dev server
 - **System Health dashboard** — eval results, alerting, log aggregation, ladder pipeline status
 - **TX Ecosystem page** — tokns.fi validator promotion, ecosystem cross-links
@@ -146,6 +147,7 @@ agents/                 # Per-agent AGENTS.md instruction files
   spark/              # Content Community — community engagement for Discord/Bluesky
   prism/              # Content Reporter — trend reports for Blog/LinkedIn/Newsletter
   mermaid/            # Company Structure Agent — architecture flowcharts, service topology
+  moltbook/           # Social Presence Agent — Moltbook AI social network engagement
 .agents/
   skills/             # Company skills (company-creator, doc-maintenance, release, etc.)
     content-writer/   # Content generation and publishing skill
@@ -162,6 +164,7 @@ packages/
     plugin-firecrawl/ # Firecrawl scraping plugin (scrape, crawl, extract, etc.)
     plugin-twitter/   # Twitter/X automation plugin (queue, missions, engagement)
     plugin-discord/   # Discord bot plugin (moderation, ticketing, commands)
+    plugin-moltbook/  # Moltbook AI social network plugin (11 tools, 3 jobs, 7-layer safety)
     sdk/              # Plugin SDK for building plugins
 cli/                  # CLI tool (paperclipai command)
 docs/
@@ -224,6 +227,8 @@ Use `TEAM_DASHBOARD_COMPANY_ID` (`8365d8c2-ea73-4c04-af78-a7db3ee7ecd4`) as the 
 
 **What triggers an update**: new files in `server/src/services/`, `server/src/routes/`, new cron jobs, new visual backends, new plugin services, or any change to `server/src/app.ts` route mounting.
 
+**This diagram must be continuously maintained.** Every PR or commit that adds, removes, or restructures services/routes/crons MUST include a corresponding diagram update in the same commit. Use the `changeSummary` field as a changelog entry — include the date and what changed (e.g., `"2026-04-10: removed Social Pulse Engine, added Partner Network subgraph, fixed cron counts"`). The fallback `DEFAULT_DIAGRAM` in `ui/src/pages/Structure.tsx` should also be kept in sync so new installs render an accurate diagram.
+
 ## Commands
 
 ```bash
@@ -260,7 +265,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily). All 38 cron + 6 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily), moltbook (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 38 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -306,6 +311,11 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `ui/src/pages/Discord.tsx` | Discord dashboard — bot status, tickets, mod feed |
 | `server/src/routes/media-drop.ts` | Media upload/management API (`/api/media/*`) |
 | `packages/plugins/plugin-twitter/src/manifest.ts` | Twitter/X plugin manifest (13 tools, 4 jobs) |
+| `packages/plugins/plugin-moltbook/src/manifest.ts` | Moltbook plugin manifest (11 tools, 3 jobs) |
+| `packages/plugins/plugin-moltbook/src/worker.ts` | Moltbook plugin worker (safety filter, approval queue, dispatcher) |
+| `packages/plugins/plugin-moltbook/src/moltbook-client.ts` | Moltbook HTTP client (domain lockdown, audit, rate limit headers) |
+| `packages/plugins/plugin-moltbook/src/rate-limiter.ts` | Moltbook rate limiter (safety multiplier, daily budgets, panic mode) |
+| `agents/moltbook/AGENTS.md` | Moltbook Social Presence Agent profile (reports to Sage/CMO) |
 | `packages/plugins/plugin-twitter/src/worker.ts` | Twitter/X plugin worker (queue, engagement, analytics) |
 | `packages/mcp-server/src/index.ts` | MCP server entry point — registers 35 tools, stdio transport |
 | `packages/mcp-server/src/client.ts` | HTTP client wrapping Team Dashboard REST API for MCP |
@@ -326,9 +336,17 @@ ssh root@31.220.61.12
 cd /opt/team-dashboard/repo && git pull
 cd /opt/team-dashboard && docker compose build && docker compose up -d
 
+# REQUIRED: Clean up stale Docker artifacts after every deploy
+docker image prune -f          # remove dangling images from old builds
+docker container prune -f      # remove stopped containers
+docker volume prune -f         # remove unused volumes
+docker builder prune -f        # clear build cache
+
 # Frontend: auto-deploys on push to master
 git push origin master
 ```
+
+**Docker cleanup is mandatory.** The VPS has limited disk (31GB RAM but finite storage). Every `docker compose build` leaves behind old images, stopped containers, and build cache. Agents that SSH to the VPS for deploys MUST run the prune commands above after every rebuild. Failing to clean up will eventually fill the disk and crash the backend. If disk usage is above 80%, also run `docker system prune -a -f` to remove all unused images (not just dangling ones).
 
 ### Environment Variables Reference
 
@@ -371,6 +389,8 @@ git push origin master
 | `TWITTER_ACCESS_TOKEN/SECRET` | Optional | VPS | Twitter/X OAuth tokens |
 | `INSTAGRAM_ACCESS_TOKEN` | Optional | VPS | Instagram Graph API |
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Optional | VPS | Instagram business account |
+| **Moltbook** | | | |
+| `MOLTBOOK_API_KEY` | Optional | VPS | Moltbook API key (registered via plugin tool, stored as secret ref) |
 | **Discord Bot** | | | |
 | `DISCORD_TOKEN` | Yes | VPS | Discord bot token from Developer Portal |
 | `DISCORD_GUILD_ID` | Yes | VPS | Discord server ID (Next.ai: `1481053410152288422`) |
@@ -415,3 +435,33 @@ After every build, deploy, or code change, track the outcome via `mcp__ladder__t
 When 10+ new events accumulate, run `mcp__ladder__generate_sources` with project `team-dashboard` and `persist=true`.
 When new sources are created, run `mcp__ladder__generate_ideas` with project `team-dashboard` and `persist=true`.
 At the end of each session, show `mcp__ladder__pipeline_status` for project `team-dashboard`.
+
+---
+
+## Structure Diagram Maintenance — CRITICAL
+
+The company structure Mermaid diagram (`/structure` page) is a **living document** that must stay in sync with the codebase at all times. It is the single source of truth for how all backend services, routes, crons, plugins, and infrastructure connect.
+
+### Rules
+
+1. **Every structural change = diagram update.** Any commit that adds, removes, or restructures services, routes, cron jobs, plugins, visual backends, or infrastructure MUST include a corresponding update to the structure diagram in the same commit.
+2. **Use the changelog.** When updating via the API (`PUT /api/companies/:companyId/structure`), always include a dated `changeSummary` (e.g., `"2026-04-10: added Partner Network, removed Pulse Engine, updated cron counts"`).
+3. **Keep the fallback in sync.** The `DEFAULT_DIAGRAM` constant in `ui/src/pages/Structure.tsx` must match reality so new installs render an accurate diagram.
+4. **Audit periodically.** If you notice the diagram is stale or missing features during any session, fix it immediately — don't defer.
+
+### VPS Docker Cleanup — MANDATORY
+
+When agents SSH to the VPS (`31.220.61.12`) for deploys or maintenance, they **MUST** clean up stale Docker artifacts:
+
+```bash
+# Run after every docker compose build / up
+docker image prune -f
+docker container prune -f
+docker volume prune -f
+docker builder prune -f
+
+# If disk usage > 80%, escalate:
+docker system prune -a -f
+```
+
+Old images, stopped containers, and build cache accumulate with every deploy. The VPS has finite disk — failing to prune will eventually fill it and crash the backend. This is not optional.
