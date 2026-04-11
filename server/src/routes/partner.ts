@@ -101,6 +101,14 @@ export function partnerRoutes(db: Db): Router {
         tier?: string;
         referralFeePerClient?: number;
         monthlyFee?: number;
+        // Phase 2 fields
+        address?: string;
+        phone?: string;
+        hours?: Record<string, string>;
+        logoUrl?: string;
+        brandColors?: { primary: string; secondary: string; accent: string };
+        targetKeywords?: string[];
+        targetAudience?: string;
       };
 
       if (!body.name || !body.industry) {
@@ -125,6 +133,13 @@ export function partnerRoutes(db: Db): Router {
           socialHandles: body.socialHandles,
           contactName: body.contactName,
           contactEmail: body.contactEmail,
+          address: body.address,
+          phone: body.phone,
+          hours: body.hours,
+          logoUrl: body.logoUrl,
+          brandColors: body.brandColors,
+          targetKeywords: body.targetKeywords,
+          targetAudience: body.targetAudience,
           tier: body.tier,
           referralFeePerClient: body.referralFeePerClient,
           monthlyFee: body.monthlyFee,
