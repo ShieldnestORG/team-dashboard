@@ -27,8 +27,9 @@ This is the main company in the dashboard. All agents, content, and data belong 
 
 - **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 6 content personality agents (Blaze/Cipher/Spark/Prism/Vanguard/Forge) + Mermaid (Company Structure Agent) + Moltbook (Social Presence Agent — AI agent social network). Each agent's AGENTS.md documents its cron responsibilities. See `docs/guides/agent-cron-ownership.md` for the full mapping
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
-- **Content engine** — Ollama-powered text content generation with 6 personality agents (Blaze/hot-take analyst, Cipher/technical deep-diver, Spark/community builder, Prism/trend reporter, Vanguard/XRP-Ripple specialist, Forge/AEO-comparison architect), PostgreSQL-backed content queue (`content_items` table), blog publishing API, multi-platform distribution. Admin feedback system (`content_feedback` table) with like/dislike ratings that feed back into generation prompts as training signal
-- **SEO engine** — trend scanner (CoinGecko + HackerNews + Google Trends RSS + Bing News every 6hr), Claude-powered blog post generation, auto-publish to coherencedaddy.com blog API, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
+- **Content engine** — Ollama-powered text content generation with 6 personality agents (Blaze/hot-take analyst, Cipher/technical deep-diver, Spark/community builder, Prism/trend reporter, Vanguard/XRP-Ripple specialist, Forge/AEO-comparison architect), PostgreSQL-backed content queue (`content_items` table), blog publishing API, multi-platform distribution. Admin feedback system (`content_feedback` + `content_quality_signals` tables) with like/dislike ratings that persist to DB and downrank/uprank intel sources for future generation. Performance tracking (`click_count` + `engagement_score` on content_items) with public `POST /api/content/:id/track` endpoint
+- **Content feedback loop** — published content is embedded back into `intel_reports` with BGE-M3 vectors (`content-embedder.ts`), so the knowledge base grows from its own output. SEO engine and content crons use vector similarity search to enrich prompts with relevant intel. Topic picker weights boosted by historical engagement data. Feedback penalties survive server restarts via `content_quality_signals` DB table
+- **SEO engine** — trend scanner (CoinGecko + HackerNews + Google Trends RSS + Bing News every 6hr), Ollama blog post generation enriched with intel vector context, auto-publish to coherencedaddy.com + app.tokns.fi, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
 - **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, PostgreSQL-backed visual content queue (`visual_content_items` + `visual_content_assets` tables) with review workflow, Content Studio UI with Text/Visual mode toggle
 - **Public Reels API** — unauthenticated `/api/reels` endpoint serving approved visual content for coherencedaddy.com. Stream, download (with Content-Disposition), and thumbnail endpoints
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
@@ -91,7 +92,9 @@ server/
       structure.ts                  # Company structure diagram service (Mermaid, versioned via documents table)
       content-feedback.ts           # Admin like/dislike feedback for content training
       trend-scanner.ts              # CoinGecko + HackerNews + Google Trends + Bing News trend signals
-      seo-engine.ts                 # Claude-powered blog generation from trends + publish + IndexNow
+      seo-engine.ts                 # Blog generation from trends with intel vector context + publish
+      content-embedder.ts           # Embeds published content back into intel with BGE-M3
+      intel-quality.ts              # Quality scoring, dedup, DB-persisted feedback penalties
       trend-crons.ts                # Trend scanning cron scheduler (6hr cycle)
       auto-reply.ts                 # X auto-reply engine (search-based polling, settings, configurable cron)
       partner-content.ts            # Partner content injection (industry matching, prompt context)
@@ -279,7 +282,11 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/routes/visual-content.ts` | Visual content generation + queue + asset serving API |
 | `server/src/content-templates/*.ts` | Personality prompt templates (text + video_script) |
 | `server/src/services/trend-scanner.ts` | CoinGecko + HackerNews + Google Trends + Bing News trend scanner |
-| `server/src/services/seo-engine.ts` | Claude-powered blog generation + publish + IndexNow |
+| `server/src/services/seo-engine.ts` | Trend-based blog generation with intel vector context + publish + IndexNow |
+| `server/src/services/content-embedder.ts` | Embeds published content back into intel_reports with BGE-M3 |
+| `server/src/services/intel-quality.ts` | Quality scoring, dedup, feedback penalties (DB-persisted), context filtering |
+| `packages/db/src/schema/content_quality_signals.ts` | Persistent feedback penalty table (survives restarts) |
+| `packages/db/src/migrations/0062_content_feedback_loop.sql` | Migration: content_quality_signals table + performance tracking columns |
 | `server/src/routes/trends.ts` | Trend signals + SEO engine API (`/api/trends/*`) |
 | `server/src/services/visual-backends/` | Pluggable visual generation backends (Gemini, Grok, Canva) |
 | `server/src/services/video-assembler.ts` | FFmpeg video pipeline (overlays, watermark, metadata) |

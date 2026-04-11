@@ -77,7 +77,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-10
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-11
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -173,6 +173,9 @@ const DEFAULT_DIAGRAM = `graph TB
         CanvaMediaCron(["Canva Media Cron — ready"]):::readyNode
         FeedbackSvc(["Feedback Service"])
         FeedbackDB[("content_feedback")]
+        ContentEmbedder(["Content Embedder — BGE-M3"])
+        QualitySignalsDB[("content_quality_signals")]
+        PerfTracking(["Performance Tracking"])
         MediaDrop(["Media Drop — File Upload"])
         MediaDropDB[("media_drops")]
       end
@@ -424,6 +427,14 @@ const DEFAULT_DIAGRAM = `graph TB
   ContentDB --> FeedbackSvc
   FeedbackSvc --> FeedbackDB
   FeedbackDB -->|"training"| ContentSvc
+  FeedbackSvc -->|"penalties"| QualitySignalsDB
+  QualitySignalsDB -->|"downrank"| IntelQuality
+  ContentEmbedder -->|"embed output"| IntelDB
+  BlogPublisher -->|"on publish"| ContentEmbedder
+  ContentEmbedder --> Embeddings
+  SEOEngine -->|"vector context"| IntelQuality
+  ContentDB --> PerfTracking
+  PerfTracking -->|"boost topics"| ContentCrons
   VisualContent --> VisualJobs
   VisualContent --> VisualDB
   VisualContent --> VisualBack
@@ -553,7 +564,7 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef readyNode fill:#94a3b8,stroke:#64748b,stroke-width:2px,stroke-dasharray:5 5,color:#f8fafc,font-style:italic
 
   class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons,MoltbookCrons cronNode
-  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent storeNode
+  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent,QualitySignalsDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
   style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
