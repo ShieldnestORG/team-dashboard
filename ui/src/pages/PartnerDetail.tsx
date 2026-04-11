@@ -8,6 +8,7 @@ import { PageTabBar, type PageTabItem } from "../components/PageTabBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs } from "@/components/ui/tabs";
 import { partnersApi, type Partner, type PartnerMetrics, type PartnerClick } from "../api/partners";
 import {
   PartnerForm, formFromPartner, formToInput, STATUS_COLORS,
@@ -898,12 +899,14 @@ export function PartnerDetail() {
       </div>
 
       {/* Tabs */}
-      <PageTabBar
-        items={TABS}
-        value={activeTab}
-        onValueChange={handleTabChange}
-        align="start"
-      />
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <PageTabBar
+          items={TABS}
+          value={activeTab}
+          onValueChange={handleTabChange}
+          align="start"
+        />
+      </Tabs>
 
       {/* Tab Content */}
       {activeTab === "overview" && <OverviewTab partner={partner} />}
