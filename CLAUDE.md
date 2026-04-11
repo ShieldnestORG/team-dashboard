@@ -248,7 +248,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Firecrawl**: Self-hosted at `168.231.127.180` — scraping, crawling, data extraction
 - **Embeddings**: `147.79.78.251:8000` — BGE-M3 vector embedding service (VPS_3)
 - **Directory API**: `168.231.127.180:4000` — data sync from Firecrawl
-- **Ollama**: `31.220.61.12:11434` (VPS_1, local) — Gemma 4 26B MoE for content generation and summarization (11.6 tok/s)
+- **Ollama**: `https://ollama.com/api` (cloud) — Gemma 4 31B Cloud for content generation and summarization
 - **Content API Key**: `CONTENT_API_KEY` env var for content generation auth (text + visual)
 - **Visual Backends**: `GEMINI_API_KEY` (Imagen 3 + Veo 2), `GROK_API_KEY` (xAI images via grok-2-image + video via grok-imagine-video) — optional, auto-enabled when set
 - **Company ID**: `TEAM_DASHBOARD_COMPANY_ID=8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy)
@@ -337,8 +337,9 @@ git push origin master
 | **AI / LLM** | | | |
 | `ANTHROPIC_API_KEY` | Yes | VPS | Claude API for agent runtime |
 | `ANTHROPIC_MODEL` | Optional | VPS | Default model (default: claude-haiku-4-5-20251001) |
-| `OLLAMA_URL` | Yes | VPS | Ollama LLM for content generation (`http://172.17.0.1:11434` — local via Docker bridge) |
-| `OLLAMA_MODEL` | Optional | VPS | Ollama model (default: gemma4:26b) |
+| `OLLAMA_URL` | Yes | VPS | Ollama API endpoint (default: `https://ollama.com/api`) |
+| `OLLAMA_MODEL` | Optional | VPS | Ollama model (default: gemma4:31b-cloud) |
+| `OLLAMA_API_KEY` | Yes | VPS | Ollama Cloud API bearer token |
 | **Visual Content** | | | |
 | `CONTENT_API_KEY` | Yes | VPS | Auth for content, visual content, and trend endpoints |
 | `CD_BLOG_API_URL` | Optional | VPS | Blog publish endpoint (default: `https://coherencedaddy.com/api/blog/posts`) |

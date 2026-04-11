@@ -80,26 +80,12 @@ interface AutoReplyConfigRow {
 // Ollama client for AI-generated replies
 // ---------------------------------------------------------------------------
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
+import { callOllamaGenerate } from "./ollama-client.js";
 
 async function callOllamaForReply(systemPrompt: string, tweetText: string): Promise<string> {
   const prompt = `${systemPrompt}\n\nTweet to reply to:\n"${tweetText}"\n\nWrite your reply (under 280 characters, no quotes):`;
-
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => "Unknown error");
-    throw new Error(`Ollama error (${res.status}): ${errorText}`);
-  }
-
-  const data = (await res.json()) as { response: string };
-  let reply = data.response.trim();
-  reply = reply.replace(/^["']|["']$/g, "").replace(/\*\*/g, "").replace(/^#+\s/gm, "");
+  const raw = await callOllamaGenerate(prompt);
+  let reply = raw.replace(/^["']|["']$/g, "").replace(/\*\*/g, "").replace(/^#+\s/gm, "");
   if (reply.length > 280) reply = reply.substring(0, 277) + "...";
   return reply;
 }

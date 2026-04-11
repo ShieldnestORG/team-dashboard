@@ -54,8 +54,9 @@ These are set automatically by the server when invoking agents:
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | (none) | Anthropic API key (Claude for agent runtime) |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Default Claude model |
-| `OLLAMA_URL` | `http://172.17.0.1:11434` | Ollama LLM for text content generation (local via Docker bridge) |
-| `OLLAMA_MODEL` | `gemma4:26b` | Ollama model for content generation |
+| `OLLAMA_URL` | `https://ollama.com/api` | Ollama API endpoint (cloud or self-hosted) |
+| `OLLAMA_MODEL` | `gemma4:31b-cloud` | Ollama model for content generation |
+| `OLLAMA_API_KEY` | (none) | Ollama Cloud API bearer token (required for cloud API) |
 | `OPENAI_API_KEY` | (none) | OpenAI API key (for Codex Local adapter) |
 
 ## Content Generation

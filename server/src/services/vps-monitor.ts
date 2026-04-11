@@ -8,6 +8,7 @@ import { execSync } from "child_process";
 import type { Db } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import { sendAlert } from "./alerting.js";
+import { OLLAMA_URL as SHARED_OLLAMA_URL, ollamaHeaders } from "./ollama-client.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ interface ServiceCheck {
   name: string;
   url: string;
   timeoutMs?: number;
+  headers?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,12 +102,12 @@ export const INFRA_COSTS: Array<{ name: string; cost: ServiceCost }> = [
 
 function getServiceChecks(): ServiceCheck[] {
   const port = process.env.PORT || "3100";
-  const ollamaUrl = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
+  const ollamaUrl = SHARED_OLLAMA_URL;
   const embedUrl = process.env.EMBED_URL || "http://147.79.78.251:8000";
 
   return [
     { name: "Backend API", url: `http://127.0.0.1:${port}/api/health/readiness` },
-    { name: "Ollama LLM", url: `${ollamaUrl}/api/tags` },
+    { name: "Ollama LLM", url: `${ollamaUrl}/api/tags`, headers: ollamaHeaders() },
     { name: "Firecrawl", url: "http://168.231.127.180:3002/", timeoutMs: 10_000 },
     { name: "Embedding Service", url: `${embedUrl}/health`, timeoutMs: 10_000 },
   ];
@@ -132,6 +134,7 @@ async function checkService(svc: ServiceCheck): Promise<ServiceStatus> {
   const start = Date.now();
   try {
     const resp = await fetch(svc.url, {
+      headers: svc.headers,
       signal: AbortSignal.timeout(svc.timeoutMs ?? 8_000),
     });
     status.latencyMs = Date.now() - start;
@@ -258,9 +261,10 @@ async function getDockerContainerStats(): Promise<ServiceResources | null> {
 }
 
 async function getOllamaResources(): Promise<ServiceResources | null> {
-  const ollamaUrl = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
+  const ollamaUrl = SHARED_OLLAMA_URL;
   try {
     const resp = await fetch(`${ollamaUrl}/api/ps`, {
+      headers: ollamaHeaders(),
       signal: AbortSignal.timeout(5_000),
     });
     if (!resp.ok) return null;

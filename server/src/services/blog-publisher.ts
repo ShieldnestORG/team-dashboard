@@ -5,8 +5,7 @@ import { logger } from "../middleware/logger.js";
 // Used by seo-engine.ts (signal-based) and content-crons.ts (Ollama content queue)
 // ---------------------------------------------------------------------------
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
+import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
 const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://coherencedaddy.com/api/blog/posts";
 const BLOG_API_KEY = process.env.CD_BLOG_API_KEY || "";
 const SN_BLOG_API_URL = process.env.SN_BLOG_API_URL || "";
@@ -86,25 +85,7 @@ export function makeSlug(title: string): string {
 // Ollama — primary LLM for blog generation (free, self-hosted on VPS)
 // ---------------------------------------------------------------------------
 
-export async function callOllamaBlog(prompt: string): Promise<string> {
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      prompt,
-      stream: false,
-    }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => "Unknown error");
-    throw new Error(`Ollama error (${res.status}): ${errorText}`);
-  }
-
-  const data = (await res.json()) as { response: string };
-  return data.response.trim();
-}
+export const callOllamaBlog = callOllamaGenerate;
 
 // ---------------------------------------------------------------------------
 // Generate a full BlogPost via Ollama from a signal topic

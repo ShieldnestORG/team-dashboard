@@ -20,8 +20,9 @@ import * as forge from "../../content-templates/forge.js";
 // and engagement feedback from tweet analytics.
 // ---------------------------------------------------------------------------
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
+import { callOllamaGenerate, OLLAMA_MODEL } from "../ollama-client.js";
+
+const callOllama = callOllamaGenerate;
 const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 const PERSONALITIES: Record<string, {
@@ -32,30 +33,6 @@ const PERSONALITIES: Record<string, {
 
 const MAX_TWEET_CHARS = 280;
 const MAX_TWEETS_PER_DAY = 12; // ~70% of X free-tier 17/day limit
-
-// ---------------------------------------------------------------------------
-// Ollama client — same pattern as content.ts
-// ---------------------------------------------------------------------------
-
-async function callOllama(prompt: string): Promise<string> {
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      prompt,
-      stream: false,
-    }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => "Unknown error");
-    throw new Error(`Ollama error (${res.status}): ${errorText}`);
-  }
-
-  const data = await res.json() as { response: string };
-  return data.response.trim();
-}
 
 // ---------------------------------------------------------------------------
 // Context fetcher — embedding-enriched intel context

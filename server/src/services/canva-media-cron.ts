@@ -27,8 +27,7 @@ const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea
 const CANVA_MEDIA_FOLDER_ID = process.env.CANVA_MEDIA_FOLDER_ID || "";
 const CANVA_MEDIA_MAX_PER_DAY = parseInt(process.env.CANVA_MEDIA_MAX_PER_DAY || "2", 10);
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
+import { callOllamaGenerate } from "./ollama-client.js";
 
 // ---------------------------------------------------------------------------
 // In-memory tracking — which designs have been posted today
@@ -64,15 +63,8 @@ Include 1-2 of these accounts naturally with context:
 Be engaging, use the design title for context. Don't describe the image literally — reference the topic.
 Return ONLY the tweet text, nothing else.`;
 
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false }),
-  });
-
-  if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
-  const data = await res.json() as { response: string };
-  let text = data.response.trim();
+  const raw = await callOllamaGenerate(prompt);
+  let text = raw;
 
   // Remove quotes if Ollama wraps the response
   if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);

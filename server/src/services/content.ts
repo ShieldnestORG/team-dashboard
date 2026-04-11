@@ -73,28 +73,9 @@ const PERSONALITIES: Record<string, {
 // Ollama client
 // ---------------------------------------------------------------------------
 
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:26b";
+import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
 
-async function callOllama(prompt: string): Promise<string> {
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      prompt,
-      stream: false,
-    }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => "Unknown error");
-    throw new Error(`Ollama error (${res.status}): ${errorText}`);
-  }
-
-  const data = await res.json() as { response: string };
-  return data.response.trim();
-}
+const callOllama = callOllamaGenerate;
 
 // ---------------------------------------------------------------------------
 // Context fetcher — query intel_reports via pgvector similarity

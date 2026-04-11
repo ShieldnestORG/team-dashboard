@@ -14,6 +14,7 @@ import type {
   AdapterModel,
 } from "@paperclipai/adapter-utils";
 import { logger } from "../../middleware/logger.js";
+import { OLLAMA_URL as SHARED_OLLAMA_URL, OLLAMA_MODEL as SHARED_OLLAMA_MODEL, ollamaHeaders, listOllamaModels as sharedListModels } from "../../services/ollama-client.js";
 
 // ---------------------------------------------------------------------------
 // Models (defaults — listModels dynamically fetches from Ollama)
@@ -33,11 +34,11 @@ const defaultModels: AdapterModel[] = [
 // ---------------------------------------------------------------------------
 
 function getOllamaUrl(config: Record<string, unknown>): string {
-  return (config.ollamaUrl as string) || process.env.OLLAMA_URL || "http://172.17.0.1:11434";
+  return (config.ollamaUrl as string) || process.env.OLLAMA_URL || SHARED_OLLAMA_URL;
 }
 
 function getModel(config: Record<string, unknown>): string {
-  return (config.model as string) || process.env.OLLAMA_AGENT_MODEL || "gemma4:26b";
+  return (config.model as string) || process.env.OLLAMA_AGENT_MODEL || SHARED_OLLAMA_MODEL;
 }
 
 function getTemperature(config: Record<string, unknown>): number {
@@ -117,7 +118,7 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
   try {
     const response = await fetch(`${ollamaUrl}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: ollamaHeaders(),
       body: JSON.stringify({
         model,
         messages: [
@@ -183,7 +184,7 @@ async function testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<Adap
   const configuredModel = getModel(ctx.config);
 
   try {
-    const res = await fetch(`${ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${ollamaUrl}/api/tags`, { headers: ollamaHeaders(), signal: AbortSignal.timeout(8000) });
     if (res.ok) {
       const data = await res.json() as { models?: Array<{ name: string }> };
       const modelNames = data.models?.map((m) => m.name) || [];
@@ -236,20 +237,12 @@ async function testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<Adap
 // ---------------------------------------------------------------------------
 
 async function listModels(): Promise<AdapterModel[]> {
-  const ollamaUrl = process.env.OLLAMA_URL || "http://172.17.0.1:11434";
-  try {
-    const res = await fetch(`${ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(5000) });
-    if (res.ok) {
-      const data = await res.json() as { models?: Array<{ name: string; details?: { parameter_size?: string } }> };
-      if (data.models && data.models.length > 0) {
-        return data.models.map((m) => ({
-          id: m.name,
-          label: `${m.name}${m.details?.parameter_size ? ` (${m.details.parameter_size})` : ""}`,
-        }));
-      }
-    }
-  } catch {
-    logger.debug("Failed to list Ollama models dynamically");
+  const models = await sharedListModels(5000);
+  if (models.length > 0) {
+    return models.map((m) => ({
+      id: m.name,
+      label: `${m.name}${m.details?.parameter_size ? ` (${m.details.parameter_size})` : ""}`,
+    }));
   }
   return defaultModels;
 }
