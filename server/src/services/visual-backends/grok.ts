@@ -45,7 +45,6 @@ async function generateImage(
 ): Promise<VisualJobResult> {
   const jobId = randomUUID();
   try {
-    const isLandscape = resolveAspectRatio(opts) === "16:9";
     const res = await fetch(`${GROK_BASE_URL}/images/generations`, {
       method: "POST",
       headers: grokHeaders(),
@@ -53,7 +52,6 @@ async function generateImage(
         model: "grok-2-image",
         prompt: opts.prompt,
         n: 1,
-        size: isLandscape ? "1344x768" : "768x1344",
         response_format: "b64_json",
       }),
     });
@@ -88,8 +86,8 @@ async function generateImage(
       assetBuffer: buffer,
       contentType: "image/png",
       filename: `grok-image-${jobId}.png`,
-      width: isLandscape ? 1344 : 768,
-      height: isLandscape ? 768 : 1344,
+      width: opts.width || 1024,
+      height: opts.height || 1024,
     };
   } catch (err) {
     logger.error({ err, jobId }, "Grok image generation failed");
