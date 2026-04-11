@@ -43,7 +43,12 @@ After any structural change, update relevant docs in `docs/`. Never leave docume
 
 ## Cron Responsibilities
 
-Bridge has no cron jobs. Work arrives via task assignment and on-demand wakeups.
+Bridge owns 2 maintenance cron jobs. Defined in `server/src/services/maintenance-crons.ts`.
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `maintenance:stale-content` | `0 3 * * *` (daily 3am) | Reset stuck content items (draft > 24hr with no progress) |
+| `maintenance:health-check` | `0 */4 * * *` (every 4hr) | System health probe — checks DB, Ollama, embedding service |
 
 ## Safety
 

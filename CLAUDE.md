@@ -55,7 +55,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 
 ## What Does NOT Live Here
 
-The 27 public free tools were **migrated to the coherencedaddy repo** (April 2026). Do not add public marketing tools here. This repo is for authenticated admin functionality only. The public blockchain directory page lives in the coherencedaddy repo at `/directory`, powered by this repo's Intel API.
+The 523+ public free tools live in **the coherencedaddy repo** (migrated April 2026). Do not add public marketing tools here. This repo is for authenticated admin functionality only. The public blockchain directory page lives in the coherencedaddy repo at `/directory`, powered by this repo's Intel API.
 
 ## Tech Stack
 
@@ -268,7 +268,7 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (2 jobs), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily), moltbook (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 38 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (4 jobs: health-check + digest + partner-metrics + partner-site-monitor), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 1 partner-sites + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), moltbook-backend (5 jobs: ingest + post + engage + heartbeat + performance), youtube (5 jobs: daily-production + publish-queue + daily-analytics + weekly-strategy + optimization), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily), moltbook-plugin (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 49 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
