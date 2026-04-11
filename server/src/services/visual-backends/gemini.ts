@@ -49,7 +49,12 @@ async function generateImage(
   try {
     // Use Gemini 2.5 Flash (Nano Banana) for image generation — fast, free-tier friendly.
     // The model uses generateContent with responseModalities including "image".
-    const model = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-preview-05-20";
+    // Gemini image models (configurable via env, default to 2.0 Flash Image — stable + free tier):
+    // gemini-2.0-flash-image        — stable, fast, free tier
+    // gemini-2.5-flash-image        — Nano Banana, faster, free tier
+    // gemini-3-pro-image-preview    — Nano Banana Pro, best quality
+    // gemini-3.1-flash-image-preview — Nano Banana 2, efficient
+    const model = process.env.GEMINI_IMAGE_MODEL || "gemini-2.0-flash-image";
     const aspectRatio = opts.aspectRatio || (opts.width && opts.height && opts.width > opts.height ? "16:9" : "9:16");
 
     const body = {
