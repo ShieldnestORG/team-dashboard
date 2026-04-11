@@ -17,7 +17,7 @@ import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
-import { pickBackend } from "../visual-backends/index.js";
+import { getAvailableBackends } from "../visual-backends/index.js";
 import { logger } from "../../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -198,8 +198,8 @@ async function generateVisualAssets(
   productionId: string,
   mode: string,
 ): Promise<string[]> {
-  const backend = pickBackend("image");
-  if (!backend) {
+  const backends = getAvailableBackends().filter((b) => b.capabilities.includes("image"));
+  if (backends.length === 0) {
     logger.warn("No image backend available — video will have no visuals");
     return [];
   }
@@ -210,19 +210,27 @@ async function generateVisualAssets(
   ensureDir(dir);
 
   for (let i = 0; i < prompts.length; i++) {
-    try {
-      const result = await backend.generateImage({
-        prompt: prompts[i],
-        width: 1920,
-        height: 1080,
-      });
-      if (result.status === "ready" && result.assetBuffer) {
-        const path = join(dir, `scene_${i}.png`);
-        await writeFile(path, result.assetBuffer);
-        assets.push(path);
+    let generated = false;
+    for (const backend of backends) {
+      try {
+        const result = await backend.generateImage({
+          prompt: prompts[i],
+          width: 1920,
+          height: 1080,
+        });
+        if (result.status === "ready" && result.assetBuffer) {
+          const path = join(dir, `scene_${i}.png`);
+          await writeFile(path, result.assetBuffer);
+          assets.push(path);
+          generated = true;
+          break; // success — move to next prompt
+        }
+      } catch (err) {
+        logger.warn({ err, scene: i, backend: backend.name }, "Backend failed, trying next");
       }
-    } catch (err) {
-      logger.warn({ err, scene: i }, "Failed to generate visual asset for scene");
+    }
+    if (!generated) {
+      logger.warn({ scene: i }, "All backends failed for this scene");
     }
   }
 

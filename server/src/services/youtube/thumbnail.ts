@@ -6,7 +6,7 @@
  */
 
 import { callOllamaChat } from "../ollama-client.js";
-import { pickBackend, type VisualGenerationOpts } from "../visual-backends/index.js";
+import { getAvailableBackends, type VisualGenerationOpts } from "../visual-backends/index.js";
 import { logger } from "../../middleware/logger.js";
 import type { ScriptData } from "./script-writer.js";
 import type { SeoData } from "./seo-optimizer.js";
@@ -52,41 +52,30 @@ export async function generateThumbnail(
     imagePrompt = `Professional YouTube thumbnail for "${seo.title}", bold dramatic lighting, high contrast, cinematic style, 16:9 aspect ratio, digital art`;
   }
 
-  // Step 2: Generate image via visual backend
-  const backend = pickBackend("image");
-  if (!backend) {
+  // Step 2: Generate image via visual backend (try all available)
+  const backends = getAvailableBackends().filter((b) => b.capabilities.includes("image"));
+  if (backends.length === 0) {
     logger.warn("No image backend available for thumbnail generation");
-    return {
-      prompt: imagePrompt,
-      dimensions: { width: 1280, height: 720 },
-      provider: "none",
-    };
+    return { prompt: imagePrompt, dimensions: { width: 1280, height: 720 }, provider: "none" };
   }
 
-  try {
-    const opts: VisualGenerationOpts = {
-      prompt: imagePrompt,
-      width: 1280,
-      height: 720,
-    };
-    const result = await backend.generateImage(opts);
-
-    if (result.status === "ready" && result.assetBuffer) {
-      logger.info({ backend: backend.name }, "Thumbnail generated via visual backend");
-      return {
-        imageBuffer: result.assetBuffer,
-        prompt: imagePrompt,
-        dimensions: { width: result.width || 1280, height: result.height || 720 },
-        provider: backend.name,
-      };
+  const opts: VisualGenerationOpts = { prompt: imagePrompt, width: 1280, height: 720 };
+  for (const backend of backends) {
+    try {
+      const result = await backend.generateImage(opts);
+      if (result.status === "ready" && result.assetBuffer) {
+        logger.info({ backend: backend.name }, "Thumbnail generated via visual backend");
+        return {
+          imageBuffer: result.assetBuffer,
+          prompt: imagePrompt,
+          dimensions: { width: result.width || 1280, height: result.height || 720 },
+          provider: backend.name,
+        };
+      }
+    } catch (err) {
+      logger.warn({ err, backend: backend.name }, "Backend failed for thumbnail, trying next");
     }
-  } catch (err) {
-    logger.error({ err, backend: backend.name }, "Visual backend thumbnail generation failed");
   }
 
-  return {
-    prompt: imagePrompt,
-    dimensions: { width: 1280, height: 720 },
-    provider: "none",
-  };
+  return { prompt: imagePrompt, dimensions: { width: 1280, height: 720 }, provider: "none" };
 }
