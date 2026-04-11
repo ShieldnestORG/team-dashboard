@@ -3,6 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import { Router, type Request } from "express";
+import { deployPartnerMicrosite } from "../services/partner-deployment.js";
+import { publishPartnerContent } from "../services/partner-site-publisher.js";
 import { eq, and, desc, count } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerSiteContent } from "@paperclipai/db";
@@ -110,22 +112,17 @@ export function partnerSiteRoutes(db: Db): Router {
       const partner = await resolvePartner(slug);
       if (!partner) { res.status(404).json({ error: "Partner not found" }); return; }
 
-      const [updated] = await db
-        .update(partnerCompanies)
-        .set({
-          siteDeployStatus: "building",
-          updatedAt: new Date(),
-        })
-        .where(eq(partnerCompanies.id, partner.id))
-        .returning();
+      const result = await deployPartnerMicrosite(db, slug);
 
       res.json({
-        status: "building",
-        message: `Deploy triggered for ${partner.name}`,
+        status: "deployed",
+        message: `Microsite deployed for ${partner.name}`,
+        siteUrl: result.siteUrl,
+        repoUrl: result.repoUrl,
       });
     } catch (err) {
-      logger.error({ err }, "Failed to trigger deploy");
-      res.status(500).json({ error: "Failed to trigger deploy" });
+      logger.error({ err }, "Failed to deploy partner microsite");
+      res.status(500).json({ error: "Failed to deploy partner microsite" });
     }
   });
 
@@ -234,16 +231,18 @@ export function partnerSiteRoutes(db: Db): Router {
     try {
       const contentId = (req.params as Record<string, string>).contentId;
 
-      const [updated] = await db
-        .update(partnerSiteContent)
-        .set({ status: "queued", updatedAt: new Date() })
-        .where(eq(partnerSiteContent.id, contentId))
-        .returning();
-
-      if (!updated) {
-        res.status(404).json({ error: "Content not found" });
+      const success = await publishPartnerContent(db, contentId);
+      if (!success) {
+        res.status(400).json({ error: "Failed to publish — partner site may not be deployed" });
         return;
       }
+
+      const [updated] = await db
+        .select()
+        .from(partnerSiteContent)
+        .where(eq(partnerSiteContent.id, contentId))
+        .limit(1);
+
       res.json({ content: updated });
     } catch (err) {
       logger.error({ err }, "Failed to publish partner content");

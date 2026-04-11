@@ -353,7 +353,7 @@ export async function createApp(
   // Register all cron jobs with the central registry (no timers started yet)
   startIntelCrons(db);
   startEvalCrons();
-  startAlertCrons();
+  startAlertCrons(db);
   startContentCrons(db);
   startTrendCrons(db);
   startMaintenanceCrons(db);

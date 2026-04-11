@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blog — {{PARTNER_NAME}}</title>
+  <meta name="description" content="Latest articles and insights from {{PARTNER_NAME}}">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="blog-header">
+    <div class="container">
+      <nav class="blog-nav">
+        <a href="index.html" class="back-link">&larr; Back to Home</a>
+      </nav>
+      <h1>{{PARTNER_NAME}} <span class="blog-label">Blog</span></h1>
+    </div>
+  </header>
+
+  <!-- Blog Listing -->
+  <main class="blog-listing">
+    <div class="container">
+      <div id="blog-posts" class="blog-grid">
+        <p class="blog-loading">Loading articles...</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p>&copy; {{YEAR}} {{PARTNER_NAME}}. All rights reserved.</p>
+      <p class="powered-by">Powered by <a href="https://coherencedaddy.com" target="_blank" rel="noopener">Coherence Daddy</a></p>
+    </div>
+  </footer>
+
+  <script src="js/blog-loader.js"></script>
+  <script>
+    loadBlogPosts("{{BLOG_FEED_URL}}", "#blog-posts", 50);
+  </script>
+</body>
+</html>

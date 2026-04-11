@@ -4,7 +4,7 @@ import { contentItems } from "@paperclipai/db";
 import { contentService } from "./content.js";
 import { seoEngineService } from "./seo-engine.js";
 import { autoGenerateAndQueue } from "./x-api/content-bridge.js";
-import { publishBlogFromContent, type PublishTarget } from "./blog-publisher.js";
+import { publishBlogFromContent, buildPartnerFooter, type PublishTarget } from "./blog-publisher.js";
 import { runRetweetCycle } from "./x-api/retweet-service.js";
 import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
@@ -481,7 +481,12 @@ export function startContentCrons(db: Db) {
                 ? "ecosystem" as const
                 : "ecosystem" as const;
             try {
-              const publishResult = await publishBlogFromContent(result.content, topic!, category, target);
+              // Append partner footer if any deployed partners exist
+              const partnerFooter = await buildPartnerFooter(db, category);
+              const contentWithFooter = partnerFooter
+                ? result.content + partnerFooter
+                : result.content;
+              const publishResult = await publishBlogFromContent(contentWithFooter, topic!, category, target);
               if (publishResult.success) {
                 await db
                   .update(contentItems)
@@ -520,5 +525,19 @@ export function startContentCrons(db: Db) {
     },
   });
 
-  logger.info({ count: JOB_DEFS.length + 3 }, "Content cron jobs registered");
+  // Partner content publish — MWF at 8:30am (30 min after generation)
+  registerCronJob({
+    jobName: "content:partner-publish",
+    schedule: "30 8 * * 1,3,5",
+    ownerAgent: "forge",
+    sourceFile: "content-crons.ts",
+    handler: async () => {
+      const { publishAllDraftContent } = await import("./partner-site-publisher.js");
+      const published = await publishAllDraftContent(db);
+      logger.info({ published }, "Partner content publish cron completed");
+      return { published };
+    },
+  });
+
+  logger.info({ count: JOB_DEFS.length + 4 }, "Content cron jobs registered");
 }

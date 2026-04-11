@@ -2,6 +2,7 @@ import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 import { sendAlert } from "./alerting.js";
 import { getLatestEval } from "./eval-store.js";
+import type { Db } from "@paperclipai/db";
 
 async function checkHealth(): Promise<void> {
   try {
@@ -48,9 +49,39 @@ async function dailyDigest(): Promise<void> {
   }
 }
 
-export function startAlertCrons() {
+export function startAlertCrons(db?: Db) {
   registerCronJob({ jobName: "alert:health-check", schedule: "*/5 * * * *", ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: checkHealth });
   registerCronJob({ jobName: "alert:digest",       schedule: "0 7 * * *",   ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: dailyDigest });
 
-  logger.info({ count: 2 }, "Alert cron jobs registered");
+  // Partner report & site health crons (require db)
+  if (db) {
+    // Monthly partner metrics report — 1st of month at 8 AM
+    registerCronJob({
+      jobName: "reports:partner-metrics",
+      schedule: "0 8 1 * *",
+      ownerAgent: "nova",
+      sourceFile: "alert-crons.ts",
+      handler: async () => {
+        const { sendPartnerMetricsReport } = await import("./partner-reports.js");
+        await sendPartnerMetricsReport(db);
+        return { sent: true };
+      },
+    });
+
+    // Weekly partner site health check — Monday 9 AM
+    registerCronJob({
+      jobName: "monitor:partner-sites",
+      schedule: "0 9 * * 1",
+      ownerAgent: "nova",
+      sourceFile: "alert-crons.ts",
+      handler: async () => {
+        const { checkPartnerSiteHealth } = await import("./partner-reports.js");
+        await checkPartnerSiteHealth(db);
+        return { checked: true };
+      },
+    });
+  }
+
+  const jobCount = db ? 4 : 2;
+  logger.info({ count: jobCount }, "Alert cron jobs registered");
 }

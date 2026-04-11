@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{PARTNER_NAME}} — {{LOCATION}}</title>
+  <meta name="description" content="{{DESCRIPTION}}">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Hero -->
+  <header class="hero">
+    <div class="container">
+      <h1>{{PARTNER_NAME}}</h1>
+      <p class="hero-tagline">{{DESCRIPTION}}</p>
+      <p class="hero-location">{{LOCATION}}</p>
+      <a href="{{CTA_URL}}" class="cta-button">Visit {{PARTNER_NAME}}</a>
+    </div>
+  </header>
+
+  <!-- Services -->
+  <section class="services" id="services">
+    <div class="container">
+      <h2>Our Services</h2>
+      <div class="services-grid">
+        {{SERVICES_HTML}}
+      </div>
+    </div>
+  </section>
+
+  <!-- About -->
+  <section class="about" id="about">
+    <div class="container">
+      <h2>About Us</h2>
+      <p>{{DESCRIPTION}}</p>
+      <p class="about-location">Located in <strong>{{LOCATION}}</strong></p>
+    </div>
+  </section>
+
+  <!-- Blog -->
+  <section class="blog" id="blog">
+    <div class="container">
+      <h2>Latest Articles</h2>
+      <div id="blog-posts" class="blog-grid">
+        <p class="blog-loading">Loading articles...</p>
+      </div>
+      <div class="blog-cta">
+        <a href="blog.html" class="link-button">View All Articles</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p>&copy; {{YEAR}} {{PARTNER_NAME}}. All rights reserved.</p>
+      <p class="powered-by">Powered by <a href="https://coherencedaddy.com" target="_blank" rel="noopener">Coherence Daddy</a></p>
+    </div>
+  </footer>
+
+  <script src="js/blog-loader.js"></script>
+  <script>
+    loadBlogPosts("{{BLOG_FEED_URL}}", "#blog-posts", 3);
+  </script>
+</body>
+</html>

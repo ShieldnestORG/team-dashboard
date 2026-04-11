@@ -95,7 +95,14 @@ export function buildPartnerContext(
         (p.services && p.services.length > 0
           ? p.services.join(", ")
           : "local business");
-      return `- ${p.name} (${p.industry}, ${p.location || "local"}): ${servicesStr}. Website: ${p.website || "N/A"}. Redirect link: https://coherencedaddy.com/go/${p.slug}`;
+      const hasMicrosite = p.siteUrl && p.siteDeployStatus === "deployed";
+      const redirectLink = hasMicrosite
+        ? `https://coherencedaddy.com/go/${p.slug}?src=cd`
+        : `https://coherencedaddy.com/go/${p.slug}`;
+      const micrositeNote = hasMicrosite
+        ? ` Check out their dedicated page at ${p.siteUrl}.`
+        : "";
+      return `- ${p.name} (${p.industry}, ${p.location || "local"}): ${servicesStr}. Website: ${p.website || "N/A"}.${micrositeNote} Redirect link: ${redirectLink}`;
     })
     .join("\n");
 
@@ -107,6 +114,8 @@ Guidelines for partner mentions:
 - Only mention if genuinely relevant to the topic
 - Keep mentions natural — don't force them
 - Use the redirect link (coherencedaddy.com/go/slug) instead of their direct website
+- If the partner has a dedicated microsite, link to it rather than their main website
+- Include the tracked redirect link: https://coherencedaddy.com/go/{slug}?src=cd
 - Maximum 1-2 partner mentions per piece of content
 - For blog posts: mention in a relevant paragraph or "recommended" section
 - For tweets: only mention if directly relevant (don't dilute the tweet)

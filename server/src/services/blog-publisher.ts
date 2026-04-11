@@ -1,3 +1,6 @@
+import { eq, and } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
+import { partnerCompanies } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -324,6 +327,44 @@ export async function pingIndexNow(urls: string[]): Promise<void> {
     logger.info({ urls }, "IndexNow pinged");
   } catch (err) {
     logger.warn({ err }, "IndexNow ping failed (non-critical)");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Build a "Recommended Partners" HTML footer for blog posts
+// ---------------------------------------------------------------------------
+
+const PARTNER_COMPANY_ID =
+  process.env.TEAM_DASHBOARD_COMPANY_ID ||
+  "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+export async function buildPartnerFooter(db: Db, _category: string): Promise<string> {
+  try {
+    const partners = await db
+      .select()
+      .from(partnerCompanies)
+      .where(
+        and(
+          eq(partnerCompanies.companyId, PARTNER_COMPANY_ID),
+          eq(partnerCompanies.siteDeployStatus, "deployed"),
+        ),
+      )
+      .limit(3);
+
+    if (partners.length === 0) return "";
+
+    const items = partners
+      .map((p) => {
+        const desc = p.description || p.industry || "local business";
+        const loc = p.location ? ` in ${p.location}` : "";
+        return `  <li><a href="https://coherencedaddy.com/go/${p.slug}?src=cd-blog">${p.name}</a> &mdash; ${desc}${loc}</li>`;
+      })
+      .join("\n");
+
+    return `\n<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb">\n  <h3>Recommended Partners</h3>\n  <ul>\n${items}\n  </ul>\n</div>`;
+  } catch (err) {
+    logger.error({ err }, "Failed to build partner footer for blog post");
+    return "";
   }
 }
 
