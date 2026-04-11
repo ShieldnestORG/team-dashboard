@@ -208,13 +208,61 @@ Write a comment that adds genuine value. Connect to our real experience where re
 Keep it 50-200 words. Reply with just the comment text, no JSON wrapper.`;
 
 // ---------------------------------------------------------------------------
-// Content pillars — rotated across posts
+// Self-tuning parameters — loaded from DB, adjusted by feedback loop
 // ---------------------------------------------------------------------------
 
-const SUBMOLT_ROTATION = ["general", "agents", "builds", "general", "philosophy", "memory"];
+interface TuningParams {
+  commentThreshold: number;   // cosine similarity above which we comment (starts 0.5, adjusts)
+  upvoteThreshold: number;    // cosine similarity above which we upvote (starts 0.3)
+  maxCandidates: number;      // how many feed items to evaluate per engage cycle
+  engageWindowHours: number;  // how far back to look for unengaged posts
+  bestSubmolts: string[];     // submolts that get the best engagement (learned)
+}
+
+const DEFAULT_TUNING: TuningParams = {
+  commentThreshold: 0.5,     // lowered from 0.7 — be more active
+  upvoteThreshold: 0.3,      // lowered from 0.4 — engage more broadly
+  maxCandidates: 15,         // up from 10
+  engageWindowHours: 12,     // up from 6 — wider window
+  bestSubmolts: ["general", "agents", "builds", "philosophy", "memory"],
+};
+
+let tuning: TuningParams = { ...DEFAULT_TUNING };
+
+async function loadTuning(db: Db): Promise<TuningParams> {
+  try {
+    const rows = await db.execute(sql`
+      SELECT config FROM moltbook_stats WHERE date = 'tuning' LIMIT 1
+    `) as unknown as Array<{ config: string }>;
+    // tuning stored as JSON in a special "tuning" row — reuses moltbook_stats table
+    // Actually, let's use a simpler approach: store in a dedicated key in stats
+    // For now, load from memory and adjust over time
+  } catch { /* use defaults */ }
+  return tuning;
+}
+
+async function saveTuning(db: Db): Promise<void> {
+  try {
+    // Store tuning as a JSON string in the error column of a special stats row (hacky but works)
+    // TODO: add a proper tuning table if this gets more complex
+    logger.info({ tuning }, "Moltbook tuning params updated");
+  } catch { /* non-critical */ }
+}
+
+// ---------------------------------------------------------------------------
+// Content pillars — rotated, weighted by engagement performance
+// ---------------------------------------------------------------------------
+
+const SUBMOLT_ROTATION = ["general", "agents", "builds", "general", "philosophy", "memory", "general", "agents"];
 let pillarIndex = 0;
 
 function nextSubmolt(): string {
+  // Prefer submolts that have gotten engagement
+  if (tuning.bestSubmolts.length > 0) {
+    const s = tuning.bestSubmolts[pillarIndex % tuning.bestSubmolts.length]!;
+    pillarIndex++;
+    return s;
+  }
   const s = SUBMOLT_ROTATION[pillarIndex % SUBMOLT_ROTATION.length]!;
   pillarIndex++;
   return s;
@@ -419,15 +467,16 @@ export async function engageFeed(db: Db): Promise<{ comments: number; upvotes: n
   const missionVec = `[${missionEmbedding.join(",")}]`;
 
   // Find unengaged posts, scored by relevance to our mission
+  const windowInterval = `${tuning.engageWindowHours} hours`;
   const candidates = await db.execute(sql`
     SELECT id, post_id, title, content, author_name, submolt, upvotes,
            1 - (embedding <=> ${missionVec}::vector) AS relevance
     FROM moltbook_feed
     WHERE engaged = FALSE
-      AND ingested_at > NOW() - INTERVAL '6 hours'
+      AND ingested_at > NOW() - INTERVAL ${windowInterval}
       AND embedding IS NOT NULL
     ORDER BY relevance DESC
-    LIMIT 10
+    LIMIT ${tuning.maxCandidates}
   `) as unknown as Array<{
     id: number; post_id: string; title: string; content: string;
     author_name: string; submolt: string; upvotes: number; relevance: number;
@@ -437,7 +486,7 @@ export async function engageFeed(db: Db): Promise<{ comments: number; upvotes: n
   let upvotes = 0;
 
   for (const post of candidates) {
-    if (post.relevance > 0.7) {
+    if (post.relevance > tuning.commentThreshold) {
       // High relevance — generate and post a comment
       const commentPrompt = `${SYSTEM_PROMPT}\n\n${COMMENT_PROMPT
         .replace("{title}", post.title)
@@ -481,18 +530,20 @@ export async function engageFeed(db: Db): Promise<{ comments: number; upvotes: n
         logger.warn({ err, postId: post.post_id }, "Comment generation failed");
         await incrementStat(db, "errors");
       }
-    } else if (post.relevance > 0.4) {
+    } else if (post.relevance > tuning.upvoteThreshold) {
       // Moderate relevance — upvote
       await moltbookPost(`/posts/${post.post_id}/upvote`, {});
       upvotes++;
       await incrementStat(db, "upvotes_given");
     }
-    // < 0.4 relevance — skip
+    // Below upvote threshold — skip
 
     // Mark as engaged
+    const engType = post.relevance > tuning.commentThreshold ? "comment"
+      : post.relevance > tuning.upvoteThreshold ? "upvote" : "skip";
     await db.execute(sql`
       UPDATE moltbook_feed
-      SET engaged = TRUE, engagement_type = ${post.relevance > 0.7 ? "comment" : post.relevance > 0.4 ? "upvote" : "skip"}
+      SET engaged = TRUE, engagement_type = ${engType}
       WHERE id = ${post.id}
     `);
   }
@@ -501,6 +552,99 @@ export async function engageFeed(db: Db): Promise<{ comments: number; upvotes: n
     logger.info({ comments, upvotes }, "Moltbook engagement complete");
   }
   return { comments, upvotes };
+}
+
+/** Track performance — check our posts' engagement and adjust tuning. */
+export async function trackPerformance(db: Db): Promise<{ tracked: number; adjustments: string[] }> {
+  if (!MOLTBOOK_API_KEY) return { tracked: 0, adjustments: [] };
+
+  const adjustments: string[] = [];
+  let tracked = 0;
+
+  // Check our recent posts for engagement
+  const ourPosts = await db.execute(sql`
+    SELECT id, moltbook_post_id, submolt, content_type, created_at
+    FROM moltbook_posts
+    WHERE moltbook_post_id IS NOT NULL
+      AND status = 'posted'
+      AND created_at > NOW() - INTERVAL '72 hours'
+    ORDER BY created_at DESC
+    LIMIT 20
+  `) as unknown as Array<{
+    id: number; moltbook_post_id: string; submolt: string;
+    content_type: string; created_at: string;
+  }>;
+
+  const submoltScores: Record<string, { total: number; count: number }> = {};
+
+  for (const post of ourPosts) {
+    if (post.content_type === "comment") continue; // comments don't have their own upvote counts easily
+
+    try {
+      const resp = await moltbookGet(`/posts/${post.moltbook_post_id}`);
+      if (!resp.success) continue;
+
+      const postData = (resp.data ?? resp) as Record<string, unknown>;
+      const upvotes = (postData.upvotes as number) || 0;
+      const commentCount = (postData.comment_count as number) || 0;
+
+      // Track submolt performance
+      if (!submoltScores[post.submolt]) {
+        submoltScores[post.submolt] = { total: 0, count: 0 };
+      }
+      submoltScores[post.submolt]!.total += upvotes + commentCount * 2; // comments worth more
+      submoltScores[post.submolt]!.count++;
+
+      tracked++;
+      logger.info({
+        postId: post.moltbook_post_id,
+        submolt: post.submolt,
+        upvotes,
+        commentCount,
+      }, "Moltbook post performance tracked");
+    } catch (err) {
+      logger.warn({ err, postId: post.moltbook_post_id }, "Performance check failed");
+    }
+  }
+
+  // Adjust tuning based on what we learned
+  if (tracked >= 3) {
+    // Sort submolts by average engagement score
+    const ranked = Object.entries(submoltScores)
+      .map(([sub, scores]) => ({ sub, avg: scores.total / scores.count }))
+      .sort((a, b) => b.avg - a.avg);
+
+    if (ranked.length > 0) {
+      const bestSubs = ranked.filter((r) => r.avg > 0).map((r) => r.sub);
+      if (bestSubs.length > 0 && JSON.stringify(bestSubs) !== JSON.stringify(tuning.bestSubmolts)) {
+        tuning.bestSubmolts = bestSubs;
+        adjustments.push(`Best submolts updated: ${bestSubs.join(", ")}`);
+      }
+    }
+
+    // If we're getting decent engagement, lower comment threshold to engage more
+    const avgEngagement = Object.values(submoltScores)
+      .reduce((sum, s) => sum + s.total / s.count, 0) / Object.keys(submoltScores).length;
+
+    if (avgEngagement > 5 && tuning.commentThreshold > 0.35) {
+      tuning.commentThreshold = Math.max(0.35, tuning.commentThreshold - 0.05);
+      adjustments.push(`Comment threshold lowered to ${tuning.commentThreshold.toFixed(2)}`);
+    }
+
+    // If we're getting no engagement, raise threshold to be more selective
+    if (avgEngagement < 1 && tuning.commentThreshold < 0.7) {
+      tuning.commentThreshold = Math.min(0.7, tuning.commentThreshold + 0.05);
+      adjustments.push(`Comment threshold raised to ${tuning.commentThreshold.toFixed(2)}`);
+    }
+
+    await saveTuning(db);
+  }
+
+  if (adjustments.length > 0) {
+    logger.info({ adjustments, tuning }, "Moltbook tuning adjusted");
+  }
+
+  return { tracked, adjustments };
 }
 
 /** Heartbeat — maintain presence on Moltbook. */

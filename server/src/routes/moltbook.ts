@@ -5,7 +5,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { sql } from "drizzle-orm";
-import { getStats, ingestFeed, generatePost, engageFeed } from "../services/moltbook-engine.js";
+import { getStats, ingestFeed, generatePost, engageFeed, trackPerformance } from "../services/moltbook-engine.js";
 
 export function moltbookRoutes(db: Db): Router {
   const router = Router();
@@ -44,6 +44,16 @@ export function moltbookRoutes(db: Db): Router {
   router.post("/engage", async (_req, res) => {
     try {
       const result = await engageFeed(db);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // POST /api/moltbook/performance — manually trigger performance tracking + tuning
+  router.post("/performance", async (_req, res) => {
+    try {
+      const result = await trackPerformance(db);
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: String(err) });
