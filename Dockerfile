@@ -48,9 +48,11 @@ FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && npx playwright install chromium --with-deps 2>/dev/null || true \
   && mkdir -p /paperclip \
-  && chown node:node /paperclip
+  && chown node:node /paperclip \
+  && PLAYWRIGHT_BROWSERS_PATH=/paperclip/.cache/ms-playwright \
+     npx --prefix /app/server playwright install chromium 2>/dev/null || true \
+  && chown -R node:node /paperclip/.cache 2>/dev/null || true
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
