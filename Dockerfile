@@ -1,6 +1,10 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git ffmpeg \
+     # Playwright Chromium dependencies for presentation slide rendering
+     libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libdrm2 \
+     libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2t64 \
+     libpango-1.0-0 libcairo2 libxshmfence1 fonts-liberation \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -44,6 +48,7 @@ FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+  && npx playwright install chromium --with-deps 2>/dev/null || true \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 

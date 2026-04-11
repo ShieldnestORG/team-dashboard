@@ -17,6 +17,7 @@ import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
+import { buildSlidesFromScript, renderSlidesToImages } from "./presentation-renderer.js";
 import { getAvailableBackends } from "../visual-backends/index.js";
 import { logger } from "../../middleware/logger.js";
 
@@ -198,6 +199,25 @@ async function generateVisualAssets(
   productionId: string,
   mode: string,
 ): Promise<string[]> {
+  const dir = join(ASSETS_DIR, productionId);
+  ensureDir(dir);
+
+  // ── Presentation mode: branded HTML/CSS slides via Playwright ──────────
+  if (mode === "presentation") {
+    try {
+      const slides = buildSlidesFromScript(script);
+      logger.info({ slideCount: slides.length }, "Built presentation slides from script");
+      const framePaths = await renderSlidesToImages(slides, dir);
+      if (framePaths.length > 0) {
+        logger.info({ frames: framePaths.length }, "Presentation slides rendered successfully");
+        return framePaths;
+      }
+    } catch (err) {
+      logger.warn({ err }, "Presentation rendering failed, falling back to AI images");
+    }
+  }
+
+  // ── Image mode (or presentation fallback): AI-generated scene images ───
   const backends = getAvailableBackends().filter((b) => b.capabilities.includes("image"));
   if (backends.length === 0) {
     logger.warn("No image backend available — video will have no visuals");
@@ -206,8 +226,6 @@ async function generateVisualAssets(
 
   const prompts = extractVisualPrompts(script);
   const assets: string[] = [];
-  const dir = join(ASSETS_DIR, productionId);
-  ensureDir(dir);
 
   for (let i = 0; i < prompts.length; i++) {
     let generated = false;
@@ -219,11 +237,11 @@ async function generateVisualAssets(
           height: 1080,
         });
         if (result.status === "ready" && result.assetBuffer) {
-          const path = join(dir, `scene_${i}.png`);
-          await writeFile(path, result.assetBuffer);
-          assets.push(path);
+          const p = join(dir, `scene_${i}.png`);
+          await writeFile(p, result.assetBuffer);
+          assets.push(p);
           generated = true;
-          break; // success — move to next prompt
+          break;
         }
       } catch (err) {
         logger.warn({ err, scene: i, backend: backend.name }, "Backend failed, trying next");
