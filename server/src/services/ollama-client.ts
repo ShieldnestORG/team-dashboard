@@ -11,8 +11,8 @@ import { logger } from "../middleware/logger.js";
 // Configuration
 // ---------------------------------------------------------------------------
 
-export const OLLAMA_URL = process.env.OLLAMA_URL || "https://ollama.com/api";
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:31b-cloud";
+export const OLLAMA_URL = process.env.OLLAMA_URL || "https://ollama.com";
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:31b";
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "";
 
 /** Returns headers with auth if OLLAMA_API_KEY is set. */
