@@ -180,15 +180,46 @@ function generateTags(script: ScriptData, strategy: ContentStrategy): string[] {
 // ---------------------------------------------------------------------------
 
 function generateHashtags(strategy: ContentStrategy): string[] {
-  const h = [`#${strategy.topic.replace(/\s+/g, "")}`, `#${strategy.contentType.toLowerCase()}`];
+  const h: string[] = [];
   const topic = strategy.topic.toLowerCase();
-  if (/crypto|bitcoin|blockchain/.test(topic)) {
-    h.push("#crypto", "#bitcoin", "#blockchain");
-  } else if (/motivat|mindset/.test(topic)) {
-    h.push("#motivation", "#mindset", "#success");
+
+  // Primary keyword hashtags from actual topic words
+  for (const kw of strategy.keywords) {
+    if (kw.length > 3) h.push(`#${kw.replace(/\s+/g, "")}`);
   }
-  h.push("#youtube", "#trending", `#${new Date().getFullYear()}`);
-  return h.slice(0, 15);
+
+  // Niche-specific hashtags based on content
+  if (/crypto|bitcoin|btc/i.test(topic)) {
+    h.push("#crypto", "#bitcoin", "#cryptoinvesting", "#btc");
+  }
+  if (/altcoin|defi|staking/i.test(topic)) {
+    h.push("#altcoins", "#defi", "#cryptostaking");
+  }
+  if (/blockchain|tx.*ecosystem|tokns/i.test(topic)) {
+    h.push("#blockchain", "#txecosystem", "#web3");
+  }
+  if (/portfolio|strategy|beginners|guide/i.test(topic)) {
+    h.push("#cryptoportfolio", "#investingstrategy", "#cryptoforbeginners");
+  }
+  if (/price|prediction|bull|bear/i.test(topic)) {
+    h.push("#cryptoprediction", "#priceanalysis", "#cryptotrading");
+  }
+  if (/motivat|mindset|discipline|wealth|freedom|success/i.test(topic)) {
+    h.push("#motivation", "#mindsetshift", "#financialfreedom", "#wealthbuilding");
+  }
+  if (/procrastinat|morning|routine|habit/i.test(topic)) {
+    h.push("#productivity", "#selfimprovement", "#dailyroutine");
+  }
+  if (/chart|technical|trading|read/i.test(topic)) {
+    h.push("#technicalanalysis", "#cryptotrading", "#tradingforbeginners");
+  }
+
+  // Channel branding
+  h.push("#toknsfi", "#coherencedaddy");
+
+  // Dedupe and limit
+  const unique = [...new Set(h)];
+  return unique.slice(0, 15);
 }
 
 // ---------------------------------------------------------------------------

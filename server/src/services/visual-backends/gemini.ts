@@ -47,32 +47,50 @@ async function generateImage(
 ): Promise<VisualJobResult> {
   const jobId = randomUUID();
   try {
-    const body: Record<string, unknown> = {
-      instances: [{ prompt: opts.prompt }],
-      parameters: {
-        sampleCount: 1,
-        aspectRatio: opts.aspectRatio || "9:16",
+    // Use Gemini 2.5 Flash (Nano Banana) for image generation — fast, free-tier friendly.
+    // The model uses generateContent with responseModalities including "image".
+    const model = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-preview-05-20";
+    const aspectRatio = opts.aspectRatio || (opts.width && opts.height && opts.width > opts.height ? "16:9" : "9:16");
+
+    const body = {
+      contents: [
+        {
+          parts: [{ text: `Generate an image: ${opts.prompt}. Aspect ratio: ${aspectRatio}. High quality, professional.` }],
+        },
+      ],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
       },
     };
 
     const data = (await geminiRequest(
-      "/models/imagen-3.0-generate-002:predict",
+      `/models/${model}:generateContent`,
       body,
     )) as {
-      predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>;
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            text?: string;
+            inlineData?: { mimeType: string; data: string };
+          }>;
+        };
+      }>;
     };
 
-    const prediction = data.predictions?.[0];
-    if (!prediction?.bytesBase64Encoded) {
-      return { jobId, status: "failed", error: "No image data in response" };
+    // Find the image part in the response
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find((p) => p.inlineData?.mimeType?.startsWith("image/"));
+
+    if (!imagePart?.inlineData) {
+      return { jobId, status: "failed", error: "No image data in Gemini response" };
     }
 
-    const buffer = Buffer.from(prediction.bytesBase64Encoded, "base64");
+    const buffer = Buffer.from(imagePart.inlineData.data, "base64");
     return {
       jobId,
       status: "ready",
       assetBuffer: buffer,
-      contentType: prediction.mimeType || "image/png",
+      contentType: imagePart.inlineData.mimeType || "image/png",
       filename: `gemini-image-${jobId}.png`,
       width: opts.width || 1080,
       height: opts.height || 1920,

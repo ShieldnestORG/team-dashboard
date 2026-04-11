@@ -13,8 +13,8 @@ import { join } from "path";
 import { logger } from "../../middleware/logger.js";
 
 const execAsync = promisify(exec);
-const TEMP_DIR = join("/tmp", "yt-temp");
-const VIDEO_DIR = join("/tmp", "yt-videos");
+const TEMP_DIR = join("/tmp", "yt-temp"); // truly ephemeral — intermediate files only
+const VIDEO_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "videos");
 
 function ensureDir(dir: string) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
