@@ -6,6 +6,8 @@ export const youtubeApi = {
     api.post("/youtube/pipeline/run", opts || {}),
   getQueue: () => api.get("/youtube/queue"),
   publishNow: (id: string) => api.post(`/youtube/queue/${id}/publish-now`, {}),
+  rescheduleQueueItem: (id: string, publishTime: string) =>
+    api.patch(`/youtube/queue/${id}/schedule`, { publishTime }),
   deleteQueueItem: (id: string) => api.delete(`/youtube/queue/${id}`),
   getAnalytics: () => api.get("/youtube/analytics"),
   collectAnalytics: () => api.post("/youtube/analytics/collect", {}),

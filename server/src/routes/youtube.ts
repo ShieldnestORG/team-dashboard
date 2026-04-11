@@ -82,6 +82,32 @@ export function youtubeRoutes(db: Db): Router {
     }
   });
 
+  // Reschedule a queue item
+  router.patch("/queue/:id/schedule", async (req, res) => {
+    try {
+      const { publishTime } = req.body as { publishTime: string };
+      if (!publishTime) {
+        return res.status(400).json({ error: "publishTime is required (ISO 8601)" });
+      }
+      const newTime = new Date(publishTime);
+      if (isNaN(newTime.getTime())) {
+        return res.status(400).json({ error: "Invalid date format" });
+      }
+      await db
+        .update(ytPublishQueue)
+        .set({ publishTime: newTime, status: "scheduled" })
+        .where(
+          and(
+            eq(ytPublishQueue.id, req.params.id as string),
+            eq(ytPublishQueue.companyId, COMPANY_ID),
+          ),
+        );
+      res.json({ success: true, publishTime: newTime.toISOString() });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to reschedule" });
+    }
+  });
+
   router.delete("/queue/:id", async (req, res) => {
     try {
       await db

@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Calendar,
 } from "lucide-react";
 import { youtubeApi } from "../api/youtube";
 
@@ -124,74 +125,149 @@ function PipelineTab() {
   );
 }
 
+function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onRefresh: () => void }) {
+  const [editingDate, setEditingDate] = useState(false);
+  const [newDate, setNewDate] = useState("");
+
+  const publishMutation = useMutation({
+    mutationFn: () => youtubeApi.publishNow(item.id as string),
+    onSuccess: onRefresh,
+  });
+
+  const rescheduleMutation = useMutation({
+    mutationFn: (publishTime: string) =>
+      youtubeApi.rescheduleQueueItem(item.id as string, publishTime),
+    onSuccess: () => {
+      setEditingDate(false);
+      onRefresh();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => youtubeApi.deleteQueueItem(item.id as string),
+    onSuccess: onRefresh,
+  });
+
+  const status = item.status as string;
+  const isScheduled = status === "scheduled";
+  const isPublished = status === "published";
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate">{item.title as string}</p>
+            {isPublished && (item.youtubeUrl as string | null) ? (
+              <a
+                href={String(item.youtubeUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-500 hover:underline"
+              >
+                {String(item.youtubeUrl)}
+              </a>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Scheduled: {new Date(item.publishTime as string).toLocaleString()}
+              </p>
+            )}
+          </div>
+          {statusBadge(status)}
+        </div>
+
+        {/* Actions for scheduled items */}
+        {isScheduled && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              onClick={() => publishMutation.mutate()}
+              disabled={publishMutation.isPending}
+            >
+              {publishMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+              ) : (
+                <Upload className="mr-1.5 h-3 w-3" />
+              )}
+              Publish Now
+            </Button>
+
+            {editingDate ? (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="datetime-local"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="h-8 w-auto text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (newDate) rescheduleMutation.mutate(new Date(newDate).toISOString());
+                  }}
+                  disabled={!newDate || rescheduleMutation.isPending}
+                >
+                  {rescheduleMutation.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3 w-3" />
+                  )}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditingDate(false)}>
+                  <XCircle className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const current = new Date(item.publishTime as string);
+                  setNewDate(current.toISOString().slice(0, 16));
+                  setEditingDate(true);
+                }}
+              >
+                <Calendar className="mr-1.5 h-3 w-3" />
+                Reschedule
+              </Button>
+            )}
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                if (confirm("Remove this video from the queue?")) deleteMutation.mutate();
+              }}
+            >
+              <Trash2 className="h-3 w-3 text-red-500" />
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function QueueTab() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["yt-queue"],
     queryFn: youtubeApi.getQueue,
-  });
-
-  const publishMutation = useMutation({
-    mutationFn: (id: string) => youtubeApi.publishNow(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["yt-queue"] }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => youtubeApi.deleteQueueItem(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["yt-queue"] }),
+    refetchInterval: 15_000,
   });
 
   const queue = (data as { queue: Array<Record<string, unknown>> } | undefined)?.queue || [];
+  const refresh = () => qc.invalidateQueries({ queryKey: ["yt-queue"] });
 
   return isLoading ? (
     <p className="text-sm text-muted-foreground">Loading...</p>
   ) : queue.length === 0 ? (
-    <p className="text-sm text-muted-foreground">Publish queue is empty.</p>
+    <p className="text-sm text-muted-foreground">Publish queue is empty. Run the pipeline to generate a video.</p>
   ) : (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {queue.map((item: Record<string, unknown>) => (
-        <Card key={item.id as string}>
-          <CardContent className="flex items-center justify-between p-4">
-            <div>
-              <p className="font-medium text-sm">{item.title as string}</p>
-              <p className="text-xs text-muted-foreground">
-                Scheduled: {new Date(item.publishTime as string).toLocaleString()}
-              </p>
-              {(item.youtubeUrl as string | null) && (
-                <a
-                  href={String(item.youtubeUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-500 hover:underline"
-                >
-                  {String(item.youtubeUrl)}
-                </a>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {statusBadge(item.status as string)}
-              {item.status === "scheduled" && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => publishMutation.mutate(item.id as string)}
-                    disabled={publishMutation.isPending}
-                  >
-                    <Upload className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => deleteMutation.mutate(item.id as string)}
-                  >
-                    <Trash2 className="h-3 w-3 text-red-500" />
-                  </Button>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <QueueItemCard key={item.id as string} item={item} onRefresh={refresh} />
       ))}
     </div>
   );
