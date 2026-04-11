@@ -77,7 +77,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-10
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -87,24 +87,27 @@ const DEFAULT_DIAGRAM = `graph TB
       direction TB
       CD(["coherencedaddy.com"]):::siteNode
       CDTools(["523+ Free Tools"])
-      CDDirectory(["Blockchain Directory"])
+      CDDirectory(["Blockchain Directory — 532 cos"])
       CDBlog(["Blog + RSS"])
       CDReels(["Public Reels"])
+      CDSitemap(["Sitemap — pages/intel/reels"])
+      CDPartnerDir(["Partner Directory"])
+      CDShop(["shop.coherencedaddy.com"]):::siteNode
     end
 
     subgraph OtherProps["Ecosystem Properties"]
       direction TB
       Tokns(["tokns.fi"]):::siteNode
       ToknsApp(["app.tokns.fi"])
-      TXChain(["TX Blockchain"]):::siteNode
-      ShieldNest(["shieldnest.org"]):::siteNode
+      TXChain(["TX Blockchain — Cosmos SDK"]):::siteNode
+      ShieldNest(["shieldnest.org — builds CD infra"]):::siteNode
       YourArchi(["yourarchi.com"]):::siteNode
     end
 
     subgraph TDash["Team Dashboard — Control Plane"]
       direction TB
 
-      APP(["Express API :3200"]):::entryNode
+      APP(["Express API :3200 — 40+ route groups"]):::entryNode
 
       subgraph Core["Core Business"]
         direction TB
@@ -113,49 +116,61 @@ const DEFAULT_DIAGRAM = `graph TB
         Projects(["Projects"])
         Issues(["Issues"])
         Goals(["Goals"])
-        Routines(["Routines"])
+        Routines(["Routines + Triggers"])
         Approvals(["Approvals"])
-        Activity(["Activity"])
+        Activity(["Activity Log"])
+        Secrets(["Secret Management"])
+        CompanySkills(["Company Skills"])
+        Dashboard(["Dashboard Service"])
       end
 
-      subgraph AgentTeam["Agent Team — 17 Agents"]
+      subgraph AgentTeam["Agent Team — 15 folders, 17 roles"]
         direction TB
         Atlas(["Atlas — CEO"])
         Nova(["Nova — CTO"])
         Sage(["Sage — CMO"])
         River(["River — PM"])
         Pixel(["Pixel — Designer"])
-        Core2(["Core — Backend"])
-        Flux(["Flux — Frontend"])
-        Bridge(["Bridge — Full-Stack"])
-        Echo(["Echo — Data Eng"])
-        Mermaid(["Mermaid — Structure"])
+        Core2(["Core — Backend Dev"])
+        Flux(["Flux — Frontend Dev"])
+        Bridge(["Bridge — Full-Stack Dev"])
+        Echo(["Echo — Data Engineer"])
+        Mermaid2(["Mermaid — Structure Agent"])
         MoltbookAgent(["Moltbook — Social Presence"])
-        ContentAgents(["Blaze / Cipher / Spark / Prism / Vanguard / Forge"])
+        Blaze(["Blaze — Hot-Take Analyst"])
+        Cipher(["Cipher — Technical Writer"])
+        Spark(["Spark — Community Builder"])
+        Prism(["Prism — Trend Reporter"])
+        VanguardForge(["Vanguard + Forge — XRP/AEO"])
       end
 
       subgraph Execution["Agent Execution"]
         direction TB
-        Heartbeat(["Heartbeat"])
+        Heartbeat(["Heartbeat — 30s tick"])
         WorkspaceRuntime(["Workspace Runtime"])
         ExecWorkspaces(["Exec Workspaces"])
         AgentInstructions(["Instructions"])
         IssueWakeup(["Issue Wakeup"])
+        LLMAdapters(["7 LLM Adapters"])
       end
 
       subgraph ContentPipeline["Content Pipeline"]
         direction TB
-        ContentSvc(["Content Service"])
+        ContentSvc(["Content Service — 6 personalities"])
         ContentCrons{{"Content Crons — 24 jobs"}}
         ContentDB[("content_items")]
         VisualContent(["Visual Content"])
-        VisualDB[("visual_content_items")]
-        VisualJobs(["Visual Jobs"])
-        Templates(["Blaze / Cipher / Spark / Prism / Vanguard / Forge"])
-        VideoAssembler(["Video Assembler"])
-        SEOEngine(["SEO Engine"])
-        BlogPublisher(["Blog Publisher"])
-        Publishers(["Platform Publishers"])
+        VisualDB[("visual_content_items + assets")]
+        VisualJobs(["Visual Jobs — 15s polling"])
+        Templates(["6 Personality Templates"])
+        VideoAssembler(["Video Assembler — FFmpeg"])
+        SEOEngine(["SEO Engine — Claude-powered"])
+        BlogPublisher(["Blog Publisher — CD + ShieldNest"])
+        PubYT(["YouTube Shorts — active"])
+        PubTikTok(["TikTok — active"])
+        PubInstaStub(["Instagram Reels — stub"]):::readyNode
+        PubXVideoStub(["X Video — stub"]):::readyNode
+        CanvaMediaCron(["Canva Media Cron — ready"]):::readyNode
         FeedbackSvc(["Feedback Service"])
         FeedbackDB[("content_feedback")]
         MediaDrop(["Media Drop — File Upload"])
@@ -165,42 +180,58 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph VisualBack["Visual Backends"]
         direction TB
         GeminiBack(["Gemini — Imagen 3 + Veo 2"])
-        GrokBack(["Grok / xAI"])
+        GrokBack(["Grok — grok-2-image + video"])
         CanvaBack(["Canva — Python bridge"])
         CanvaConnect(["Canva Connect — OAuth + API"])
       end
 
-      subgraph IntelEngine["Intel Engine"]
+      subgraph XEcosystem["X / Twitter Ecosystem"]
         direction TB
-        IntelSvc(["Intel Service"])
-        IntelCrons{{"Intel Crons — 8 jobs"}}
-        IntelDiscovery(["Intel Discovery"])
-        Embeddings[("Vector Embeddings — BGE-M3")]
-        TrendScanner(["Trend Scanner"])
-        TrendCrons{{"Trend Crons — 6hr"}}
-        Mintscan(["Mintscan Chain Metrics"])
+        XClient(["X API v2 Client"])
+        XOAuth(["X OAuth 2.0 PKCE"])
+        RateLimiter(["Dollar-Based Rate Limiter"])
+        ContentBridge(["Content Bridge — post gen"])
+        EngagementEngine(["Engagement Engine"])
+        RetweetSvc(["Retweet Service"])
+        XMedia(["X Media Upload"])
+        XAnalytics(["X Analytics"])
+        XEngagementDB[("x_engagement_log")]
+        XTweetDB[("x_tweet_analytics")]
+        XOAuthDB[("x_oauth_tokens")]
       end
 
       subgraph AutoReplyEngine["Auto-Reply Engine"]
         direction TB
         AutoReplySvc(["Auto-Reply Service"])
-        AutoReplyCron{{"Poll Cron — 30min"}}
-        XClient(["X API v2 Client"])
-        RateLimiter(["Dollar-Based Rate Limiter"])
-        AutoReplyDB[("auto_reply_settings")]
+        AutoReplyCron{{"Poll Cron — configurable"}}
+        AutoReplyDB[("auto_reply_settings + config + log")]
       end
 
-      subgraph PluginApps["Plugin Apps"]
+      subgraph IntelEngine["Intel Engine"]
         direction TB
-        DiscordBot(["Discord Bot"])
-        TwitterPlugin(["Twitter/X Plugin"])
-        FirecrawlPlugin(["Firecrawl Plugin"])
+        IntelSvc(["Intel Service — 4 directories"])
+        IntelCrons{{"Intel Crons — 8 jobs"}}
+        IntelDiscovery(["Intel Discovery — CoinGecko + GitHub"])
+        IntelQuality(["Intel Quality — dedup + scoring"])
+        Embeddings[("Vector Embeddings — BGE-M3")]
+        TrendScanner(["Trend Scanner — 4 sources"])
+        TrendCrons{{"Trend Crons — 6hr"}}
+        Mintscan(["Mintscan — Cosmos chain metrics"])
+        IntelDB[("intel_companies + intel_reports")]
+      end
+
+      subgraph PluginApps["Plugin Apps — 4 plugins"]
+        direction TB
+        DiscordBot(["Discord — 8 tools, 2 jobs"])
+        TwitterPlugin(["Twitter/X — 14 tools, 4 jobs"])
+        FirecrawlPlugin(["Firecrawl — 9 tools, 2 jobs"])
+        MoltbookPlugin(["Moltbook — 11 tools, 3 jobs"])
         XBot(["X-Bot Chrome Extension"])
       end
 
       subgraph MCPServer["MCP Server"]
         direction TB
-        MCPTools(["35 Tools — 9 Entities"])
+        MCPTools(["36 Tools — 10 Entities"])
         MCPTransport(["Stdio Transport"])
       end
 
@@ -208,24 +239,26 @@ const DEFAULT_DIAGRAM = `graph TB
         direction TB
         PluginRegistry(["Registry"])
         PluginLoader(["Loader"])
-        PluginLifecycle(["Lifecycle"])
+        PluginLifecycle(["Lifecycle Manager"])
         PluginWorkerMgr(["Worker Manager"])
         PluginJobScheduler{{"Job Scheduler — 30s tick"}}
         PluginToolDispatch(["Tool Dispatcher"])
         PluginEventBus(["Event Bus"])
+        PluginStateDB[("plugin_state + jobs + logs")]
       end
 
       subgraph Monitor["Monitoring & Alerting"]
         direction TB
-        Alerting(["SMTP Alerting"])
-        AlertCrons{{"Health Check 5m + Digest 7am"}}
-        EvalStore[("Eval Store")]
-        EvalCrons{{"Evals — promptfoo 6am"}}
-        LogStore[("Log Store")]
+        Alerting(["SMTP Alerting — Proton Mail"])
+        AlertCrons{{"Alert Crons — 4 jobs"}}
+        EvalStore[("Eval Store — promptfoo")]
+        EvalCrons{{"Eval Cron — daily 6am"}}
+        LogStore[("Log Store — 14d retention")]
         SiteMetrics(["Site Metrics Ingest"])
         MaintCrons{{"Maintenance — 2 jobs"}}
         VPSMonitor(["VPS Monitor"])
-        CronMgmt(["Cron Management UI"])
+        CronMgmt(["Cron Management — UI + API"])
+        CronDB[("system_crons")]
       end
 
       subgraph Finance["Financial"]
@@ -241,16 +274,19 @@ const DEFAULT_DIAGRAM = `graph TB
         PartnerSvc(["Partner Content Service"])
         PartnerDB[("partnerCompanies + Clicks")]
         PartnerRedirect(["Redirect /go/:slug"])
+        PartnerMicrosite(["Partner Microsites"])
+        PartnerDashboard(["Partner Dashboard — token-auth"])
+        PartnerReports(["Partner Reports — monthly"])
+        PartnerSiteContent[("partner_site_content")]
       end
 
       subgraph MoltbookEngine["Moltbook Social Engine"]
         direction TB
-        MoltbookSvc(["Moltbook Engine"])
+        MoltbookSvc(["Moltbook Engine — Ollama + safety"])
         MoltbookCrons{{"Moltbook Crons — 5 jobs"}}
         MoltbookFeedDB[("moltbook_feed + embeddings")]
         MoltbookPostsDB[("moltbook_posts")]
         MoltbookStatsDB[("moltbook_stats")]
-        MoltbookPlugin(["Plugin — 11 tools"])
         MoltbookPerf(["Performance Tracker"])
       end
     end
@@ -264,19 +300,16 @@ const DEFAULT_DIAGRAM = `graph TB
       Docker(["Docker Container"])
       ExpressRuntime(["Express.js :3200"])
       AgentRuntime(["Agent Runtime"])
-      OllamaSvc(["Ollama — gemma4:31b Cloud API"])
     end
 
     subgraph VPS3["VPS_3 — 147.79.78.251 (15GB RAM)"]
       direction TB
       EmbedSvc(["BGE-M3 Embeddings :8000"])
-      VoskSvc(["Vosk STT :2700"])
-      OllamaVPS3(["Ollama :11434"])
     end
 
     subgraph VPS2["VPS_2 — 168.231.127.180"]
       direction TB
-      FirecrawlSvc(["Firecrawl — Scraping :3002"])
+      FirecrawlSvc(["Firecrawl — Scraping"])
       DirectoryAPI(["Directory API :4000"])
     end
 
@@ -288,18 +321,35 @@ const DEFAULT_DIAGRAM = `graph TB
 
     subgraph NeonInfra["Neon"]
       direction TB
-      NeonDB[("PostgreSQL")]
+      NeonDB[("PostgreSQL — 73+ tables")]
+    end
+
+    subgraph OllamaCloud["Ollama Cloud"]
+      direction TB
+      OllamaSvc(["ollama.com/api — gemma4:31b"])
     end
 
     subgraph ExtAPIs["External APIs"]
       direction TB
       GeminiAPI(["Google Gemini API"])
       GrokAPI(["xAI / Grok API"])
+      AnthropicAPI(["Anthropic Claude API"])
       CoinGecko(["CoinGecko"])
       HackerNews(["Hacker News"])
       GitHubAPI(["GitHub API"])
       XAPIv2(["X / Twitter API v2"])
-      MoltbookAPI(["Moltbook API — moltbook.com"])
+      MoltbookAPI(["Moltbook — moltbook.com"])
+      DiscordAPI(["Discord API"])
+      CanvaAPI(["Canva API"])
+      BingNewsAPI(["Bing News API v7"])
+      GoogleTrendsRSS(["Google Trends RSS"])
+      RedditAPI(["Reddit"])
+      IndexNowAPI(["IndexNow — search ping"])
+      YouTubeAPI(["YouTube Data API v3"])
+      TikTokAPI(["TikTok Content API"])
+      MintscanAPI(["Mintscan — Cosmostation"])
+      StripeAPI(["Stripe — payments"])
+      PrintifyAPI(["Printify — print-on-demand"])
     end
   end
 
@@ -312,7 +362,6 @@ const DEFAULT_DIAGRAM = `graph TB
   Docker --> ExpressRuntime
   ExpressRuntime --> NeonDB
   ExpressRuntime --> AgentRuntime
-  ExpressRuntime -->|"Docker bridge"| OllamaSvc
 
   %% Vercel serves frontend, rewrites API to VPS
   VercelUI -->|"serves"| CD
@@ -323,30 +372,42 @@ const DEFAULT_DIAGRAM = `graph TB
   CDBlog -->|"SEO content"| SEOEngine
   CDReels -->|"/api/reels"| VisualContent
   CD -->|"site metrics"| SiteMetrics
+  CDPartnerDir -->|"/api/partner-directory"| PartnerSvc
 
-  %% Content pipeline → Ollama (local on VPS_1)
+  %% Content pipeline → Ollama Cloud
   ContentSvc --> OllamaSvc
   ContentSvc --> Embeddings
   SEOEngine --> TrendScanner
   SEOEngine --> BlogPublisher
+  SEOEngine -->|"fallback"| AnthropicAPI
   BlogPublisher --> OllamaSvc
+  BlogPublisher -->|"IndexNow"| IndexNowAPI
   Embeddings --> EmbedSvc
   TrendScanner --> CoinGecko
   TrendScanner --> HackerNews
+  TrendScanner --> BingNewsAPI
+  TrendScanner --> GoogleTrendsRSS
 
   %% Intel → External
   IntelSvc --> FirecrawlSvc
   IntelSvc --> GitHubAPI
+  IntelSvc --> RedditAPI
+  IntelSvc --> CoinGecko
+  IntelQuality --> Embeddings
+  Mintscan --> MintscanAPI
   Mintscan --> TXChain
 
   %% Visual backends → External APIs
   GeminiBack --> GeminiAPI
   GrokBack --> GrokAPI
+  CanvaConnect --> CanvaAPI
 
   %% Agent execution
   Agents --> Heartbeat
   Heartbeat --> WorkspaceRuntime
-  Heartbeat --> OllamaSvc
+  Heartbeat --> LLMAdapters
+  LLMAdapters --> OllamaSvc
+  LLMAdapters --> AnthropicAPI
   Issues --> IssueWakeup
   IssueWakeup --> Heartbeat
 
@@ -367,17 +428,36 @@ const DEFAULT_DIAGRAM = `graph TB
   VisualContent --> VisualDB
   VisualContent --> VisualBack
   VideoAssembler --> VisualContent
-  ContentSvc --> Publishers
+
+  %% Platform publishers → APIs
+  PubYT --> YouTubeAPI
+  PubTikTok --> TikTokAPI
+  ContentSvc --> PubYT
+  ContentSvc --> PubTikTok
+
+  %% X ecosystem flows
+  XClient --> XAPIv2
+  XOAuth --> XAPIv2
+  ContentBridge --> XClient
+  ContentBridge --> OllamaSvc
+  ContentBridge --> Embeddings
+  EngagementEngine --> XClient
+  EngagementEngine --> Embeddings
+  RetweetSvc --> XClient
+  XMedia --> XAPIv2
+  ContentBridge --> XTweetDB
+  EngagementEngine --> XEngagementDB
+  XOAuth --> XOAuthDB
 
   %% Intel flows
   IntelCrons --> IntelSvc
   TrendCrons --> TrendScanner
   IntelDiscovery --> IntelSvc
+  IntelSvc --> IntelDB
 
   %% Auto-Reply flows
   AutoReplyCron --> AutoReplySvc
   AutoReplySvc --> XClient
-  XClient --> XAPIv2
   AutoReplySvc --> RateLimiter
   AutoReplySvc --> OllamaSvc
   AutoReplySvc --> AutoReplyDB
@@ -386,16 +466,19 @@ const DEFAULT_DIAGRAM = `graph TB
   PartnerSvc --> PartnerDB
   PartnerRedirect --> PartnerSvc
   PartnerSvc --> ContentSvc
+  PartnerMicrosite --> PartnerSiteContent
+  PartnerReports --> Alerting
 
   %% Media flows
   MediaDrop --> MediaDropDB
 
-  %% Canva Connect
-  CanvaConnect --> CanvaBack
-
-  %% Monitoring additions
+  %% Monitoring
   MaintCrons --> ContentDB
   VPSMonitor --> Alerting
+  AlertCrons --> Alerting
+  EvalCrons --> EvalStore
+  Heartbeat --> LogStore
+  CronMgmt --> CronDB
 
   %% X-Bot
   XBot --> XAPIv2
@@ -405,27 +488,30 @@ const DEFAULT_DIAGRAM = `graph TB
   PluginLifecycle --> PluginWorkerMgr
   PluginJobScheduler --> PluginLifecycle
   PluginToolDispatch --> PluginWorkerMgr
+  PluginLifecycle --> PluginStateDB
   DiscordBot --> PluginLifecycle
   TwitterPlugin --> PluginLifecycle
   FirecrawlPlugin --> PluginLifecycle
+  MoltbookPlugin --> PluginLifecycle
+  DiscordBot --> DiscordAPI
+  TwitterPlugin --> XClient
+  FirecrawlPlugin --> FirecrawlSvc
 
   %% MCP Server
   MCPTools --> ExpressRuntime
-
-  %% Monitoring
-  AlertCrons --> Alerting
-  EvalCrons --> EvalStore
-  Heartbeat --> LogStore
 
   %% Financial
   Heartbeat --> Costs
   Budgets --> QuotaWindows
   Costs --> FinanceRpt
 
+  %% Shop / E-commerce
+  CDShop -->|"payments"| StripeAPI
+  CDShop -->|"fulfillment"| PrintifyAPI
+
   %% Ecosystem cross-links
   Tokns -->|"validator"| TXChain
   ToknsApp -->|"staking + swaps"| TXChain
-  ShieldNest -->|"builds"| CD
   DirectoryAPI -->|"data sync"| FirecrawlSvc
 
   %% Moltbook engine flows
@@ -437,19 +523,23 @@ const DEFAULT_DIAGRAM = `graph TB
   MoltbookSvc --> Embeddings
   MoltbookSvc --> MoltbookAPI
   MoltbookPerf --> MoltbookSvc
-  MoltbookPerf --> MoltbookAPI
   MoltbookPlugin --> MoltbookAPI
 
   %% Agent team reporting
   Atlas --> Nova
   Atlas --> Sage
   Atlas --> River
+  Atlas --> Pixel
   Nova --> Core2
   Nova --> Flux
   Nova --> Bridge
   Nova --> Echo
-  Nova --> Mermaid
-  Sage --> ContentAgents
+  Nova --> Mermaid2
+  Sage --> Blaze
+  Sage --> Cipher
+  Sage --> Spark
+  Sage --> Prism
+  Sage --> VanguardForge
   Sage --> MoltbookAgent
 
   %% ═══════════════════════════════════════════════════════
@@ -460,9 +550,10 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef siteNode fill:#6366f1,stroke:#4f46e5,stroke-width:2px,color:#eef2ff,font-weight:bold
   classDef cronNode fill:#7c3aed,stroke:#6d28d9,color:#f5f3ff,stroke-width:2px
   classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
+  classDef readyNode fill:#94a3b8,stroke:#64748b,stroke-width:2px,stroke-dasharray:5 5,color:#f8fafc,font-style:italic
 
-  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons cronNode
-  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB storeNode
+  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons,MoltbookCrons cronNode
+  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
   style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
@@ -473,18 +564,21 @@ const DEFAULT_DIAGRAM = `graph TB
   style Execution fill:#fce7f3,stroke:#ec4899,stroke-width:2px,color:#5f1e3a
   style ContentPipeline fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#1e5f3a
   style VisualBack fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#1e5f3a
+  style XEcosystem fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
   style IntelEngine fill:#ffedd5,stroke:#f97316,stroke-width:2px,color:#5f3a1e
   style PartnerNet fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
   style PluginSys fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#3a1e5f
   style Monitor fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
   style Finance fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f
   style Infra fill:#f8fafc,stroke:#64748b,stroke-width:2px,color:#1e293b
-  style AutoReplyEngine fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+  style AutoReplyEngine fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12
   style PluginApps fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3a1e5f
   style MCPServer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+  style MoltbookEngine fill:#fce7f3,stroke:#ec4899,stroke-width:2px,color:#5f1e3a
   style VPS1 fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
   style VPS2 fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#334155
   style VPS3 fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#064e3b
+  style OllamaCloud fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#7c2d12
   style VercelInfra fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#312e81
   style NeonInfra fill:#cffafe,stroke:#0891b2,stroke-width:2px,color:#164e63
   style ExtAPIs fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12

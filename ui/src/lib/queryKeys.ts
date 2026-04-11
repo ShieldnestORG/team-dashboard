@@ -144,6 +144,7 @@ export const queryKeys = {
     log: (page?: number) => ["auto-reply", "log", page] as const,
     stats: ["auto-reply", "stats"] as const,
   },
+  apiRoutes: ["api-routes"] as const,
   plugins: {
     all: ["plugins"] as const,
     examples: ["plugins", "examples"] as const,
