@@ -506,5 +506,19 @@ export function startContentCrons(db: Db) {
     });
   }
 
-  logger.info({ count: JOB_DEFS.length + 2 }, "Content cron jobs registered");
+  // Partner site content — MWF at 8am, generates blog posts for partner microsites
+  registerCronJob({
+    jobName: "content:partner-sites",
+    schedule: "0 8 * * 1,3,5",
+    ownerAgent: "forge",
+    sourceFile: "content-crons.ts",
+    handler: async () => {
+      const { generateAllPartnerContent } = await import("./partner-site-content.js");
+      const generated = await generateAllPartnerContent(db);
+      logger.info({ generated }, "Partner site content cron completed");
+      return { generated };
+    },
+  });
+
+  logger.info({ count: JOB_DEFS.length + 3 }, "Content cron jobs registered");
 }

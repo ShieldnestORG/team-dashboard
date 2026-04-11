@@ -70,8 +70,9 @@ import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
-import { partnerRoutes } from "./routes/partner.js";
+import { partnerRoutes, partnerDirectoryRoutes } from "./routes/partner.js";
 import { partnerGoRoutes } from "./routes/partner-go.js";
+import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
 import { agentOpsRoutes } from "./routes/agent-ops.js";
 import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
 import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
@@ -221,6 +222,7 @@ export async function createApp(
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/partners", partnerRoutes(db));
+  api.use("/partners/:slug/site", partnerSiteRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -279,6 +281,10 @@ export async function createApp(
   app.use("/api/reels", publicReelsRoutes(db, opts.storageService, "default"));
   // Public partner redirect — unauthenticated, tracks clicks and redirects to partner website
   app.use("/api/go", partnerGoRoutes(db));
+  // Public partner site content feed — unauthenticated, for partner microsites to fetch at build time
+  app.use("/api/partner-sites", partnerSiteFeedRoutes(db));
+  // Public partner directory — unauthenticated, for coherencedaddy.com "Trusted Partners" section
+  app.use("/api/partner-directory", partnerDirectoryRoutes(db));
   // Sitemap + robots — unauthenticated, for search engine crawlers
   app.use("/", sitemapRoutes(db));
 

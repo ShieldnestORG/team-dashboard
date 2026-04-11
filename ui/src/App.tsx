@@ -47,6 +47,7 @@ import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
 import { AgentOps } from "./pages/AgentOps";
 import { Partners } from "./pages/Partners";
+import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
@@ -188,6 +189,8 @@ function boardRoutes() {
       <Route path="content-review" element={<ContentReview />} />
       <Route path="structure" element={<Structure />} />
       <Route path="partners" element={<Partners />} />
+      <Route path="partners/:slug" element={<PartnerDetail />} />
+      <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
@@ -351,6 +354,8 @@ export function App() {
           <Route path="projects/:projectId/configuration" element={<UnprefixedBoardRedirect />} />
           <Route path="tests/ux/runs" element={<UnprefixedBoardRedirect />} />
           <Route path="partners" element={<UnprefixedBoardRedirect />} />
+          <Route path="partners/:slug" element={<UnprefixedBoardRedirect />} />
+          <Route path="partners/:slug/:tab" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>

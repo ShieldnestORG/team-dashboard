@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
-import { eq, and, desc, gte, sql, count } from "drizzle-orm";
+import { eq, and, desc, gte, sql, count, or, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerClicks } from "@paperclipai/db";
@@ -192,6 +192,51 @@ export function partnerRoutes(db: Db): Router {
     }
   });
 
+  // ── GET /:slug/clicks — Paginated click log ─────────────────────
+  router.get("/:slug/clicks", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      // Verify partner exists
+      const [partner] = await db
+        .select()
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.companyId, COMPANY_ID),
+            eq(partnerCompanies.slug, slug),
+          ),
+        )
+        .limit(1);
+
+      if (!partner) {
+        res.status(404).json({ error: "Partner not found" });
+        return;
+      }
+
+      const [clicks, totalResult] = await Promise.all([
+        db
+          .select()
+          .from(partnerClicks)
+          .where(eq(partnerClicks.partnerSlug, slug))
+          .orderBy(desc(partnerClicks.clickedAt))
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ total: count() })
+          .from(partnerClicks)
+          .where(eq(partnerClicks.partnerSlug, slug)),
+      ]);
+
+      res.json({ clicks, total: totalResult[0]?.total ?? 0 });
+    } catch (err) {
+      logger.error({ err }, "Failed to get partner clicks");
+      res.status(500).json({ error: "Failed to get partner clicks" });
+    }
+  });
+
   // ── GET /:slug/metrics — Partner click metrics ──────────────────
   router.get("/:slug/metrics", async (req, res) => {
     try {
@@ -329,6 +374,87 @@ export function partnerRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to get partner dashboard");
       res.status(500).json({ error: "Failed to get partner dashboard" });
+    }
+  });
+
+  // ── GET /directory — Public partner directory (no auth needed) ──
+  // Note: this is mounted under authenticated routes, but we include it
+  // for agents calling via API key. For the public-facing version,
+  // use partnerDirectoryRoutes below.
+  router.get("/directory", async (_req, res) => {
+    try {
+      const partners = await db
+        .select({
+          slug: partnerCompanies.slug,
+          name: partnerCompanies.name,
+          industry: partnerCompanies.industry,
+          location: partnerCompanies.location,
+          description: partnerCompanies.description,
+          website: partnerCompanies.website,
+          siteUrl: partnerCompanies.siteUrl,
+          siteDeployStatus: partnerCompanies.siteDeployStatus,
+          logoUrl: partnerCompanies.logoUrl,
+          services: partnerCompanies.services,
+        })
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.companyId, COMPANY_ID),
+            or(
+              eq(partnerCompanies.status, "active"),
+              eq(partnerCompanies.status, "trial"),
+            ),
+          ),
+        )
+        .orderBy(partnerCompanies.name);
+
+      res.json({ partners });
+    } catch (err) {
+      logger.error({ err }, "Failed to get partner directory");
+      res.status(500).json({ error: "Failed to get partner directory" });
+    }
+  });
+
+  return router;
+}
+
+// ---------------------------------------------------------------------------
+// Public partner directory (unauthenticated)
+// ---------------------------------------------------------------------------
+
+export function partnerDirectoryRoutes(db: Db): Router {
+  const router = Router();
+
+  router.get("/", async (_req, res) => {
+    try {
+      const partners = await db
+        .select({
+          slug: partnerCompanies.slug,
+          name: partnerCompanies.name,
+          industry: partnerCompanies.industry,
+          location: partnerCompanies.location,
+          description: partnerCompanies.description,
+          website: partnerCompanies.website,
+          siteUrl: partnerCompanies.siteUrl,
+          logoUrl: partnerCompanies.logoUrl,
+          services: partnerCompanies.services,
+        })
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.companyId, COMPANY_ID),
+            or(
+              eq(partnerCompanies.status, "active"),
+              eq(partnerCompanies.status, "trial"),
+            ),
+          ),
+        )
+        .orderBy(partnerCompanies.name);
+
+      res.json({ partners });
+    } catch (err) {
+      logger.error({ err }, "Failed to get public partner directory");
+      res.status(500).json({ error: "Failed to get partner directory" });
     }
   });
 
