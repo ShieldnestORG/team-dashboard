@@ -97,7 +97,7 @@ const DEFAULT_DIAGRAM = `graph TB
       Tokns(["tokns.fi"]):::siteNode
       ToknsApp(["app.tokns.fi"])
       TXChain(["TX Blockchain"]):::siteNode
-      ShieldNest(["shieldnest.io"]):::siteNode
+      ShieldNest(["shieldnest.org"]):::siteNode
       YourArchi(["yourarchi.com"]):::siteNode
     end
 
@@ -118,7 +118,7 @@ const DEFAULT_DIAGRAM = `graph TB
         Activity(["Activity"])
       end
 
-      subgraph AgentTeam["Agent Team — 14 Agents"]
+      subgraph AgentTeam["Agent Team — 17 Agents"]
         direction TB
         Atlas(["Atlas — CEO"])
         Nova(["Nova — CTO"])
@@ -130,7 +130,8 @@ const DEFAULT_DIAGRAM = `graph TB
         Bridge(["Bridge — Full-Stack"])
         Echo(["Echo — Data Eng"])
         Mermaid(["Mermaid — Structure"])
-        ContentAgents(["Blaze / Cipher / Spark / Prism"])
+        MoltbookAgent(["Moltbook — Social Presence"])
+        ContentAgents(["Blaze / Cipher / Spark / Prism / Vanguard / Forge"])
       end
 
       subgraph Execution["Agent Execution"]
@@ -145,18 +146,20 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph ContentPipeline["Content Pipeline"]
         direction TB
         ContentSvc(["Content Service"])
-        ContentCrons{{"Content Crons — 14 jobs"}}
+        ContentCrons{{"Content Crons — 24 jobs"}}
         ContentDB[("content_items")]
         VisualContent(["Visual Content"])
         VisualDB[("visual_content_items")]
         VisualJobs(["Visual Jobs"])
-        Templates(["Blaze / Cipher / Spark / Prism"])
+        Templates(["Blaze / Cipher / Spark / Prism / Vanguard / Forge"])
         VideoAssembler(["Video Assembler"])
         SEOEngine(["SEO Engine"])
         BlogPublisher(["Blog Publisher"])
         Publishers(["Platform Publishers"])
         FeedbackSvc(["Feedback Service"])
         FeedbackDB[("content_feedback")]
+        MediaDrop(["Media Drop — File Upload"])
+        MediaDropDB[("media_drops")]
       end
 
       subgraph VisualBack["Visual Backends"]
@@ -164,12 +167,13 @@ const DEFAULT_DIAGRAM = `graph TB
         GeminiBack(["Gemini — Imagen 3 + Veo 2"])
         GrokBack(["Grok / xAI"])
         CanvaBack(["Canva — Python bridge"])
+        CanvaConnect(["Canva Connect — OAuth + API"])
       end
 
       subgraph IntelEngine["Intel Engine"]
         direction TB
         IntelSvc(["Intel Service"])
-        IntelCrons{{"Intel Crons — 9 jobs"}}
+        IntelCrons{{"Intel Crons — 8 jobs"}}
         IntelDiscovery(["Intel Discovery"])
         Embeddings[("Vector Embeddings — BGE-M3")]
         TrendScanner(["Trend Scanner"])
@@ -191,23 +195,13 @@ const DEFAULT_DIAGRAM = `graph TB
         DiscordBot(["Discord Bot"])
         TwitterPlugin(["Twitter/X Plugin"])
         FirecrawlPlugin(["Firecrawl Plugin"])
+        XBot(["X-Bot Chrome Extension"])
       end
 
       subgraph MCPServer["MCP Server"]
         direction TB
         MCPTools(["35 Tools — 9 Entities"])
         MCPTransport(["Stdio Transport"])
-      end
-
-      subgraph PulseEngine["Social Pulse Engine"]
-        direction TB
-        PULSE_CLIENT(["X API v2 Client"])
-        PULSE_SVC(["Pulse Service"])
-        PULSE_SENT(["Sentiment Scorer"])
-        PULSE_AGG(["Aggregation Engine"])
-        PULSE_SPIKE(["Spike Detector"])
-        PULSE_XRPL(["XRPL Bridge Tagger"])
-        PULSE_CRON{{"7 Pulse Crons"}}:::cronNode
       end
 
       subgraph PluginSys["Plugin System"]
@@ -229,6 +223,9 @@ const DEFAULT_DIAGRAM = `graph TB
         EvalCrons{{"Evals — promptfoo 6am"}}
         LogStore[("Log Store")]
         SiteMetrics(["Site Metrics Ingest"])
+        MaintCrons{{"Maintenance — 2 jobs"}}
+        VPSMonitor(["VPS Monitor"])
+        CronMgmt(["Cron Management UI"])
       end
 
       subgraph Finance["Financial"]
@@ -237,6 +234,24 @@ const DEFAULT_DIAGRAM = `graph TB
         FinanceRpt(["Finance Reports"])
         Budgets(["Budget Enforcement"])
         QuotaWindows(["Quota Windows"])
+      end
+
+      subgraph PartnerNet["AEO Partner Network"]
+        direction TB
+        PartnerSvc(["Partner Content Service"])
+        PartnerDB[("partnerCompanies + Clicks")]
+        PartnerRedirect(["Redirect /go/:slug"])
+      end
+
+      subgraph MoltbookEngine["Moltbook Social Engine"]
+        direction TB
+        MoltbookSvc(["Moltbook Engine"])
+        MoltbookCrons{{"Moltbook Crons — 5 jobs"}}
+        MoltbookFeedDB[("moltbook_feed + embeddings")]
+        MoltbookPostsDB[("moltbook_posts")]
+        MoltbookStatsDB[("moltbook_stats")]
+        MoltbookPlugin(["Plugin — 11 tools"])
+        MoltbookPerf(["Performance Tracker"])
       end
     end
   end
@@ -249,7 +264,7 @@ const DEFAULT_DIAGRAM = `graph TB
       Docker(["Docker Container"])
       ExpressRuntime(["Express.js :3200"])
       AgentRuntime(["Agent Runtime"])
-      OllamaSvc(["Ollama — gemma4:26b :11434"])
+      OllamaSvc(["Ollama — gemma4:31b Cloud API"])
     end
 
     subgraph VPS3["VPS_3 — 147.79.78.251 (15GB RAM)"]
@@ -284,6 +299,7 @@ const DEFAULT_DIAGRAM = `graph TB
       HackerNews(["Hacker News"])
       GitHubAPI(["GitHub API"])
       XAPIv2(["X / Twitter API v2"])
+      MoltbookAPI(["Moltbook API — moltbook.com"])
     end
   end
 
@@ -366,16 +382,23 @@ const DEFAULT_DIAGRAM = `graph TB
   AutoReplySvc --> OllamaSvc
   AutoReplySvc --> AutoReplyDB
 
-  %% Pulse flows
-  PULSE_CLIENT --> PULSE_SVC
-  PULSE_SVC --> PULSE_SENT
-  PULSE_SVC --> PULSE_AGG
-  PULSE_SVC --> PULSE_XRPL
-  PULSE_AGG --> PULSE_SPIKE
-  PULSE_CRON --> PULSE_SVC
-  PULSE_SVC --> NeonDB
-  PULSE_CLIENT --> XAPIv2
-  Tokns -->|"public pulse"| PULSE_SVC
+  %% Partner flows
+  PartnerSvc --> PartnerDB
+  PartnerRedirect --> PartnerSvc
+  PartnerSvc --> ContentSvc
+
+  %% Media flows
+  MediaDrop --> MediaDropDB
+
+  %% Canva Connect
+  CanvaConnect --> CanvaBack
+
+  %% Monitoring additions
+  MaintCrons --> ContentDB
+  VPSMonitor --> Alerting
+
+  %% X-Bot
+  XBot --> XAPIv2
 
   %% Plugin flows
   PluginLoader --> PluginRegistry
@@ -405,6 +428,18 @@ const DEFAULT_DIAGRAM = `graph TB
   ShieldNest -->|"builds"| CD
   DirectoryAPI -->|"data sync"| FirecrawlSvc
 
+  %% Moltbook engine flows
+  MoltbookCrons --> MoltbookSvc
+  MoltbookSvc --> MoltbookFeedDB
+  MoltbookSvc --> MoltbookPostsDB
+  MoltbookSvc --> MoltbookStatsDB
+  MoltbookSvc --> OllamaSvc
+  MoltbookSvc --> Embeddings
+  MoltbookSvc --> MoltbookAPI
+  MoltbookPerf --> MoltbookSvc
+  MoltbookPerf --> MoltbookAPI
+  MoltbookPlugin --> MoltbookAPI
+
   %% Agent team reporting
   Atlas --> Nova
   Atlas --> Sage
@@ -415,6 +450,7 @@ const DEFAULT_DIAGRAM = `graph TB
   Nova --> Echo
   Nova --> Mermaid
   Sage --> ContentAgents
+  Sage --> MoltbookAgent
 
   %% ═══════════════════════════════════════════════════════
   %% STYLING
@@ -425,8 +461,8 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef cronNode fill:#7c3aed,stroke:#6d28d9,color:#f5f3ff,stroke-width:2px
   classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
 
-  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,PULSE_CRON,AutoReplyCron cronNode
-  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB storeNode
+  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons cronNode
+  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
   style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
@@ -438,7 +474,7 @@ const DEFAULT_DIAGRAM = `graph TB
   style ContentPipeline fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#1e5f3a
   style VisualBack fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#1e5f3a
   style IntelEngine fill:#ffedd5,stroke:#f97316,stroke-width:2px,color:#5f3a1e
-  style PulseEngine fill:#fef9c3,stroke:#eab308,stroke-width:2px,color:#713f12
+  style PartnerNet fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
   style PluginSys fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#3a1e5f
   style Monitor fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
   style Finance fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f
