@@ -8,7 +8,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import { writeFile, unlink, mkdir } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
 
@@ -32,7 +32,7 @@ export interface TTSResult {
 
 function ensureDir(dir: string) {
   if (!existsSync(dir)) {
-    require("fs").mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true });
   }
 }
 
