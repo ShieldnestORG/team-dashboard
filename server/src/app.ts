@@ -42,6 +42,7 @@ import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
+import { startMoltbookCrons } from "./services/moltbook-crons.js";
 import { trendRoutes } from "./routes/trends.js";
 import { logAvailableBackends } from "./services/visual-backends/index.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -70,6 +71,7 @@ import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
+import { moltbookRoutes } from "./routes/moltbook.js";
 import { partnerRoutes, partnerDirectoryRoutes } from "./routes/partner.js";
 import { partnerGoRoutes } from "./routes/partner-go.js";
 import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
@@ -221,6 +223,7 @@ export async function createApp(
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
+  api.use("/moltbook", moltbookRoutes(db));
   api.use("/partners", partnerRoutes(db));
   api.use("/partners/:slug/site", partnerSiteRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
@@ -357,6 +360,7 @@ export async function createApp(
   startContentCrons(db);
   startTrendCrons(db);
   startMaintenanceCrons(db);
+  startMoltbookCrons(db);
   // NOT ACTIVATED — uncomment when Canva OAuth is connected and tested:
   // startCanvaMediaCrons(db);
   initVpsMonitor(db);
