@@ -46,6 +46,8 @@ import { Discord } from "./pages/Discord";
 import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
 import { AgentOps } from "./pages/AgentOps";
+import { ApiDashboard } from "./pages/ApiDashboard";
+import { YouTubePipeline } from "./pages/YouTubePipeline";
 import { Partners } from "./pages/Partners";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
@@ -184,6 +186,7 @@ function boardRoutes() {
       <Route path="tokns" element={<Tokns />} />
       <Route path="auto-reply" element={<AutoReply />} />
       <Route path="system-health" element={<SystemHealth />} />
+      <Route path="api-routes" element={<ApiDashboard />} />
       <Route path="agent-ops" element={<AgentOps />} />
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
@@ -191,6 +194,7 @@ function boardRoutes() {
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
+      <Route path="youtube" element={<YouTubePipeline />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="inbox" element={<InboxRootRedirect />} />

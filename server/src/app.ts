@@ -76,8 +76,10 @@ import { partnerRoutes, partnerDirectoryRoutes } from "./routes/partner.js";
 import { partnerGoRoutes } from "./routes/partner-go.js";
 import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
 import { agentOpsRoutes } from "./routes/agent-ops.js";
+import { youtubeRoutes } from "./routes/youtube.js";
 import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
 import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
+import { startYouTubeCrons } from "./services/youtube/yt-crons.js";
 import { initVpsMonitor } from "./services/vps-monitor.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
@@ -224,6 +226,7 @@ export async function createApp(
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
+  api.use("/youtube", youtubeRoutes(db));
   api.use("/partners", partnerRoutes(db));
   api.use("/partners/:slug/site", partnerSiteRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
@@ -361,6 +364,7 @@ export async function createApp(
   startTrendCrons(db);
   startMaintenanceCrons(db);
   startMoltbookCrons(db);
+  startYouTubeCrons(db);
   // NOT ACTIVATED — uncomment when Canva OAuth is connected and tested:
   // startCanvaMediaCrons(db);
   initVpsMonitor(db);

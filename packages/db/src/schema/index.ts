@@ -70,3 +70,11 @@ export { autoReplyConfig, autoReplyLog, autoReplySettings } from "./auto_reply.j
 export { systemCrons } from "./system_crons.js";
 export { partnerCompanies, partnerClicks, partnerSiteContent } from "./partners.js";
 export { moltbookFeed, moltbookPosts, moltbookStats } from "./moltbook.js";
+export {
+  ytContentStrategies,
+  ytSeoData,
+  ytProductions,
+  ytPublishQueue,
+  ytAnalytics,
+  ytKeywordPerformance,
+} from "./youtube_pipeline.js";

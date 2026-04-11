@@ -23,6 +23,8 @@ import {
   Reply,
   Clock,
   Handshake,
+  Youtube,
+  Globe,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -132,8 +134,10 @@ export function Sidebar() {
           <SidebarNavItem to="/agent-ops" label="Agent Ops" icon={Radar} />
           <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
+          <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
           <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
+          <SidebarNavItem to="/youtube" label="YouTube" icon={Youtube} />
           <SidebarNavItem to="/content-review" label="Content" icon={Newspaper} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
