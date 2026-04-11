@@ -102,8 +102,8 @@ function categoryToSignalType(category: string): SignalType {
 }
 
 function pickSignal(signals: TrendSignals): { type: SignalType; topic: string; details: string } | null {
-  // Priority 1: crypto mover with >15% change
-  const bigMover = signals.crypto_movers.find((c: TrendSignals["crypto_movers"][number]) => Math.abs(c.change_24h) > 15);
+  // Priority 1: crypto mover with >5% change
+  const bigMover = signals.crypto_movers.find((c: TrendSignals["crypto_movers"][number]) => Math.abs(c.change_24h) > 5);
   if (bigMover) {
     return {
       type: "crypto",
@@ -115,7 +115,7 @@ function pickSignal(signals: TrendSignals): { type: SignalType; topic: string; d
   // Priority 2: Google Trends keyword with high traffic
   const gtHigh = (signals.google_trends || []).find((g) => {
     const trafficNum = parseInt(g.traffic.replace(/[^0-9]/g, ""), 10) || 0;
-    return trafficNum >= 50000;
+    return trafficNum >= 10000;
   });
   if (gtHigh) {
     const kw = gtHigh.keyword.toLowerCase();
@@ -128,14 +128,14 @@ function pickSignal(signals: TrendSignals): { type: SignalType; topic: string; d
     };
   }
 
-  // Priority 3: AI/ML trending story with >200 score
-  const aiStory = signals.trending_tech.find((s: TrendSignals["trending_tech"][number]) => s.category === "AI/ML" && s.score > 200);
+  // Priority 3: AI/ML trending story with >50 score
+  const aiStory = signals.trending_tech.find((s: TrendSignals["trending_tech"][number]) => s.category === "AI/ML" && s.score > 50);
   if (aiStory) {
     return { type: "ai-agents", topic: aiStory.title, details: `Score: ${aiStory.score}, ${aiStory.comments} comments` };
   }
 
-  // Priority 4: Lifestyle/finance trending story with >100 score
-  const lifestyleStory = signals.trending_tech.find((s: TrendSignals["trending_tech"][number]) => LIFESTYLE_CATEGORIES.includes(s.category) && s.score > 100);
+  // Priority 4: Lifestyle/finance trending story with >30 score
+  const lifestyleStory = signals.trending_tech.find((s: TrendSignals["trending_tech"][number]) => LIFESTYLE_CATEGORIES.includes(s.category) && s.score > 30);
   if (lifestyleStory) {
     return { type: "lifestyle", topic: lifestyleStory.title, details: `Score: ${lifestyleStory.score}, Category: ${lifestyleStory.category}` };
   }
