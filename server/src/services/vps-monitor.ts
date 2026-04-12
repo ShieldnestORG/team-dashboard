@@ -385,6 +385,106 @@ async function checkAllServices(db: Db): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// SSL Certificate monitoring
+// ---------------------------------------------------------------------------
+
+export interface SslCertStatus {
+  domain: string;
+  validFrom: string | null;
+  validTo: string | null;
+  daysUntilExpiry: number | null;
+  issuer: string | null;
+  status: "valid" | "expiring" | "expired" | "unknown";
+  lastCheckedAt: string;
+  error: string | null;
+}
+
+const SSL_DOMAINS = ["api.coherencedaddy.com"];
+const sslStatuses = new Map<string, SslCertStatus>();
+
+async function checkSslCert(domain: string): Promise<SslCertStatus> {
+  const result: SslCertStatus = {
+    domain,
+    validFrom: null,
+    validTo: null,
+    daysUntilExpiry: null,
+    issuer: null,
+    status: "unknown",
+    lastCheckedAt: new Date().toISOString(),
+    error: null,
+  };
+
+  try {
+    const tls = await import("tls");
+
+    const cert = await new Promise<{
+      valid_from: string;
+      valid_to: string;
+      issuer: { O?: string; CN?: string };
+    }>((resolve, reject) => {
+      const socket = tls.connect({ host: domain, port: 443, rejectUnauthorized: false, servername: domain }, () => {
+        const peerCert = socket.getPeerCertificate();
+        socket.destroy();
+        if (!peerCert || !peerCert.valid_from) {
+          reject(new Error("No certificate returned"));
+          return;
+        }
+        resolve(peerCert as any);
+      });
+      socket.once("error", (err) => { socket.destroy(); reject(err); });
+      socket.setTimeout(10_000, () => { socket.destroy(); reject(new Error("Connection timeout")); });
+    });
+
+    result.validFrom = new Date(cert.valid_from).toISOString();
+    result.validTo = new Date(cert.valid_to).toISOString();
+    result.issuer = cert.issuer?.O || cert.issuer?.CN || null;
+
+    const expiryDate = new Date(cert.valid_to);
+    const now = new Date();
+    result.daysUntilExpiry = Math.floor((expiryDate.getTime() - now.getTime()) / 86_400_000);
+
+    if (result.daysUntilExpiry <= 0) {
+      result.status = "expired";
+    } else if (result.daysUntilExpiry <= 14) {
+      result.status = "expiring";
+    } else {
+      result.status = "valid";
+    }
+  } catch (err) {
+    result.error = err instanceof Error ? err.message : String(err);
+    result.status = "unknown";
+  }
+
+  return result;
+}
+
+async function checkAllSslCerts(): Promise<void> {
+  for (const domain of SSL_DOMAINS) {
+    const status = await checkSslCert(domain);
+    sslStatuses.set(domain, status);
+
+    // Alert if expiring soon or expired
+    if (status.status === "expired") {
+      await sendAlert(
+        "service_down",
+        `SSL EXPIRED: ${domain}`,
+        `The SSL certificate for ${domain} has expired!\nExpired: ${status.validTo}\nIssuer: ${status.issuer}\n\nRun: certbot renew --nginx`,
+      );
+    } else if (status.status === "expiring") {
+      await sendAlert(
+        "disk_warning",
+        `SSL expiring soon: ${domain} (${status.daysUntilExpiry} days)`,
+        `The SSL certificate for ${domain} expires in ${status.daysUntilExpiry} days.\nExpiry: ${status.validTo}\nIssuer: ${status.issuer}\n\nCertbot should auto-renew, but verify: certbot renew --dry-run`,
+      );
+    }
+  }
+}
+
+export function getSslCertStatuses(): SslCertStatus[] {
+  return Array.from(sslStatuses.values());
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -409,10 +509,21 @@ export function initVpsMonitor(db: Db): void {
     handler: () => checkAllServices(db),
   });
 
-  // Run first check immediately
+  registerCronJob({
+    jobName: "monitor:ssl-certs",
+    schedule: "0 */6 * * *",
+    ownerAgent: "nova",
+    sourceFile: "vps-monitor.ts",
+    handler: () => checkAllSslCerts(),
+  });
+
+  // Run first checks immediately
   void checkAllServices(db).catch((err) => {
     logger.error({ err }, "Initial VPS health check failed");
   });
+  void checkAllSslCerts().catch((err) => {
+    logger.error({ err }, "Initial SSL cert check failed");
+  });
 
-  logger.info("VPS monitor initialized (checks every 3 min)");
+  logger.info("VPS monitor initialized (services every 3 min, SSL every 6 hr)");
 }

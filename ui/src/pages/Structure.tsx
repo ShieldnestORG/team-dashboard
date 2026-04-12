@@ -283,6 +283,7 @@ const DEFAULT_DIAGRAM = `graph TB
         SiteMetrics(["Site Metrics Ingest"])
         MaintCrons{{"Maintenance — 2 jobs"}}
         VPSMonitor(["VPS Monitor"])
+        SSLMonitor(["SSL Cert Monitor — 6hr"])
         CronMgmt(["Cron Management — UI + API"])
         CronDB[("system_crons")]
       end
@@ -325,9 +326,12 @@ const DEFAULT_DIAGRAM = `graph TB
 
     subgraph VPS1["VPS_1 — 31.220.61.12 (31GB RAM)"]
       direction TB
+      Nginx(["nginx — api.coherencedaddy.com"])
+      SSLCert(["SSL — Let's Encrypt + Certbot"])
       Docker(["Docker Container"])
-      ExpressRuntime(["Express.js :3200"])
+      ExpressRuntime(["Express.js :3100"])
       AgentRuntime(["Agent Runtime"])
+      Nginx --> ExpressRuntime
     end
 
     subgraph VPS3["VPS_3 — 147.79.78.251 (15GB RAM)"]
@@ -344,7 +348,7 @@ const DEFAULT_DIAGRAM = `graph TB
     subgraph VercelInfra["Vercel"]
       direction TB
       VercelUI(["React SPA — ui/dist"])
-      VercelRewrites(["API Rewrites → VPS_1"])
+      VercelDirect(["Direct → api.coherencedaddy.com"])
     end
 
     subgraph NeonInfra["Neon"]

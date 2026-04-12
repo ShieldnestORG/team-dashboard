@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { systemHealthApi } from "../api/system-health";
-import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, SystemMetricsInfo, InfraCostItem } from "../api/system-health";
+import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, SystemMetricsInfo, InfraCostItem, SslCertStatusInfo } from "../api/system-health";
 import {
   Card,
   CardContent,
@@ -33,6 +33,7 @@ import {
   HardDrive,
   Wifi,
   WifiOff,
+  ShieldCheck,
 } from "lucide-react";
 
 // ── Query Keys ──────────────────────────────────────────────────────────────
@@ -527,6 +528,79 @@ export function SystemHealth() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── SSL Certificate Status ─────────────────────────────────────── */}
+      {servicesData?.sslCerts && servicesData.sslCerts.length > 0 && (
+        <Card className="rounded-xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              SSL Certificates
+            </CardTitle>
+            <CardDescription>TLS certificate status and expiry monitoring (checks every 6 hr)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {servicesData.sslCerts.map((cert: SslCertStatusInfo) => (
+                <div
+                  key={cert.domain}
+                  className={`flex items-center gap-3 rounded-lg border p-3 ${
+                    cert.status === "valid" ? "border-emerald-500/20 bg-emerald-500/5" :
+                    cert.status === "expiring" ? "border-yellow-500/20 bg-yellow-500/5" :
+                    cert.status === "expired" ? "border-red-500/20 bg-red-500/5" :
+                    "border-border bg-muted/20"
+                  }`}
+                >
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                    cert.status === "valid" ? "bg-emerald-500/20" :
+                    cert.status === "expiring" ? "bg-yellow-500/20" :
+                    cert.status === "expired" ? "bg-red-500/20" :
+                    "bg-muted"
+                  }`}>
+                    <ShieldCheck className={`h-4 w-4 ${
+                      cert.status === "valid" ? "text-emerald-400" :
+                      cert.status === "expiring" ? "text-yellow-400" :
+                      cert.status === "expired" ? "text-red-400" :
+                      "text-muted-foreground"
+                    }`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{cert.domain}</span>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                        cert.status === "valid" ? "text-emerald-400 border-emerald-500/30" :
+                        cert.status === "expiring" ? "text-yellow-400 border-yellow-500/30" :
+                        cert.status === "expired" ? "text-red-400 border-red-500/30" :
+                        ""
+                      }`}>
+                        {cert.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
+                      {cert.daysUntilExpiry !== null && (
+                        <span className={`font-medium ${
+                          cert.daysUntilExpiry <= 7 ? "text-red-400" :
+                          cert.daysUntilExpiry <= 14 ? "text-yellow-400" :
+                          "text-emerald-400"
+                        }`}>
+                          {cert.daysUntilExpiry} days remaining
+                        </span>
+                      )}
+                      {cert.validTo && (
+                        <span>expires {new Date(cert.validTo).toLocaleDateString()}</span>
+                      )}
+                      {cert.issuer && <span>{cert.issuer}</span>}
+                    </div>
+                    {cert.error && (
+                      <div className="text-[9px] text-red-400 mt-0.5 truncate">{cert.error}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

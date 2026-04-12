@@ -124,6 +124,17 @@ export interface SystemMetricsInfo {
   uptimeHours: number;
 }
 
+export interface SslCertStatusInfo {
+  domain: string;
+  validFrom: string | null;
+  validTo: string | null;
+  daysUntilExpiry: number | null;
+  issuer: string | null;
+  status: "valid" | "expiring" | "expired" | "unknown";
+  lastCheckedAt: string;
+  error: string | null;
+}
+
 export const systemHealthApi = {
   overview: () =>
     api.get<SystemHealthOverview>("/system-health/overview"),
@@ -142,5 +153,5 @@ export const systemHealthApi = {
       `/system-health/logs?${new URLSearchParams({ ...(level ? { level } : {}), ...(limit ? { limit: String(limit) } : {}) })}`,
     ),
   services: () =>
-    api.get<{ services: ServiceStatusInfo[]; metrics: SystemMetricsInfo | null; infraCosts?: InfraCostItem[]; totalMonthlyCents?: number }>("/system-health/services"),
+    api.get<{ services: ServiceStatusInfo[]; metrics: SystemMetricsInfo | null; infraCosts?: InfraCostItem[]; totalMonthlyCents?: number; sslCerts?: SslCertStatusInfo[] }>("/system-health/services"),
 };
