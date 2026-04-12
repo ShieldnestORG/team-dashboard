@@ -17,7 +17,7 @@ import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
-import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages } from "./presentation-renderer.js";
+import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
 import { getAvailableBackends } from "../visual-backends/index.js";
@@ -245,7 +245,7 @@ async function generateVisualAssets(
       const aiSlides = await buildSlidesFromScriptAI(script);
       const framePaths = await renderSlidesToImages(aiSlides, dir);
       if (framePaths.length > 0) {
-        const wordCounts = aiSlides.map((s) => {
+        const wordCounts = aiSlides.map((s: Slide) => {
           const text = s.spokenText || "";
           const words = text.split(/\s+/).filter(Boolean).length;
           if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
@@ -264,7 +264,7 @@ async function generateVisualAssets(
       logger.info({ slideCount: staticSlides.length }, "Built static presentation slides from script");
       const framePaths = await renderSlidesToImages(staticSlides, dir);
       if (framePaths.length > 0) {
-        const wordCounts = staticSlides.map((s) => {
+        const wordCounts = staticSlides.map((s: Slide) => {
           const text = s.spokenText || "";
           const words = text.split(/\s+/).filter(Boolean).length;
           if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
