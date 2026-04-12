@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-11
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -188,8 +188,10 @@ const DEFAULT_DIAGRAM = `graph TB
         YTScriptWriter(["Script Writer — Ollama"])
         YTSEOOpt(["SEO Optimizer — tags, chapters"])
         YTThumbnail(["Thumbnail Generator — Grok/Gemini"])
-        YTTTS(["TTS — Chatterbox voice clone"])
+        YTTTS(["TTS — Grok xAI (Rex voice)"])
         YTPresRenderer(["Presentation Renderer — Playwright"])
+        YTSiteWalker(["Site-Walker — Playwright browser agent"])
+        YTWalkthroughWriter(["Walkthrough Writer — Ollama"])
         YTVideoAssembler(["Video Assembler — FFmpeg"])
         YTPublishQueue(["Publish Queue — auto-upload"])
         YTAnalytics(["Analytics — YouTube API + Ollama"])
@@ -373,7 +375,7 @@ const DEFAULT_DIAGRAM = `graph TB
       TikTokAPI(["TikTok Content API"])
       MintscanAPI(["Mintscan — Cosmostation"])
       StripeAPI(["Stripe — payments"])
-      ChatterboxTTS(["Chatterbox TTS — VPS voice clone"])
+      GrokTTS(["Grok TTS — xAI API (Rex voice)"])
       PrintifyAPI(["Printify — print-on-demand"])
     end
   end
@@ -472,7 +474,10 @@ const DEFAULT_DIAGRAM = `graph TB
   YTStrategy --> OllamaSvc
   YTScriptWriter --> OllamaSvc
   YTThumbnail --> VisualBack
-  YTTTS --> ChatterboxTTS
+  YTTTS --> GrokTTS
+  YTSiteWalker --> YTWalkthroughWriter
+  YTWalkthroughWriter --> OllamaSvc
+  YTSiteWalker --> YTTTS
   YTPresRenderer --> YTVideoAssembler
   YTVideoAssembler --> YTPublishQueue
   YTPublishQueue --> YouTubeAPI

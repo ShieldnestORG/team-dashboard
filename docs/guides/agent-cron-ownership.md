@@ -55,7 +55,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Maintenance crons | `server/src/services/maintenance-crons.ts` | 2 | Bridge |
 | Auto-reply | `server/src/services/auto-reply.ts` | 1 | Core |
 | Moltbook backend | `server/src/services/moltbook-crons.ts` | 5 | Moltbook |
-| YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Core — Ollama scripts, Chatterbox TTS, Playwright slides, FFmpeg, YouTube API |
+| YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Core — Ollama scripts, Grok TTS (xAI Rex voice), Playwright slides + site-walker, FFmpeg, YouTube API |
 
 **Total: 49 system cron jobs across 9 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 58 total**
 

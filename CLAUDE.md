@@ -32,6 +32,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **SEO engine** — trend scanner (CoinGecko + HackerNews + Google Trends RSS + Bing News every 6hr), Ollama blog post generation enriched with intel vector context, auto-publish to coherencedaddy.com + app.tokns.fi, IndexNow ping. Routes at `/api/trends/*`, daily cron at 7:03 AM (`content:seo-engine`)
 - **Visual content system** — AI image/video generation via Gemini (Imagen 3 + Veo 2), Grok/xAI (grok-2-image + grok-imagine-video), and Canva (Python bridge). FFmpeg video assembly with watermark + metadata embedding. Async job system, PostgreSQL-backed visual content queue (`visual_content_items` + `visual_content_assets` tables) with review workflow, Content Studio UI with Text/Visual mode toggle
 - **Public Reels API** — unauthenticated `/api/reels` endpoint serving approved visual content for coherencedaddy.com. Stream, download (with Content-Disposition), and thumbnail endpoints
+- **YouTube Automation Pipeline** — full video production: Ollama content strategy, script writing, Playwright presentation rendering, Grok TTS (xAI Rex voice, chunked per-slide), FFmpeg assembly, SEO optimization, thumbnail generation, auto-publish queue. Includes **site-walker mode** — Playwright browser agent that visits URLs, scrolls through sites, captures branded screenshots, and feeds results to the walkthrough writer for narrated review videos. Services at `server/src/services/youtube/`, 5 cron jobs
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
 - **Directory expansion** — AI/ML (151 entries), DeFi (113), DevTools (154), Crypto (114) — 532 unique companies across 4 directories, all seeded and ingested
 - **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing
@@ -110,6 +111,21 @@ server/
         twitter-video.ts            # Twitter/X video (stub — needs OAuth 1.0a)
         instagram.ts                # Instagram Reels (stub — needs public URL)
         index.ts                    # Publisher registry
+      youtube/                      # YouTube automation pipeline
+        content-strategy.ts         # Ollama-powered content strategy generation
+        script-writer.ts            # Ollama script generation for standard videos
+        walkthrough-writer.ts       # Ollama walkthrough narration from site-walk results
+        site-walker.ts              # Playwright browser agent — visits URLs, captures screenshots
+        presentation-renderer.ts    # Playwright slide renderer (branded screenshots)
+        tts.ts                      # Grok TTS (xAI API, Rex voice) — chunked per-slide
+        yt-video-assembler.ts       # FFmpeg assembly with per-slide durations
+        seo-optimizer.ts            # YouTube SEO (tags, chapters, descriptions)
+        thumbnail.ts                # Thumbnail generation (Grok/Gemini)
+        production.ts               # Production orchestration
+        publish-queue.ts            # Auto-upload queue to YouTube
+        analytics.ts                # YouTube API analytics + Ollama insights
+        slide-templates.ts          # Branded slide layout templates
+        yt-crons.ts                 # 5 scheduled jobs (daily-production, publish, analytics, strategy, optimization)
     storage/              # Pluggable storage service (S3, local disk)
     content-templates/  # Personality prompt templates (blaze, cipher, spark, prism, vanguard, forge)
     routes/
@@ -262,13 +278,13 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 - **Directory API**: `168.231.127.180:4000` — data sync from Firecrawl
 - **Ollama**: `https://ollama.com/api` (cloud) — Gemma 4 31B Cloud for content generation and summarization
 - **Content API Key**: `CONTENT_API_KEY` env var for content generation auth (text + visual)
-- **Visual Backends**: `GEMINI_API_KEY` (Imagen 3 + Veo 2), `GROK_API_KEY` (xAI images via grok-2-image + video via grok-imagine-video) — optional, auto-enabled when set
+- **Visual Backends**: `GEMINI_API_KEY` (Imagen 3 + Veo 2), `GROK_API_KEY` (xAI images via grok-2-image + video via grok-imagine-video + TTS via Rex voice) — optional, auto-enabled when set
 - **Company ID**: `TEAM_DASHBOARD_COMPANY_ID=8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy)
 - **GitHub**: ShieldnestORG/team-dashboard (make private after deploy; use PAT for VPS access)
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (4 jobs: health-check + digest + partner-metrics + partner-site-monitor), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 1 partner-sites + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), moltbook-backend (5 jobs: ingest + post + engage + heartbeat + performance), youtube (5 jobs: daily-production + publish-queue + daily-analytics + weekly-strategy + optimization), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily), moltbook-plugin (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 49 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (4 jobs: health-check + digest + partner-metrics + partner-site-monitor), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 1 partner-sites + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), moltbook-backend (5 jobs: ingest + post + engage + heartbeat + performance), youtube (5 jobs: daily-production + publish-queue + daily-analytics + weekly-strategy + optimization, Grok TTS + Playwright + FFmpeg), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily), moltbook-plugin (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 49 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -291,6 +307,12 @@ vercel.json rewrites           docker-compose.production.yml     Vercel integrat
 | `server/src/services/visual-backends/` | Pluggable visual generation backends (Gemini, Grok, Canva) |
 | `server/src/services/video-assembler.ts` | FFmpeg video pipeline (overlays, watermark, metadata) |
 | `server/src/services/platform-publishers/` | Auto-publishing to YouTube/TikTok/Instagram/Twitter |
+| `server/src/services/youtube/` | YouTube automation pipeline (strategy, scripts, TTS, rendering, publishing) |
+| `server/src/services/youtube/site-walker.ts` | Playwright browser agent — visits URLs, scrolls, captures branded screenshots |
+| `server/src/services/youtube/walkthrough-writer.ts` | Ollama walkthrough narration from site-walk results with TTS sanitization |
+| `server/src/services/youtube/tts.ts` | Grok TTS (xAI API, Rex voice) — chunked per-slide with silence gaps |
+| `server/src/services/youtube/presentation-renderer.ts` | Playwright slide renderer with branded screenshot overlays |
+| `server/src/services/youtube/yt-crons.ts` | 5 YouTube cron jobs (production, publish, analytics, strategy, optimization) |
 | `server/src/routes/public-reels.ts` | Public reels API (no auth) for coherencedaddy.com |
 | `scripts/canva-generator.py` | Canva visual backend Python bridge (legacy) |
 | `server/src/services/canva-connect.ts` | Canva Connect API client (OAuth + design export) |
@@ -382,7 +404,8 @@ git push origin master
 | `CD_BLOG_API_KEY` | Yes | VPS | Bearer token for coherencedaddy blog API |
 | `INDEXNOW_KEY` | Optional | VPS | IndexNow verification key for search engine ping |
 | `GEMINI_API_KEY` | Optional | VPS | Enables Gemini visual backend (Imagen 3 + Veo 2) |
-| `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI backend (grok-2-image + grok-imagine-video) |
+| `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI backend (grok-2-image + grok-imagine-video + TTS) |
+| `GROK_TTS_VOICE` | Optional | VPS | Voice for Grok TTS (default: `rex`) |
 | `CANVA_API_KEY` | Optional | VPS | Enables Canva template backend (Python bridge) |
 | `CANVA_CLIENT_ID` | Optional | VPS | Canva Connect API client ID (OAuth 2.0) |
 | `CANVA_CLIENT_SECRET` | Optional | VPS | Canva Connect API client secret |
