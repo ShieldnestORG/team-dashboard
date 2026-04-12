@@ -111,7 +111,7 @@ export async function runProductionPipeline(
 
     // 7. Generate visual assets (images for slideshow)
     logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
-    const visualAssets = await generateVisualAssets(script, productionId, mode);
+    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode);
 
     // 8. Generate captions
     const captionsPath = await generateCaptions(ttsText, tts.durationSec, `captions_${productionId}.srt`);
@@ -124,6 +124,7 @@ export async function runProductionPipeline(
         audioPath: tts.audioPath,
         audioDurationSec: tts.durationSec,
         visualAssets,
+        slideWordCounts,
         captionsPath,
         outputFilename: `video_${productionId}.mp4`,
         metadata: { title: seo.title, copyright: `${new Date().getFullYear()} Tokns.fi` },
@@ -194,11 +195,16 @@ export async function runProductionPipeline(
 // Visual asset generation for slideshow
 // ---------------------------------------------------------------------------
 
+interface VisualResult {
+  paths: string[];
+  wordCounts: number[];
+}
+
 async function generateVisualAssets(
   script: ScriptData,
   productionId: string,
   mode: string,
-): Promise<string[]> {
+): Promise<VisualResult> {
   const dir = join(ASSETS_DIR, productionId);
   ensureDir(dir);
 
@@ -209,8 +215,16 @@ async function generateVisualAssets(
       logger.info({ slideCount: slides.length }, "Built presentation slides from script");
       const framePaths = await renderSlidesToImages(slides, dir);
       if (framePaths.length > 0) {
+        // Weight durations by spoken text word count per slide
+        const wordCounts = slides.map((s) => {
+          const text = s.spokenText || "";
+          const words = text.split(/\s+/).filter(Boolean).length;
+          // Title/section_title slides get minimum weight (brief transition)
+          if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
+          return Math.max(words, 5);
+        });
         logger.info({ frames: framePaths.length }, "Presentation slides rendered successfully");
-        return framePaths;
+        return { paths: framePaths, wordCounts };
       }
     } catch (err) {
       logger.warn({ err }, "Presentation rendering failed, falling back to AI images");
@@ -221,7 +235,7 @@ async function generateVisualAssets(
   const backends = getAvailableBackends().filter((b) => b.capabilities.includes("image"));
   if (backends.length === 0) {
     logger.warn("No image backend available — video will have no visuals");
-    return [];
+    return { paths: [], wordCounts: [] };
   }
 
   const prompts = extractVisualPrompts(script);
@@ -252,7 +266,8 @@ async function generateVisualAssets(
     }
   }
 
-  return assets;
+  // Equal weight for AI images (no spoken text info)
+  return { paths: assets, wordCounts: assets.map(() => 10) };
 }
 
 function extractVisualPrompts(script: ScriptData): string[] {

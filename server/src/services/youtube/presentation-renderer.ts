@@ -225,48 +225,78 @@ function templateQuote(quote: string): string {
 // Build slides from script
 // ---------------------------------------------------------------------------
 
-interface Slide {
+export interface Slide {
   type: string;
   html: string;
+  /** Approximate spoken text this slide covers (for duration weighting) */
+  spokenText?: string;
 }
 
 export function buildSlidesFromScript(script: ScriptData): Slide[] {
   const slides: Slide[] = [];
 
-  // Title
-  slides.push({ type: "title", html: templateTitle(script.title || "Untitled") });
+  // Title — short pause, just the title on screen
+  slides.push({
+    type: "title",
+    html: templateTitle(script.title || "Untitled"),
+    spokenText: script.title || "",
+  });
 
-  // Hook
+  // Hook — the opening hook text
   if (script.hook?.text) {
-    slides.push({ type: "quote", html: templateQuote(script.hook.text) });
+    slides.push({
+      type: "quote",
+      html: templateQuote(script.hook.text),
+      spokenText: script.hook.text,
+    });
   }
 
   // Main sections
   for (const section of script.mainContent?.sections || []) {
+    // Section title card — brief transition
     slides.push({
       type: "section_title",
       html: templateSectionTitle(section.title || "Section", (section.type || "topic").toUpperCase()),
+      spokenText: section.title || "",
     });
 
     const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
     const bulletTexts = bullets.map((b) => (typeof b === "string" ? b : String(b)));
 
+    // Each highlighted bullet gets the text for that specific bullet
     for (let c = 0; c < bulletTexts.length; c += 3) {
       const chunk = bulletTexts.slice(c, c + 3);
       for (let h = 0; h < chunk.length; h++) {
-        slides.push({ type: "bullets", html: templateBullets(section.title || "Details", chunk, h) });
+        slides.push({
+          type: "bullets",
+          html: templateBullets(section.title || "Details", chunk, h),
+          spokenText: chunk[h], // only the active bullet's text
+        });
       }
     }
   }
 
-  // Conclusion
+  // Conclusion — all recap points
   if (script.conclusion?.recap) {
     const recap = script.conclusion.recap.map((r) => (typeof r === "string" ? r : String(r)));
-    slides.push({ type: "conclusion", html: templateConclusion(recap) });
+    slides.push({
+      type: "conclusion",
+      html: templateConclusion(recap),
+      spokenText: recap.join(". "),
+    });
   }
 
-  // CTA
-  slides.push({ type: "cta", html: templateCTA(script.callToAction?.subscribe || "Subscribe for more!") });
+  // CTA — subscribe prompt + like/comment
+  const ctaText = [
+    script.callToAction?.subscribe,
+    script.callToAction?.like,
+    script.callToAction?.comment,
+  ].filter(Boolean).join(". ");
+  slides.push({
+    type: "cta",
+    html: templateCTA(script.callToAction?.subscribe || "Subscribe for more!"),
+    spokenText: ctaText || "Subscribe for more content!",
+  });
 
   return slides;
 }

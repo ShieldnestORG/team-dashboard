@@ -85,9 +85,11 @@ async function generateChatterboxTTS(text: string, outputPath: string): Promise<
   const requestBody = JSON.stringify({
     text,
     voice_ref: CHATTERBOX_VOICE_REF,
-    temperature: 0.6,
-    top_p: 0.95,
-    repetition_penalty: 1.2,
+    // Lower temperature = less random artifacts, cleaner tone, less nasal.
+    // Higher repetition_penalty = reduces repetitive nasal patterns.
+    temperature: parseFloat(process.env.CHATTERBOX_TEMPERATURE || "0.4"),
+    top_p: parseFloat(process.env.CHATTERBOX_TOP_P || "0.85"),
+    repetition_penalty: parseFloat(process.env.CHATTERBOX_REP_PENALTY || "1.35"),
   });
 
   const httpModule = url.protocol === "https:" ? await import("https") : await import("http");

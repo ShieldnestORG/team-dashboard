@@ -81,9 +81,9 @@ const TEMPLATES: Record<string, { tone: string; pacing: string }> = {
 
 export function applyPronunciationFixes(text: string): string {
   const fixes: Record<string, string> = {
-    "tokns.fi": "toe-kins dot fie",
-    "Tokns.fi": "Toe-kins dot fie",
-    "TOKNS.FI": "TOE-KINS DOT FIE",
+    "tokns.fi": "toe-kins dot fye",
+    "Tokns.fi": "Toe-kins dot fye",
+    "TOKNS.FI": "TOE-KINS DOT FYE",
     "coherencedaddy.com": "coherence daddy dot com",
     "HODL": "hoddle",
     "hodl": "hoddle",
