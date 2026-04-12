@@ -67,7 +67,8 @@ import { publicReelsRoutes } from "./routes/public-reels.js";
 import { sitemapRoutes } from "./routes/sitemap.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
 import { canvaOauthRoutes } from "./routes/canva-oauth.js";
-import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
+// Canva media cron — ready but paused until Canva folder API is sorted:
+// import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
@@ -367,7 +368,7 @@ export async function createApp(
   startMaintenanceCrons(db);
   startMoltbookCrons(db);
   startYouTubeCrons(db);
-  startCanvaMediaCrons(db);
+  // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);
   // Sync registry to DB + start the single cron scheduler
   void syncCronRegistry(db).catch((err) => {

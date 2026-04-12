@@ -59,7 +59,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 
 **Total: 49 system cron jobs across 9 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 58 total**
 
-> **Planned (not activated):** `content:canva-media:morning` and `content:canva-media:evening` owned by Sage — posts Canva designs as image tweets 2x/day once Canva OAuth is connected.
+> **Ready (paused):** `content:canva-media:morning` and `content:canva-media:evening` owned by Sage — posts Canva designs as image tweets 2x/day. Canva OAuth connected (2026-04-11), but paused until Canva folder API is available for image/video separation. Twitter plugin image posting is functional.
 
 ## Full Agent-to-Cron Mapping
 
