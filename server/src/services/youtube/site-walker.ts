@@ -77,9 +77,16 @@ export async function walkSite(url: string, outputDir: string): Promise<SiteWalk
     await page.setViewportSize(VIEWPORT);
     await page.setExtraHTTPHeaders({ "User-Agent": USER_AGENT });
 
-    // Navigate
+    // Navigate — try networkidle first, fall back to domcontentloaded for SPAs
     logger.info({ url }, "Site Walker: navigating to target URL");
-    await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+    try {
+      await page.goto(url, { waitUntil: "networkidle", timeout: 20_000 });
+    } catch {
+      logger.info("Site Walker: networkidle timed out, trying domcontentloaded...");
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      // Give SPA extra time to render
+      await page.waitForTimeout(5000);
+    }
 
     // Dismiss cookie banners
     await dismissCookieBanners(page);
