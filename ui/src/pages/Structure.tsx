@@ -180,10 +180,29 @@ const DEFAULT_DIAGRAM = `graph TB
         MediaDropDB[("media_drops")]
       end
 
+      subgraph YouTubePipeline["YouTube Automation Pipeline"]
+        direction TB
+        YTStrategy(["Content Strategy — Ollama"])
+        YTScriptWriter(["Script Writer — Ollama"])
+        YTSEOOpt(["SEO Optimizer — tags, chapters"])
+        YTThumbnail(["Thumbnail Generator — Grok/Gemini"])
+        YTTTS(["TTS — Chatterbox voice clone"])
+        YTPresRenderer(["Presentation Renderer — Playwright"])
+        YTVideoAssembler(["Video Assembler — FFmpeg"])
+        YTPublishQueue(["Publish Queue — auto-upload"])
+        YTAnalytics(["Analytics — YouTube API + Ollama"])
+        YTCrons{{"YT Crons — 5 jobs"}}
+        YTStratDB[("yt_content_strategies")]
+        YTSEODB[("yt_seo_data")]
+        YTProdDB[("yt_productions")]
+        YTQueueDB[("yt_publish_queue")]
+        YTAnalyticsDB[("yt_analytics")]
+      end
+
       subgraph VisualBack["Visual Backends"]
         direction TB
-        GeminiBack(["Gemini — Imagen 3 + Veo 2"])
-        GrokBack(["Grok — grok-2-image + video"])
+        GeminiBack(["Gemini — 2.5 Flash Image (Nano Banana)"])
+        GrokBack(["Grok — grok-imagine-image + video"])
         CanvaBack(["Canva — Python bridge"])
         CanvaConnect(["Canva Connect — OAuth + API"])
       end
@@ -352,6 +371,7 @@ const DEFAULT_DIAGRAM = `graph TB
       TikTokAPI(["TikTok Content API"])
       MintscanAPI(["Mintscan — Cosmostation"])
       StripeAPI(["Stripe — payments"])
+      ChatterboxTTS(["Chatterbox TTS — VPS voice clone"])
       PrintifyAPI(["Printify — print-on-demand"])
     end
   end
@@ -445,6 +465,24 @@ const DEFAULT_DIAGRAM = `graph TB
   PubTikTok --> TikTokAPI
   ContentSvc --> PubYT
   ContentSvc --> PubTikTok
+
+  %% YouTube Pipeline flows
+  YTStrategy --> OllamaSvc
+  YTScriptWriter --> OllamaSvc
+  YTThumbnail --> VisualBack
+  YTTTS --> ChatterboxTTS
+  YTPresRenderer --> YTVideoAssembler
+  YTVideoAssembler --> YTPublishQueue
+  YTPublishQueue --> YouTubeAPI
+  YTAnalytics --> YouTubeAPI
+  YTAnalytics --> OllamaSvc
+  YTCrons --> YTStrategy
+  YTCrons --> YTPublishQueue
+  YTCrons --> YTAnalytics
+  YTStrategy --> YTStratDB
+  YTSEOOpt --> YTSEODB
+  YTPublishQueue --> YTQueueDB
+  YTAnalytics --> YTAnalyticsDB
 
   %% X ecosystem flows
   XClient --> XAPIv2

@@ -55,7 +55,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Maintenance crons | `server/src/services/maintenance-crons.ts` | 2 | Bridge |
 | Auto-reply | `server/src/services/auto-reply.ts` | 1 | Core |
 | Moltbook backend | `server/src/services/moltbook-crons.ts` | 5 | Moltbook |
-| YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Bridge |
+| YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Core — Ollama scripts, Chatterbox TTS, Playwright slides, FFmpeg, YouTube API |
 
 **Total: 49 system cron jobs across 9 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 58 total**
 
@@ -171,11 +171,11 @@ Sage orchestrates the 4 content personality agents below.
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
-| `yt:daily-production` | daily | yt-crons | Daily video production from content pipeline |
-| `yt:publish-queue` | periodic | yt-crons | Process and publish queued videos |
-| `yt:daily-analytics` | daily | yt-crons | Fetch YouTube analytics data |
-| `yt:weekly-strategy` | weekly | yt-crons | Weekly content strategy review |
-| `yt:optimization` | periodic | yt-crons | SEO optimization for published videos |
+| `yt:daily-production` | `0 6 * * *` | yt-crons | Full pipeline: strategy → script → SEO → thumbnail → TTS → slides → video → queue |
+| `yt:publish-queue` | `*/15 * * * *` | yt-crons | Auto-upload due videos to YouTube via OAuth2 |
+| `yt:daily-analytics` | `0 9 * * *` | yt-crons | Collect YouTube analytics (views, likes, CTR) |
+| `yt:weekly-strategy` | `0 8 * * 0` | yt-crons | Analyze performance, adjust content pillars |
+| `yt:optimization` | `0 22 * * *` | yt-crons | Ollama-powered optimization insights |
 
 ### Agents with No Cron Jobs
 
