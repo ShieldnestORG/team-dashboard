@@ -19,6 +19,8 @@ import {
   Maximize2,
   Minimize2,
   Move,
+  Copy,
+  Check,
 } from "lucide-react";
 
 // ── Theme Config ────────────────────────────────────────────────────────────
@@ -718,7 +720,15 @@ function DiagramViewer({
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentScale, setCurrentScale] = useState(1);
+  const [copied, setCopied] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const handleCopyMermaid = useCallback(() => {
+    navigator.clipboard.writeText(source).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [source]);
 
   useEffect(() => {
     let active = true;
@@ -785,7 +795,7 @@ function DiagramViewer({
       <TransformWrapper
         initialScale={0.85}
         minScale={0.1}
-        maxScale={4}
+        maxScale={8}
         centerOnInit
         wheel={{ step: 0.08 }}
         pinch={{ step: 5 }}
@@ -831,6 +841,17 @@ function DiagramViewer({
                   <Minimize2 className="h-4 w-4" />
                 ) : (
                   <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                onClick={handleCopyMermaid}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Copy Mermaid source"
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
                 )}
               </button>
               {diagramMeta && (
