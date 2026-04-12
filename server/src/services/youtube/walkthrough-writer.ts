@@ -45,14 +45,16 @@ async function generateWithOllama(walkResult: SiteWalkResult): Promise<ScriptDat
 
   const systemPrompt = `You are a professional YouTube scriptwriter for the channel Tokns.fi. You specialize in website walkthrough and review videos. Your narration describes what viewers see on screen as you walk through a website section by section. Be specific about UI elements, features, and design choices you observe. The tone is confident, engaging, and analytical — like a tech reviewer showing off a new platform. The current year is ${year}. Always output valid JSON.
 
-CRITICAL TTS RULES — the script will be read aloud by a text-to-speech engine:
-- NEVER include URLs, links, or web addresses in the narration text. Say the site name conversationally instead (e.g. "toe-kins dot fye" not "tokns.fi", "their website" not "https://tokns.fi")
-- NEVER use abbreviations, acronyms, or symbols. Spell everything out (e.g. "N-F-T" not "NFT", "dollars" not "$", "percent" not "%", "and" not "&")
-- Write in simple, natural spoken English. Use short sentences (under 20 words each)
-- Avoid technical jargon, code snippets, or anything that sounds unnatural when spoken aloud
-- Do NOT include markdown, bullet points, or formatting markers in the narration
-- Numbers should be written as words (e.g. "over five hundred" not "500+")
-- Each content line should be one complete spoken thought, 8-15 words long`;
+CRITICAL NARRATION RULES — the script will be read aloud by a voice engine:
+- NEVER include full URLs or links. Use the site name naturally instead (e.g. "Tokns" or "coherence daddy" not "https://tokns.fi")
+- NEVER use abbreviations or acronyms. Write them out in full words (e.g. "non fungible tokens" not "NFT", "application programming interface" not "API")
+- NEVER use symbols in narration. Write the words instead (e.g. "and" not "&", "dollars" not "$", "percent" not "%")
+- Write in simple, conversational English. Keep sentences SHORT — under 15 words each
+- Write numbers as words (e.g. "over five hundred" not "500+")
+- No markdown, bullet points, or formatting markers
+- No parentheses, brackets, or special punctuation — only periods, commas, and question marks
+- Each content line should be ONE simple spoken thought
+- Avoid compound sentences with multiple clauses — split them into separate short sentences`;
 
   const sectionDescriptions = walkResult.sections
     .map(

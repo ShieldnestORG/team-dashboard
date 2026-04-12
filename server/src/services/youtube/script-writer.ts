@@ -112,40 +112,52 @@ export function applyPronunciationFixes(text: string): string {
 // Format script for TTS (plain text)
 // ---------------------------------------------------------------------------
 
-export function formatScriptForTTS(script: ScriptData): string {
-  let tts = "";
-  if (script.hook) tts += `${script.hook.text}\n\n`;
+/**
+ * Extract plain narration text from script (no pronunciation mangling).
+ * Used for captions / display text.
+ */
+export function formatScriptPlainText(script: ScriptData): string {
+  let text = "";
+  if (script.hook) text += `${script.hook.text}\n\n`;
   if (script.introduction) {
-    tts += `${script.introduction.greeting}\n`;
-    tts += `${script.introduction.topicIntro}\n`;
-    tts += `${script.introduction.valueProposition}\n`;
-    tts += `${script.introduction.credibility}\n\n`;
+    text += `${script.introduction.greeting}\n`;
+    text += `${script.introduction.topicIntro}\n`;
+    text += `${script.introduction.valueProposition}\n`;
+    text += `${script.introduction.credibility}\n\n`;
   }
   if (script.mainContent?.sections) {
     for (const section of script.mainContent.sections) {
-      tts += `${section.title}.\n`;
+      text += `${section.title}.\n`;
       if (Array.isArray(section.content)) {
         for (const line of section.content) {
           if (typeof line === "string" && !line.startsWith("[")) {
-            tts += `${line}\n`;
+            text += `${line}\n`;
           }
         }
       }
-      tts += "\n";
+      text += "\n";
     }
   }
   if (script.conclusion) {
     for (const line of script.conclusion.recap) {
-      tts += `${line}\n`;
+      text += `${line}\n`;
     }
-    tts += `\n${script.conclusion.finalThought}\n\n`;
+    text += `\n${script.conclusion.finalThought}\n\n`;
   }
   if (script.callToAction) {
-    tts += `${script.callToAction.subscribe}\n`;
-    tts += `${script.callToAction.like}\n`;
-    tts += `${script.callToAction.comment}\n`;
+    text += `${script.callToAction.subscribe}\n`;
+    text += `${script.callToAction.like}\n`;
+    text += `${script.callToAction.comment}\n`;
   }
-  return applyPronunciationFixes(tts);
+  return text;
+}
+
+/**
+ * Format script for TTS — applies pronunciation fixes for the voice engine.
+ * Do NOT use this for captions/display — use formatScriptPlainText() instead.
+ */
+export function formatScriptForTTS(script: ScriptData): string {
+  return applyPronunciationFixes(formatScriptPlainText(script));
 }
 
 // ---------------------------------------------------------------------------

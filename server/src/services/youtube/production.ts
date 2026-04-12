@@ -12,12 +12,13 @@ import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
 import { generateContentStrategy, type ContentStrategy } from "./content-strategy.js";
-import { generateScript, formatScriptForTTS, type ScriptData } from "./script-writer.js";
+import { generateScript, formatScriptForTTS, formatScriptPlainText, type ScriptData } from "./script-writer.js";
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
 import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Slide } from "./presentation-renderer.js";
+import { getTemplate } from "./slide-templates.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
 import { getAvailableBackends } from "../visual-backends/index.js";
@@ -50,8 +51,10 @@ export async function runProductionPipeline(
   db: Db,
   requestedTopic?: string,
   visualMode?: string,
+  templateName?: string,
 ): Promise<ProductionResult> {
   const mode = visualMode || VISUAL_MODE;
+  const template = getTemplate(templateName);
 
   // 1. Generate content strategy
   logger.info("YT Pipeline: generating content strategy...");
@@ -126,10 +129,11 @@ export async function runProductionPipeline(
 
     // 7. Generate visual assets (images for slideshow)
     logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
-    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
+    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult, template);
 
-    // 8. Generate captions
-    const captionsPath = await generateCaptions(ttsText, tts.durationSec, `captions_${productionId}.srt`);
+    // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text)
+    const captionText = formatScriptPlainText(script);
+    const captionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
 
     // 9. Assemble video
     let video: YtAssembleResult | undefined;
@@ -220,6 +224,7 @@ async function generateVisualAssets(
   productionId: string,
   mode: string,
   walkResult?: SiteWalkResult,
+  template?: import("./slide-templates.js").SlideTemplate,
 ): Promise<VisualResult> {
   const dir = join(ASSETS_DIR, productionId);
   ensureDir(dir);
@@ -242,7 +247,7 @@ async function generateVisualAssets(
     // Try Ollama-generated unique slides first
     try {
       logger.info("Trying AI-generated slides via Ollama...");
-      const aiSlides = await buildSlidesFromScriptAI(script);
+      const aiSlides = await buildSlidesFromScriptAI(script, template);
       const framePaths = await renderSlidesToImages(aiSlides, dir);
       if (framePaths.length > 0) {
         const wordCounts = aiSlides.map((s: Slide) => {
@@ -260,7 +265,7 @@ async function generateVisualAssets(
 
     // Fall back to static HTML templates
     try {
-      const staticSlides = buildSlidesFromScript(script);
+      const staticSlides = buildSlidesFromScript(script, template);
       logger.info({ slideCount: staticSlides.length }, "Built static presentation slides from script");
       const framePaths = await renderSlidesToImages(staticSlides, dir);
       if (framePaths.length > 0) {
