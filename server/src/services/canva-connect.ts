@@ -131,9 +131,15 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
   let canvaUserId = "unknown";
   let canvaDisplayName = "Unknown";
   if (profileRes.ok) {
-    const profile = await profileRes.json() as { id: string; display_name: string };
-    canvaUserId = profile.id;
-    canvaDisplayName = profile.display_name;
+    // Canva API may wrap in { profile: { ... } } or return flat { id, display_name }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await profileRes.json() as any;
+    const profile = raw.profile || raw;
+    canvaUserId = profile.id || profile.user_id || "unknown";
+    canvaDisplayName = profile.display_name || profile.displayName || "Unknown";
+    logger.info({ canvaUserId, canvaDisplayName, rawKeys: Object.keys(raw) }, "Canva profile fetched");
+  } else {
+    logger.warn({ status: profileRes.status }, "Canva /users/me failed — using defaults");
   }
 
   return {
@@ -187,9 +193,11 @@ async function refreshAccessToken(refreshToken: string): Promise<CanvaTokenSet> 
   let canvaUserId = "unknown";
   let canvaDisplayName = "Unknown";
   if (profileRes.ok) {
-    const profile = await profileRes.json() as { id: string; display_name: string };
-    canvaUserId = profile.id;
-    canvaDisplayName = profile.display_name;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await profileRes.json() as any;
+    const profile = raw.profile || raw;
+    canvaUserId = profile.id || profile.user_id || "unknown";
+    canvaDisplayName = profile.display_name || profile.displayName || "Unknown";
   }
 
   return {

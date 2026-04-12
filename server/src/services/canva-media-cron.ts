@@ -1,9 +1,8 @@
 // ---------------------------------------------------------------------------
 // Canva Media Tweet Cron — posts Canva designs as image tweets 2x/day
 //
-// NOT ACTIVATED — infrastructure only.
-// To activate: uncomment startCanvaMediaCrons(db) in app.ts
-// Requires: Canva OAuth connected + X OAuth connected
+// ACTIVATED in app.ts. Requires: Canva OAuth connected + X OAuth connected.
+// Will gracefully skip if Canva is not connected (logs warning, no crash).
 // ---------------------------------------------------------------------------
 
 import type { Db } from "@paperclipai/db";
@@ -51,16 +50,19 @@ function resetDailyIfNeeded(): void {
 // ---------------------------------------------------------------------------
 
 async function generateMediaTweetText(designTitle: string): Promise<string> {
-  const prompt = `You are a social media manager for the TX blockchain ecosystem.
+  const prompt = `You are a social media manager for the Coherence Daddy / TX blockchain ecosystem.
 Write a single tweet (under 260 characters to leave room for the image link) about this visual design.
 The design is titled: "${designTitle}"
 
-Include 1-2 of these accounts naturally with context:
-- @txEcosystem — TX blockchain L1
+Include 1-2 of these accounts/links naturally:
+- @txEcosystem — TX blockchain L1 (tx.org)
 - @tokns_fi — portfolio dashboard at app.tokns.fi
 - @txDevHub — developer tools on TX
+- @coheraborator — Coherence Daddy (coherencedaddy.com — 523+ free tools)
+- txdex.live — TX DEX for on-chain trading
 
-Be engaging, use the design title for context. Don't describe the image literally — reference the topic.
+Be engaging and draw people in. Create viral hooks — make people curious about the ecosystem.
+Don't describe the image literally — reference the topic and tie it to something exciting happening in crypto.
 Return ONLY the tweet text, nothing else.`;
 
   const raw = await callOllamaGenerate(prompt);
@@ -162,11 +164,7 @@ export async function runCanvaMediaCycle(db: Db): Promise<{
 }
 
 // ---------------------------------------------------------------------------
-// Register cron jobs — call this from app.ts to activate
-//
-// NOT ACTIVATED by default. To enable:
-//   import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
-//   startCanvaMediaCrons(db);
+// Register cron jobs — activated in app.ts
 // ---------------------------------------------------------------------------
 
 export function startCanvaMediaCrons(db: Db) {

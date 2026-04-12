@@ -33,14 +33,16 @@ async function loadModules(): Promise<void> {
   const clientPath = resolve(SERVER_SERVICES, "client.js");
   const oauthPath = resolve(SERVER_SERVICES, "oauth.js");
   const rlPath = resolve(SERVER_SERVICES, "rate-limiter.js");
+  const mediaPath = resolve(SERVER_SERVICES, "media.js");
 
   // Resolve @paperclipai/db path dynamically (not a direct dependency of this plugin)
   const dbPkgPath = resolve(__dirname, "../../../../packages/db/src/index.js");
 
-  const [clientMod, oauthMod, rlMod, dbMod] = await Promise.all([
+  const [clientMod, oauthMod, rlMod, mediaMod, dbMod] = await Promise.all([
     import(/* @vite-ignore */ clientPath),
     import(/* @vite-ignore */ oauthPath),
     import(/* @vite-ignore */ rlPath),
+    import(/* @vite-ignore */ mediaPath),
     import(/* @vite-ignore */ dbPkgPath),
   ]);
 
@@ -52,6 +54,7 @@ async function loadModules(): Promise<void> {
     canUseDailyBudget: rlMod.canUseDailyBudget,
     setMultiplier: rlMod.setMultiplier,
     createDb: dbMod.createDb,
+    uploadMedia: mediaMod.uploadMedia,
   };
 }
 
@@ -149,7 +152,31 @@ export async function executePost(queueItem: TweetQueueData): Promise<PostExecut
         text += `\n\n${tags}`;
       }
 
-      const result = await client.createTweet({ text });
+      // Upload media attachments if provided
+      const mediaIds: string[] = [];
+      if (queueItem.mediaUrls && queueItem.mediaUrls.length > 0) {
+        const db = getDb();
+        const companyId = getCompanyId();
+        for (const url of queueItem.mediaUrls.slice(0, 4)) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            const contentType = res.headers.get("content-type") || "image/png";
+            const arrayBuf = await res.arrayBuffer();
+            const buffer = Buffer.from(arrayBuf);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const mediaId = await (_modules as any).uploadMedia(db, companyId, buffer, contentType);
+            if (mediaId) mediaIds.push(mediaId);
+          } catch {
+            // Skip failed media uploads — still post the tweet with text
+          }
+        }
+      }
+
+      const result = await client.createTweet({
+        text,
+        ...(mediaIds.length > 0 ? { mediaIds } : {}),
+      });
       return {
         tweetId: result.data.id,
         tweetUrl: `https://x.com/i/status/${result.data.id}`,
