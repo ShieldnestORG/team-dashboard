@@ -60,6 +60,16 @@ export interface Partner {
   // Phase 2: Content tracking
   contentPostCount: number;
   lastContentGeneratedAt: string | null;
+
+  // Onboarding pipeline
+  onboardingStatus: string;
+  onboardingError: string | null;
+  onboardingCompletedAt: string | null;
+
+  // Trusted Companies directory
+  featured: boolean;
+  featuredOrder: number | null;
+  tagline: string | null;
 }
 
 export interface PartnerMetrics {
@@ -158,6 +168,8 @@ export const partnersApi = {
   delete: (slug: string) => api.delete<{ ok: boolean }>(`/partners/${slug}`),
   getMetrics: (slug: string) => api.get<PartnerMetrics>(`/partners/${slug}/metrics`),
   getDashboard: (slug: string, token: string) => api.get<PartnerDashboardData>(`/partners/${slug}/dashboard?token=${token}`),
+  triggerOnboarding: (slug: string) =>
+    api.post<{ ok: boolean; status: string }>(`/partners/${slug}/onboard`, {}),
   getClicks: (slug: string, opts?: { limit?: number; offset?: number }) => {
     const params = new URLSearchParams();
     if (opts?.limit) params.set("limit", String(opts.limit));

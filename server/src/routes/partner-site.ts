@@ -75,13 +75,12 @@ export function partnerSiteRoutes(db: Db): Router {
       const allowed = [
         "siteUrl", "siteRepoUrl", "siteConfig", "siteVercelProjectId",
         "siteDeployStatus",
-      ];
+      ] as const;
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       for (const key of allowed) {
         if (key in body) {
-          // Convert camelCase to snake_case for DB
-          const dbKey = key.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
-          updates[dbKey] = body[key];
+          // Drizzle uses camelCase keys matching the schema definition
+          updates[key] = body[key];
         }
       }
 

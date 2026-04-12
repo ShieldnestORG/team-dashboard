@@ -38,6 +38,38 @@ interface Partner {
   partnerSince: string;                // ISO 8601 timestamp
   createdAt: string;                   // ISO 8601 timestamp
   updatedAt: string;                   // ISO 8601 timestamp
+
+  // Phase 2: Business profile
+  address: string | null;
+  phone: string | null;
+  hours: Record<string, string> | null;
+  logoUrl: string | null;
+  brandColors: { primary: string; secondary: string; accent: string } | null;
+  targetKeywords: string[] | null;
+  targetAudience: string | null;
+
+  // Phase 2: Microsite management
+  siteUrl: string | null;
+  siteRepoUrl: string | null;
+  siteDeployStatus: string;            // none | building | deployed | failed | suspended
+  siteLastDeployedAt: string | null;
+  siteConfig: object | null;
+
+  // Phase 2: Analytics baseline
+  baselineAnalytics: object | null;    // { capturedAt, monthlyVisitors, topKeywords, competitorSites }
+  baselineCapturedAt: string | null;
+  contentPostCount: number;
+  lastContentGeneratedAt: string | null;
+
+  // Onboarding pipeline
+  onboardingStatus: string;            // none | scraping | analyzing | complete | failed
+  onboardingError: string | null;
+  onboardingCompletedAt: string | null;
+
+  // Trusted Companies directory
+  featured: boolean;                   // show in homepage banner
+  featuredOrder: number | null;        // sort order for banner
+  tagline: string | null;              // short one-liner for directory cards
 }
 ```
 
@@ -382,6 +414,114 @@ https://31.220.61.12:3200/api/go/acme-consulting?src=blog&cid=post-123
 |--------|------|
 | 404 | `{ "error": "Partner not found" }` |
 | 400 | `{ "error": "Partner has no website configured" }` |
+
+---
+
+### POST /api/partners/:slug/onboard
+
+Manually trigger the onboarding pipeline for a partner. Scrapes their website via Firecrawl, extracts business intel via Ollama, finds competitors, and populates Phase 2 fields. Runs fire-and-forget (returns immediately).
+
+**Authentication:** Session (cookie)
+
+**Response:**
+
+```json
+{ "ok": true, "status": "started" }
+```
+
+**Error Responses:**
+
+| Status | Body |
+|--------|------|
+| 400 | `{ "error": "Partner has no website to scrape" }` |
+| 404 | `{ "error": "Partner not found" }` |
+
+**Pipeline stages:** `none` -> `scraping` -> `analyzing` -> `complete` (or `failed`). Poll `GET /api/partners/:slug` to check `onboardingStatus`.
+
+---
+
+### GET /api/partner-directory/
+
+Public directory of active/trial partners. No authentication required.
+
+**Query Parameters:**
+
+| Parameter  | Type    | Default | Description                              |
+|------------|---------|---------|------------------------------------------|
+| `featured` | boolean | —       | If `true`, only return featured partners |
+| `limit`    | number  | 100     | Max results (1-200)                      |
+
+**Response:**
+
+```json
+{
+  "partners": [
+    {
+      "slug": "bulk-bark",
+      "name": "Bulk Bark",
+      "industry": "retail",
+      "location": "hawaii",
+      "description": "...",
+      "website": "https://bulkbark.com",
+      "siteUrl": null,
+      "logoUrl": null,
+      "services": ["Cheapest Bark", "Acacia"],
+      "tagline": "Premium Acacia Bark Supplier",
+      "brandColors": null,
+      "totalClicks": 0,
+      "contentMentions": 0,
+      "featured": true,
+      "featuredOrder": 1
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/partner-directory/featured
+
+Slim payload for the homepage scrollable banner. No authentication required.
+
+**Response:**
+
+```json
+{
+  "partners": [
+    { "slug": "bulk-bark", "name": "Bulk Bark", "logoUrl": null, "industry": "retail", "tagline": "Premium Acacia Bark Supplier", "location": "hawaii" }
+  ]
+}
+```
+
+---
+
+## Site Management Endpoints
+
+All site management endpoints are authenticated and scoped to `/api/partners/:slug/site/`.
+
+### GET /PUT /api/partners/:slug/site/config
+
+Get or update microsite configuration (siteUrl, siteRepoUrl, siteConfig, siteDeployStatus).
+
+### POST /api/partners/:slug/site/deploy
+
+Trigger microsite deployment. Scaffolds a GitHub repo and optionally deploys to Vercel.
+
+### GET /POST /api/partners/:slug/site/baseline
+
+Get or set baseline analytics (monthlyVisitors, domainAuthority, topKeywords, sourceBreakdown).
+
+### GET /POST /PUT /api/partners/:slug/site/content
+
+CRUD for partner microsite blog content. Auto-generated MWF at 8am by content crons.
+
+### POST /api/partners/:slug/site/content/:contentId/publish
+
+Publish a draft content item to the partner's GitHub-hosted microsite.
+
+### GET /api/partner-sites/:slug/feed
+
+Public feed of published content for partner microsites (no auth).
 
 ---
 

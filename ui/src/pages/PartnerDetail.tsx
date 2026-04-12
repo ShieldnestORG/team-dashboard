@@ -20,7 +20,7 @@ import {
   ExternalLink, MapPin, Mail, User, Phone, MousePointerClick, FileText,
   TrendingUp, Calendar, Globe, Pencil, Trash2, Copy, CheckCircle,
   ArrowLeft, Clock, Tag, Shield, DollarSign, RefreshCw, Rocket,
-  Target, Palette, Building, KeyRound,
+  Target, Palette, Building, KeyRound, Loader2, AlertCircle, Scan,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -197,6 +197,9 @@ function OverviewTab({ partner }: { partner: Partner }) {
         </CardContent>
       </Card>
 
+      {/* Onboarding Status */}
+      <OnboardingStatus partner={partner} />
+
       {/* Quick Stats */}
       <Card className="lg:col-span-2">
         <CardContent className="py-4">
@@ -217,6 +220,71 @@ function OverviewTab({ partner }: { partner: Partner }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function OnboardingStatus({ partner }: { partner: Partner }) {
+  const queryClient = useQueryClient();
+  const onboardMutation = useMutation({
+    mutationFn: () => partnersApi.triggerOnboarding(partner.slug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["partners", "detail", partner.slug] });
+    },
+  });
+
+  const status = partner.onboardingStatus;
+
+  const statusConfig: Record<string, { icon: typeof Scan; label: string; color: string; spinning?: boolean }> = {
+    none: { icon: Scan, label: "Not Scanned", color: "bg-gray-500/20 text-gray-400" },
+    scraping: { icon: Loader2, label: "Scraping Site...", color: "bg-yellow-500/20 text-yellow-400", spinning: true },
+    analyzing: { icon: Loader2, label: "Analyzing...", color: "bg-yellow-500/20 text-yellow-400", spinning: true },
+    complete: { icon: CheckCircle, label: "Scan Complete", color: "bg-green-500/20 text-green-400" },
+    failed: { icon: AlertCircle, label: "Scan Failed", color: "bg-red-500/20 text-red-400" },
+  };
+
+  const cfg = statusConfig[status] ?? statusConfig.none;
+  const StatusIcon = cfg.icon;
+  const isRunning = status === "scraping" || status === "analyzing";
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardContent className="py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`rounded-md p-2 ${cfg.color.split(" ")[0]}`}>
+              <StatusIcon className={`h-5 w-5 ${cfg.color.split(" ")[1]} ${cfg.spinning ? "animate-spin" : ""}`} />
+            </div>
+            <div>
+              <p className="text-sm font-medium">{cfg.label}</p>
+              {status === "complete" && partner.onboardingCompletedAt && (
+                <p className="text-xs text-muted-foreground">
+                  {fmtDateTime(partner.onboardingCompletedAt)}
+                </p>
+              )}
+              {status === "failed" && partner.onboardingError && (
+                <p className="text-xs text-red-400 max-w-md truncate">{partner.onboardingError}</p>
+              )}
+              {status === "none" && (
+                <p className="text-xs text-muted-foreground">
+                  Scan this partner's website to auto-populate keywords, industry, and competitor data.
+                </p>
+              )}
+            </div>
+          </div>
+          {!isRunning && partner.website && (
+            <Button
+              size="sm"
+              variant={status === "failed" ? "destructive" : "outline"}
+              onClick={() => onboardMutation.mutate()}
+              disabled={onboardMutation.isPending}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${onboardMutation.isPending ? "animate-spin" : ""}`} />
+              {status === "none" ? "Scan Now" : status === "failed" ? "Retry" : "Re-scan"}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

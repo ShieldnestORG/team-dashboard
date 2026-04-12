@@ -297,6 +297,7 @@ const DEFAULT_DIAGRAM = `graph TB
 
       subgraph PartnerNet["AEO Partner Network"]
         direction TB
+        PartnerOnboard(["Partner Onboarding — Firecrawl + Ollama"])
         PartnerSvc(["Partner Content Service"])
         PartnerDB[("partnerCompanies + Clicks")]
         PartnerRedirect(["Redirect /go/:slug"])
@@ -304,6 +305,7 @@ const DEFAULT_DIAGRAM = `graph TB
         PartnerDashboard(["Partner Dashboard — token-auth"])
         PartnerReports(["Partner Reports — monthly"])
         PartnerSiteContent[("partner_site_content")]
+        PartnerDirectory(["Trusted Companies API — /partner-directory"])
       end
 
       subgraph MoltbookEngine["Moltbook Social Engine"]

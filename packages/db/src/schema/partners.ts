@@ -73,6 +73,16 @@ export const partnerCompanies = pgTable(
     // ── Content tracking (Phase 2) ──────────────────────────────
     contentPostCount: integer("content_post_count").notNull().default(0),
     lastContentGeneratedAt: timestamp("last_content_generated_at", { withTimezone: true }),
+
+    // ── Onboarding pipeline ────────────────────────────────────
+    onboardingStatus: text("onboarding_status").notNull().default("none"),
+    onboardingError: text("onboarding_error"),
+    onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+
+    // ── Trusted Companies directory ────────────────────────────
+    featured: boolean("featured").notNull().default(false),
+    featuredOrder: integer("featured_order"),
+    tagline: text("tagline"),
   },
   (table) => ({
     companySlugUq: uniqueIndex("partner_companies_company_slug_uq").on(

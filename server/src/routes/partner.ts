@@ -3,11 +3,12 @@
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
-import { eq, and, desc, gte, sql, count, or, inArray } from "drizzle-orm";
+import { eq, and, desc, gte, sql, count, or, inArray, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerClicks } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { runPartnerOnboarding } from "../services/partner-onboarding.js";
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID ||
@@ -147,6 +148,13 @@ export function partnerRoutes(db: Db): Router {
         })
         .returning();
 
+      // Fire-and-forget onboarding pipeline if website provided
+      if (partner.website) {
+        runPartnerOnboarding(db, slug).catch((err) =>
+          logger.error({ err, slug }, "Partner onboarding pipeline failed"),
+        );
+      }
+
       res.status(201).json({ partner });
     } catch (err) {
       logger.error({ err }, "Failed to create partner");
@@ -159,6 +167,18 @@ export function partnerRoutes(db: Db): Router {
     try {
       const slug = req.params.slug as string;
       const body = req.body as Record<string, unknown>;
+
+      // Fetch current partner to detect website changes
+      const [current] = await db
+        .select({ website: partnerCompanies.website })
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.companyId, COMPANY_ID),
+            eq(partnerCompanies.slug, slug),
+          ),
+        )
+        .limit(1);
 
       const result = await db
         .update(partnerCompanies)
@@ -175,10 +195,60 @@ export function partnerRoutes(db: Db): Router {
         res.status(404).json({ error: "Partner not found" });
         return;
       }
+
+      // Re-trigger onboarding if website changed
+      if (
+        body.website &&
+        typeof body.website === "string" &&
+        body.website !== current?.website
+      ) {
+        runPartnerOnboarding(db, slug).catch((err) =>
+          logger.error({ err, slug }, "Partner onboarding pipeline failed"),
+        );
+      }
+
       res.json({ partner: result[0] });
     } catch (err) {
       logger.error({ err }, "Failed to update partner");
       res.status(500).json({ error: "Failed to update partner" });
+    }
+  });
+
+  // ── POST /:slug/onboard — Manually trigger onboarding ──────────
+  router.post("/:slug/onboard", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+
+      const [partner] = await db
+        .select()
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.companyId, COMPANY_ID),
+            eq(partnerCompanies.slug, slug),
+          ),
+        )
+        .limit(1);
+
+      if (!partner) {
+        res.status(404).json({ error: "Partner not found" });
+        return;
+      }
+
+      if (!partner.website) {
+        res.status(400).json({ error: "Partner has no website to scrape" });
+        return;
+      }
+
+      // Fire-and-forget
+      runPartnerOnboarding(db, slug).catch((err) =>
+        logger.error({ err, slug }, "Partner onboarding pipeline failed"),
+      );
+
+      res.json({ ok: true, status: "started" });
+    } catch (err) {
+      logger.error({ err }, "Failed to trigger onboarding");
+      res.status(500).json({ error: "Failed to trigger onboarding" });
     }
   });
 
@@ -440,8 +510,23 @@ export function partnerRoutes(db: Db): Router {
 export function partnerDirectoryRoutes(db: Db): Router {
   const router = Router();
 
-  router.get("/", async (_req, res) => {
+  // ── GET / — Full directory listing ─────────────────────────────
+  router.get("/", async (req, res) => {
     try {
+      const featured = req.query.featured === "true";
+      const limit = Math.min(parseInt(req.query.limit as string) || 100, 200);
+
+      const conditions = [
+        eq(partnerCompanies.companyId, COMPANY_ID),
+        or(
+          eq(partnerCompanies.status, "active"),
+          eq(partnerCompanies.status, "trial"),
+        ),
+      ];
+      if (featured) {
+        conditions.push(eq(partnerCompanies.featured, true));
+      }
+
       const partners = await db
         .select({
           slug: partnerCompanies.slug,
@@ -453,23 +538,59 @@ export function partnerDirectoryRoutes(db: Db): Router {
           siteUrl: partnerCompanies.siteUrl,
           logoUrl: partnerCompanies.logoUrl,
           services: partnerCompanies.services,
+          tagline: partnerCompanies.tagline,
+          brandColors: partnerCompanies.brandColors,
+          totalClicks: partnerCompanies.totalClicks,
+          contentMentions: partnerCompanies.contentMentions,
+          featured: partnerCompanies.featured,
+          featuredOrder: partnerCompanies.featuredOrder,
+        })
+        .from(partnerCompanies)
+        .where(and(...conditions))
+        .orderBy(
+          featured
+            ? asc(partnerCompanies.featuredOrder)
+            : partnerCompanies.name,
+        )
+        .limit(limit);
+
+      res.json({ partners });
+    } catch (err) {
+      logger.error({ err }, "Failed to get public partner directory");
+      res.status(500).json({ error: "Failed to get partner directory" });
+    }
+  });
+
+  // ── GET /featured — Slim payload for homepage banner ────────────
+  router.get("/featured", async (_req, res) => {
+    try {
+      const partners = await db
+        .select({
+          slug: partnerCompanies.slug,
+          name: partnerCompanies.name,
+          logoUrl: partnerCompanies.logoUrl,
+          industry: partnerCompanies.industry,
+          tagline: partnerCompanies.tagline,
+          location: partnerCompanies.location,
         })
         .from(partnerCompanies)
         .where(
           and(
             eq(partnerCompanies.companyId, COMPANY_ID),
+            eq(partnerCompanies.featured, true),
             or(
               eq(partnerCompanies.status, "active"),
               eq(partnerCompanies.status, "trial"),
             ),
           ),
         )
-        .orderBy(partnerCompanies.name);
+        .orderBy(asc(partnerCompanies.featuredOrder))
+        .limit(20);
 
       res.json({ partners });
     } catch (err) {
-      logger.error({ err }, "Failed to get public partner directory");
-      res.status(500).json({ error: "Failed to get partner directory" });
+      logger.error({ err }, "Failed to get featured partners");
+      res.status(500).json({ error: "Failed to get featured partners" });
     }
   });
 

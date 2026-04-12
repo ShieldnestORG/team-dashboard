@@ -13,10 +13,48 @@ import {
   PartnerForm, EMPTY_FORM, formToInput, STATUS_COLORS,
   type PartnerFormState,
 } from "../components/PartnerForm";
+import { HowToGuide } from "../components/HowToGuide";
 import {
   Handshake, Plus, MousePointerClick, FileText, TrendingUp, Users,
   ExternalLink, MapPin, ChevronRight, Globe,
 } from "lucide-react";
+
+const PARTNER_GUIDE_SECTIONS = [
+  {
+    heading: "Admin Flow",
+    steps: [
+      { title: "Add Partner", description: "Enter name, website, industry, location, and contact info. Click Save." },
+      { title: "Auto-Onboarding", description: "AI scrapes the partner's website, classifies their industry, extracts keywords, services, and competitors automatically." },
+      { title: "Review & Adjust", description: "Check the Overview tab for extracted data. Edit anything the AI got wrong in Settings. Mark as Featured for the homepage banner." },
+      { title: "Monitor Performance", description: "Analytics tab shows clicks by day and source. Content tab tracks mentions. Monthly email reports fire on the 1st." },
+    ],
+  },
+  {
+    heading: "Partner (User) Flow",
+    steps: [
+      { title: "Gets Added", description: "Admin adds them \u2014 onboarding runs automatically, no action needed from the partner." },
+      { title: "Receives Dashboard Link", description: "Copy the token-authenticated URL from Settings tab and share it. No login required." },
+      { title: "Views Their Metrics", description: "Partner sees total clicks, 30-day chart, traffic sources, and content mention count on their dashboard." },
+    ],
+  },
+  {
+    heading: "Public Visitor Flow",
+    steps: [
+      { title: "Homepage Banner", description: "Featured partners appear in a scrollable \u201cTrusted Companies\u201d section on coherencedaddy.com." },
+      { title: "Directory Page", description: "Visitors browse vetted partners by industry and location on the Trusted Companies page." },
+      { title: "Click Through", description: "/go/:slug tracks the click with full metadata, then redirects to the partner\u2019s website." },
+    ],
+  },
+  {
+    heading: "Content Engine (Automatic)",
+    steps: [
+      { title: "Industry Matching", description: "Content crons match partners by industry keywords against the topic being generated." },
+      { title: "Mention Injection", description: "Partner name + tracked redirect link woven naturally into AI-generated content." },
+      { title: "Blog Footers", description: "Published blogs include a \u201cRecommended Partners\u201d footer with tracked links to deployed partners." },
+      { title: "Microsite Content", description: "MWF at 8am, SEO-optimized blog posts are auto-generated for each partner\u2019s microsite." },
+    ],
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Main Page
@@ -125,6 +163,9 @@ export function Partners() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Flow Guide */}
+      <HowToGuide sections={PARTNER_GUIDE_SECTIONS} />
 
       {/* Action Bar */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
