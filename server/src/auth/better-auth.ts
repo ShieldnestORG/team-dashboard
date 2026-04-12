@@ -76,7 +76,16 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
   const authConfig = {
     baseURL: baseUrl,
     secret,
-    trustedOrigins: effectiveTrustedOrigins,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    trustedOrigins: ((request?: any) => {
+      const origin = String(request?.headers?.get?.("origin") ?? "");
+      // Allow any Vercel preview/production deployment
+      if (origin.endsWith(".vercel.app")) return [origin];
+      // Allow coherencedaddy.com domains
+      if (origin.endsWith("coherencedaddy.com")) return [origin];
+      // Fall back to explicit list
+      return effectiveTrustedOrigins;
+    }) as any,
     database: drizzleAdapter(db, {
       provider: "pg",
       schema: {

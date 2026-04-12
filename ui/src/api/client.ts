@@ -1,5 +1,4 @@
-const IS_PROD = typeof window !== "undefined" && !window.location.hostname.includes("localhost");
-const BASE = IS_PROD ? "https://api.coherencedaddy.com/api" : "/api";
+const BASE = "/api";
 
 export class ApiError extends Error {
   status: number;
