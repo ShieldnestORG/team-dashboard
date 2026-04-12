@@ -59,6 +59,20 @@ export function sanitizeTags(rawTags: string[]): string[] {
 // ---------------------------------------------------------------------------
 
 function optimizeTitle(originalTitle: string, strategy: ContentStrategy): string {
+  // Site-walker: walkthrough-specific title pattern
+  if (strategy.pillar === "site-walker") {
+    let hostname: string;
+    try { hostname = new URL(strategy.topic).hostname.replace(/^www\./, ""); } catch { hostname = strategy.topic; }
+    let title = originalTitle;
+    if (!title.toLowerCase().includes("walkthrough") && !title.toLowerCase().includes("review")) {
+      title = `Inside ${hostname} — Full Website Walkthrough & Review`;
+    }
+    const year = new Date().getFullYear().toString();
+    if (!title.includes(year) && title.length < 70) title = `${title} (${year})`;
+    if (title.length > 100) title = title.substring(0, 97) + "...";
+    return titleCase(title);
+  }
+
   let title = originalTitle;
   const powerWords = ["Ultimate", "Complete", "Essential", "Proven", "Secret", "Amazing", "Powerful"];
   const hasPowerWord = powerWords.some((w) => title.toLowerCase().includes(w.toLowerCase()));
@@ -100,6 +114,39 @@ function titleCase(str: string): string {
 // ---------------------------------------------------------------------------
 
 function generateDescription(script: ScriptData, strategy: ContentStrategy): string {
+  // Site-walker: walkthrough-specific description
+  if (strategy.pillar === "site-walker") {
+    let hostname: string;
+    try { hostname = new URL(strategy.topic).hostname.replace(/^www\./, ""); } catch { hostname = strategy.topic; }
+    let desc = `${script.title} - A complete walkthrough and review of ${hostname}.\n\n`;
+    desc += "IN THIS VIDEO:\n";
+    if (script.mainContent?.sections) {
+      for (const section of script.mainContent.sections.slice(0, 8)) {
+        if (section.title) desc += `- ${section.title}\n`;
+      }
+    }
+    desc += "\n";
+    desc += "TIMESTAMPS:\n00:00 Introduction\n";
+    let ts = 15;
+    if (script.mainContent?.sections) {
+      for (const section of script.mainContent.sections) {
+        const m = Math.floor(ts / 60).toString().padStart(2, "0");
+        const s = (ts % 60).toString().padStart(2, "0");
+        desc += `${m}:${s} ${section.title || "Section"}\n`;
+        ts += section.duration || 45;
+      }
+    }
+    desc += "\n";
+    desc += "ABOUT THIS VIDEO:\n";
+    desc += `We walk through ${hostname} page by page, exploring its features, design, and what it offers. `;
+    desc += `Perfect for anyone curious about ${hostname} or looking for honest website reviews.\n\n`;
+    desc += "LINKS:\n";
+    desc += `- ${strategy.topic}\n- tokns.fi\n- coherencedaddy.com\n\n`;
+    desc += "DISCLAIMER:\nThis video is for informational purposes only.\n\n";
+    desc += `(c) ${new Date().getFullYear()} Tokns.fi. All Rights Reserved.\n`;
+    return desc;
+  }
+
   let desc = `${script.title} - In this video, you'll discover ${strategy.angle.toLowerCase()}.\n\n`;
 
   desc += "WHAT YOU'LL LEARN:\n";
@@ -161,6 +208,11 @@ function generateTags(script: ScriptData, strategy: ContentStrategy): string[] {
 
   // Niche-specific
   const topic = strategy.topic.toLowerCase();
+  if (strategy.pillar === "site-walker") {
+    let hostname: string;
+    try { hostname = new URL(strategy.topic).hostname.replace(/^www\./, ""); } catch { hostname = strategy.topic; }
+    for (const t of ["website review", "website walkthrough", "site review", "web app review", hostname]) tags.add(t);
+  }
   if (/crypto|bitcoin|blockchain|defi|altcoin/.test(topic)) {
     for (const t of ["crypto", "cryptocurrency", "blockchain", "bitcoin", "investing"]) tags.add(t);
   }
@@ -212,6 +264,11 @@ function generateHashtags(strategy: ContentStrategy): string[] {
   }
   if (/chart|technical|trading|read/i.test(topic)) {
     h.push("#technicalanalysis", "#cryptotrading", "#tradingforbeginners");
+  }
+
+  // Site-walker specific
+  if (strategy.pillar === "site-walker") {
+    h.push("#websitereview", "#walkthrough", "#sitereview", "#webreview", "#techreview");
   }
 
   // Channel branding

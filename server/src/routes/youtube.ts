@@ -42,9 +42,11 @@ export function youtubeRoutes(db: Db): Router {
   // Manually trigger pipeline
   router.post("/pipeline/run", async (req, res) => {
     try {
-      const { topic, visualMode } = req.body as { topic?: string; visualMode?: string };
+      const { topic, visualMode, targetUrl } = req.body as { topic?: string; visualMode?: string; targetUrl?: string };
+      // For site-walker mode, use targetUrl as the topic (it's the URL to walk)
+      const effectiveTopic = (visualMode === "site-walker" && targetUrl) ? targetUrl : topic;
       // Run async — don't block the request
-      const result = await runProductionPipeline(db, topic, visualMode);
+      const result = await runProductionPipeline(db, effectiveTopic, visualMode);
       res.json({
         productionId: result.productionId,
         status: result.status,

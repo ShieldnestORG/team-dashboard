@@ -17,7 +17,9 @@ import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
-import { buildSlidesFromScript, renderSlidesToImages } from "./presentation-renderer.js";
+import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages } from "./presentation-renderer.js";
+import { walkSite, type SiteWalkResult } from "./site-walker.js";
+import { generateWalkthroughScript } from "./walkthrough-writer.js";
 import { getAvailableBackends } from "../visual-backends/index.js";
 import { logger } from "../../middleware/logger.js";
 
@@ -69,10 +71,23 @@ export async function runProductionPipeline(
 
   const productionId = prod.id;
 
+  // Site-walker state (populated if mode === "site-walker")
+  let siteWalkResult: SiteWalkResult | undefined;
+
   try {
-    // 3. Generate script
-    logger.info({ productionId }, "YT Pipeline: generating script...");
-    const script = await generateScript(strategy);
+    // 3. Generate script (site-walker uses its own writer)
+    let script: ScriptData;
+    if (mode === "site-walker") {
+      logger.info({ productionId, url: strategy.topic }, "YT Pipeline: walking site...");
+      const walkDir = join(ASSETS_DIR, productionId, "walk");
+      ensureDir(walkDir);
+      siteWalkResult = await walkSite(strategy.topic, walkDir);
+      logger.info({ productionId, sections: siteWalkResult.sections.length }, "YT Pipeline: generating walkthrough script...");
+      script = await generateWalkthroughScript(siteWalkResult);
+    } else {
+      logger.info({ productionId }, "YT Pipeline: generating script...");
+      script = await generateScript(strategy);
+    }
 
     await db
       .update(ytProductions)
@@ -111,7 +126,7 @@ export async function runProductionPipeline(
 
     // 7. Generate visual assets (images for slideshow)
     logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
-    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode);
+    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
 
     // 8. Generate captions
     const captionsPath = await generateCaptions(ttsText, tts.durationSec, `captions_${productionId}.srt`);
@@ -204,30 +219,62 @@ async function generateVisualAssets(
   script: ScriptData,
   productionId: string,
   mode: string,
+  walkResult?: SiteWalkResult,
 ): Promise<VisualResult> {
   const dir = join(ASSETS_DIR, productionId);
   ensureDir(dir);
 
-  // ── Presentation mode: branded HTML/CSS slides via Playwright ──────────
+  // ── Site-walker mode: screenshots already captured by walkSite() ──────
+  if (mode === "site-walker" && walkResult) {
+    const paths = walkResult.sections.map((s) => s.screenshotPath);
+    const wordCounts = script.mainContent.sections.map((s) => {
+      const text = Array.isArray(s.content) ? s.content.join(" ") : String(s.content);
+      return Math.max(text.split(/\s+/).filter(Boolean).length, 5);
+    });
+    // Pad word counts to match screenshot count if needed
+    while (wordCounts.length < paths.length) wordCounts.push(10);
+    logger.info({ frames: paths.length }, "Site-walker screenshots ready for assembly");
+    return { paths: paths.slice(0, Math.max(paths.length, wordCounts.length)), wordCounts: wordCounts.slice(0, paths.length) };
+  }
+
+  // ── Presentation mode: AI-generated slides → static fallback → AI images ─
   if (mode === "presentation") {
+    // Try Ollama-generated unique slides first
     try {
-      const slides = buildSlidesFromScript(script);
-      logger.info({ slideCount: slides.length }, "Built presentation slides from script");
-      const framePaths = await renderSlidesToImages(slides, dir);
+      logger.info("Trying AI-generated slides via Ollama...");
+      const aiSlides = await buildSlidesFromScriptAI(script);
+      const framePaths = await renderSlidesToImages(aiSlides, dir);
       if (framePaths.length > 0) {
-        // Weight durations by spoken text word count per slide
-        const wordCounts = slides.map((s) => {
+        const wordCounts = aiSlides.map((s) => {
           const text = s.spokenText || "";
           const words = text.split(/\s+/).filter(Boolean).length;
-          // Title/section_title slides get minimum weight (brief transition)
           if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
           return Math.max(words, 5);
         });
-        logger.info({ frames: framePaths.length }, "Presentation slides rendered successfully");
+        logger.info({ frames: framePaths.length }, "AI-generated slides rendered successfully");
         return { paths: framePaths, wordCounts };
       }
     } catch (err) {
-      logger.warn({ err }, "Presentation rendering failed, falling back to AI images");
+      logger.warn({ err }, "AI slide generation failed, trying static templates...");
+    }
+
+    // Fall back to static HTML templates
+    try {
+      const staticSlides = buildSlidesFromScript(script);
+      logger.info({ slideCount: staticSlides.length }, "Built static presentation slides from script");
+      const framePaths = await renderSlidesToImages(staticSlides, dir);
+      if (framePaths.length > 0) {
+        const wordCounts = staticSlides.map((s) => {
+          const text = s.spokenText || "";
+          const words = text.split(/\s+/).filter(Boolean).length;
+          if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
+          return Math.max(words, 5);
+        });
+        logger.info({ frames: framePaths.length }, "Static slides rendered successfully");
+        return { paths: framePaths, wordCounts };
+      }
+    } catch (err) {
+      logger.warn({ err }, "Static slide rendering failed, falling back to AI images");
     }
   }
 

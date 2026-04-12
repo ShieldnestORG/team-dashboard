@@ -206,6 +206,40 @@ export async function generateContentStrategy(
   db: Db,
   requestedTopic?: string,
 ): Promise<ContentStrategy> {
+  // Site-walker mode: topic is a URL
+  const isUrl = requestedTopic && /^https?:\/\//.test(requestedTopic);
+  if (isUrl) {
+    const topic = requestedTopic;
+    const hostname = extractHostnameFromUrl(topic);
+    const angle = await generateAngleWithAI(`Website walkthrough and review of ${hostname}`);
+
+    const strategy: ContentStrategy = {
+      topic,
+      angle,
+      pillar: "site-walker",
+      contentType: "Review",
+      targetAudience: "Tech enthusiasts, web users, potential customers",
+      keywords: [hostname, ...hostname.split(".")[0].split("-"), "website review", "walkthrough"],
+      estimatedViews: 5000 + Math.floor(Math.random() * 10000),
+      bestPublishTime: calculateBestPublishTime(),
+    };
+
+    await db.insert(ytContentStrategies).values({
+      companyId: COMPANY_ID,
+      topic: strategy.topic,
+      angle: strategy.angle,
+      pillar: strategy.pillar,
+      contentType: strategy.contentType,
+      targetAudience: strategy.targetAudience,
+      keywords: strategy.keywords,
+      estimatedViews: strategy.estimatedViews,
+      bestPublishTime: new Date(strategy.bestPublishTime),
+    });
+
+    logger.info({ topic: hostname, pillar: "site-walker" }, "Site-walker content strategy generated");
+    return strategy;
+  }
+
   const recentTopics = await getRecentTopics(db);
   const pillar = selectPillar();
   const topic = requestedTopic || selectTopic(pillar, recentTopics);
@@ -237,4 +271,12 @@ export async function generateContentStrategy(
 
   logger.info({ topic, pillar, contentType: strategy.contentType }, "Content strategy generated");
   return strategy;
+}
+
+function extractHostnameFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
