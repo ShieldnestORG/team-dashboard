@@ -26,6 +26,9 @@ export async function generateWalkthroughScript(walkResult: SiteWalkResult): Pro
     script = generateFromTemplate(walkResult);
   }
 
+  // Sanitize all narration text for TTS before anything else
+  sanitizeScriptForTTS(script);
+
   // Build full script text
   script.fullScript = formatFullWalkthroughScript(script);
   logger.info({ title: script.title, sections: script.mainContent.sections.length }, "Walkthrough script generated");
@@ -40,7 +43,16 @@ async function generateWithOllama(walkResult: SiteWalkResult): Promise<ScriptDat
   const hostname = extractHostname(walkResult.url);
   const year = new Date().getFullYear();
 
-  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Tokns.fi. You specialize in website walkthrough and review videos. Your narration describes what viewers see on screen as you walk through a website section by section. Be specific about UI elements, features, and design choices you observe. The tone is confident, engaging, and analytical — like a tech reviewer showing off a new platform. The current year is ${year}. Always output valid JSON.`;
+  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Tokns.fi. You specialize in website walkthrough and review videos. Your narration describes what viewers see on screen as you walk through a website section by section. Be specific about UI elements, features, and design choices you observe. The tone is confident, engaging, and analytical — like a tech reviewer showing off a new platform. The current year is ${year}. Always output valid JSON.
+
+CRITICAL TTS RULES — the script will be read aloud by a text-to-speech engine:
+- NEVER include URLs, links, or web addresses in the narration text. Say the site name conversationally instead (e.g. "toe-kins dot fye" not "tokns.fi", "their website" not "https://tokns.fi")
+- NEVER use abbreviations, acronyms, or symbols. Spell everything out (e.g. "N-F-T" not "NFT", "dollars" not "$", "percent" not "%", "and" not "&")
+- Write in simple, natural spoken English. Use short sentences (under 20 words each)
+- Avoid technical jargon, code snippets, or anything that sounds unnatural when spoken aloud
+- Do NOT include markdown, bullet points, or formatting markers in the narration
+- Numbers should be written as words (e.g. "over five hundred" not "500+")
+- Each content line should be one complete spoken thought, 8-15 words long`;
 
   const sectionDescriptions = walkResult.sections
     .map(
@@ -176,7 +188,7 @@ function generateFromTemplate(walkResult: SiteWalkResult): ScriptData {
         `The site ${walkResult.sections.length > 5 ? "has a lot to offer" : "keeps things focused and clean"}.`,
         `Overall, it's worth checking out if you're interested in what they do.`,
       ],
-      finalThought: `Head over to ${walkResult.url} to explore it yourself!`,
+      finalThought: `Head over to ${hostname} to explore it yourself!`,
       duration: "20 seconds",
     },
     callToAction: {
@@ -206,6 +218,124 @@ function extractHostname(url: string): string {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
     return url;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TTS sanitizer — clean up all narration text so Chatterbox doesn't gibberish
+// ---------------------------------------------------------------------------
+
+function sanitizeTextForTTS(text: string): string {
+  let t = text;
+
+  // Strip URLs entirely — replace with "their website" or just remove
+  t = t.replace(/https?:\/\/[^\s)]+/g, "their website");
+
+  // Strip markdown formatting
+  t = t.replace(/\*\*([^*]+)\*\*/g, "$1");  // bold
+  t = t.replace(/\*([^*]+)\*/g, "$1");       // italic
+  t = t.replace(/`([^`]+)`/g, "$1");         // inline code
+  t = t.replace(/^[-*•]\s+/gm, "");          // bullet points
+  t = t.replace(/^#+\s+/gm, "");             // heading markers
+
+  // Expand common symbols
+  t = t.replace(/&/g, " and ");
+  t = t.replace(/%/g, " percent");
+  t = t.replace(/\$/g, " dollars ");
+  t = t.replace(/\+/g, " plus ");
+  t = t.replace(/@/g, " at ");
+  t = t.replace(/#(\w)/g, "number $1");
+  t = t.replace(/\//g, " ");
+
+  // Expand common abbreviations
+  t = t.replace(/\bNFTs?\b/g, "N-F-T");
+  t = t.replace(/\bDeFi\b/gi, "de-fi");
+  t = t.replace(/\bDAOs?\b/g, (m) => m.endsWith("s") ? "dow-z" : "dow");
+  t = t.replace(/\bAPR\b/g, "A-P-R");
+  t = t.replace(/\bAPY\b/g, "A-P-Y");
+  t = t.replace(/\bAPI\b/g, "A-P-I");
+  t = t.replace(/\bUI\b/g, "U-I");
+  t = t.replace(/\bUX\b/g, "U-X");
+  t = t.replace(/\bAI\b/g, "A-I");
+  t = t.replace(/\bETH\b/g, "E-T-H");
+  t = t.replace(/\bBTC\b/g, "B-T-C");
+
+  // Numbers: simple conversions for common patterns
+  t = t.replace(/(\d+)\+/g, "over $1");
+  t = t.replace(/\b(\d{1,3}),(\d{3})\b/g, "$1$2"); // strip commas in numbers
+
+  // Clean up domain-like patterns (e.g. "app.tokns.fi")
+  t = t.replace(/\b(\w+)\.(\w+)\.(\w+)\b/g, "$1 dot $2 dot $3");
+  t = t.replace(/\b(\w+)\.(\w{2,6})\b/g, (match, name, tld) => {
+    // Don't break normal sentences ending with period
+    if (["com", "io", "fi", "org", "net", "co", "app", "dev", "xyz"].includes(tld.toLowerCase())) {
+      return `${name} dot ${tld}`;
+    }
+    return match;
+  });
+
+  // Remove non-speakable characters
+  t = t.replace(/[{}[\]<>|\\^~`]/g, "");
+  t = t.replace(/[""]/g, '"');
+  t = t.replace(/['']/g, "'");
+  t = t.replace(/—/g, ", ");
+  t = t.replace(/–/g, ", ");
+  t = t.replace(/\.\.\./g, ". ");
+
+  // Collapse excessive whitespace
+  t = t.replace(/\s+/g, " ").trim();
+
+  // Break up very long sentences (over 30 words) with natural pauses
+  const sentences = t.split(/(?<=[.!?])\s+/);
+  const cleaned = sentences.map((s) => {
+    const words = s.split(/\s+/);
+    if (words.length > 30) {
+      // Insert a pause/period after ~15 words at a natural break
+      const midpoint = Math.min(15, Math.floor(words.length / 2));
+      // Find a comma or conjunction near midpoint
+      for (let i = midpoint - 3; i <= midpoint + 3 && i < words.length; i++) {
+        if (words[i].endsWith(",") || ["and", "but", "or", "which", "that", "where"].includes(words[i].toLowerCase())) {
+          words[i] = words[i].replace(/,$/, ".") || words[i] + ".";
+          break;
+        }
+      }
+    }
+    return words.join(" ");
+  });
+  t = cleaned.join(" ");
+
+  return t;
+}
+
+/**
+ * Sanitize all narration fields in a ScriptData for TTS.
+ * Mutates the script in-place.
+ */
+function sanitizeScriptForTTS(script: ScriptData): void {
+  if (script.hook) script.hook.text = sanitizeTextForTTS(script.hook.text);
+  if (script.introduction) {
+    script.introduction.greeting = sanitizeTextForTTS(script.introduction.greeting);
+    script.introduction.topicIntro = sanitizeTextForTTS(script.introduction.topicIntro);
+    script.introduction.valueProposition = sanitizeTextForTTS(script.introduction.valueProposition);
+    script.introduction.credibility = sanitizeTextForTTS(script.introduction.credibility);
+  }
+  if (script.mainContent?.sections) {
+    for (const section of script.mainContent.sections) {
+      section.title = sanitizeTextForTTS(section.title);
+      if (Array.isArray(section.content)) {
+        section.content = section.content.map(sanitizeTextForTTS);
+      }
+    }
+  }
+  if (script.conclusion) {
+    script.conclusion.recap = script.conclusion.recap.map(sanitizeTextForTTS);
+    script.conclusion.finalThought = sanitizeTextForTTS(script.conclusion.finalThought);
+  }
+  if (script.callToAction) {
+    script.callToAction.subscribe = sanitizeTextForTTS(script.callToAction.subscribe);
+    script.callToAction.like = sanitizeTextForTTS(script.callToAction.like);
+    script.callToAction.comment = sanitizeTextForTTS(script.callToAction.comment);
+    script.callToAction.nextVideo = sanitizeTextForTTS(script.callToAction.nextVideo);
   }
 }
 
