@@ -133,14 +133,8 @@ export async function walkSite(url: string, outputDir: string): Promise<SiteWalk
       }
       await page.waitForTimeout(SCROLL_SETTLE_MS);
 
-      // Inject branded overlay
-      await injectOverlay(page, heading, i + 1, sectionData.length);
-
-      // Screenshot
+      // Screenshot (clean — no overlays)
       await page.screenshot({ path: screenshotPath, type: "png" });
-
-      // Remove overlay
-      await page.evaluate(`document.getElementById('sw-overlay-top')?.remove(); document.getElementById('sw-overlay-bottom')?.remove();`);
 
       sections.push({
         index: i,
