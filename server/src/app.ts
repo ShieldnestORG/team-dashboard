@@ -1,3 +1,4 @@
+import cors from "cors";
 import express, { Router, type Request as ExpressRequest } from "express";
 import path from "node:path";
 import fs from "node:fs";
@@ -115,6 +116,16 @@ export async function createApp(
 ) {
   const app = express();
 
+  app.use(cors({
+    origin: [
+      /\.vercel\.app$/,
+      "https://coherencedaddy.com",
+      "https://www.coherencedaddy.com",
+      "https://api.coherencedaddy.com",
+      /localhost/,
+    ],
+    credentials: true,
+  }));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",

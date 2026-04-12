@@ -264,14 +264,14 @@ cd ui && npm run build
 ## Deployment (Split Architecture)
 
 ```
-Vercel (frontend)              VPS 31.220.61.12 (backend)        Neon (database)
-React SPA (ui/dist)  -------> Docker: Express.js :3200  ------> PostgreSQL
-vercel.json rewrites           docker-compose.production.yml     Vercel integration
-/api/* -> VPS:3200             SERVE_UI=false
+Vercel (frontend)              VPS 31.220.61.12 (backend)            Neon (database)
+React SPA (ui/dist)  -------> Caddy (api.coherencedaddy.com)  ----> PostgreSQL
+  HTTP API (direct)            ├─ auto HTTPS (Let's Encrypt)         Vercel integration
+  WebSocket (direct)           └─ reverse_proxy → Express :3100
 ```
 
 - **Frontend**: Vercel — auto-deploys on push to master, serves static UI
-- **Backend**: VPS Docker at `31.220.61.12:3200` — Express.js API, agent runtime
+- **Backend**: VPS Docker behind Caddy at `api.coherencedaddy.com` — Express.js API, agent runtime, WebSocket
 - **Database**: Neon PostgreSQL — managed by Vercel integration
 - **Firecrawl**: Self-hosted at `168.231.127.180` — scraping, crawling, data extraction
 - **Embeddings**: `147.79.78.251:8000` — BGE-M3 vector embedding service (VPS_3)
@@ -451,9 +451,13 @@ git push origin master
 
 **VPS** needs all the above in `.env.production` at `/opt/team-dashboard/`.
 
-### WebSocket Limitation
+### WebSocket & API Domain
 
-Vercel rewrites don't support WebSocket upgrade. Live push notifications (agent status, issue updates) are degraded. React Query polling still works. Fix later by adding a domain to the VPS with Caddy for HTTPS + WS support.
+The VPS backend is fronted by **Caddy** at `api.coherencedaddy.com` (auto-HTTPS via Let's Encrypt). The production frontend connects directly to `https://api.coherencedaddy.com/api` for HTTP and `wss://api.coherencedaddy.com` for WebSocket — bypassing Vercel rewrites entirely. This enables real-time push notifications (agent status, issue updates, live events) via WebSocket.
+
+- **Caddy config:** `Caddyfile` in repo root, mounted into Docker
+- **CORS:** `server/src/app.ts` allows `*.vercel.app`, `coherencedaddy.com`, and `localhost` origins with credentials
+- **Fallback:** `vercel.json` still has `/api/*` rewrites to the VPS IP as a fallback
 
 ---
 

@@ -738,7 +738,11 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     const connect = () => {
       if (closed) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      const url = `${protocol}://${window.location.host}/api/companies/${encodeURIComponent(selectedCompanyId)}/events/ws`;
+      const isProd = !window.location.hostname.includes("localhost");
+      const wsBase = isProd
+        ? "wss://api.coherencedaddy.com"
+        : `${protocol}://${window.location.host}`;
+      const url = `${wsBase}/api/companies/${encodeURIComponent(selectedCompanyId)}/events/ws`;
       socket = new WebSocket(url);
 
       socket.onopen = () => {
