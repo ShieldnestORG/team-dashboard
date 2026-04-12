@@ -28,4 +28,22 @@ export const youtubeApi = {
       productions: Record<string, number>;
       queue: Record<string, number>;
     }>("/youtube/stats"),
+  getVideos: () =>
+    api.get<{
+      videos: Array<{
+        filename: string;
+        productionId: string;
+        title: string;
+        status: string;
+        visualMode: string;
+        fileSizeBytes: number;
+        createdAt: string;
+        youtubeUrl: string | null;
+        publishStatus: string | null;
+      }>;
+      totalSize: number;
+      count: number;
+    }>("/youtube/videos"),
+  getVideoDownloadUrl: (filename: string) =>
+    `/api/youtube/videos/${encodeURIComponent(filename)}/download`,
 };

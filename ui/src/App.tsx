@@ -48,6 +48,7 @@ import { CronManagement } from "./pages/CronManagement";
 import { AgentOps } from "./pages/AgentOps";
 import { ApiDashboard } from "./pages/ApiDashboard";
 import { YouTubePipeline } from "./pages/YouTubePipeline";
+import { YouTubeVideos } from "./pages/YouTubeVideos";
 import { Partners } from "./pages/Partners";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
@@ -195,6 +196,7 @@ function boardRoutes() {
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
       <Route path="youtube" element={<YouTubePipeline />} />
+      <Route path="youtube/videos" element={<YouTubeVideos />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
