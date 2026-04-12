@@ -17,6 +17,11 @@ const BOARD_ROUTE_ROOTS = new Set([
   "design-guide",
   "structure",
   "twitter",
+  "discord",
+  "tokns",
+  "auto-reply",
+  "api-routes",
+  "agent-ops",
   "tx-ecosystem",
   "system-health",
   "content-review",
@@ -27,6 +32,9 @@ const BOARD_ROUTE_ROOTS = new Set([
   "settings",
   "tests",
   "crons",
+  "partners",
+  "youtube",
+  "partner-dashboard",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
