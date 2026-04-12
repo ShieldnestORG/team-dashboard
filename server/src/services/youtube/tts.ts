@@ -201,6 +201,105 @@ async function generateMacOSTTS(text: string, outputPath: string): Promise<TTSRe
   return { audioPath: outputPath, durationSec, provider: "macos" };
 }
 
+// ---------------------------------------------------------------------------
+// Chunked TTS — generate per-section audio and concatenate
+// ---------------------------------------------------------------------------
+
+export interface ChunkedTTSResult {
+  audioPath: string;
+  durationSec: number;
+  chunkDurations: number[]; // per-chunk durations for slide timing
+  provider: string;
+}
+
+/**
+ * Generate TTS for each text chunk separately, then concatenate into one file.
+ * Returns per-chunk durations so slide timing can be exact.
+ * Adds a brief silence gap between chunks for natural pacing.
+ */
+export async function generateChunkedTTS(
+  chunks: string[],
+  outputFilename?: string,
+): Promise<ChunkedTTSResult> {
+  ensureDir(AUDIO_DIR);
+  const filename = outputFilename || `tts_chunked_${Date.now()}.mp3`;
+  const outputPath = join(AUDIO_DIR, filename);
+
+  if (!CHATTERBOX_API_URL) {
+    throw new Error("Chatterbox TTS not configured. Set CHATTERBOX_API_URL in environment.");
+  }
+
+  // Health check once
+  const healthRes = await fetch(`${CHATTERBOX_API_URL}/health`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!healthRes.ok) throw new Error(`Chatterbox health check failed: ${healthRes.status}`);
+  logger.info({ chunks: chunks.length }, "Chatterbox chunked TTS starting...");
+
+  const chunkPaths: string[] = [];
+  const chunkDurations: number[] = [];
+  const SILENCE_GAP_SEC = 0.6; // brief pause between sections
+
+  // Generate a silence file for gaps
+  const silencePath = join(AUDIO_DIR, `silence_${Date.now()}.mp3`);
+  await execAsync(
+    `ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t ${SILENCE_GAP_SEC} -codec:a libmp3lame -qscale:a 2 "${silencePath}"`,
+  );
+
+  for (let i = 0; i < chunks.length; i++) {
+    const text = chunks[i].trim();
+    if (!text) {
+      chunkDurations.push(SILENCE_GAP_SEC);
+      continue;
+    }
+
+    const chunkFile = join(AUDIO_DIR, `chunk_${Date.now()}_${i}.mp3`);
+    logger.info({ chunk: i + 1, total: chunks.length, words: text.split(/\s+/).length }, "Generating TTS chunk...");
+
+    try {
+      const result = await generateChatterboxTTS(text, chunkFile);
+      chunkPaths.push(chunkFile);
+      chunkDurations.push(result.durationSec);
+
+      // Add silence gap after each chunk except the last
+      if (i < chunks.length - 1) {
+        chunkPaths.push(silencePath);
+        chunkDurations.push(SILENCE_GAP_SEC);
+      }
+    } catch (err) {
+      logger.warn({ err, chunk: i }, "Chunk TTS failed, adding silence");
+      chunkPaths.push(silencePath);
+      chunkDurations.push(SILENCE_GAP_SEC);
+    }
+  }
+
+  // Concatenate all chunks with FFmpeg
+  const concatList = join(AUDIO_DIR, `concat_${Date.now()}.txt`);
+  const concatContent = chunkPaths.map((p) => `file '${p}'`).join("\n");
+  await writeFile(concatList, concatContent);
+
+  await execAsync(
+    `ffmpeg -y -f concat -safe 0 -i "${concatList}" -codec:a libmp3lame -qscale:a 2 "${outputPath}"`,
+    { timeout: 120_000 },
+  );
+
+  const totalDuration = await getAudioDuration(outputPath);
+
+  // Cleanup temp chunk files (not silence, it may be reused)
+  for (const p of chunkPaths) {
+    if (p !== silencePath) await unlink(p).catch(() => {});
+  }
+  await unlink(silencePath).catch(() => {});
+  await unlink(concatList).catch(() => {});
+
+  logger.info(
+    { provider: "chatterbox", chunks: chunks.length, totalDuration, chunkCount: chunkDurations.length },
+    "Chunked TTS generation complete",
+  );
+
+  return { audioPath: outputPath, durationSec: totalDuration, chunkDurations, provider: "chatterbox" };
+}
+
 /**
  * Check which TTS providers are currently configured.
  */

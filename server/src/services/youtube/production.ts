@@ -12,10 +12,10 @@ import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
 import { generateContentStrategy, type ContentStrategy } from "./content-strategy.js";
-import { generateScript, formatScriptForTTS, formatScriptPlainText, type ScriptData } from "./script-writer.js";
+import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunciationFixes, type ScriptData } from "./script-writer.js";
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
-import { generateTTSAudio, type TTSResult } from "./tts.js";
+import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
 import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
@@ -121,8 +121,27 @@ export async function runProductionPipeline(
 
     // 6. Generate TTS audio
     logger.info({ productionId }, "YT Pipeline: generating TTS audio...");
-    const ttsText = formatScriptForTTS(script);
-    const tts = await generateTTSAudio(ttsText, `audio_${productionId}.mp3`);
+    let tts: TTSResult;
+    let perSlideDurations: number[] | undefined;
+
+    if (mode === "site-walker") {
+      // Chunked TTS: one chunk per screenshot for cleaner voice output
+      const ttsChunks = buildTTSChunks(script);
+      const chunkedResult = await generateChunkedTTS(ttsChunks, `audio_${productionId}.mp3`);
+      tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
+      // Collapse [content, silence, content, silence, ..., content] into per-slide durations
+      // Each slide = its content duration + the following silence gap (if any)
+      const raw = chunkedResult.chunkDurations;
+      perSlideDurations = [];
+      for (let i = 0; i < raw.length; i += 2) {
+        const contentDur = raw[i] || 0;
+        const silenceDur = raw[i + 1] || 0;
+        perSlideDurations.push(contentDur + silenceDur);
+      }
+    } else {
+      const ttsText = formatScriptForTTS(script);
+      tts = await generateTTSAudio(ttsText, `audio_${productionId}.mp3`);
+    }
 
     // 7. Generate visual assets (images for slideshow)
     logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
@@ -141,6 +160,7 @@ export async function runProductionPipeline(
         audioDurationSec: tts.durationSec,
         visualAssets,
         slideWordCounts,
+        slideDurations: perSlideDurations,
         captionsPath,
         outputFilename: `video_${productionId}.mp4`,
         metadata: { title: seo.title, copyright: `${new Date().getFullYear()} Tokns.fi` },
@@ -336,6 +356,65 @@ function extractVisualPrompts(script: ScriptData): string[] {
     "YouTube video outro card, subscribe reminder, professional dark gradient, tokns.fi branding, tech aesthetic",
   );
   return prompts;
+}
+
+/**
+ * Split a walkthrough script into TTS chunks aligned 1:1 with screenshots.
+ * Chunk 0 = hook + intro + first section narration (shown over first screenshot)
+ * Chunks 1..N-2 = one section each (one per screenshot)
+ * Chunk N-1 = last section + conclusion + CTA (shown over last screenshot)
+ */
+function buildTTSChunks(script: ScriptData): string[] {
+  const sections = script.mainContent?.sections || [];
+  if (sections.length === 0) return [];
+
+  const sectionTexts = sections.map((section) => {
+    let text = `${section.title}. `;
+    if (Array.isArray(section.content)) {
+      for (const line of section.content) {
+        if (typeof line === "string" && !line.startsWith("[")) {
+          text += `${line} `;
+        }
+      }
+    }
+    return text.trim();
+  });
+
+  // Build intro text
+  let intro = "";
+  if (script.hook) intro += `${script.hook.text} `;
+  if (script.introduction) {
+    intro += `${script.introduction.greeting} `;
+    intro += `${script.introduction.topicIntro} `;
+    intro += `${script.introduction.valueProposition} `;
+    intro += script.introduction.credibility;
+  }
+
+  // Build outro text
+  let outro = "";
+  if (script.conclusion) {
+    outro += script.conclusion.recap.join(". ") + ". ";
+    outro += script.conclusion.finalThought + " ";
+  }
+  if (script.callToAction) {
+    outro += [
+      script.callToAction.subscribe,
+      script.callToAction.like,
+      script.callToAction.comment,
+    ].filter(Boolean).join(". ");
+  }
+
+  // Merge intro into first section, outro into last section
+  const chunks: string[] = [];
+  for (let i = 0; i < sectionTexts.length; i++) {
+    let chunk = "";
+    if (i === 0) chunk += intro.trim() + " ";
+    chunk += sectionTexts[i];
+    if (i === sectionTexts.length - 1) chunk += " " + outro.trim();
+    chunks.push(applyPronunciationFixes(chunk.trim()));
+  }
+
+  return chunks;
 }
 
 function calculatePriority(strategy: ContentStrategy): number {

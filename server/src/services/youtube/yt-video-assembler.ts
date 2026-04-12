@@ -27,6 +27,8 @@ export interface YtAssembleOptions {
   visualAssets: string[];
   /** Word counts per slide for duration weighting (same length as visualAssets) */
   slideWordCounts?: number[];
+  /** Exact per-slide durations in seconds (overrides word-count estimation if provided) */
+  slideDurations?: number[];
   /** SRT captions file path (optional) */
   captionsPath?: string;
   /** Output filename (without dir) */
@@ -67,16 +69,22 @@ export async function assembleYouTubeVideo(opts: YtAssembleOptions): Promise<YtA
     throw new Error("No visual assets provided for video assembly");
   }
 
-  // Calculate per-slide duration weighted by spoken word count.
-  // Slides with more spoken text get proportionally more time.
-  const wordCounts = opts.slideWordCounts || visualAssets.map(() => 1);
-  const MIN_SLIDE_SEC = 2.0; // minimum time any slide is shown
-  const totalWords = wordCounts.reduce((a, b) => a + b, 0) || 1;
-  const reservedSec = MIN_SLIDE_SEC * visualAssets.length;
-  const distributableSec = Math.max(0, audioDurationSec - reservedSec);
-  const slideDurations = wordCounts.map(
-    (wc) => MIN_SLIDE_SEC + (distributableSec * wc) / totalWords,
-  );
+  // Calculate per-slide durations.
+  // If exact slideDurations provided (from chunked TTS), use those directly.
+  // Otherwise estimate from word counts.
+  let slideDurations: number[];
+  if (opts.slideDurations && opts.slideDurations.length === visualAssets.length) {
+    slideDurations = opts.slideDurations;
+  } else {
+    const wordCounts = opts.slideWordCounts || visualAssets.map(() => 1);
+    const MIN_SLIDE_SEC = 2.0;
+    const totalWords = wordCounts.reduce((a, b) => a + b, 0) || 1;
+    const reservedSec = MIN_SLIDE_SEC * visualAssets.length;
+    const distributableSec = Math.max(0, audioDurationSec - reservedSec);
+    slideDurations = wordCounts.map(
+      (wc) => MIN_SLIDE_SEC + (distributableSec * wc) / totalWords,
+    );
+  }
 
   // Build concat file for ffmpeg
   const concatPath = join(TEMP_DIR, `concat_${Date.now()}.txt`);
