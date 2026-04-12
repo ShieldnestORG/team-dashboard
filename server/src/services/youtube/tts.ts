@@ -1,27 +1,28 @@
 /**
  * YouTube Pipeline — Text-to-Speech service
  *
- * Provider cascade: Chatterbox (self-hosted voice clone) → Google Cloud TTS → macOS built-in
- * Replaces Anthropic/OpenAI TTS from the standalone project.
+ * Primary provider: Grok TTS (xAI) — fast, high quality, Rex voice.
+ * Supports both single-call and chunked (per-slide) generation.
  */
 
 import { exec } from "child_process";
 import { promisify } from "util";
-import { writeFile, unlink, mkdir } from "fs/promises";
+import { writeFile, unlink } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
 
 const execAsync = promisify(exec);
 
-const CHATTERBOX_API_URL = process.env.CHATTERBOX_API_URL || "";
-const CHATTERBOX_API_KEY = process.env.CHATTERBOX_API_KEY || "";
-const CHATTERBOX_VOICE_REF = process.env.CHATTERBOX_VOICE_REF || "default";
-const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || "";
-const GOOGLE_TTS_VOICE = process.env.GOOGLE_TTS_VOICE || "en-US-Neural2-J";
-const GOOGLE_TTS_LANGUAGE = process.env.GOOGLE_TTS_LANGUAGE || "en-US";
+const GROK_API_KEY = process.env.GROK_API_KEY || "";
+const GROK_TTS_VOICE = process.env.GROK_TTS_VOICE || "rex";
+const GROK_TTS_URL = "https://api.x.ai/v1/tts";
 
 const AUDIO_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "audio");
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface TTSResult {
   audioPath: string;
@@ -30,29 +31,15 @@ export interface TTSResult {
   provider: string;
 }
 
-function ensureDir(dir: string) {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+export interface ChunkedTTSResult {
+  audioPath: string;
+  durationSec: number;
+  chunkDurations: number[];
+  provider: string;
 }
 
-/**
- * Generate TTS audio from text with provider cascade.
- */
-export async function generateTTSAudio(
-  text: string,
-  outputFilename?: string,
-): Promise<TTSResult> {
-  ensureDir(AUDIO_DIR);
-  const filename = outputFilename || `tts_${Date.now()}.mp3`;
-  const outputPath = join(AUDIO_DIR, filename);
-
-  // Chatterbox only — self-hosted voice clone, no fallback to Google/macOS
-  if (CHATTERBOX_API_URL) {
-    return await generateChatterboxTTS(text, outputPath);
-  }
-
-  throw new Error("Chatterbox TTS not configured. Set CHATTERBOX_API_URL in environment.");
+function ensureDir(dir: string) {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
 async function getAudioDuration(audioPath: string): Promise<number> {
@@ -67,150 +54,70 @@ async function getAudioDuration(audioPath: string): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Chatterbox TTS (self-hosted voice clone on VPS)
+// Grok TTS (xAI) — primary provider
 // ---------------------------------------------------------------------------
 
-async function generateChatterboxTTS(text: string, outputPath: string): Promise<TTSResult> {
-  // Health check — fail fast if VPS is down
-  const healthRes = await fetch(`${CHATTERBOX_API_URL}/health`, {
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!healthRes.ok) throw new Error(`Chatterbox health check failed: ${healthRes.status}`);
-  logger.info("Chatterbox health check passed, starting TTS generation (this may take 5-10 min on CPU)...");
+async function generateGrokTTS(text: string, outputPath: string): Promise<TTSResult> {
+  if (!GROK_API_KEY) {
+    throw new Error("Grok TTS not configured. Set GROK_API_KEY in environment.");
+  }
 
-  // Chatterbox on CPU takes 5-10 min for a full 4-5 min script.
-  // Node.js undici has a default headersTimeout that can kill long requests.
-  // Use http module directly to avoid undici timeout issues.
-  const url = new URL(`${CHATTERBOX_API_URL}/v1/tts`);
-  const requestBody = JSON.stringify({
-    text,
-    voice_ref: CHATTERBOX_VOICE_REF,
-    // Lower temperature = less random artifacts, cleaner tone, less nasal.
-    // Higher repetition_penalty = reduces repetitive nasal patterns.
-    temperature: parseFloat(process.env.CHATTERBOX_TEMPERATURE || "0.4"),
-    top_p: parseFloat(process.env.CHATTERBOX_TOP_P || "0.85"),
-    repetition_penalty: parseFloat(process.env.CHATTERBOX_REP_PENALTY || "1.35"),
-  });
+  logger.info({ voice: GROK_TTS_VOICE, chars: text.length }, "Grok TTS: generating audio...");
 
-  const httpModule = url.protocol === "https:" ? await import("https") : await import("http");
-
-  const arrayBuf = await new Promise<Buffer>((resolve, reject) => {
-    const req = httpModule.request(
-      {
-        hostname: url.hostname,
-        port: url.port || (url.protocol === "https:" ? 443 : 80),
-        path: url.pathname,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": CHATTERBOX_API_KEY,
-          "Content-Length": Buffer.byteLength(requestBody),
-        },
-        timeout: 1_800_000, // 30 min socket timeout
+  const res = await fetch(GROK_TTS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${GROK_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text,
+      voice_id: GROK_TTS_VOICE,
+      language: "en",
+      output_format: {
+        codec: "mp3",
+        sample_rate: 24000,
+        bit_rate: 128000,
       },
-      (res) => {
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`Chatterbox TTS failed: ${res.statusCode}`));
-          res.resume();
-          return;
-        }
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(chunks)));
-        res.on("error", reject);
-      },
-    );
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy(new Error("Chatterbox TTS request timed out after 30 minutes"));
-    });
-    req.write(requestBody);
-    req.end();
+    }),
+    signal: AbortSignal.timeout(120_000), // 2 min timeout
   });
 
-  const wavPath = outputPath.replace(/\.mp3$/, "_raw.wav");
-  await writeFile(wavPath, arrayBuf);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Grok TTS failed (${res.status}): ${errBody.slice(0, 500)}`);
+  }
 
-  // Convert WAV → MP3
-  await execAsync(`ffmpeg -y -i "${wavPath}" -codec:a libmp3lame -qscale:a 2 "${outputPath}"`);
-  await unlink(wavPath).catch(() => {});
+  const audioBuffer = Buffer.from(await res.arrayBuffer());
+  await writeFile(outputPath, audioBuffer);
 
   const durationSec = await getAudioDuration(outputPath);
-  logger.info({ provider: "chatterbox", durationSec }, "TTS generation complete (voice clone)");
+  logger.info({ provider: "grok", voice: GROK_TTS_VOICE, durationSec }, "Grok TTS complete");
 
-  return { audioPath: outputPath, durationSec, provider: "chatterbox" };
+  return { audioPath: outputPath, durationSec, provider: "grok" };
 }
 
 // ---------------------------------------------------------------------------
-// Google Cloud TTS
+// Public API — single text
 // ---------------------------------------------------------------------------
 
-async function generateGoogleTTS(text: string, outputPath: string): Promise<TTSResult> {
-  const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`;
-  const CHUNK_SIZE = 4500; // Google TTS limit is 5000 bytes
+/**
+ * Generate TTS audio from text.
+ */
+export async function generateTTSAudio(
+  text: string,
+  outputFilename?: string,
+): Promise<TTSResult> {
+  ensureDir(AUDIO_DIR);
+  const filename = outputFilename || `tts_${Date.now()}.mp3`;
+  const outputPath = join(AUDIO_DIR, filename);
 
-  // Split at sentence boundaries
-  const chunks: string[] = [];
-  let remaining = text;
-  while (remaining.length > CHUNK_SIZE) {
-    let splitAt = remaining.lastIndexOf(". ", CHUNK_SIZE);
-    if (splitAt === -1) splitAt = remaining.lastIndexOf(" ", CHUNK_SIZE);
-    if (splitAt === -1) splitAt = CHUNK_SIZE;
-    chunks.push(remaining.slice(0, splitAt + 1).trim());
-    remaining = remaining.slice(splitAt + 1).trim();
-  }
-  if (remaining.length > 0) chunks.push(remaining);
-
-  const audioBuffers: Buffer[] = [];
-  for (const chunk of chunks) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        input: { text: chunk },
-        voice: { languageCode: GOOGLE_TTS_LANGUAGE, name: GOOGLE_TTS_VOICE, ssmlGender: "MALE" },
-        audioConfig: { audioEncoding: "MP3", speakingRate: 1.0, pitch: 0, volumeGainDb: 0 },
-      }),
-    });
-    if (!res.ok) throw new Error(`Google TTS failed: ${res.status}`);
-    const data = (await res.json()) as { audioContent: string };
-    audioBuffers.push(Buffer.from(data.audioContent, "base64"));
-  }
-
-  await writeFile(outputPath, Buffer.concat(audioBuffers));
-  const durationSec = await getAudioDuration(outputPath);
-  logger.info({ provider: "google", chunks: chunks.length, durationSec }, "Google TTS complete");
-
-  return { audioPath: outputPath, durationSec, provider: "google" };
-}
-
-// ---------------------------------------------------------------------------
-// macOS built-in TTS (free, offline fallback)
-// ---------------------------------------------------------------------------
-
-async function generateMacOSTTS(text: string, outputPath: string): Promise<TTSResult> {
-  const aiffPath = outputPath.replace(/\.[^.]+$/, ".aiff");
-  const escaped = text.replace(/"/g, '\\"');
-  await execAsync(`say -o "${aiffPath}" "${escaped}"`);
-  await execAsync(`ffmpeg -y -i "${aiffPath}" "${outputPath}"`);
-  await unlink(aiffPath).catch(() => {});
-
-  const durationSec = await getAudioDuration(outputPath);
-  logger.info({ provider: "macos", durationSec }, "macOS TTS complete");
-
-  return { audioPath: outputPath, durationSec, provider: "macos" };
+  return await generateGrokTTS(text, outputPath);
 }
 
 // ---------------------------------------------------------------------------
 // Chunked TTS — generate per-section audio and concatenate
 // ---------------------------------------------------------------------------
-
-export interface ChunkedTTSResult {
-  audioPath: string;
-  durationSec: number;
-  chunkDurations: number[]; // per-chunk durations for slide timing
-  provider: string;
-}
 
 /**
  * Generate TTS for each text chunk separately, then concatenate into one file.
@@ -225,20 +132,15 @@ export async function generateChunkedTTS(
   const filename = outputFilename || `tts_chunked_${Date.now()}.mp3`;
   const outputPath = join(AUDIO_DIR, filename);
 
-  if (!CHATTERBOX_API_URL) {
-    throw new Error("Chatterbox TTS not configured. Set CHATTERBOX_API_URL in environment.");
+  if (!GROK_API_KEY) {
+    throw new Error("Grok TTS not configured. Set GROK_API_KEY in environment.");
   }
 
-  // Health check once
-  const healthRes = await fetch(`${CHATTERBOX_API_URL}/health`, {
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!healthRes.ok) throw new Error(`Chatterbox health check failed: ${healthRes.status}`);
-  logger.info({ chunks: chunks.length }, "Chatterbox chunked TTS starting...");
+  logger.info({ chunks: chunks.length, voice: GROK_TTS_VOICE }, "Grok chunked TTS starting...");
 
   const chunkPaths: string[] = [];
   const chunkDurations: number[] = [];
-  const SILENCE_GAP_SEC = 0.6; // brief pause between sections
+  const SILENCE_GAP_SEC = 0.6;
 
   // Generate a silence file for gaps
   const silencePath = join(AUDIO_DIR, `silence_${Date.now()}.mp3`);
@@ -254,10 +156,10 @@ export async function generateChunkedTTS(
     }
 
     const chunkFile = join(AUDIO_DIR, `chunk_${Date.now()}_${i}.mp3`);
-    logger.info({ chunk: i + 1, total: chunks.length, words: text.split(/\s+/).length }, "Generating TTS chunk...");
+    logger.info({ chunk: i + 1, total: chunks.length, chars: text.length }, "Generating TTS chunk...");
 
     try {
-      const result = await generateChatterboxTTS(text, chunkFile);
+      const result = await generateGrokTTS(text, chunkFile);
       chunkPaths.push(chunkFile);
       chunkDurations.push(result.durationSec);
 
@@ -285,7 +187,7 @@ export async function generateChunkedTTS(
 
   const totalDuration = await getAudioDuration(outputPath);
 
-  // Cleanup temp chunk files (not silence, it may be reused)
+  // Cleanup temp files
   for (const p of chunkPaths) {
     if (p !== silencePath) await unlink(p).catch(() => {});
   }
@@ -293,18 +195,22 @@ export async function generateChunkedTTS(
   await unlink(concatList).catch(() => {});
 
   logger.info(
-    { provider: "chatterbox", chunks: chunks.length, totalDuration, chunkCount: chunkDurations.length },
+    { provider: "grok", voice: GROK_TTS_VOICE, chunks: chunks.length, totalDuration, chunkCount: chunkDurations.length },
     "Chunked TTS generation complete",
   );
 
-  return { audioPath: outputPath, durationSec: totalDuration, chunkDurations, provider: "chatterbox" };
+  return { audioPath: outputPath, durationSec: totalDuration, chunkDurations, provider: "grok" };
 }
+
+// ---------------------------------------------------------------------------
+// Provider status
+// ---------------------------------------------------------------------------
 
 /**
  * Check which TTS providers are currently configured.
  */
 export function getTTSProviderStatus(): Array<{ name: string; configured: boolean }> {
   return [
-    { name: "Chatterbox (voice clone)", configured: !!CHATTERBOX_API_URL },
+    { name: `Grok TTS (${GROK_TTS_VOICE})`, configured: !!GROK_API_KEY },
   ];
 }
