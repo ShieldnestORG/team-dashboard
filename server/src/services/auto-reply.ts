@@ -49,8 +49,8 @@ export interface AutoReplyGlobalSettings {
 
 const DEFAULT_SETTINGS: AutoReplyGlobalSettings = {
   pollIntervalMinutes: 30,
-  dailySpendCapUsd: 1.0,
-  globalMaxRepliesPerDay: 50,
+  dailySpendCapUsd: 5.0,
+  globalMaxRepliesPerDay: 200,
   defaultMinDelaySeconds: 3,
   defaultMaxDelaySeconds: 15,
   defaultMaxRepliesPerTarget: 10,

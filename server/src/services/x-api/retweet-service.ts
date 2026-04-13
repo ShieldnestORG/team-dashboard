@@ -12,11 +12,15 @@ import { logger } from "../../middleware/logger.js";
 
 const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
-// Accounts to auto-retweet — own ecosystem accounts
-const OWN_ACCOUNTS = ["txEcosystem", "tokns_fi", "txDevHub"];
+// Accounts to auto-retweet — ecosystem accounts promoted by @tx_rizz
+const OWN_ACCOUNTS = [
+  "CoherenceDaddy", "TxEcosystem", "Tokns_fi",
+  "zenlounge369", "Zenwarrior113", "JoinCruiseCrtl",
+  "bobrasx", "txdevhub",
+];
 
-// Partner accounts — extensible, add more as ecosystem grows
-const PARTNER_ACCOUNTS: string[] = [];
+// Partner accounts — XRP/SOLO ecosystem for yield conversion messaging
+const PARTNER_ACCOUNTS = ["realSologenic"];
 
 const MAX_RETWEETS_PER_CYCLE = 3;
 const MAX_RETWEETS_PER_DAY = 10;
@@ -42,9 +46,15 @@ function resetDailyIfNeeded(): void {
 
 // Map Twitter handles to intel_companies slugs
 const HANDLE_TO_SLUG: Record<string, string> = {
+  coherencedaddy: "txhuman",
   txecosystem: "txhuman",
   tokns_fi: "txhuman",
+  zenlounge369: "txhuman",
+  zenwarrior113: "txhuman",
+  joincruisecrtl: "txhuman",
+  bobrasx: "txhuman",
   txdevhub: "txhuman",
+  realsologenic: "xrpl-ripple",
   ripple: "xrpl-ripple",
 };
 

@@ -28,9 +28,7 @@ interface ContentJobDef {
 
 const JOB_DEFS: ContentJobDef[] = [
   // Regular content crons — ownerAgent matches the personality agent responsible
-  { name: "content:twitter",  schedule: "0 13,15,17,20 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet", useContentBridge: true },
-  // Auto-post cron — every 3 hours during active hours (9am-9pm UTC), cap ~8/day
-  { name: "content:twitter:auto-post", schedule: "0 9,12,15,18,21 * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet", useContentBridge: true },
+  { name: "content:twitter",  schedule: "0 8,11,14,17,20,22 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet", useContentBridge: true },
   { name: "content:blog",     schedule: "0 10 * * 2,4",        personality: "cipher", ownerAgent: "cipher", contentType: "blog_post", publishTarget: "all" },
   { name: "content:linkedin", schedule: "0 14 * * 1-5",        personality: "prism",  ownerAgent: "prism",  contentType: "linkedin" },
   { name: "content:discord",  schedule: "0 10,16,21 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "discord" },
@@ -41,7 +39,7 @@ const JOB_DEFS: ContentJobDef[] = [
   { name: "content:video:market", schedule: "0 9 * * 1-5",      personality: "prism",  ownerAgent: "prism",  contentType: "video_script" },
   { name: "content:video:weekly", schedule: "0 10 * * 6",       personality: "prism",  ownerAgent: "prism",  contentType: "video_script" },
   // Intel-alert content — reactive, triggered by hot intel signals
-  { name: "content:intel-alert:twitter",  schedule: "*/45 * * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet",   topicPicker: "intel-alert", useContentBridge: true },
+  { name: "content:intel-alert:twitter",  schedule: "0 */3 * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet",   topicPicker: "intel-alert", useContentBridge: true },
   { name: "content:intel-alert:bluesky",  schedule: "0 */2 * * *",  personality: "spark", ownerAgent: "spark", contentType: "bluesky", topicPicker: "intel-alert" },
   // TX chain daily — daily chain metrics article published to ShieldNest
   { name: "content:tx-chain-daily", schedule: "0 8 * * *", personality: "prism", ownerAgent: "prism", contentType: "blog_post", topicPicker: "chain-metrics", publishTarget: "sn" },
@@ -49,7 +47,7 @@ const JOB_DEFS: ContentJobDef[] = [
   { name: "content:xrp:blog",     schedule: "0 9 * * 1,3,5",      personality: "vanguard", ownerAgent: "vanguard", contentType: "blog_post", topicPicker: "xrp-focus", publishTarget: "all" },
   { name: "content:xrp:twitter",  schedule: "0 11,16,19 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "xrp-focus", useContentBridge: true },
   { name: "content:xrp:linkedin", schedule: "0 13 * * 2,4",       personality: "vanguard", ownerAgent: "vanguard", contentType: "linkedin",  topicPicker: "xrp-focus" },
-  { name: "content:xrp-alert:twitter", schedule: "0 */3 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "intel-alert", useContentBridge: true },
+  { name: "content:xrp-alert:twitter", schedule: "0 */4 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "intel-alert", useContentBridge: true },
   // Comparison blogs — Forge personality (AEO-optimized TX vs L1s)
   { name: "content:comparison:blog",   schedule: "0 10 * * 3,6",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "comparison", publishTarget: "all" },
   // AEO-optimized general content — Forge personality

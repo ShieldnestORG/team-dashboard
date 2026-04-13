@@ -19,6 +19,7 @@ const HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item";
 const GOOGLE_TRENDS_RSS_URL = "https://trends.google.com/trending/rss?geo=US";
 const BING_NEWS_API_URL = "https://api.bing.microsoft.com/v7.0/news/search";
 const BING_NEWS_KEY = process.env.BING_NEWS_KEY || "";
+const COINGECKO_API_KEY = process.env.COIN_GECKO_API_KEY || "";
 
 const TREND_KEYWORDS = /\b(crypto|bitcoin|btc|ethereum|eth|solana|blockchain|defi|nft|token|web3|ai|artificial.?intelligence|llm|gpt|machine.?learn|neural|deep.?learn|openai|anthropic|chatbot|agent|passive.?income|side.?hustle|investing|stock|real.?estate|personal.?finance|budget|retirement|self.?help|mindset|motivation|wellness|mental.?health|meditation|fitness|faith|spiritual|entrepreneur|startup|productivity|habit)\b/i;
 
@@ -91,7 +92,9 @@ export function trendScannerService(db?: Db) {
 
     async scanCrypto(): Promise<TrendSignals["crypto_movers"]> {
       const url = await getCoinGeckoUrl();
-      const res = await fetch(url);
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (COINGECKO_API_KEY) headers["x-cg-demo-api-key"] = COINGECKO_API_KEY;
+      const res = await fetch(url, { headers });
       if (!res.ok) {
         logger.warn({ status: res.status }, "CoinGecko request failed");
         return [];

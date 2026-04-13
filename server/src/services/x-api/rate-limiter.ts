@@ -44,8 +44,8 @@ function ensureBucketCurrent(): void {
 // ---------------------------------------------------------------------------
 
 let budgetConfig = {
-  dailySpendCapUsd: 1.0,   // $1/day default
-  maxRepliesPerDay: 50,     // 50 replies/day default
+  dailySpendCapUsd: 5.0,   // $5/day — burning through $240 API credits
+  maxRepliesPerDay: 200,    // 200 replies/day for max engagement
 };
 
 // ---------------------------------------------------------------------------

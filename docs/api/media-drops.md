@@ -1,13 +1,13 @@
 # Media Drops API
 
-Upload images, GIFs, and videos from Canva (or anywhere) so agents can post them to Twitter/X via the extension bot.
+Upload images, GIFs, and videos from Canva (or anywhere) so agents can post them to Twitter/X via the API.
 
 ## How It Works
 
 1. **You** export a design from Canva and upload it here with a caption and hashtags
 2. **The agent** sees available drops via the `get-media-drops` tool
 3. **The agent** queues a tweet using `queue-post` with the caption and file URLs
-4. **The x-bot extension** picks up the queued post, downloads the images, and posts them to X
+4. **The post-dispatcher** publishes the queued post to X via the API
 
 ## Endpoints
 
@@ -20,7 +20,7 @@ All endpoints (except file serving) require the `Content-API-Key` header.
 | `/api/media/drops/:id` | GET | Content-API-Key | Get a single drop |
 | `/api/media/drops/:id` | PATCH | Content-API-Key | Update caption, hashtags, status |
 | `/api/media/drops/:id` | DELETE | Content-API-Key | Remove a drop and its files |
-| `/api/media/drops/:id/file/:index` | GET | None | Serve the file (public, for x-bot) |
+| `/api/media/drops/:id/file/:index` | GET | None | Serve the file (public) |
 
 ## Upload
 

@@ -842,7 +842,7 @@ export function ContentReview() {
               { title: "Export from Canva", description: "Download your design as PNG, JPG, or MP4 from Canva." },
               { title: "Upload to Media Drops", description: "Use the Media Drops API to upload your files with a caption and hashtags." },
               { title: "Agent picks it up", description: "The AI agent sees your drop and queues it as a tweet with your images attached." },
-              { title: "X-bot extension posts it", description: "The Chrome extension bot grabs the queued post and publishes it to X/Twitter." },
+              { title: "API posts it", description: "The tweet is published to X/Twitter via the X API." },
             ],
           },
           {

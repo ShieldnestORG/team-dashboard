@@ -10,7 +10,7 @@ import { logger } from "../middleware/logger.js";
 const MINTSCAN_BASE_URL = "https://apis.mintscan.io";
 const MINTSCAN_API_KEY = process.env.MINTSCAN_API_KEY || "";
 
-const NETWORKS = ["cosmos", "osmosis", "txhuman"] as const;
+const NETWORKS = ["cosmos", "osmosis", "coreum"] as const;
 type Network = (typeof NETWORKS)[number];
 
 // ---------------------------------------------------------------------------

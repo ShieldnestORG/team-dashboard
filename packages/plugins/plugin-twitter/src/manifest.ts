@@ -178,7 +178,7 @@ const manifest: PaperclipPluginManifestV1 = {
       jobKey: "engagement-cycle",
       displayName: "Engagement Cycle",
       description: "Execute engagement actions on targets via X API v2.",
-      schedule: "*/5 * * * *",
+      schedule: "*/30 * * * *",
     },
     {
       jobKey: "queue-cleanup",

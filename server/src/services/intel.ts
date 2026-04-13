@@ -1079,8 +1079,11 @@ async function fetchCoinGeckoMarkets(ids: string[]): Promise<Map<string, CoinGec
     const batch = ids.slice(i, i + BATCH);
     try {
       const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${batch.join(",")}&order=market_cap_desc&per_page=${BATCH}&page=1&sparkline=false`;
+      const cgHeaders: Record<string, string> = { Accept: "application/json" };
+      const cgKey = process.env.COIN_GECKO_API_KEY;
+      if (cgKey) cgHeaders["x-cg-demo-api-key"] = cgKey;
       const res = await fetch(url, {
-        headers: { Accept: "application/json" },
+        headers: cgHeaders,
         signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) continue;

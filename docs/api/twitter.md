@@ -103,23 +103,6 @@ Returns posting analytics with daily counts, recent posts (with impression/engag
 }
 ```
 
-### `GET /extension-status`
-Returns the latest heartbeat from the local Chrome extension bot (`packages/x-bot/`). The extension sends periodic heartbeats via the plugin-twitter `ext-heartbeat` webhook, and this endpoint reads the stored state.
-
-A heartbeat within the last 5 minutes means the extension is "online".
-
-**Response:**
-```json
-{
-  "online": true,
-  "lastHeartbeatAt": "2026-04-07T18:30:00.000Z",
-  "sessionId": "login-check",
-  "botEnabled": true,
-  "currentUrl": "https://x.com/home",
-  "ageSeconds": 45
-}
-```
-
 ### `GET /connection`
 Returns OAuth connection status from `x_oauth_tokens` table.
 
@@ -174,24 +157,3 @@ The Twitter plugin provides 13 agent-callable tools and 4 scheduled jobs for twe
 | `queue-cleanup` | Every 6 hr | Archive old queue items (>7 days) |
 | `analytics-rollup` | Daily midnight | Aggregate daily stats |
 
----
-
-## Chrome Extension Bot (`packages/x-bot/`)
-
-Local Chrome extension ("Tokns Automation Bot") that runs in the user's browser. Not a server-side component — the user loads it as an unpacked extension in Chrome.
-
-- **Install:** `chrome://extensions` > Developer Mode > Load Unpacked > select `packages/x-bot/`
-- **How it works:** Injects content scripts into x.com, polls dashboard backend for tasks, executes via X.com's internal GraphQL API + DOM manipulation
-- **Anti-bot:** Jittered timing (12-25s cycles), breathing pauses (30-90s), daily action limits (40 likes, 15 follows, 20 replies, 10 reposts)
-- **Dashboard Backend URL:** `https://team-dashboard-cyan.vercel.app` (proxied to VPS)
-- **Heartbeat:** Sends periodic `POST /api/plugins/coherencedaddy.twitter/webhooks/ext-heartbeat` — dashboard shows online/offline status based on last heartbeat
-
-### Related Files
-
-| File | Purpose |
-|------|---------|
-| `packages/x-bot/manifest.json` | Chrome extension manifest (MV3) |
-| `packages/x-bot/content.js` | Main content script (bot UI widget, task execution) |
-| `packages/x-bot/modules/api.js` | Dashboard API communication + X GraphQL posting |
-| `packages/x-bot/modules/botController.js` | Bot cycle controller (missions, engagement) |
-| `packages/x-bot/modules/constants.js` | Anti-bot timing, daily limits, API URLs |

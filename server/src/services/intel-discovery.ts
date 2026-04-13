@@ -48,8 +48,11 @@ export function intelDiscoveryService(db: Db) {
   async function fetchCoinGeckoTrending(): Promise<DiscoveryCandidate[]> {
     const candidates: DiscoveryCandidate[] = [];
     try {
+      const cgHeaders: Record<string, string> = { Accept: "application/json" };
+      const cgKey = process.env.COIN_GECKO_API_KEY;
+      if (cgKey) cgHeaders["x-cg-demo-api-key"] = cgKey;
       const res = await fetch("https://api.coingecko.com/api/v3/search/trending", {
-        headers: { Accept: "application/json" },
+        headers: cgHeaders,
         signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) return candidates;

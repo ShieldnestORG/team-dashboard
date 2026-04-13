@@ -276,7 +276,7 @@ export function mediaDropRoutes(db: Db, storageService: StorageService) {
     }
   });
 
-  // GET /api/media/drops/:id/file/:index — Serve file (no auth — x-bot extension needs this)
+  // GET /api/media/drops/:id/file/:index — Serve file (no auth — public access for media)
   router.get("/drops/:id/file/:index", async (req, res) => {
     try {
       const [row] = await db

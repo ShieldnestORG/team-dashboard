@@ -32,7 +32,7 @@ const PERSONALITIES: Record<string, {
 }> = { blaze, cipher, spark, prism, vanguard, forge };
 
 const MAX_TWEET_CHARS = 280;
-const MAX_TWEETS_PER_DAY = 12; // ~70% of X free-tier 17/day limit
+const MAX_TWEETS_PER_DAY = 40; // maximizing content output while burning API credits
 
 // ---------------------------------------------------------------------------
 // Context fetcher — embedding-enriched intel context

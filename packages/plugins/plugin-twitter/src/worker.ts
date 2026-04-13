@@ -1150,7 +1150,7 @@ const plugin = definePlugin({
 
         const summary = body.drops.map((d) => {
           const fileList = d.files.map((f) => `  [${f.index}] ${f.filename} (${f.contentType}, ${Math.round(f.byteSize / 1024)}KB)`).join("\n");
-          // Build absolute URLs for the x-bot extension to fetch
+          // Build absolute URLs for media access
           const mediaUrls = d.files.map((f) => `${baseUrl}${f.url}`);
           return {
             text: `Drop ${d.id}:\n  Caption: ${d.caption || "(none)"}\n  Hashtags: ${d.hashtags?.join(", ") || "(none)"}\n  Platform: ${d.platform}\n  Files:\n${fileList}`,
