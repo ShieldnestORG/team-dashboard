@@ -39,7 +39,8 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
 - **Mintscan Chain Metrics** — Cosmostation Mintscan API integration for Cosmos ecosystem (staking APR, validator data) tracking cosmos/osmosis/txhuman
-- **Auto-Reply Engine** — X/Twitter auto-reply system using a single `search/recent` query to cover all enabled targets (accounts + keywords) in one API call. Configurable via admin UI: poll interval (default 30 min), daily dollar spend cap (default $1.00), global max replies/day (default 50), per-target delay range and reply caps. Reply modes: template rotation or AI-generated. Settings persisted in `auto_reply_settings` DB table. Budget tracked in-memory by `rate-limiter.ts` with dollar-based caps ($0.005/read, $0.01/write). Panic mode halves all caps for 1 hour on 429. Admin page at `/auto-reply`
+- **Auto-Reply Engine** — X/Twitter auto-reply system using a single `search/recent` query to cover all enabled targets (accounts + keywords) in one API call. Configurable via admin UI: poll interval (default 30 min), daily dollar spend cap (default $5.00), global max replies/day (default 200), per-target delay range and reply caps. Reply modes: template rotation or AI-generated. Settings persisted in `auto_reply_settings` DB table. Budget tracked in-memory by `rate-limiter.ts` with dollar-based caps ($0.005/read, $0.01/write). Panic mode halves all caps for 1 hour on 429. Admin page at `/auto-reply`
+- **X-Bot (planned)** — Chrome extension for DOM-based X/Twitter automation (likes, follows, replies, posts) will run locally (not on VPS) and send data back to the VPS API. Once operational, most X API write actions will migrate to x-bot to reduce API costs, keeping only search/read operations on the API crons
 - **MCP Server** — `packages/mcp-server/` Model Context Protocol server exposing 35 tools across 9 entities (Issues, Projects, Milestones, Labels, Teams, WorkflowStates, Comments, IssueRelations, Initiatives). Wraps Team Dashboard REST API for use by Claude, Codex, and other MCP-compatible agents. Stdio transport, configurable via `PAPERCLIP_API_URL` and `PAPERCLIP_API_TOKEN`
 - **Media Drop** — file upload and media management for content pipeline. Multer-based upload (up to 4 files), S3/local storage backends, per-company media libraries. Routes at `/api/media/*`, schema in `media_drops` table
 - **AEO Partner Network** — B2B lead-gen system that drives traffic to local business partners through CD's content engine. Partners are local businesses (gyms, restaurants, salons, etc.) whose info gets woven into content naturally. Redirect link tracking (`/api/go/:slug`), click metrics, public partner dashboard (token-authenticated), content mention tracking. Admin page at `/partners`, public dashboard at `/partner-dashboard/:slug?token=xxx`. Revenue model: free proof tier → performance-based fees ($10-15/client/mo) → premium retainer
@@ -264,17 +265,15 @@ cd ui && npm run build
 ## Deployment (Split Architecture)
 
 ```
-VPS 31.220.61.12 (full stack)                         Neon (database)
-nginx (reverse proxy, auto HTTPS)                     PostgreSQL
-├─ frontend container (Next.js :3000)  ────────────> (api routes proxy to backend)
-│   coherencedaddy.com, freetools.*, directory.*,
-│   token.*, law.*, optimize-me.*
-├─ backend container (Express :3100)   ────────────> PostgreSQL
-│   api.coherencedaddy.com
-└─ Vercel (fallback — keep configured but DNS moves to VPS)
+Vercel (public sites)          VPS 31.220.61.12 (backend + admin)    Neon (database)
+coherencedaddy.com             nginx (api.coherencedaddy.com)  ----> PostgreSQL
+freetools.coherencedaddy.com   └─ Express :3100 (SERVE_UI=true)
+directory.coherencedaddy.com      API + admin dashboard
+token.coherencedaddy.com
 ```
 
-- **Frontend**: VPS Docker behind nginx — coherencedaddy.com + all subdomains. Vercel kept as fallback.
+- **Frontend (public)**: Vercel — auto-deploys coherencedaddy.com + all subdomains on push to main
+- **Admin Dashboard**: VPS Docker (SERVE_UI=true) — team-dashboard admin UI served from Express alongside API
 - **Backend**: VPS Docker behind Caddy at `api.coherencedaddy.com` — Express.js API, agent runtime, WebSocket
 - **Database**: Neon PostgreSQL — managed by Vercel integration
 - **Firecrawl**: Self-hosted at `168.231.127.180` — scraping, crawling, data extraction
@@ -288,7 +287,7 @@ nginx (reverse proxy, auto HTTPS)                     PostgreSQL
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (4 jobs: health-check + digest + partner-metrics + partner-site-monitor), content (23 jobs: 1 SEO engine + 1 retweet-cycle + 1 partner-sites + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 1 auto-post), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), ssl-monitor (1 job: cert expiry check every 6hr + email alert if &lt;14 days), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), moltbook-backend (5 jobs: ingest + post + engage + heartbeat + performance), youtube (5 jobs: daily-production + publish-queue + daily-analytics + weekly-strategy + optimization, Grok TTS + Playwright + FFmpeg), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 5m + queue-cleanup 6h + analytics-rollup daily), moltbook-plugin (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 50 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (4 jobs: health-check + digest + partner-metrics + partner-site-monitor), content (22 jobs: 1 SEO engine + 1 retweet-cycle + 1 partner-sites + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), ssl-monitor (1 job: cert expiry check every 6hr + email alert if &lt;14 days), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), moltbook-backend (5 jobs: ingest + post + engage + heartbeat + performance), youtube (5 jobs: daily-production + publish-queue + daily-analytics + weekly-strategy + optimization, Grok TTS + Playwright + FFmpeg), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 30m + queue-cleanup 6h + analytics-rollup daily), moltbook-plugin (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 49 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -352,7 +351,7 @@ nginx (reverse proxy, auto HTTPS)                     PostgreSQL
 | `packages/plugins/plugin-twitter/src/worker.ts` | Twitter/X plugin worker (queue, engagement, analytics) |
 | `packages/mcp-server/src/index.ts` | MCP server entry point — registers 35 tools, stdio transport |
 | `packages/mcp-server/src/client.ts` | HTTP client wrapping Team Dashboard REST API for MCP |
-| `packages/x-bot/` | Chrome extension for local X/Twitter DOM automation (user's browser) |
+| `server/src/services/x-api/rate-limiter.ts` | X API rate limiter — $5/day budget, panic mode on 429 |
 | `packages/db/src/schema/partners.ts` | `partnerCompanies` + `partnerClicks` table schemas |
 | `packages/db/src/migrations/0057_partner_network.sql` | Migration: partner network tables |
 | `server/src/services/partner-content.ts` | Partner context injection for content generation prompts |
@@ -364,10 +363,9 @@ nginx (reverse proxy, auto HTTPS)                     PostgreSQL
 ### Updating
 
 ```bash
-# Full deploy: SSH into VPS
+# Backend: SSH into VPS, pull latest code, rebuild
 ssh root@31.220.61.12
-cd /opt/coherencedaddy-landing && git pull origin main
-cd /opt/team-dashboard/repo && git pull origin master
+cd /opt/team-dashboard/repo && git pull
 cd /opt/team-dashboard && docker compose build && docker compose up -d
 
 # REQUIRED: Clean up stale Docker artifacts after every deploy
@@ -432,6 +430,7 @@ docker image prune -f && docker container prune -f && docker volume prune -f && 
 | `DISCORD_ROLE_ADMIN` | Optional | VPS | Role for admin commands |
 | **Intel Engine** | | | |
 | `INTEL_INGEST_KEY` | Yes | VPS | Auth for intel data ingestion |
+| `COIN_GECKO_API_KEY` | Optional | VPS | CoinGecko Demo API key (30 req/min, 10k/month) |
 | `MINTSCAN_API_KEY` | Optional | VPS | Cosmostation Mintscan API for Cosmos chain metrics (APR, validators) |
 | `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |
 | `EMBED_URL` | Yes | VPS | Embedding service (`http://147.79.78.251:8000`) |

@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12 (self-hosted frontend + directory subdomain)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12 (directory subdomain + SERVE_UI enabled)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -345,9 +345,9 @@ const DEFAULT_DIAGRAM = `graph TB
       DirectoryAPI(["Directory API :4000"])
     end
 
-    subgraph VercelInfra["Vercel (fallback)"]
+    subgraph VercelInfra["Vercel"]
       direction TB
-      VercelUI(["React SPA — ui/dist (fallback)"])
+      VercelUI(["React SPA — ui/dist"])
       VercelDirect(["Direct → api.coherencedaddy.com"])
     end
 
@@ -396,8 +396,8 @@ const DEFAULT_DIAGRAM = `graph TB
   ExpressRuntime --> NeonDB
   ExpressRuntime --> AgentRuntime
 
-  %% Vercel fallback — primary frontend now on VPS via nginx
-  VercelUI -->|"fallback serves"| CD
+  %% Vercel serves public frontend
+  VercelUI -->|"serves"| CD
   VercelRewrites -->|"/api/* proxy"| ExpressRuntime
 
   %% coherencedaddy.com consumes Team Dashboard APIs
