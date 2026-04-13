@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12 (directory subdomain added)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -89,6 +89,7 @@ const DEFAULT_DIAGRAM = `graph TB
       direction TB
       CD(["coherencedaddy.com"]):::siteNode
       CDTools(["523+ Free Tools"])
+      CDDirectorySub(["directory.coherencedaddy.com"]):::siteNode
       CDDirectory(["Blockchain Directory — 532 cos"])
       CDBlog(["Blog + RSS"])
       CDReels(["Public Reels"])
@@ -401,6 +402,7 @@ const DEFAULT_DIAGRAM = `graph TB
   VercelRewrites -->|"/api/* proxy"| ExpressRuntime
 
   %% coherencedaddy.com consumes Team Dashboard APIs
+  CDDirectorySub -->|"subdomain"| CDDirectory
   CDDirectory -->|"Intel API"| IntelSvc
   CDBlog -->|"SEO content"| SEOEngine
   CDReels -->|"/api/reels"| VisualContent
