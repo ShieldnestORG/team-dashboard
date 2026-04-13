@@ -32,6 +32,30 @@ services:
       retries: 3
       start_period: 30s
 
+  frontend:
+    build:
+      context: /opt/coherencedaddy-landing
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      NEXT_TELEMETRY_DISABLED: "1"
+    env_file:
+      - .env.frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      server:
+        condition: service_healthy
+
 volumes:
   paperclip-data:
   paperclip-backups:
