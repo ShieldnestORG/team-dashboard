@@ -11,7 +11,7 @@ The public-facing brand site and tools live in a separate repo: [ShieldnestORG/c
 - **Team Dashboard** (this repo) — internal admin, agent management, data pipelines
 - **Coherence Daddy** (coherencedaddy.com) — public mission hub: faith-driven technology for a more coherent world. Landing page features the mission, YourArchi spotlight, donation support (Stripe + crypto), venture overview, and FAQ
 - **Free Tools** (freetools.coherencedaddy.com) — 523+ public tools, subdomain routed (lives in coherencedaddy repo)
-- **Blockchain Directory** (coherencedaddy.com/directory) — public directory of 114+ blockchain projects powered by Intel API (lives in coherencedaddy repo)
+- **Project Directory** (directory.coherencedaddy.com) — public directory of 532+ projects across Crypto, AI/ML, DeFi, DevTools with real-time intelligence, powered by Intel API (lives in coherencedaddy repo)
 - **YourArchi** (yourarchi.com) — flagship self-help product: smart note-taking and personal development app with full privacy (no data leaves the device)
 - **tokns.fi / app.tokns.fi** — crypto platform and dashboard (NFTs, swaps, staking, wallet tracking)
 - **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator; goal: #1 validator via tokns.fi
@@ -35,7 +35,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **YouTube Automation Pipeline** — full video production: Ollama content strategy, script writing, Playwright presentation rendering, Grok TTS (xAI Rex voice, chunked per-slide), FFmpeg assembly, SEO optimization, thumbnail generation, auto-publish queue. Includes **site-walker mode** — Playwright browser agent that visits URLs, scrolls through sites, captures branded screenshots, and feeds results to the walkthrough writer for narrated review videos. Services at `server/src/services/youtube/`, 5 cron jobs
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
 - **Directory expansion** — AI/ML (151 entries), DeFi (113), DevTools (154), Crypto (114) — 532 unique companies across 4 directories, all seeded and ingested
-- **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing
+- **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing, rate-limited at 60 req/min per IP
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
 - **Mintscan Chain Metrics** — Cosmostation Mintscan API integration for Cosmos ecosystem (staking APR, validator data) tracking cosmos/osmosis/txhuman
@@ -138,7 +138,7 @@ server/
       partner.ts                    # Partner CRUD + metrics API (/api/partners/*)
       partner-go.ts                 # Public redirect endpoint (/api/go/:slug — no auth)
     data/             # Static seed data (intel companies)
-    middleware/       # Auth, validation, board mutation guard
+    middleware/       # Auth, validation, board mutation guard, intel rate limiter
     adapters/         # HTTP/process adapter runners
 ui/
   src/
