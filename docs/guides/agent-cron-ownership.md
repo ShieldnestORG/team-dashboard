@@ -48,7 +48,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Service | File | Job Count | Owner Agent(s) |
 |---------|------|-----------|----------------|
 | Intel crons | `server/src/services/intel-crons.ts` | 8 | Echo |
-| Content crons | `server/src/services/content-crons.ts` | 23 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
+| Content crons | `server/src/services/content-crons.ts` | 22 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
 | Eval crons | `server/src/services/eval-crons.ts` | 1 | Nova |
 | Alert crons | `server/src/services/alert-crons.ts` | 4 | Nova |
 | Trend crons | `server/src/services/trend-crons.ts` | 1 | Echo |
@@ -57,7 +57,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Moltbook backend | `server/src/services/moltbook-crons.ts` | 5 | Moltbook |
 | YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Core — Ollama scripts, Grok TTS (xAI Rex voice), Playwright slides + site-walker, FFmpeg, YouTube API |
 
-**Total: 49 system cron jobs across 9 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 58 total**
+**Total: 48 system cron jobs across 9 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 57 total**
 
 > **Ready (paused):** `content:canva-media:morning` and `content:canva-media:evening` owned by Sage — posts Canva designs as image tweets 2x/day. Canva OAuth connected (2026-04-11), but paused until Canva folder API is available for image/video separation. Twitter plugin image posting is functional.
 
@@ -85,15 +85,14 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 
 Sage orchestrates the 4 content personality agents below.
 
-### Blaze (Hot-Take Analyst) — 5 jobs
+### Blaze (Hot-Take Analyst) — 4 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
-| `content:twitter` | `0 13,15,17,20 * * *` | content-crons | Hot-take tweets 4x daily |
-| `content:twitter:auto-post` | `0 9,12,15,18,21 * * *` | content-crons | Auto-post tweets every 3hr during active hours |
+| `content:twitter` | `0 8,11,14,17,20,22 * * *` | content-crons | Hot-take tweets 6x daily (spread across day) |
 | `content:video:trend` | `0 11,14,18 * * *` | content-crons | Trend video scripts 3x daily |
-| `content:intel-alert:twitter` | `*/45 * * * *` | content-crons | Reactive tweets from hot intel signals |
-| `content:retweet-cycle` | `0 */4 * * *` | content-crons | Retweet ecosystem accounts every 4 hours |
+| `content:intel-alert:twitter` | `0 */3 * * *` | content-crons | Reactive tweets from hot intel signals every 3hr |
+| `content:retweet-cycle` | `0 */4 * * *` | content-crons | Retweet 8 ecosystem accounts + @realSologenic every 4 hours |
 
 ### Cipher (Technical Deep-Diver) — 2 jobs
 
@@ -126,7 +125,7 @@ Sage orchestrates the 4 content personality agents below.
 | `content:xrp:blog` | `0 9 * * 1,3,5` | content-crons | XRP analysis blog Mon/Wed/Fri → CD + tokns |
 | `content:xrp:twitter` | `0 11,16,19 * * *` | content-crons | XRP insight tweets 3x daily |
 | `content:xrp:linkedin` | `0 13 * * 2,4` | content-crons | XRP LinkedIn posts Tue/Thu |
-| `content:xrp-alert:twitter` | `0 */3 * * *` | content-crons | Reactive XRP tweets from hot intel signals |
+| `content:xrp-alert:twitter` | `0 */4 * * *` | content-crons | Reactive XRP/SOLO yield tweets from hot intel signals |
 
 ### Forge (AEO/Comparison Architect) — 3 jobs
 
