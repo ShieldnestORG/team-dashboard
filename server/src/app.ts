@@ -122,6 +122,7 @@ export async function createApp(
       "https://coherencedaddy.com",
       "https://www.coherencedaddy.com",
       "https://api.coherencedaddy.com",
+      "https://directory.coherencedaddy.com",
       /localhost/,
     ],
     credentials: true,

@@ -4,6 +4,7 @@ import { intelService } from "../services/index.js";
 import { intelDiscoveryService } from "../services/intel-discovery.js";
 import { mintscanService } from "../services/mintscan.js";
 import { logger } from "../middleware/logger.js";
+import { intelRateLimit } from "../middleware/intel-rate-limit.js";
 
 // ---------------------------------------------------------------------------
 // Auth helper — ingest/seed endpoints require INTEL_INGEST_KEY
@@ -39,6 +40,8 @@ export function intelRoutes(db: Db) {
   const svc = intelService(db);
   const discovery = intelDiscoveryService(db);
   const mintscan = mintscanService(db);
+
+  router.use(intelRateLimit);
 
   // ---- Public read endpoints (no auth) ----
 
