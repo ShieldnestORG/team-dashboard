@@ -264,13 +264,17 @@ cd ui && npm run build
 ## Deployment (Split Architecture)
 
 ```
-Vercel (frontend)              VPS 31.220.61.12 (backend)            Neon (database)
-React SPA (ui/dist)  -------> Caddy (api.coherencedaddy.com)  ----> PostgreSQL
-  HTTP API (direct)            ├─ auto HTTPS (Let's Encrypt)         Vercel integration
-  WebSocket (direct)           └─ reverse_proxy → Express :3100
+VPS 31.220.61.12 (full stack)                         Neon (database)
+nginx (reverse proxy, auto HTTPS)                     PostgreSQL
+├─ frontend container (Next.js :3000)  ────────────> (api routes proxy to backend)
+│   coherencedaddy.com, freetools.*, directory.*,
+│   token.*, law.*, optimize-me.*
+├─ backend container (Express :3100)   ────────────> PostgreSQL
+│   api.coherencedaddy.com
+└─ Vercel (fallback — keep configured but DNS moves to VPS)
 ```
 
-- **Frontend**: Vercel — auto-deploys on push to master, serves static UI
+- **Frontend**: VPS Docker behind nginx — coherencedaddy.com + all subdomains. Vercel kept as fallback.
 - **Backend**: VPS Docker behind Caddy at `api.coherencedaddy.com` — Express.js API, agent runtime, WebSocket
 - **Database**: Neon PostgreSQL — managed by Vercel integration
 - **Firecrawl**: Self-hosted at `168.231.127.180` — scraping, crawling, data extraction
@@ -360,19 +364,14 @@ React SPA (ui/dist)  -------> Caddy (api.coherencedaddy.com)  ----> PostgreSQL
 ### Updating
 
 ```bash
-# Backend: SSH into VPS, pull latest code, rebuild
+# Full deploy: SSH into VPS
 ssh root@31.220.61.12
-cd /opt/team-dashboard/repo && git pull
+cd /opt/coherencedaddy-landing && git pull origin main
+cd /opt/team-dashboard/repo && git pull origin master
 cd /opt/team-dashboard && docker compose build && docker compose up -d
 
 # REQUIRED: Clean up stale Docker artifacts after every deploy
-docker image prune -f          # remove dangling images from old builds
-docker container prune -f      # remove stopped containers
-docker volume prune -f         # remove unused volumes
-docker builder prune -f        # clear build cache
-
-# Frontend: auto-deploys on push to master
-git push origin master
+docker image prune -f && docker container prune -f && docker volume prune -f && docker builder prune -f
 ```
 
 **Docker cleanup is mandatory.** The VPS has limited disk (31GB RAM but finite storage). Every `docker compose build` leaves behind old images, stopped containers, and build cache. Agents that SSH to the VPS for deploys MUST run the prune commands above after every rebuild. Failing to clean up will eventually fill the disk and crash the backend. If disk usage is above 80%, also run `docker system prune -a -f` to remove all unused images (not just dangling ones).

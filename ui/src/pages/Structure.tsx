@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12 (directory subdomain added)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12 (self-hosted frontend + directory subdomain)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -253,7 +253,6 @@ const DEFAULT_DIAGRAM = `graph TB
         TwitterPlugin(["Twitter/X — 14 tools, 4 jobs"])
         FirecrawlPlugin(["Firecrawl — 9 tools, 2 jobs"])
         MoltbookPlugin(["Moltbook — 11 tools, 3 jobs"])
-        XBot(["X-Bot Chrome Extension"])
       end
 
       subgraph MCPServer["MCP Server"]
@@ -346,9 +345,9 @@ const DEFAULT_DIAGRAM = `graph TB
       DirectoryAPI(["Directory API :4000"])
     end
 
-    subgraph VercelInfra["Vercel"]
+    subgraph VercelInfra["Vercel (fallback)"]
       direction TB
-      VercelUI(["React SPA — ui/dist"])
+      VercelUI(["React SPA — ui/dist (fallback)"])
       VercelDirect(["Direct → api.coherencedaddy.com"])
     end
 
@@ -397,8 +396,8 @@ const DEFAULT_DIAGRAM = `graph TB
   ExpressRuntime --> NeonDB
   ExpressRuntime --> AgentRuntime
 
-  %% Vercel serves frontend, rewrites API to VPS
-  VercelUI -->|"serves"| CD
+  %% Vercel fallback — primary frontend now on VPS via nginx
+  VercelUI -->|"fallback serves"| CD
   VercelRewrites -->|"/api/* proxy"| ExpressRuntime
 
   %% coherencedaddy.com consumes Team Dashboard APIs
@@ -543,9 +542,6 @@ const DEFAULT_DIAGRAM = `graph TB
   EvalCrons --> EvalStore
   Heartbeat --> LogStore
   CronMgmt --> CronDB
-
-  %% X-Bot
-  XBot --> XAPIv2
 
   %% Plugin flows
   PluginLoader --> PluginRegistry
