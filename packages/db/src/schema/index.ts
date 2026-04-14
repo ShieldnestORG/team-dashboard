@@ -82,3 +82,11 @@ export {
 export { knowledgeTags } from "./knowledge_tags.js";
 export { companyRelationships } from "./company_relationships.js";
 export { agentMemory } from "./agent_memory.js";
+export { repoUpdateSuggestions } from "./repo_update_suggestions.js";
+export {
+  intelPlans,
+  intelCustomers,
+  intelApiKeys,
+  intelUsageMeter,
+} from "./intel_billing.js";
+export { directoryListings, directoryListingEvents } from "./directory_listings.js";

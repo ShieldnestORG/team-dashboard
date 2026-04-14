@@ -35,7 +35,8 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **YouTube Automation Pipeline** — full video production: Ollama content strategy, script writing, Playwright presentation rendering, Grok TTS (xAI Rex voice, chunked per-slide), FFmpeg assembly, SEO optimization, thumbnail generation, auto-publish queue. Includes **site-walker mode** — Playwright browser agent that visits URLs, scrolls through sites, captures branded screenshots, and feeds results to the walkthrough writer for narrated review videos. Services at `server/src/services/youtube/`, 5 cron jobs
 - **Platform publishing** — YouTube Shorts, TikTok, Instagram Reels, Twitter/X video publishers (env-var gated, auto-enabled when platform API keys are set)
 - **Directory expansion** — AI/ML (151 entries), DeFi (113), DevTools (154), Crypto (114) — 532 unique companies across 4 directories, all seeded and ingested
-- **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing, rate-limited at 60 req/min per IP
+- **Blockchain Intel Engine** — price/news/twitter/github/reddit ingestion with BGE-M3 vector embeddings, public API at `/api/intel/*`, aggressive cron schedules (30min–4hr cycles), paginated full-directory processing, rate-limited per API key (paid tiers) or per IP (anon free tier)
+- **Intel API paid tier** — self-serve monetization layer on top of `/api/intel/*`. Four Stripe-backed plans (Free / Starter $19 / Pro $49 / Enterprise $199) with monthly quotas + per-minute rate limits + metered overage. API keys provisioned via Stripe Checkout webhook and emailed to subscribers (bcc to admin). Usage tracked in `intel_usage_meter`, overage reported to Stripe daily at 02:17. Public pricing at `/intel/pricing`, admin subscriber list at `/intel-billing`, self-serve key check at `/billing/success`. Routes at `/api/intel-billing/*`, tables in migration 0066
 - **Intel Discovery Engine** — automated trending project discovery via CoinGecko trending + GitHub trending, auto-adds high-confidence finds, queues low-confidence for review
 - **Intel Backfill** — cron + API endpoint for building historical data on sparse companies, auto-triggered after seeding
 - **Mintscan Chain Metrics** — Cosmostation Mintscan API integration for Cosmos ecosystem (staking APR, validator data) tracking cosmos/osmosis/txhuman
@@ -383,6 +384,14 @@ token.coherencedaddy.com
 | `server/src/routes/knowledge-graph.ts` | Knowledge graph API (`/api/knowledge-graph/*`) |
 | `server/src/routes/agent-memory.ts` | Agent memory API (`/api/agent-memory/*`) |
 | `ui/src/pages/KnowledgeGraph.tsx` | Knowledge graph admin page — stats, search, relationships, entity detail |
+| `server/src/services/intel-billing.ts` | Intel paid tier — Stripe REST client, checkout, webhook handler, overage reporter, welcome email |
+| `server/src/routes/intel-billing.ts` | `/api/intel-billing/*` routes (plans, checkout, webhook, customers, me) |
+| `server/src/middleware/intel-rate-limit.ts` | Per-API-key + per-plan rate limiter with monthly quota meter |
+| `packages/db/src/schema/intel_billing.ts` | `intelPlans`, `intelCustomers`, `intelApiKeys`, `intelUsageMeter` tables |
+| `packages/db/src/migrations/0066_intel_billing.sql` | Migration: intel billing tables + seed of 4 tiers |
+| `ui/src/pages/IntelPricing.tsx` | Public pricing page at `/intel/pricing` — 4 tier cards, email → Stripe Checkout |
+| `ui/src/pages/IntelBilling.tsx` | Admin subscribers list at `/intel-billing` — MRR, customer table |
+| `ui/src/pages/IntelBillingSuccess.tsx` | Post-checkout page at `/billing/success` — verify key, show usage |
 
 ### Updating
 
@@ -462,8 +471,13 @@ docker image prune -f && docker container prune -f && docker volume prune -f && 
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
 | `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |
 | **Payments** | | | |
-| `STRIPE_SECRET_KEY` | Optional | VPS | Stripe API secret key for donations |
+| `STRIPE_SECRET_KEY` | Optional | VPS | Stripe API secret key for donations + Intel API paid tier |
 | `STRIPE_WEBHOOK_SECRET` | Optional | VPS | Stripe webhook signature verification |
+| `STRIPE_PRICE_STARTER_BASE` / `_METERED` | Optional | VPS | Stripe price IDs for Intel Starter plan (base + metered overage) |
+| `STRIPE_PRICE_PRO_BASE` / `_METERED` | Optional | VPS | Stripe price IDs for Intel Pro plan |
+| `STRIPE_PRICE_ENTERPRISE_BASE` / `_METERED` | Optional | VPS | Stripe price IDs for Intel Enterprise plan |
+| `INTEL_BILLING_SUCCESS_URL` | Optional | VPS | Checkout success redirect (default: dashboard `/billing/success?session_id={CHECKOUT_SESSION_ID}`) |
+| `INTEL_BILLING_CANCEL_URL` | Optional | VPS | Checkout cancel redirect (default: dashboard `/intel/pricing`) |
 | **Monitoring** | | | |
 | `SITE_METRICS_KEY` | Yes | VPS + coherencedaddy | Site analytics ingestion auth |
 | `SMTP_HOST/PORT/USER/PASS` | Optional | VPS | Email alerting (Proton Mail) |

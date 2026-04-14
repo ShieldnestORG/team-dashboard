@@ -12,11 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { Database, Search, Building2, BarChart3, Clock, CheckCircle2, AlertTriangle, TrendingUp, Activity } from "lucide-react";
 import { HowToGuide } from "../components/HowToGuide";
+import { ListingsTab } from "./intel/ListingsTab";
 
-type DirectoryTab = "overview" | "crypto" | "ai-ml" | "defi" | "devtools";
+type DirectoryTab = "overview" | "listings" | "crypto" | "ai-ml" | "defi" | "devtools";
 
 const TAB_ITEMS: { value: DirectoryTab; label: string }[] = [
   { value: "overview", label: "Overview" },
+  { value: "listings", label: "Listings" },
   { value: "crypto", label: "Crypto" },
   { value: "ai-ml", label: "AI/ML" },
   { value: "defi", label: "DeFi" },
@@ -67,7 +69,7 @@ export function Intel() {
   const { data: companies, isLoading: companiesLoading } = useQuery({
     queryKey: queryKeys.intel.companies(directoryParam),
     queryFn: () => intelApi.listCompanies(directoryParam),
-    enabled: tab !== "overview",
+    enabled: tab !== "overview" && tab !== "listings",
   });
 
   const filtered = useMemo(() => {
@@ -129,7 +131,9 @@ export function Intel() {
 
       {tab === "overview" && <OverviewPanel stats={stats ?? null} />}
 
-      {tab !== "overview" && (
+      {tab === "listings" && <ListingsTab />}
+
+      {tab !== "overview" && tab !== "listings" && (
         <>
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

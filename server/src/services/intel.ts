@@ -193,16 +193,37 @@ export function intelService(db: Db) {
     const qLimit = Math.min(Math.max(1, limit), 500);
     const qOffset = Math.max(0, offset);
 
+    // LEFT JOIN the latest active directory_listing so callers can surface
+    // the `featured` flag + tier on directory.coherencedaddy.com. Back-compat:
+    // extra fields are additive; existing consumers ignore them.
     const rows = directory
       ? await rawQuery<Record<string, unknown>>(sql`
-          SELECT * FROM intel_companies
-          WHERE directory = ${directory}
-          ORDER BY name ASC
+          SELECT c.*,
+            (l.id IS NOT NULL) AS featured,
+            l.tier AS listing_tier
+          FROM intel_companies c
+          LEFT JOIN LATERAL (
+            SELECT id, tier FROM directory_listings
+            WHERE company_id = c.id AND status IN ('active','past_due')
+            ORDER BY started_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+          ) l ON true
+          WHERE c.directory = ${directory}
+          ORDER BY featured DESC, c.name ASC
           LIMIT ${qLimit} OFFSET ${qOffset}
         `)
       : await rawQuery<Record<string, unknown>>(sql`
-          SELECT * FROM intel_companies
-          ORDER BY name ASC
+          SELECT c.*,
+            (l.id IS NOT NULL) AS featured,
+            l.tier AS listing_tier
+          FROM intel_companies c
+          LEFT JOIN LATERAL (
+            SELECT id, tier FROM directory_listings
+            WHERE company_id = c.id AND status IN ('active','past_due')
+            ORDER BY started_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+          ) l ON true
+          ORDER BY featured DESC, c.name ASC
           LIMIT ${qLimit} OFFSET ${qOffset}
         `);
 

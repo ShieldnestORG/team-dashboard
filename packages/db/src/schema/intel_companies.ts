@@ -23,6 +23,11 @@ export const intelCompanies = pgTable(
     subreddit: text("subreddit"),
     twitterHandle: text("twitter_handle"),
     rssFeeds: jsonb("rss_feeds").$type<string[]>().default([]),
+    contactEmail: text("contact_email"),
+    contactName: text("contact_name"),
+    contactNotes: text("contact_notes"),
+    contactSource: text("contact_source"),
+    contactVerifiedAt: timestamp("contact_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

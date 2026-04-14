@@ -31,6 +31,10 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { siteMetricsRoutes } from "./routes/site-metrics.js";
 import { intelRoutes } from "./routes/intel.js";
+import {
+  directoryListingsRoutes,
+  directoryListingsWebhookRoutes,
+} from "./routes/directory-listings.js";
 import { contentRoutes } from "./routes/content.js";
 import { visualContentRoutes } from "./routes/visual-content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
@@ -232,6 +236,8 @@ export async function createApp(
   api.use(instanceSettingsRoutes(db));
   api.use(siteMetricsRoutes(db));
   api.use("/intel", intelRoutes(db));
+  api.use("/directory-listings", directoryListingsRoutes(db));
+  api.use("/stripe", directoryListingsWebhookRoutes(db));
   api.use("/content", contentRoutes(db));
   api.use(trendRoutes(db));
   const visualRoutes = visualContentRoutes(db, opts.storageService, "default");

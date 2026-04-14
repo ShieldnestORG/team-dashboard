@@ -2,6 +2,7 @@ import type { Db } from "@paperclipai/db";
 import { intelService } from "./intel.js";
 import { intelDiscoveryService } from "./intel-discovery.js";
 import { mintscanService } from "./mintscan.js";
+import { intelBillingService } from "./intel-billing.js";
 import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 
@@ -58,7 +59,9 @@ export function startIntelCrons(db: Db) {
   const svc = intelService(db);
   const discovery = intelDiscoveryService(db);
   const mintscan = mintscanService(db);
+  const billing = intelBillingService(db);
 
+  registerCronJob({ jobName: "intel:billing-overage", schedule: "17 2 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => billing.reportOverageUsage() });
   registerCronJob({ jobName: "intel:prices",        schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100) });
   registerCronJob({ jobName: "intel:news",           schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50) });
   registerCronJob({ jobName: "intel:twitter",        schedule: "*/30 * * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30) });
@@ -68,5 +71,5 @@ export function startIntelCrons(db: Db) {
   registerCronJob({ jobName: "intel:backfill",       schedule: "0 */12 * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => svc.backfillNewCompanies() });
   registerCronJob({ jobName: "intel:discover",       schedule: "0 */6 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => discovery.discoverNewProjects() });
 
-  logger.info({ count: 8 }, "Intel cron jobs registered");
+  logger.info({ count: 9 }, "Intel cron jobs registered");
 }

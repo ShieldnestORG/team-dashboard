@@ -78,11 +78,12 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | `intel:discover` | `0 */6 * * *` | intel-crons | Discover trending projects every 6 hours |
 | `trends:scan` | `0 */6 * * *` | trend-crons | CoinGecko + HackerNews + Google Trends + Bing News trend signals every 6 hours |
 
-### Sage (CMO) — 1 job (orchestrator)
+### Sage (CMO) — 2 jobs (orchestrator)
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
 | `content:seo-engine` | `3 7 * * *` | content-crons | Daily Claude-powered blog generation from trends |
+| `content:seo-audit` | `17 8 * * 0` | seo-audit-cron | Weekly on-page SEO/AEO audit of all monitored sites. Writes advisory suggestions to the `/repo-updates` queue for admin review. Never auto-pushes. |
 
 Sage orchestrates the 4 content personality agents below.
 

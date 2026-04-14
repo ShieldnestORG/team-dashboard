@@ -165,6 +165,11 @@ const DEFAULT_DIAGRAM = `graph TB
         direction TB
         ContentSvc(["Content Service — 6 personalities"])
         ContentCrons{{"Content Crons — 24 jobs"}}
+        SeoAuditCron{{"content:seo-audit — Sun 8:17am (Sage)"}}
+        SeoAuditSvc(["SEO/AEO Auditor — 16-item checklist"])
+        RepoUpdateAdvisor(["Repo Update Advisor — Ollama drafts"])
+        RepoUpdateDB[("repo_update_suggestions")]
+        RepoUpdatePage(["/repo-updates — admin review queue"])
         ContentDB[("content_items")]
         VisualContent(["Visual Content"])
         VisualDB[("visual_content_items + assets")]
@@ -242,7 +247,7 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph IntelEngine["Intel Engine"]
         direction TB
         IntelSvc(["Intel Service — 4 directories"])
-        IntelCrons{{"Intel Crons — 8 jobs"}}
+        IntelCrons{{"Intel Crons — 9 jobs"}}
         IntelDiscovery(["Intel Discovery — CoinGecko + GitHub"])
         IntelQuality(["Intel Quality — dedup + scoring"])
         Embeddings[("Vector Embeddings — BGE-M3")]
@@ -250,6 +255,9 @@ const DEFAULT_DIAGRAM = `graph TB
         TrendCrons{{"Trend Crons — 6hr"}}
         Mintscan(["Mintscan — Cosmos chain metrics"])
         IntelDB[("intel_companies + intel_reports")]
+        IntelBilling(["Intel Billing — Stripe 4 tiers"])
+        IntelRateLimit(["Intel Rate Limiter — per-key quota + meter"])
+        IntelBillingDB[("intel_plans + customers + api_keys + usage_meter")]
       end
 
       subgraph KnowledgeGraph["Knowledge Graph Engine"]
@@ -470,6 +478,14 @@ const DEFAULT_DIAGRAM = `graph TB
   %% Content flows
   ContentCrons --> ContentSvc
   ContentCrons -->|"slideshow blogs"| SlideshowGen
+
+  %% SEO/AEO advisory loop (Sage)
+  SeoAuditCron --> SeoAuditSvc
+  SeoAuditSvc -->|"failures"| RepoUpdateAdvisor
+  RepoUpdateAdvisor --> RepoUpdateDB
+  RepoUpdateDB --> RepoUpdatePage
+  SeoAuditSvc -.->|"audits"| BlogPublisher
+  SeoAuditCron -.->|"digest email"| Alerting
   SlideshowGen --> BlogPublisher
   ContentSvc --> Templates
   ContentSvc --> ContentDB

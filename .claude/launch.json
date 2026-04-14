@@ -23,8 +23,9 @@
     {
       "name": "coherencedaddy",
       "runtimeExecutable": "/bin/zsh",
-      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/exe/Downloads/Claude/coherencedaddy-landing && npm run dev"],
-      "port": 3000
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/exe/Downloads/Claude/coherencedaddy-landing && npm run dev -- -p $PORT"],
+      "port": 3006,
+      "autoPort": true
     },
     {
       "name": "tokns",

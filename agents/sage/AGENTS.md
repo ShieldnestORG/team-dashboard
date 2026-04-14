@@ -87,11 +87,18 @@ A marketing task is done when the content, campaign, or strategy is published/la
 
 ## Cron Responsibilities
 
-Sage owns the SEO engine cron (1 job) and orchestrates the 4 content personality agents (Blaze, Cipher, Spark, Prism) who each own their own content crons. Defined in `server/src/services/content-crons.ts`.
+Sage owns the SEO engine cron, the weekly SEO/AEO audit, and orchestrates the 4 content personality agents (Blaze, Cipher, Spark, Prism) who each own their own content crons. Defined in `server/src/services/content-crons.ts` and `server/src/services/seo-audit-cron.ts`.
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
 | `content:seo-engine` | `3 7 * * *` (daily 7:03am) | Claude-powered blog generation from trend signals, auto-publish + IndexNow |
+| `content:seo-audit` | `17 8 * * 0` (Sundays 8:17am) | On-page SEO/AEO auditor. Fetches every monitored site, validates the 16-item checklist, writes advisory suggestions to `/repo-updates` for admin review, and sends a digest email. **Never auto-pushes** — the admin approves, rejects, or replies to each suggestion manually. |
+
+### Advisory Loop — Repo Updates
+
+The `content:seo-audit` cron runs against `coherencedaddy.com` and every subdomain plus `app.tokns.fi` and `shieldnest.org`. When a site fails a checklist item (missing og:image, no FAQPage schema, broken canonical, stale sitemap, etc.) the advisor drafts a concrete code-level fix suggestion and persists it to the `repo_update_suggestions` table. Admin reviews the queue at `/repo-updates`.
+
+**Sage's duty:** when the admin replies with guidance (`needs_revision`), update the fix library in `server/src/services/repo-update-advisor.ts` or the site-to-repo map, then re-run the audit. Approved suggestions become a hand-off queue for Flux/Bridge to apply by hand in the affected repo. **Never push to any repo without explicit admin approval.**
 
 Sage's content personality agents collectively run 11 additional content crons — see each agent's AGENTS.md for their specific schedules.
 
