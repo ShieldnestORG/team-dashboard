@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS knowledge_tags (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_knowledge_tags_type ON knowledge_tags (tag_type);
+CREATE INDEX IF NOT EXISTS idx_knowledge_tags_type ON knowledge_tags (tag_type);
 
 -- 2. Company Relationships — typed directed edges between entities
 CREATE TABLE IF NOT EXISTS company_relationships (
@@ -34,9 +34,9 @@ CREATE TABLE IF NOT EXISTS company_relationships (
   UNIQUE (source_type, source_id, relationship, target_type, target_id)
 );
 
-CREATE INDEX idx_cr_source ON company_relationships (source_type, source_id);
-CREATE INDEX idx_cr_target ON company_relationships (target_type, target_id);
-CREATE INDEX idx_cr_relationship ON company_relationships (relationship);
+CREATE INDEX IF NOT EXISTS idx_cr_source ON company_relationships (source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_cr_target ON company_relationships (target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_cr_relationship ON company_relationships (relationship);
 
 -- 3. Agent Memory — structured fact storage per agent
 CREATE TABLE IF NOT EXISTS agent_memory (
@@ -53,6 +53,6 @@ CREATE TABLE IF NOT EXISTS agent_memory (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_agent_memory_agent ON agent_memory (agent_name);
-CREATE INDEX idx_agent_memory_subject ON agent_memory (subject, predicate);
-CREATE INDEX idx_agent_memory_expires ON agent_memory (expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_agent_memory_agent ON agent_memory (agent_name);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_subject ON agent_memory (subject, predicate);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_expires ON agent_memory (expires_at) WHERE expires_at IS NOT NULL;
