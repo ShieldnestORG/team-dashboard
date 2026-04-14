@@ -86,6 +86,9 @@ import { initVpsMonitor } from "./services/vps-monitor.js";
 import { knowledgeGraphRoutes } from "./routes/knowledge-graph.js";
 import { agentMemoryRoutes } from "./routes/agent-memory.js";
 import { startKnowledgeGraphCrons } from "./services/knowledge-graph-crons.js";
+import { repoUpdateRoutes } from "./routes/repo-updates.js";
+import { automationHealthRoutes } from "./routes/automation-health.js";
+import { startSeoAuditCron } from "./services/seo-audit-cron.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -247,6 +250,8 @@ export async function createApp(
   api.use("/partners/:slug/site", partnerSiteRoutes(db));
   api.use("/knowledge-graph", knowledgeGraphRoutes(db));
   api.use("/agent-memory", agentMemoryRoutes(db));
+  api.use("/repo-updates", repoUpdateRoutes(db));
+  api.use("/automation-health", automationHealthRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -386,6 +391,7 @@ export async function createApp(
   startMoltbookCrons(db);
   startYouTubeCrons(db);
   startKnowledgeGraphCrons(db);
+  startSeoAuditCron(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);
   // Sync registry to DB + start the single cron scheduler
