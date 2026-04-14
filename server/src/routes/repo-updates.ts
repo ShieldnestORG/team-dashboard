@@ -12,6 +12,10 @@ import type { Db } from "@paperclipai/db";
 import { repoUpdateSuggestions } from "@paperclipai/db";
 import { auditUrl } from "../services/seo-audit.js";
 import { persistAuditFailures } from "../services/repo-update-advisor.js";
+import {
+  draftPrForSuggestion,
+  parsePrFromAdminResponse,
+} from "../services/repo-update-pr-worker.js";
 import { logger } from "../middleware/logger.js";
 
 export function repoUpdateRoutes(db: Db) {
@@ -159,6 +163,68 @@ export function repoUpdateRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "Failed to run ad-hoc audit");
       res.status(500).json({ error: "Failed to run audit" });
+    }
+  });
+
+  // POST /repo-updates/:id/draft-pr — create a GitHub PR for an approved
+  // suggestion. Never merges — humans do that manually.
+  router.post("/:id/draft-pr", async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const result = await draftPrForSuggestion(db, id);
+      res.json({
+        suggestion: result.suggestion,
+        pr: result.pr,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      logger.error({ err, suggestionId: req.params.id }, "Failed to draft PR");
+      if (msg === "GITHUB_TOKEN not configured") {
+        res.status(503).json({ error: msg });
+        return;
+      }
+      if (msg === "Suggestion not found") {
+        res.status(404).json({ error: msg });
+        return;
+      }
+      if (
+        msg.startsWith("Suggestion must be in 'approved'") ||
+        msg === "Suggestion has no repo" ||
+        msg === "Repo not in Sage's allowlist"
+      ) {
+        res.status(400).json({ error: msg });
+        return;
+      }
+      // Sanitize anything else — never leak GitHub response bodies or tokens.
+      const safe = msg.startsWith("GitHub ")
+        ? "GitHub API call failed — check server logs"
+        : "Failed to draft PR";
+      res.status(500).json({ error: safe });
+    }
+  });
+
+  // Helper so UI can surface PR links without re-parsing admin_response.
+  // Exposed via GET /repo-updates/:id/pr — returns { number, url } or 404.
+  router.get("/:id/pr", async (req, res) => {
+    try {
+      const [row] = await db
+        .select()
+        .from(repoUpdateSuggestions)
+        .where(eq(repoUpdateSuggestions.id, req.params.id as string))
+        .limit(1);
+      if (!row) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      const pr = parsePrFromAdminResponse(row.adminResponse);
+      if (!pr) {
+        res.status(404).json({ error: "No PR linked" });
+        return;
+      }
+      res.json({ pr });
+    } catch (err) {
+      logger.error({ err }, "Failed to get PR link");
+      res.status(500).json({ error: "Failed to get PR link" });
     }
   });
 

@@ -98,7 +98,24 @@ Sage owns the SEO engine cron, the weekly SEO/AEO audit, and orchestrates the 4 
 
 The `content:seo-audit` cron runs against `coherencedaddy.com` and every subdomain plus `app.tokns.fi` and `shieldnest.org`. When a site fails a checklist item (missing og:image, no FAQPage schema, broken canonical, stale sitemap, etc.) the advisor drafts a concrete code-level fix suggestion and persists it to the `repo_update_suggestions` table. Admin reviews the queue at `/repo-updates`.
 
-**Sage's duty:** when the admin replies with guidance (`needs_revision`), update the fix library in `server/src/services/repo-update-advisor.ts` or the site-to-repo map, then re-run the audit. Approved suggestions become a hand-off queue for Flux/Bridge to apply by hand in the affected repo. **Never push to any repo without explicit admin approval.**
+**Sage's duty:** when the admin replies with guidance (`needs_revision`), update the fix library in `server/src/services/repo-update-advisor.ts` or the site-to-repo map, then re-run the audit. **Never push to any repo without explicit admin approval.**
+
+**PR drafting (new, v1).** Once the admin clicks Approve on a suggestion, the admin can click **Draft PR** in `/repo-updates`. This calls `POST /repo-updates/:id/draft-pr`, which:
+
+1. Validates the suggestion is in `approved` status.
+2. Checks `GITHUB_TOKEN` is configured and the target repo is in Sage's hard-coded allowlist (`ShieldnestORG/coherencedaddy`, `.../team-dashboard`, `.../v1_shieldnest_org`, `.../shieldnest_landing_page`).
+3. Creates a new branch `sage/repo-update-<short-id>-<slug>` off the repo's default branch via the GitHub REST API.
+4. Commits a marker file at `.seo-audit/SUGGESTION-<short-id>.md` containing the full rendered suggestion (issue, rationale, proposed patch). In v1, the `proposedPatch` is a snippet — not a full-file diff — so the worker deliberately does NOT mutate the real source file. The PR is the artifact; a human hand-applies the snippet before merging.
+5. Opens a pull request whose body renders the suggestion with the required disclaimer: _"Auto-drafted by Sage (SEO/AEO Audit Advisor). Human review required — DO NOT merge without verifying."_
+6. Transitions the suggestion to `pr_drafted` and packs the PR URL/number into `admin_response` (format `PR: <url> | number: <n>`). The UI shows a "PR #N linked" badge.
+
+**Rules for Sage:**
+- Never auto-merge. Ever. The PR worker has no code path that calls a merge endpoint.
+- Never add a repo to the allowlist without explicit operator approval.
+- If an admin marks a suggestion `needs_revision` after a PR is drafted, update the advisor fix library, re-run the audit, and let a fresh suggestion take its place — do not try to edit the open PR programmatically.
+- Future (Option B) work: use Ollama to merge the snippet into the real file and push a real diff. Stays gated the same way.
+
+Approved-but-not-yet-drafted suggestions still act as a hand-off queue for Flux/Bridge when the PR flow is disabled or fails.
 
 Sage's content personality agents collectively run 11 additional content crons — see each agent's AGENTS.md for their specific schedules.
 

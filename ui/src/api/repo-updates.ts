@@ -43,5 +43,24 @@ export const repoUpdatesApi = {
       "/repo-updates/run-audit",
       { url },
     ),
+  draftPr: (id: string) =>
+    api.post<{
+      suggestion: RepoUpdateSuggestion;
+      pr: { number: number; url: string };
+    }>(`/repo-updates/${id}/draft-pr`, {}),
   stats: () => api.get<RepoUpdateStats>("/repo-updates/stats/summary"),
 };
+
+/**
+ * Extract a PR reference that was packed into the `admin_response` field by
+ * the PR worker (format: "PR: <url> | number: <n>"). Returns null if no PR
+ * link is present. Kept in sync with server/src/services/repo-update-pr-worker.ts.
+ */
+export function parsePrFromAdminResponse(
+  adminResponse: string | null,
+): { number: number; url: string } | null {
+  if (!adminResponse) return null;
+  const m = adminResponse.match(/PR:\s*(\S+)\s*\|\s*number:\s*(\d+)/);
+  if (!m) return null;
+  return { url: m[1]!, number: Number(m[2]) };
+}

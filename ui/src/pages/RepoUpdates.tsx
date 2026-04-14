@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import {
   repoUpdatesApi,
+  parsePrFromAdminResponse,
   type RepoUpdateSuggestion,
 } from "../api/repo-updates";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -18,6 +19,7 @@ import {
   MessageSquare,
   Play,
   AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -33,6 +35,7 @@ const STATUS_STYLES: Record<string, string> = {
   rejected: "bg-red-500/10 text-red-700 dark:text-red-300",
   needs_revision: "bg-purple-500/10 text-purple-700 dark:text-purple-300",
   applied: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  pr_drafted: "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
 };
 
 function StatsRow() {
@@ -145,6 +148,26 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
       invalidate();
     },
   });
+  const draftPr = useMutation({
+    mutationFn: () => repoUpdatesApi.draftPr(s.id),
+    onSuccess: (data) => {
+      invalidate();
+      if (typeof window !== "undefined") {
+        window.open(data.pr.url, "_blank", "noopener");
+        window.alert(
+          `PR #${data.pr.number} drafted: ${data.pr.url}\n\nA human must review and merge manually.`,
+        );
+      }
+    },
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to draft PR: ${msg}`);
+      }
+    },
+  });
+
+  const linkedPr = parsePrFromAdminResponse(s.adminResponse);
 
   return (
     <Card>
@@ -216,6 +239,45 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
             </Button>
           </div>
         ) : null}
+        {s.status === "approved" ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={draftPr.isPending}
+              onClick={() => draftPr.mutate()}
+            >
+              <GitPullRequest className="mr-1 h-3 w-3" />
+              {draftPr.isPending ? "Drafting PR…" : "Draft PR"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reject.isPending}
+              onClick={() => reject.mutate()}
+            >
+              <X className="mr-1 h-3 w-3" /> Reject
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setReplyOpen((v) => !v)}
+            >
+              <MessageSquare className="mr-1 h-3 w-3" /> Reply
+            </Button>
+          </div>
+        ) : null}
+        {s.status === "pr_drafted" && linkedPr ? (
+          <a
+            href={linkedPr.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-700 hover:bg-cyan-500/20 dark:text-cyan-300"
+          >
+            <GitPullRequest className="h-3 w-3" />
+            PR #{linkedPr.number} linked
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : null}
         {replyOpen ? (
           <div className="flex flex-col gap-2">
             <textarea
@@ -276,7 +338,7 @@ export function RepoUpdates() {
       <RunAuditBox />
 
       <div className="flex flex-wrap gap-2">
-        {["pending", "approved", "needs_revision", "rejected", "all"].map((f) => (
+        {["pending", "approved", "pr_drafted", "needs_revision", "rejected", "all"].map((f) => (
           <Button
             key={f}
             size="sm"
