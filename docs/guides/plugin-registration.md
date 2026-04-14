@@ -87,7 +87,9 @@ disk). Moltbook is the simpler case: just never installed at all.
 
 **Step 1 — Open the Plugins admin page**
 
-In the dashboard sidebar, click **Plugins** (or go directly to `/plugins`).
+In the dashboard sidebar click **Instance Settings → Plugins**, or go
+directly to `/instance/settings/plugins`. (Note: this lives under Instance
+Settings, not as a top-level sidebar item.)
 You will see a list of currently-installed plugins. Moltbook will not be
 there. That's the bug.
 
@@ -145,7 +147,7 @@ warning should disappear.
 - **`/automation-health`** — the warning "Plugin manifest 'coherencedaddy.
   moltbook' exists on disk but is not registered in plugin_config" is gone.
 - **`/crons`** — `moltbook:*` jobs show up with recent `lastRunAt` values.
-- **`/plugins`** — moltbook row status is `active`, not `installed` or
+- **`/instance/settings/plugins`** — moltbook row status is `active`, not `installed` or
   `error`.
 - **Moltbook dashboard on moltbook.com** — you should see new activity from
   the `coherencedaddy` account within 30–60 minutes (depends on the cron
