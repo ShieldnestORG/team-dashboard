@@ -48,7 +48,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Service | File | Job Count | Owner Agent(s) |
 |---------|------|-----------|----------------|
 | Intel crons | `server/src/services/intel-crons.ts` | 8 | Echo |
-| Content crons | `server/src/services/content-crons.ts` | 22 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
+| Content crons | `server/src/services/content-crons.ts` | 24 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
 | Eval crons | `server/src/services/eval-crons.ts` | 1 | Nova |
 | Alert crons | `server/src/services/alert-crons.ts` | 4 | Nova |
 | Trend crons | `server/src/services/trend-crons.ts` | 1 | Echo |
@@ -94,12 +94,13 @@ Sage orchestrates the 4 content personality agents below.
 | `content:intel-alert:twitter` | `0 */3 * * *` | content-crons | Reactive tweets from hot intel signals every 3hr |
 | `content:retweet-cycle` | `0 */4 * * *` | content-crons | Retweet 8 ecosystem accounts + @realSologenic every 4 hours |
 
-### Cipher (Technical Deep-Diver) — 2 jobs
+### Cipher (Technical Deep-Diver) — 3 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
 | `content:blog` | `0 10 * * 2,4` | content-crons | Technical blog posts Tue/Thu |
 | `content:reddit` | `0 15 * * *` | content-crons | Technical Reddit content daily |
+| `content:slideshow-blog:cd` | `0 12 * * 3,6` | content-crons | Animated slideshow blog → coherencedaddy Wed/Sat |
 
 ### Spark (Community Builder) — 3 jobs
 
@@ -109,7 +110,7 @@ Sage orchestrates the 4 content personality agents below.
 | `content:bluesky` | `0 14,17,20 * * *` | content-crons | Bluesky posts 3x daily |
 | `content:intel-alert:bluesky` | `0 */2 * * *` | content-crons | Reactive Bluesky posts from hot intel |
 
-### Prism (Trend Reporter) — 4 jobs
+### Prism (Trend Reporter) — 5 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
@@ -117,6 +118,7 @@ Sage orchestrates the 4 content personality agents below.
 | `content:video:market` | `0 9 * * 1-5` | content-crons | Market recap video scripts weekdays |
 | `content:video:weekly` | `0 10 * * 6` | content-crons | Weekly wrap-up video script Saturday |
 | `content:tx-chain-daily` | `0 8 * * *` | content-crons | Daily TX chain metrics article → ShieldNest |
+| `content:slideshow-blog:sn` | `0 13 * * 2,5` | content-crons | Animated slideshow blog → tokns.fi Tue/Fri |
 
 ### Vanguard (XRP/Ripple Analyst) — 4 jobs
 

@@ -15,6 +15,14 @@ import { logger } from "../middleware/logger.js";
 // Pattern: register with central cron-registry, no local setInterval.
 // ---------------------------------------------------------------------------
 
+/** Topic pickers can return a structured result to separate the display title from the LLM prompt */
+interface TopicResult {
+  /** Clean display string for titles (no LLM instructions) */
+  display: string;
+  /** Full prompt including instructions for LLM generation */
+  prompt: string;
+}
+
 interface ContentJobDef {
   name: string;
   schedule: string;
@@ -54,6 +62,9 @@ const JOB_DEFS: ContentJobDef[] = [
   { name: "content:aeo:blog",          schedule: "0 11 * * 1,4",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", publishTarget: "all" },
   // tokns.fi promotional blogs — Forge for structured content
   { name: "content:tokns-promo:blog",  schedule: "0 14 * * 2,5",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "tokns-promo", publishTarget: "all" },
+  // Slideshow blogs — animated presentation-style posts (reuses YouTube slide renderer)
+  { name: "content:slideshow-blog:cd", schedule: "0 12 * * 3,6",  personality: "cipher", ownerAgent: "cipher", contentType: "slideshow_blog", publishTarget: "cd" },
+  { name: "content:slideshow-blog:sn", schedule: "0 13 * * 2,5",  personality: "prism",  ownerAgent: "prism",  contentType: "slideshow_blog", publishTarget: "sn" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -205,7 +216,7 @@ async function pickIntelAlert(db: Db): Promise<string | null> {
 // Chain metrics topic picker — builds daily summary from Mintscan intel data
 // ---------------------------------------------------------------------------
 
-async function pickChainMetricsTopic(db: Db): Promise<string | null> {
+async function pickChainMetricsTopic(db: Db): Promise<TopicResult | null> {
   try {
     const networks = ["cosmos", "osmosis", "txhuman"];
     const parts: string[] = [];
@@ -266,7 +277,11 @@ async function pickChainMetricsTopic(db: Db): Promise<string | null> {
       return null;
     }
 
-    return `TX Blockchain Daily Chain Report: ${parts.join(" | ")}. Write a comprehensive daily overview of Cosmos ecosystem activity covering staking, validator health, network performance, and what these metrics mean for the ecosystem.`;
+    const display = `TX Blockchain Daily Chain Report: ${parts.join(" | ")}`;
+    return {
+      display,
+      prompt: `${display}. Write a comprehensive daily overview of Cosmos ecosystem activity covering staking, validator health, network performance, and what these metrics mean for the ecosystem.`,
+    };
   } catch (err) {
     logger.warn({ err }, "Failed to pick chain metrics topic");
     return null;
@@ -321,7 +336,7 @@ async function pickXrpTopic(db: Db): Promise<string> {
 
 const COMPETITOR_L1S = ["solana", "avalanche-2", "matic-network", "arbitrum", "optimism", "sei-network", "injective-protocol", "celestia"];
 
-async function pickComparisonTopic(db: Db): Promise<string> {
+async function pickComparisonTopic(db: Db): Promise<TopicResult> {
   try {
     // Get TX chain metrics
     const txMetrics = (await db.execute(sql`
@@ -357,16 +372,18 @@ async function pickComparisonTopic(db: Db): Promise<string> {
       compContext = `Competitor data: ${compData[0]!.headline}. `;
     }
 
-    return `${txContext}${compContext}Write a detailed comparison of TX Blockchain (Cosmos SDK, IBC-enabled) vs ${compName}. Compare: transaction speed, staking APR, validator decentralization, cross-chain interoperability (IBC vs bridges), ecosystem size, and developer experience. Include an HTML comparison table. Show why TX's Cosmos SDK foundation and IBC connectivity give it advantages. Reference app.tokns.fi for staking and portfolio tracking.`;
+    const display = `TX Blockchain vs ${compName}: Cosmos SDK Comparison`;
+    const instruction = `${txContext}${compContext}Write a detailed comparison of TX Blockchain (Cosmos SDK, IBC-enabled) vs ${compName}. Compare: transaction speed, staking APR, validator decentralization, cross-chain interoperability (IBC vs bridges), ecosystem size, and developer experience. Include an HTML comparison table. Show why TX's Cosmos SDK foundation and IBC connectivity give it advantages. Reference app.tokns.fi for staking and portfolio tracking.`;
+    return { display, prompt: instruction };
   } catch (err) {
     logger.warn({ err }, "Failed to build comparison topic, using fallback");
   }
 
-  const fallbacks = [
-    "TX Blockchain vs Solana: Which L1 offers better interoperability and staking rewards? Compare IBC cross-chain vs Wormhole bridges, validator economics, and ecosystem growth. Include comparison table.",
-    "TX Blockchain advantages over Ethereum L2s: Why a sovereign Cosmos SDK chain beats rollups for cross-chain DeFi. Compare finality, fees, IBC connectivity, and sovereignty.",
-    "Why TX Blockchain's Cosmos SDK foundation matters: Comparing TX to monolithic L1s on interoperability, governance, and staking APR. Reference app.tokns.fi for staking.",
-    "TX vs Avalanche: Subnet architecture vs IBC — which cross-chain approach wins? Compare validator requirements, staking yields, and ecosystem composability.",
+  const fallbacks: TopicResult[] = [
+    { display: "TX Blockchain vs Solana: Interoperability and Staking Comparison", prompt: "TX Blockchain vs Solana: Which L1 offers better interoperability and staking rewards? Compare IBC cross-chain vs Wormhole bridges, validator economics, and ecosystem growth. Include comparison table." },
+    { display: "TX Blockchain vs Ethereum L2s: Sovereign Cosmos Chain Advantages", prompt: "TX Blockchain advantages over Ethereum L2s: Why a sovereign Cosmos SDK chain beats rollups for cross-chain DeFi. Compare finality, fees, IBC connectivity, and sovereignty." },
+    { display: "Why TX Blockchain's Cosmos SDK Foundation Matters", prompt: "Why TX Blockchain's Cosmos SDK foundation matters: Comparing TX to monolithic L1s on interoperability, governance, and staking APR. Reference app.tokns.fi for staking." },
+    { display: "TX vs Avalanche: IBC vs Subnets", prompt: "TX vs Avalanche: Subnet architecture vs IBC — which cross-chain approach wins? Compare validator requirements, staking yields, and ecosystem composability." },
   ];
   return fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
 }
@@ -375,7 +392,7 @@ async function pickComparisonTopic(db: Db): Promise<string> {
 // tokns.fi promo topic picker — feature spotlights enriched with live data
 // ---------------------------------------------------------------------------
 
-async function pickToknsPromoTopic(db: Db): Promise<string> {
+async function pickToknsPromoTopic(db: Db): Promise<TopicResult> {
   // Pull latest TX chain metrics for real numbers
   let metricsContext = "";
   try {
@@ -396,13 +413,13 @@ async function pickToknsPromoTopic(db: Db): Promise<string> {
     // Non-critical — proceed with static topic
   }
 
-  const topics = [
-    `How to stake TX tokens on app.tokns.fi: Step-by-step guide to earning passive rewards.${metricsContext} Cover: connecting wallet, choosing a validator (recommend tokns.fi validator), delegating, claiming rewards. Include FAQ section with common staking questions.`,
-    `Why tokns.fi is the best TX ecosystem dashboard: Feature comparison with alternatives.${metricsContext} Cover: NFT marketplace, multi-wallet tracking, token swaps, staking — all in one app. Include comparison table vs generic block explorers.`,
-    `app.tokns.fi feature spotlight: Multi-wallet portfolio tracking for the TX ecosystem.${metricsContext} Cover: how to add multiple wallets, track NFTs across wallets, monitor staking rewards, view transaction history. Explain why privacy-first design matters.`,
-    `tokns.fi NFT marketplace guide: How to buy, sell, and trade TX NFTs.${metricsContext} Cover: listing process, ShieldNest 1% fee advantage, on-chain verification, and how NFT trading supports the ecosystem validator.`,
-    `Earning with tokns.fi: Staking rewards, validator delegation, and ecosystem participation.${metricsContext} Cover: how every TX delegated to the tokns.fi validator funds free community tools and infrastructure. Reference coherencedaddy.com 523+ free tools.`,
-    `tokns.fi token swaps: How to swap tokens on the TX blockchain with low fees.${metricsContext} Cover: swap interface, supported pairs, slippage settings, and why Cosmos IBC makes cross-chain swaps possible.`,
+  const topics: TopicResult[] = [
+    { display: "How to Stake TX Tokens on tokns.fi", prompt: `How to stake TX tokens on app.tokns.fi: Step-by-step guide to earning passive rewards.${metricsContext} Cover: connecting wallet, choosing a validator (recommend tokns.fi validator), delegating, claiming rewards. Include FAQ section with common staking questions.` },
+    { display: "Why tokns.fi Is the Best TX Ecosystem Dashboard", prompt: `Why tokns.fi is the best TX ecosystem dashboard: Feature comparison with alternatives.${metricsContext} Cover: NFT marketplace, multi-wallet tracking, token swaps, staking — all in one app. Include comparison table vs generic block explorers.` },
+    { display: "tokns.fi Feature Spotlight: Multi-Wallet Portfolio Tracking", prompt: `app.tokns.fi feature spotlight: Multi-wallet portfolio tracking for the TX ecosystem.${metricsContext} Cover: how to add multiple wallets, track NFTs across wallets, monitor staking rewards, view transaction history. Explain why privacy-first design matters.` },
+    { display: "tokns.fi NFT Marketplace Guide", prompt: `tokns.fi NFT marketplace guide: How to buy, sell, and trade TX NFTs.${metricsContext} Cover: listing process, ShieldNest 1% fee advantage, on-chain verification, and how NFT trading supports the ecosystem validator.` },
+    { display: "Earning with tokns.fi: Staking and Validator Delegation", prompt: `Earning with tokns.fi: Staking rewards, validator delegation, and ecosystem participation.${metricsContext} Cover: how every TX delegated to the tokns.fi validator funds free community tools and infrastructure. Reference coherencedaddy.com 523+ free tools.` },
+    { display: "tokns.fi Token Swaps: Low-Fee Trading on TX Blockchain", prompt: `tokns.fi token swaps: How to swap tokens on the TX blockchain with low fees.${metricsContext} Cover: swap interface, supported pairs, slippage settings, and why Cosmos IBC makes cross-chain swaps possible.` },
   ];
   return topics[Math.floor(Math.random() * topics.length)]!;
 }
@@ -449,46 +466,84 @@ export function startContentCrons(db: Db) {
       ownerAgent: def.ownerAgent,
       sourceFile: "content-crons.ts",
       handler: async () => {
-        let topic: string | null;
+        // Topic pickers return either a plain string or TopicResult { display, prompt }
+        // display = clean title (no LLM instructions), prompt = full LLM input
+        let topicRaw: string | TopicResult | null;
 
         if (def.topicPicker === "intel-alert") {
-          topic = await pickIntelAlert(db);
-          if (!topic) {
+          topicRaw = await pickIntelAlert(db);
+          if (!topicRaw) {
             logger.info({ job: def.name, ownerAgent: def.ownerAgent }, "No hot intel signals, skipping alert content");
             return;
           }
         } else if (def.topicPicker === "chain-metrics") {
-          topic = await pickChainMetricsTopic(db);
-          if (!topic) {
+          topicRaw = await pickChainMetricsTopic(db);
+          if (!topicRaw) {
             logger.info({ job: def.name, ownerAgent: def.ownerAgent }, "No chain metrics data, skipping daily chain report");
             return;
           }
         } else if (def.topicPicker === "xrp-focus") {
-          topic = await pickXrpTopic(db);
+          topicRaw = await pickXrpTopic(db);
         } else if (def.topicPicker === "comparison") {
-          topic = await pickComparisonTopic(db);
+          topicRaw = await pickComparisonTopic(db);
         } else if (def.topicPicker === "tokns-promo") {
-          topic = await pickToknsPromoTopic(db);
+          topicRaw = await pickToknsPromoTopic(db);
         } else {
-          topic = await pickTopic(db);
+          topicRaw = await pickTopic(db);
+        }
+
+        // Normalize: structured TopicResult separates display title from LLM prompt
+        const topicPrompt = typeof topicRaw === "string" ? topicRaw : topicRaw?.prompt ?? "";
+        const topicDisplay = typeof topicRaw === "string" ? topicRaw : topicRaw?.display ?? topicPrompt;
+
+        // Slideshow blog generation — uses presentation renderer pipeline
+        if (def.contentType === "slideshow_blog") {
+          const target = def.publishTarget || "cd";
+          const templateName = target === "sn" ? "tx" as const : "coherencedaddy" as const;
+          try {
+            const { generateSlideshowBlog } = await import("./blog-slideshow-generator.js");
+            const slideshow = await generateSlideshowBlog(topicPrompt || topicDisplay, templateName);
+            const category = "ecosystem" as const;
+            const publishResult = await publishBlogFromContent(
+              slideshow.html, slideshow.title, category, target, "slideshow",
+            );
+            if (publishResult.success) {
+              logger.info(
+                { job: def.name, slug: publishResult.slug, title: slideshow.title, slides: slideshow.slideCount, target },
+                "Slideshow blog published",
+              );
+              await embedPublishedContent(db, {
+                title: slideshow.title,
+                content: slideshow.html,
+                slug: publishResult.slug || "",
+                category,
+                personalityId: def.personality,
+              });
+            } else {
+              logger.warn({ job: def.name, error: publishResult.error, target }, "Slideshow blog publish failed");
+            }
+          } catch (err) {
+            logger.error({ err, job: def.name, target }, "Slideshow blog generation error");
+          }
+          return;
         }
 
         // Use enriched content bridge for twitter jobs
         if (def.useContentBridge && def.contentType === "tweet") {
           const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
-          await autoGenerateAndQueue(db, def.personality, companyId, topic ?? undefined);
+          await autoGenerateAndQueue(db, def.personality, companyId, topicPrompt || undefined);
           logger.info(
-            { job: def.name, ownerAgent: def.ownerAgent, topic, isAlert: !!def.topicPicker },
+            { job: def.name, ownerAgent: def.ownerAgent, topic: topicDisplay, isAlert: !!def.topicPicker },
             "Content cron completed via content-bridge — tweet queued as draft",
           );
         } else {
           const result = await svc.generate({
             personalityId: def.personality,
             contentType: def.contentType,
-            topic: topic!,
+            topic: topicPrompt,
           });
           logger.info(
-            { job: def.name, ownerAgent: def.ownerAgent, contentId: result.contentId, topic, isAlert: !!def.topicPicker },
+            { job: def.name, ownerAgent: def.ownerAgent, contentId: result.contentId, topic: topicDisplay, isAlert: !!def.topicPicker },
             "Content cron completed — item queued as pending",
           );
 
@@ -506,7 +561,8 @@ export function startContentCrons(db: Db) {
               const contentWithFooter = partnerFooter
                 ? result.content + partnerFooter
                 : result.content;
-              const publishResult = await publishBlogFromContent(contentWithFooter, topic!, category, target);
+              // Use topicDisplay (clean title) for publishing, NOT topicPrompt (has LLM instructions)
+              const publishResult = await publishBlogFromContent(contentWithFooter, topicDisplay, category, target);
               if (publishResult.success) {
                 await db
                   .update(contentItems)
@@ -518,7 +574,7 @@ export function startContentCrons(db: Db) {
                 );
                 // Embed published content back into intel for future context enrichment
                 await embedPublishedContent(db, {
-                  title: publishResult.title || topic!,
+                  title: publishResult.title || topicDisplay,
                   content: result.content,
                   slug: publishResult.slug || "",
                   category,

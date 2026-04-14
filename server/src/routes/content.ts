@@ -228,6 +228,25 @@ export function contentRoutes(db: Db) {
     }
   });
 
+  // ---- DELETE /api/content/queue/:id ----
+
+  router.delete("/queue/:id", requireContentKey, async (req, res) => {
+    const id = req.params.id as string;
+    const hard = req.query.hard === "true";
+
+    try {
+      if (hard) {
+        await db.execute(sql`DELETE FROM content_items WHERE id = ${id}`);
+      } else {
+        await db.execute(sql`UPDATE content_items SET status = 'deleted', updated_at = NOW() WHERE id = ${id}`);
+      }
+      res.json({ success: true, id, action: hard ? "deleted" : "soft_deleted" });
+    } catch (err) {
+      logger.error({ err, id }, "Content delete error");
+      res.status(500).json({ error: "Delete failed" });
+    }
+  });
+
   // ---- GET /api/content/queue/stats ----
 
   router.get("/queue/stats", requireContentKey, async (_req, res) => {

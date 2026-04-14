@@ -169,6 +169,7 @@ const DEFAULT_DIAGRAM = `graph TB
         VideoAssembler(["Video Assembler — FFmpeg"])
         SEOEngine(["SEO Engine — Claude-powered"])
         BlogPublisher(["Blog Publisher — CD + ShieldNest"])
+        SlideshowGen(["Slideshow Blog Generator"])
         PubYT(["YouTube Shorts — active"])
         PubTikTok(["TikTok — active"])
         PubInstaStub(["Instagram Reels — stub"]):::readyNode
@@ -453,6 +454,8 @@ const DEFAULT_DIAGRAM = `graph TB
 
   %% Content flows
   ContentCrons --> ContentSvc
+  ContentCrons -->|"slideshow blogs"| SlideshowGen
+  SlideshowGen --> BlogPublisher
   ContentSvc --> Templates
   ContentSvc --> ContentDB
   ContentDB --> FeedbackSvc

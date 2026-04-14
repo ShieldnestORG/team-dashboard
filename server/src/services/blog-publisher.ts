@@ -57,6 +57,7 @@ export interface BlogPost {
   keywords: string[];
   content: string;
   reading_time: number;
+  content_format?: "text" | "slideshow";
 }
 
 // tokns.fi / TX ecosystem links — injected into crypto, ecosystem, xrp, comparison posts
@@ -380,8 +381,10 @@ export async function publishBlogFromContent(
   topic: string,
   category: BlogPost["category"] = "ecosystem",
   target: PublishTarget = "cd",
+  contentFormat?: "text" | "slideshow",
 ): Promise<{ success: boolean; slug?: string; title?: string; error?: string }> {
   const post = buildBlogPostFromContent(htmlContent, topic, category);
+  if (contentFormat) post.content_format = contentFormat;
   const results = await publishToTargets(post, target);
 
   const anySuccess = results.cd?.success || results.sn?.success;
