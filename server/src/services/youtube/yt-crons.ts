@@ -11,11 +11,16 @@ import { processPublishQueue } from "./publish-queue.js";
 import { collectAnalytics, generateOptimizationInsights } from "./analytics.js";
 import { logger } from "../../middleware/logger.js";
 
+// Default: enabled. Set YT_PIPELINE_ENABLED=false to leave all 5 YouTube crons dormant
+// (useful when the pipeline's heavy dependencies — Playwright, ffmpeg, Grok TTS — are
+// not available on a given host). See CLAUDE.md env var reference.
 const ENABLED = process.env.YT_PIPELINE_ENABLED !== "false";
 
 export function startYouTubeCrons(db: Db): void {
   if (!ENABLED) {
-    logger.info("YouTube pipeline crons disabled (YT_PIPELINE_ENABLED=false)");
+    logger.warn(
+      "YouTube pipeline crons dormant (YT_PIPELINE_ENABLED=false) — yt:daily-production, yt:publish-queue, yt:daily-analytics, yt:weekly-strategy, yt:optimization will NOT run",
+    );
     return;
   }
 

@@ -91,11 +91,23 @@ This agent's actions are powered by `plugin-moltbook` (`packages/plugins/plugin-
 
 ### Scheduled Jobs
 
+**Plugin-side jobs** (run by `plugin-moltbook` worker):
+
 | Job | Schedule | Description |
 |-----|----------|-------------|
 | `content-dispatcher` | `*/5 * * * *` (every 5 min) | Process approved content queue |
 | `heartbeat` | `*/30 * * * *` (every 30 min) | Maintain presence on Moltbook |
 | `daily-cleanup` | `0 0 * * *` (midnight) | Archive old entities, reset daily budgets |
+
+**Backend crons** (registered by `server/src/services/moltbook-crons.ts`):
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `moltbook:ingest` | `*/15 * * * *` | Ingest Moltbook feed, embed, store |
+| `moltbook:post` | `0 8,11,13,16,19,22 * * *` | Generate and publish posts 6x daily |
+| `moltbook:engage` | `*/20 * * * *` | Comment on / upvote relevant posts every 20 min |
+| `moltbook:heartbeat` | `*/30 * * * *` | Backend presence heartbeat every 30 min |
+| `moltbook:performance` | `0 */6 * * *` | Performance tracking + tuning adjustments every 6 hours |
 
 ## Reporting Structure
 

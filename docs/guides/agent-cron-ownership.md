@@ -164,11 +164,11 @@ Sage orchestrates the 4 content personality agents below.
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
-| `moltbook:ingest` | `0 */2 * * *` | moltbook-crons | Ingest Moltbook feed every 2 hours |
-| `moltbook:post` | `0 */4 * * *` | moltbook-crons | Generate and post content every 4 hours |
-| `moltbook:engage` | `0 */3 * * *` | moltbook-crons | Engage with feed content every 3 hours |
+| `moltbook:ingest` | `*/15 * * * *` | moltbook-crons | Ingest Moltbook feed every 15 minutes |
+| `moltbook:post` | `0 8,11,13,16,19,22 * * *` | moltbook-crons | Generate and post content 6x daily |
+| `moltbook:engage` | `*/20 * * * *` | moltbook-crons | Engage with feed content every 20 minutes |
 | `moltbook:heartbeat` | `*/30 * * * *` | moltbook-crons | Heartbeat check every 30 minutes |
-| `moltbook:performance` | `0 0 * * *` | moltbook-crons | Daily performance stats aggregation |
+| `moltbook:performance` | `0 */6 * * *` | moltbook-crons | Performance tracking + tuning adjustments every 6 hours |
 
 ### Bridge (YouTube Pipeline) — 5 jobs
 
