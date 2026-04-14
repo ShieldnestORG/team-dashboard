@@ -383,37 +383,52 @@ export function intelBillingService(db: Db) {
       logger.debug("intel-billing: STRIPE_SECRET_KEY unset — overage reporting skipped");
       return { reported: 0 };
     }
-    // Find unreported overage rows joined with subscription item IDs.
+    // Stripe Billing Meters: 1 unit = 1,000 requests (matches the $0.10/$0.05/$0.03
+    // per-1k pricing we publish). Each row stores cumulative overage_count and
+    // cumulative overage_units_reported; the cron emits a meter_event for the
+    // delta and advances the reported counter.
     const rows = await db.execute<{
       meter_id: string;
       overage_count: number;
-      sub_item_id: string;
+      overage_units_reported: number;
+      stripe_customer_id: string;
     }>(sql`
-      SELECT m.id AS meter_id, m.overage_count, c.stripe_subscription_item_id AS sub_item_id
+      SELECT m.id AS meter_id,
+             m.overage_count,
+             m.overage_units_reported,
+             c.stripe_customer_id
       FROM intel_usage_meter m
       JOIN intel_api_keys k ON k.id = m.api_key_id
       JOIN intel_customers c ON c.id = k.customer_id
       WHERE m.overage_count > 0
-        AND m.overage_reported_to_stripe_at IS NULL
-        AND c.stripe_subscription_item_id IS NOT NULL
+        AND c.stripe_customer_id IS NOT NULL
     `);
-    const list = (rows as unknown as { rows?: Array<{ meter_id: string; overage_count: number; sub_item_id: string }> }).rows
-      ?? (rows as unknown as Array<{ meter_id: string; overage_count: number; sub_item_id: string }>);
+    const list = (rows as unknown as { rows?: Array<{ meter_id: string; overage_count: number; overage_units_reported: number; stripe_customer_id: string }> }).rows
+      ?? (rows as unknown as Array<{ meter_id: string; overage_count: number; overage_units_reported: number; stripe_customer_id: string }>);
     let reported = 0;
     for (const row of list ?? []) {
+      // How many whole 1k-buckets have accumulated vs. what we've already billed.
+      const totalUnits = Math.floor(Number(row.overage_count) / 1000);
+      const alreadyReported = Number(row.overage_units_reported ?? 0);
+      const delta = totalUnits - alreadyReported;
+      if (delta <= 0) continue;
       try {
-        await stripeRequest("POST", `/subscription_items/${row.sub_item_id}/usage_records`, {
-          quantity: row.overage_count,
+        await stripeRequest("POST", "/billing/meter_events", {
+          event_name: "intel_api_overage",
+          "payload[stripe_customer_id]": row.stripe_customer_id,
+          "payload[value]": delta,
           timestamp: Math.floor(Date.now() / 1000),
-          action: "increment",
         });
         await db
           .update(intelUsageMeter)
-          .set({ overageReportedToStripeAt: new Date() })
+          .set({
+            overageUnitsReported: totalUnits,
+            overageReportedToStripeAt: new Date(),
+          })
           .where(eq(intelUsageMeter.id, row.meter_id));
         reported += 1;
       } catch (err) {
-        logger.warn({ err, meterId: row.meter_id }, "intel-billing: usage record failed");
+        logger.warn({ err, meterId: row.meter_id, delta }, "intel-billing: meter_event failed");
       }
     }
     return { reported };

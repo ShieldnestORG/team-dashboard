@@ -74,6 +74,7 @@ export const intelUsageMeter = pgTable(
     periodStart: date("period_start").notNull(),
     requestCount: bigint("request_count", { mode: "number" }).notNull().default(0),
     overageCount: bigint("overage_count", { mode: "number" }).notNull().default(0),
+    overageUnitsReported: bigint("overage_units_reported", { mode: "number" }).notNull().default(0),
     overageReportedToStripeAt: timestamp("overage_reported_to_stripe_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
