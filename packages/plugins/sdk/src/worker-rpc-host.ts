@@ -34,6 +34,7 @@
  * @see PLUGIN_SPEC.md §14 — SDK Surface
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -209,8 +210,29 @@ export function runWorker(
   }
   const entry = process.argv[1];
   if (typeof entry !== "string") return;
-  const thisFile = path.resolve(fileURLToPath(moduleUrl));
-  const entryPath = path.resolve(entry);
+
+  // Resolve symlinks on both sides before comparing. Plugin packages are
+  // often staged in `$HOME/.paperclip/plugins/@scope/plugin-x` as symlinks
+  // back to the monorepo (`/app/packages/plugins/plugin-x`). When the host
+  // spawns the worker, `process.argv[1]` is the symlinked path the host
+  // resolved via `resolveWorkerEntrypoint`, but `import.meta.url` — once
+  // loaded through tsx/node's esm loader — can be the *realpath* target.
+  // Plain string equality fails and the worker exits before the RPC host
+  // starts. Running both through fs.realpathSync makes the comparison
+  // symlink-safe.
+  let thisFile: string;
+  let entryPath: string;
+  try {
+    thisFile = fs.realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    thisFile = path.resolve(fileURLToPath(moduleUrl));
+  }
+  try {
+    entryPath = fs.realpathSync(path.resolve(entry));
+  } catch {
+    entryPath = path.resolve(entry);
+  }
+
   if (thisFile === entryPath) {
     startWorkerRpcHost({ plugin });
   }
