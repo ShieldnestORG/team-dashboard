@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-13 (knowledge graph + 4 agents + agent memory)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-14 (directory listings monetization + Stripe checkout/webhook)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -263,6 +263,10 @@ const DEFAULT_DIAGRAM = `graph TB
         IntelBilling(["Intel Billing — Stripe 4 tiers"])
         IntelRateLimit(["Intel Rate Limiter — per-key quota + meter"])
         IntelBillingDB[("intel_plans + customers + api_keys + usage_meter")]
+        DirListingsSvc(["Directory Listings — Stripe featured/verified/boosted"])
+        DirListingsRoutes(["/api/directory-listings — admin CRUD + checkout"])
+        StripeWebhook(["/api/stripe/webhook — signature-verified"])
+        DirListingsDB[("directory_listings + directory_listing_events")]
       end
 
       subgraph KnowledgeGraph["Knowledge Graph Engine"]
@@ -571,6 +575,15 @@ const DEFAULT_DIAGRAM = `graph TB
   IntelDiscovery --> IntelSvc
   IntelSvc --> IntelDB
 
+  %% Directory Listings — monetization layer
+  DirListingsRoutes --> DirListingsSvc
+  DirListingsSvc --> IntelDB
+  DirListingsSvc --> DirListingsDB
+  DirListingsSvc -->|"checkout.sessions"| StripeAPI
+  StripeWebhook -->|"invoice.paid / sub.deleted"| DirListingsSvc
+  StripeAPI -.->|"webhook POST"| StripeWebhook
+  IntelSvc -->|"featured flag"| DirListingsDB
+
   %% Knowledge Graph flows
   KGCrons --> RelExtractor
   KGCrons --> GraphQuery
@@ -682,7 +695,7 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef readyNode fill:#94a3b8,stroke:#64748b,stroke-width:2px,stroke-dasharray:5 5,color:#f8fafc,font-style:italic
 
   class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons,MoltbookCrons cronNode
-  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent,QualitySignalsDB storeNode
+  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent,QualitySignalsDB,IntelBillingDB,DirListingsDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
   style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81

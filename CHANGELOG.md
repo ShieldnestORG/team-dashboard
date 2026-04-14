@@ -53,9 +53,46 @@ endpoints.
 
 #### Directory Listings (Paid Tier)
 - `packages/db/src/schema/directory_listings.ts` + `0066_directory_listings`
-  migration.
-- `server/src/services/directory-listings.ts` + `routes/directory-listings.ts`.
-- `ui/src/pages/intel/ListingsTab.tsx` + `ListingDetailDrawer.tsx`.
+  migration (adds `directory_listings` + `directory_listing_events` tables and
+  5 `contact_*` columns to `intel_companies`).
+- `server/src/services/directory-listings.ts` — sales-pipeline business logic:
+  list-with-listings + server-side smart search, stats/MRR aggregation, contact
+  upsert, Stripe checkout session creation (subscription mode), webhook handler
+  (`checkout.session.completed`, `invoice.paid/payment_failed`,
+  `customer.subscription.deleted`) tagged via `metadata.source=directory_listings`,
+  cancel listing, freeform notes, outreach tracking, and traffic attribution
+  (`getTrafficAttribution`) that joins `content_items` by name/slug to report
+  mentions + clicks driven + published-mention counts so sales can prove value.
+- `server/src/services/stripe-client.ts` — shared fetch-based Stripe REST
+  wrapper + `verifyStripeSignature` (scheme v1, HMAC-SHA256).
+- `server/src/routes/directory-listings.ts` — admin REST at
+  `/api/directory-listings/*` (tiers, stats, list, company contact, company
+  listings, traffic, checkout, cancel, note, outreach, events) +
+  `/api/stripe/webhook` mounted with `req.rawBody` (captured by global
+  `express.json({ verify })`) — no `express.raw()` needed.
+- `server/src/services/intel.ts` — `listCompanies()` extended to LEFT JOIN
+  LATERAL the latest active listing so the public `GET /intel/companies`
+  response surfaces `featured` + `listing_tier` columns for
+  directory.coherencedaddy.com to sort featured first (backwards compatible —
+  additive fields only).
+- `ui/src/pages/Intel.tsx` — new **Listings** tab between Overview and the
+  four directory tabs.
+- `ui/src/pages/intel/ListingsTab.tsx` — stats cards (active / MRR / past due
+  / with-email / total), status chip filters
+  (all/prospects/contacted/checkout_sent/active/past_due/canceled), directory
+  dropdown, smart search (debounced, server-side) across
+  name/slug/category/contact_email/website/twitter, sortable paginated table,
+  click-to-open drawer.
+- `ui/src/pages/intel/ListingDetailDrawer.tsx` — editable contact form
+  (email/name/notes), **Traffic we've driven** attribution panel (mentions,
+  clicks, published count, recent mentions list), current-listing card with
+  cancel button, Stripe checkout link creator with copy-to-clipboard, and
+  event timeline with freeform note composer.
+- `ui/src/api/directoryListings.ts` — React Query hooks for all endpoints.
+- Tier defaults: Featured $199/mo, Verified $499/mo, Boosted $1499/mo — Stripe
+  price IDs loaded from `STRIPE_PRICE_FEATURED` / `_VERIFIED` / `_BOOSTED` env
+  vars; checkout URLs via `DIRECTORY_CHECKOUT_SUCCESS_URL` /
+  `DIRECTORY_CHECKOUT_CANCEL_URL`.
 
 #### Unified Automation Health Dashboard
 - `server/src/services/automation-health.ts` — aggregator returning crons /
