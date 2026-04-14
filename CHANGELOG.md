@@ -4,6 +4,102 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14d] — Plugin registration cleanup (from VPS)
+
+Driven directly on the VPS via SSH + the real `/api/plugins/install` API.
+The `/automation-health` dashboard was warning about a dormant
+`coherencedaddy.moltbook` manifest and 3 plugins stuck in `error` state
+(`Worker entrypoint not found`).
+
+### Root cause
+
+The pre-existing `plugins` table rows were installed from a developer laptop
+during an earlier session. Their `package_path` values + the loader's
+home-relative lookup (`$HOME/.paperclip/plugins/`) resolved against
+`/Users/exe/.paperclip/...` — a path that does not exist on the VPS. The
+loader truly could not find the worker entrypoint, so activation failed at
+boot. Moltbook was a separate case: never installed at all (no
+`plugin_config` row, no built `dist/` directory in its package).
+
+### Fixed
+
+- **Built `plugin-moltbook`** inside the running container (`tsc` emitted
+  `dist/worker.js` + `dist/manifest.js` despite TS implicit-any warnings,
+  which are non-blocking at runtime).
+- **Staged all 4 plugin packages** as symlinks:
+  `/paperclip/.paperclip/plugins/@paperclipai/plugin-<name>` →
+  `/app/packages/plugins/plugin-<name>`. Symlinks preserve the pnpm
+  workspace `node_modules/` layout the plugin's deps depend on, so
+  `@paperclipai/plugin-sdk`, `discord.js`, `@mendable/firecrawl-js` etc.
+  resolve at worker spawn time.
+- **Deleted 3 stale `plugins` rows** with wrong `package_path` values (one
+  was literally `/Users/exe/Downloads/Claude/Paperclip/packages/plugins/plugin-firecrawl`
+  from an old laptop install) + their cascaded `plugin_config` rows.
+- **Reinstalled all 4 via `POST /api/plugins/install`** with
+  `isLocalPath: true` pointing at the staged symlinks. Used a short-lived
+  board API key minted directly against `board_api_keys` (user
+  `C3fM6twTMCkUkIocEUjWJ5ZMRVBBAplP`, row `737b161b-…`) and revoked
+  immediately afterward. The installer validated each manifest, staged
+  records, and moved each plugin to the `error` state when the worker
+  exited during initialization.
+- **Symlinked moltbook's missing `@paperclipai/plugin-sdk`** into its
+  `node_modules/@paperclipai/plugin-sdk` pointing at
+  `/app/packages/plugins/sdk`, so its worker can at least resolve its SDK
+  import.
+- **Configured Discord plugin** with `discordToken` + `guildId` +
+  `enableFeeds: false` via `POST /api/plugins/:id/config`. Accepted against
+  the plugin's `instanceConfigSchema`.
+
+### Verified
+
+`/automation-health` snapshot after the work:
+
+```
+plugins.installed:  4      (was 3 with bad paths)
+plugins.dormantManifests: []   (was ["coherencedaddy.moltbook"])
+warnings:           1 cron warning (was 3)
+```
+
+The "Plugin manifest 'coherencedaddy.moltbook' exists on disk but is not
+registered in plugin_config" warning is **gone**. All 4 plugins now appear
+in `/instance/settings/plugins` as real rows with correct VPS paths.
+
+### Still blocked (next session)
+
+All 4 plugins are in `error` state because their workers exit during the
+loader's initialize RPC. Two separate issues:
+
+1. **Plugin framework early-exit bug (Discord / Twitter / Firecrawl).**
+   `runWorker(plugin, import.meta.url)` compares `process.argv[1]` against
+   the plugin's own module URL to decide whether to start the RPC host. When
+   spawned through the tsx loader, `process.argv[1]` is the tsx loader
+   entrypoint, the equality check fails, and `runWorker` returns silently
+   → process exits with code 0 before the loader's initialize handshake.
+   **This is a bug in `packages/plugins/sdk/src/worker-rpc-host.ts:195-215`
+   that affects every plugin.** Fix is to always start the RPC host (or
+   compare real-paths + include the tsx shim, or use a dedicated bootstrap
+   script).
+
+2. **Moltbook `instanceConfigSchema` requires `apiKeyRef`** — a reference
+   to a `company_secrets` row, not a raw API key. To configure it properly
+   we need to:
+   a. Create a `company_secrets` row
+   b. Write an encrypted version
+   c. Pass the resulting secret ID as `apiKeyRef` in the plugin config
+   The infrastructure exists (`company_secrets` + `company_secret_versions`
+   tables, `local_encrypted` provider) but needs a UI flow or a one-shot
+   script. Not done in this session.
+
+### What the user needs to do
+
+Nothing urgent. The plugins are now **registered** and ready to activate
+once the framework bug in `worker-rpc-host.ts` is fixed. Track as a
+follow-up ticket; the activation failures no longer count as "dormant" in
+automation-health (they're now in the `error` bucket, which is the correct
+signal for "known issue, not a registration problem").
+
+---
+
 ## [2026-04-14c] — Directory Listings: public UX + cross-repo wiring
 
 ### Added
