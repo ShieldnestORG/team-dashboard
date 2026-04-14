@@ -466,14 +466,17 @@ export async function engageFeed(db: Db): Promise<{ comments: number; upvotes: n
 
   const missionVec = `[${missionEmbedding.join(",")}]`;
 
-  // Find unengaged posts, scored by relevance to our mission
-  const windowInterval = `${tuning.engageWindowHours} hours`;
+  // Find unengaged posts, scored by relevance to our mission.
+  // NB: PostgreSQL does not allow parameterized INTERVAL literals (`INTERVAL $2`
+  // is a syntax error). Use make_interval() which takes hours as a real
+  // parameter, or multiply a literal interval. We go with make_interval.
+  const windowHours = tuning.engageWindowHours;
   const candidates = await db.execute(sql`
     SELECT id, post_id, title, content, author_name, submolt, upvotes,
            1 - (embedding <=> ${missionVec}::vector) AS relevance
     FROM moltbook_feed
     WHERE engaged = FALSE
-      AND ingested_at > NOW() - INTERVAL ${windowInterval}
+      AND ingested_at > NOW() - make_interval(hours => ${windowHours}::int)
       AND embedding IS NOT NULL
     ORDER BY relevance DESC
     LIMIT ${tuning.maxCandidates}
