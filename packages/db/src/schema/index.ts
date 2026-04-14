@@ -79,3 +79,6 @@ export {
   ytAnalytics,
   ytKeywordPerformance,
 } from "./youtube_pipeline.js";
+export { knowledgeTags } from "./knowledge_tags.js";
+export { companyRelationships } from "./company_relationships.js";
+export { agentMemory } from "./agent_memory.js";

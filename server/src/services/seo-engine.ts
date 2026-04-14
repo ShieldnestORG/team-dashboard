@@ -268,7 +268,7 @@ export function seoEngineService(db?: Db) {
       let intelContext = "";
       if (db) {
         try {
-          intelContext = await fetchQualityContext(db, signal.topic, 5);
+          intelContext = await fetchQualityContext(db, signal.topic, 5, { includeRelationships: true });
         } catch (err) {
           logger.warn({ err }, "SEO engine: intel context fetch failed, generating without context");
         }

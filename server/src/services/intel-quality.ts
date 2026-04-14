@@ -324,6 +324,7 @@ export async function fetchQualityContext(
   db: Db,
   topic: string,
   limit = 5,
+  opts: { includeRelationships?: boolean } = {},
 ): Promise<string> {
   try {
     const { getEmbedding } = await import("./intel-embeddings.js");
@@ -384,7 +385,41 @@ export async function fetchQualityContext(
       return `[${r.report_type}/${r.company_slug}] ${r.headline}\n${body}`;
     });
 
-    return `\nRelevant context from recent intel:\n${contextLines.join("\n\n")}`;
+    let contextStr = `\nRelevant context from recent intel:\n${contextLines.join("\n\n")}`;
+
+    // Optionally enrich with knowledge graph relationships
+    if (opts.includeRelationships) {
+      try {
+        const companySlugs = [...new Set(top.map((r) => r.company_slug))];
+        const relationships = await db.execute(sql`
+          SELECT source_type, source_id, relationship, target_type, target_id, confidence
+          FROM company_relationships
+          WHERE (source_type = 'company' AND source_id = ANY(${companySlugs}::text[]))
+             OR (target_type = 'company' AND target_id = ANY(${companySlugs}::text[]))
+          AND (verified = true OR confidence >= 0.5)
+          ORDER BY confidence DESC
+          LIMIT 20
+        `) as unknown as Array<{
+          source_type: string;
+          source_id: string;
+          relationship: string;
+          target_type: string;
+          target_id: string;
+          confidence: number;
+        }>;
+
+        if (relationships.length > 0) {
+          const relLines = relationships.map(
+            (r) => `- ${r.source_id} ${r.relationship} ${r.target_id} (${(r.confidence * 100).toFixed(0)}%)`,
+          );
+          contextStr += `\n\nRelated entities:\n${relLines.join("\n")}`;
+        }
+      } catch (relErr) {
+        logger.debug({ err: relErr }, "Failed to fetch relationship context, skipping");
+      }
+    }
+
+    return contextStr;
   } catch (err) {
     logger.warn({ err }, "Quality context fetch failed, returning empty");
     return "";

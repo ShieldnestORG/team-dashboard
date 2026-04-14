@@ -56,8 +56,9 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Auto-reply | `server/src/services/auto-reply.ts` | 1 | Core |
 | Moltbook backend | `server/src/services/moltbook-crons.ts` | 5 | Moltbook |
 | YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Core — Ollama scripts, Grok TTS (xAI Rex voice), Playwright slides + site-walker, FFmpeg, YouTube API |
+| Knowledge graph | `server/src/services/knowledge-graph-crons.ts` | 9 | Nexus (2), Weaver (3), Recall (3), Oracle (1) |
 
-**Total: 48 system cron jobs across 9 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 57 total**
+**Total: 60 system cron jobs across 10 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 69 total**
 
 > **Ready (paused):** `content:canva-media:morning` and `content:canva-media:evening` owned by Sage — posts Canva designs as image tweets 2x/day. Canva OAuth connected (2026-04-11), but paused until Canva folder API is available for image/video separation. Twitter plugin image posting is functional.
 
@@ -177,6 +178,35 @@ Sage orchestrates the 4 content personality agents below.
 | `yt:daily-analytics` | `0 9 * * *` | yt-crons | Collect YouTube analytics (views, likes, CTR) |
 | `yt:weekly-strategy` | `0 8 * * 0` | yt-crons | Analyze performance, adjust content pillars |
 | `yt:optimization` | `0 22 * * *` | yt-crons | Ollama-powered optimization insights |
+
+### Nexus (Relationship Extractor) — 2 jobs
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `kg:extract-relationships` | `0 */3 * * *` | knowledge-graph-crons | Extract triples from new intel reports via Ollama every 3 hours |
+| `kg:embed-tags` | `0 */6 * * *` | knowledge-graph-crons | Embed knowledge tags missing embeddings every 6 hours |
+
+### Weaver (Graph Curator) — 3 jobs
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `kg:deduplicate-tags` | `0 2 * * *` | knowledge-graph-crons | Merge duplicate tags by embedding similarity daily at 2 AM |
+| `kg:prune-edges` | `0 3 * * *` | knowledge-graph-crons | Remove low-confidence unverified edges daily at 3 AM |
+| `kg:stats` | `0 */12 * * *` | knowledge-graph-crons | Compute and log graph statistics twice daily |
+
+### Recall (Memory Manager) — 3 jobs
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `memory:expire` | `0 4 * * *` | knowledge-graph-crons | Delete expired agent memories daily at 4 AM |
+| `memory:compact` | `0 5 * * *` | knowledge-graph-crons | Merge near-duplicate memories daily at 5 AM |
+| `memory:embed` | `0 */4 * * *` | knowledge-graph-crons | Embed unembedded memories every 4 hours |
+
+### Oracle (Graph Query Agent) — 1 job
+
+| Job | Schedule | Service | Description |
+|-----|----------|---------|-------------|
+| `kg:warm-cache` | `0 6 * * *` | knowledge-graph-crons | Pre-compute common graph traversals daily at 6 AM |
 
 ### Agents with No Cron Jobs
 

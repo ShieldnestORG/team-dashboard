@@ -42,6 +42,7 @@ import { SystemHealth } from "./pages/SystemHealth";
 import { ContentReview } from "./pages/ContentReview";
 import { Structure } from "./pages/Structure";
 import { Intel } from "./pages/Intel";
+import { KnowledgeGraph } from "./pages/KnowledgeGraph";
 import { Discord } from "./pages/Discord";
 import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
@@ -199,6 +200,7 @@ function boardRoutes() {
       <Route path="youtube/videos" element={<YouTubeVideos />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
+      <Route path="knowledge-graph" element={<KnowledgeGraph />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       <Route path="inbox/mine" element={<Inbox />} />
       <Route path="inbox/recent" element={<Inbox />} />

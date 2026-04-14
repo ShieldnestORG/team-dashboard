@@ -25,7 +25,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 
 ## What Lives Here
 
-- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 6 content personality agents (Blaze/Cipher/Spark/Prism/Vanguard/Forge) + Mermaid (Company Structure Agent) + Moltbook (Social Presence Agent — AI agent social network). Each agent's AGENTS.md documents its cron responsibilities. See `docs/guides/agent-cron-ownership.md` for the full mapping
+- **Agent management** — 9 AI agents under Coherence Daddy (Atlas/CEO, Nova/CTO, Sage/CMO, River/PM, Pixel/Designer, Echo/Data Engineer, Core/Backend, Bridge/Full-Stack, Flux/Frontend) + 6 content personality agents (Blaze/Cipher/Spark/Prism/Vanguard/Forge) + Mermaid (Company Structure Agent) + Moltbook (Social Presence Agent — AI agent social network) + 4 knowledge graph agents (Nexus/Relationship Extractor, Weaver/Graph Curator, Recall/Memory Manager, Oracle/Graph Query). Each agent's AGENTS.md documents its cron responsibilities. See `docs/guides/agent-cron-ownership.md` for the full mapping
 - **Data pipelines** — Firecrawl scraping, Qdrant vector indexing, Directory API sync, eval smoke tests (daily), SMTP email alerting, log aggregation
 - **Content engine** — Ollama-powered text content generation with 6 personality agents (Blaze/hot-take analyst, Cipher/technical deep-diver, Spark/community builder, Prism/trend reporter, Vanguard/XRP-Ripple specialist, Forge/AEO-comparison architect), PostgreSQL-backed content queue (`content_items` table), blog publishing API, multi-platform distribution. **Slideshow blog generator** reuses the YouTube presentation renderer to produce interactive HTML slideshow posts with branded slides (Coherence Daddy coral/cyan or TX lime/purple), embedded navigation (prev/next, keyboard arrows, swipe, progress dots), published to both coherencedaddy.com and app.tokns.fi. Admin feedback system (`content_feedback` + `content_quality_signals` tables) with like/dislike ratings that persist to DB and downrank/uprank intel sources for future generation. Performance tracking (`click_count` + `engagement_score` on content_items) with public `POST /api/content/:id/track` endpoint
 - **Content feedback loop** — published content is embedded back into `intel_reports` with BGE-M3 vectors (`content-embedder.ts`), so the knowledge base grows from its own output. SEO engine and content crons use vector similarity search to enrich prompts with relevant intel. Topic picker weights boosted by historical engagement data. Feedback penalties survive server restarts via `content_quality_signals` DB table
@@ -44,6 +44,7 @@ This is the main company in the dashboard. All agents, content, and data belong 
 - **MCP Server** — `packages/mcp-server/` Model Context Protocol server exposing 35 tools across 9 entities (Issues, Projects, Milestones, Labels, Teams, WorkflowStates, Comments, IssueRelations, Initiatives). Wraps Team Dashboard REST API for use by Claude, Codex, and other MCP-compatible agents. Stdio transport, configurable via `PAPERCLIP_API_URL` and `PAPERCLIP_API_TOKEN`
 - **Media Drop** — file upload and media management for content pipeline. Multer-based upload (up to 4 files), S3/local storage backends, per-company media libraries. Routes at `/api/media/*`, schema in `media_drops` table
 - **AEO Partner Network** — B2B lead-gen system that drives traffic to local business partners through CD's content engine. Partners are local businesses (gyms, restaurants, salons, etc.) whose info gets woven into content naturally. Redirect link tracking (`/api/go/:slug`), click metrics, public partner dashboard (token-authenticated), content mention tracking. Admin page at `/partners`, public dashboard at `/partner-dashboard/:slug?token=xxx`. Revenue model: free proof tier → performance-based fees ($10-15/client/mo) → premium retainer
+- **Knowledge Graph Engine** — structured relationship intelligence layer on top of the intel pipeline. Typed directed edges between companies and technologies (`company_relationships` table) with confidence scoring and evidence tracking. Knowledge tags (`knowledge_tags` table) provide a shared vocabulary of technologies, protocols, and ecosystems. Agent memory (`agent_memory` table) stores persistent subject-predicate-object triples per agent with semantic recall via BGE-M3 embeddings. 4 specialized agents: Nexus (extracts triples from intel via Ollama every 3hr), Weaver (dedup tags, prune edges, auto-verify daily), Recall (expire/compact/embed memories), Oracle (multi-hop traversal via recursive CTEs + hybrid vector search). Graph context enriches SEO engine and content generation via `fetchQualityContext({ includeRelationships: true })`. Admin page at `/knowledge-graph` with stats, hybrid search, entity detail, relationship table, and agent memory overview. Routes at `/api/knowledge-graph/*` and `/api/agent-memory/*`, 9 cron jobs
 - **Intel Dashboard** — admin UI page at `/intel` with tabbed tables (Overview/Crypto/AI-ML/DeFi/DevTools), searchable company lists, stats cards
 - **Public Article Generator** — rate-limited public endpoint (`POST /api/content/public/generate`) for users to generate AI-powered articles with Coherence Daddy metadata attribution. Powered by Ollama + intel context, supports all platforms (tweet, blog, linkedin, reddit, etc.)
 - **Authenticated dashboard** — company/workspace management, projects, issues, goals, routines
@@ -100,6 +101,10 @@ server/
       trend-crons.ts                # Trend scanning cron scheduler (6hr cycle)
       auto-reply.ts                 # X auto-reply engine (search-based polling, settings, configurable cron)
       partner-content.ts            # Partner content injection (industry matching, prompt context)
+      relationship-extractor.ts     # Ollama-powered triple extraction from intel reports (Nexus agent)
+      graph-query.ts                # Recursive CTE traversal + hybrid vector search (Oracle agent)
+      agent-memory.ts               # Structured fact storage per agent with semantic recall (Recall agent)
+      knowledge-graph-crons.ts      # 9 cron jobs across 4 knowledge graph agents
       x-api/
         client.ts                   # X API v2 client (searchRecent, getUserTweets, createTweet)
         rate-limiter.ts             # Dollar-based daily budget tracker ($0.005/read, $0.01/write) + panic mode
@@ -138,6 +143,8 @@ server/
       auto-reply.ts                 # Auto-reply API (/api/auto-reply/*) — settings, config CRUD, log, stats
       partner.ts                    # Partner CRUD + metrics API (/api/partners/*)
       partner-go.ts                 # Public redirect endpoint (/api/go/:slug — no auth)
+      knowledge-graph.ts            # Knowledge graph API (/api/knowledge-graph/*) — search, traverse, CRUD, visualization
+      agent-memory.ts               # Agent memory API (/api/agent-memory/*) — CRUD, semantic search, stats
     data/             # Static seed data (intel companies)
     middleware/       # Auth, validation, board mutation guard, intel rate limiter
     adapters/         # HTTP/process adapter runners
@@ -168,6 +175,10 @@ agents/                 # Per-agent AGENTS.md instruction files
   prism/              # Content Reporter — trend reports for Blog/LinkedIn/Newsletter
   mermaid/            # Company Structure Agent — architecture flowcharts, service topology
   moltbook/           # Social Presence Agent — Moltbook AI social network engagement
+  nexus/              # Relationship Extractor — Ollama triple extraction from intel reports
+  weaver/             # Graph Curator — tag dedup, edge pruning, graph health
+  recall/             # Memory Manager — expire, compact, embed agent memories
+  oracle/             # Graph Query Agent — multi-hop traversal, hybrid search, cache
 .agents/
   skills/             # Company skills (company-creator, doc-maintenance, release, etc.)
     content-writer/   # Content generation and publishing skill
@@ -287,7 +298,7 @@ token.coherencedaddy.com
 - **Site Metrics**: coherencedaddy.com pushes daily analytics via `/api/companies/:id/site-metrics/ingest`
 - **DB Backups**: enabled (`PAPERCLIP_DB_BACKUP_ENABLED=true`)
 - **SMTP Alerting**: env vars `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (4 jobs: health-check + digest + partner-metrics + partner-site-monitor), content (24 jobs: 1 SEO engine + 1 retweet-cycle + 1 partner-sites + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 2 slideshow-blog), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), ssl-monitor (1 job: cert expiry check every 6hr + email alert if &lt;14 days), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), moltbook-backend (5 jobs: ingest + post + engage + heartbeat + performance), youtube (5 jobs: daily-production + publish-queue + daily-analytics + weekly-strategy + optimization, Grok TTS + Playwright + FFmpeg), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 30m + queue-cleanup 6h + analytics-rollup daily), moltbook-plugin (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). All 51 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
+- **Cron Schedulers**: intel (8 jobs: 5 ingest + 1 backfill + 1 discover + 1 chain-metrics), eval (1 job), alert (4 jobs: health-check + digest + partner-metrics + partner-site-monitor), content (24 jobs: 1 SEO engine + 1 retweet-cycle + 1 partner-sites + 7 text + 3 video script + 2 intel-alert + 1 tx-chain-daily + 4 XRP/vanguard + 3 AEO-comparison/forge + 2 slideshow-blog), trends (1 job: scan every 6hr), maintenance (2 jobs: stale-content + health-check), ssl-monitor (1 job: cert expiry check every 6hr + email alert if &lt;14 days), auto-reply (1 job: single `search/recent` query covering all targets, configurable interval via settings API, default 30 min), moltbook-backend (5 jobs: ingest + post + engage + heartbeat + performance), youtube (5 jobs: daily-production + publish-queue + daily-analytics + weekly-strategy + optimization, Grok TTS + Playwright + FFmpeg), discord (2 plugin jobs: ticket-cleanup + daily-stats), twitter (4 plugin jobs: post-dispatcher 2m + engagement-cycle 30m + queue-cleanup 6h + analytics-rollup daily), moltbook-plugin (3 plugin jobs: content-dispatcher 5m + heartbeat 30m + daily-cleanup midnight). knowledge-graph (9 jobs: 2 nexus/extraction + 3 weaver/curation + 3 recall/memory + 1 oracle/cache). All 60 cron + 9 plugin jobs have `ownerAgent` metadata — see `docs/guides/agent-cron-ownership.md`
 - **Heartbeat Scheduler**: enabled by default (`HEARTBEAT_SCHEDULER_ENABLED`), 30s tick in `index.ts`, wakes agents with configured `runtimeConfig.heartbeat.intervalSec`
 
 ### Key Files
@@ -361,6 +372,17 @@ token.coherencedaddy.com
 | `server/src/routes/partner-go.ts` | Public redirect endpoint (`/api/go/:slug` — no auth) |
 | `ui/src/pages/Partners.tsx` | Partner admin page — CRUD, metrics, dashboard links |
 | `ui/src/pages/PartnerDashboard.tsx` | Public partner metrics dashboard (token-auth, light theme) |
+| `packages/db/src/schema/knowledge_tags.ts` | `knowledgeTags` table schema (technologies, protocols, ecosystems) |
+| `packages/db/src/schema/company_relationships.ts` | `companyRelationships` table schema (typed directed edges) |
+| `packages/db/src/schema/agent_memory.ts` | `agentMemory` table schema (subject-predicate-object triples) |
+| `packages/db/src/migrations/0064_knowledge_graph.sql` | Migration: knowledge graph + agent memory tables |
+| `server/src/services/relationship-extractor.ts` | Ollama triple extraction from intel reports (Nexus agent) |
+| `server/src/services/graph-query.ts` | Recursive CTE traversal + hybrid vector search (Oracle agent) |
+| `server/src/services/agent-memory.ts` | Structured fact storage per agent with semantic recall |
+| `server/src/services/knowledge-graph-crons.ts` | 9 cron jobs across 4 knowledge graph agents |
+| `server/src/routes/knowledge-graph.ts` | Knowledge graph API (`/api/knowledge-graph/*`) |
+| `server/src/routes/agent-memory.ts` | Agent memory API (`/api/agent-memory/*`) |
+| `ui/src/pages/KnowledgeGraph.tsx` | Knowledge graph admin page — stats, search, relationships, entity detail |
 
 ### Updating
 

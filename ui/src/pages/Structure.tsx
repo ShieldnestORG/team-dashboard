@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-12 (directory subdomain + SERVE_UI enabled)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-13 (knowledge graph + 4 agents + agent memory)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -127,7 +127,7 @@ const DEFAULT_DIAGRAM = `graph TB
         Dashboard(["Dashboard Service"])
       end
 
-      subgraph AgentTeam["Agent Team — 15 folders, 17 roles"]
+      subgraph AgentTeam["Agent Team — 19 folders, 21 roles"]
         direction TB
         Atlas(["Atlas — CEO"])
         Nova(["Nova — CTO"])
@@ -145,6 +145,10 @@ const DEFAULT_DIAGRAM = `graph TB
         Spark(["Spark — Community Builder"])
         Prism(["Prism — Trend Reporter"])
         VanguardForge(["Vanguard + Forge — XRP/AEO"])
+        NexusAgent(["Nexus — Relationship Extractor"])
+        WeaverAgent(["Weaver — Graph Curator"])
+        RecallAgent(["Recall — Memory Manager"])
+        OracleAgent(["Oracle — Graph Query"])
       end
 
       subgraph Execution["Agent Execution"]
@@ -246,6 +250,17 @@ const DEFAULT_DIAGRAM = `graph TB
         TrendCrons{{"Trend Crons — 6hr"}}
         Mintscan(["Mintscan — Cosmos chain metrics"])
         IntelDB[("intel_companies + intel_reports")]
+      end
+
+      subgraph KnowledgeGraph["Knowledge Graph Engine"]
+        direction TB
+        RelExtractor(["Relationship Extractor — Ollama"])
+        GraphQuery(["Graph Query — Recursive CTEs"])
+        AgentMemSvc(["Agent Memory — Semantic Recall"])
+        KGCrons{{"KG Crons — 9 jobs"}}
+        KnowledgeTagsDB[("knowledge_tags")]
+        CompanyRelsDB[("company_relationships")]
+        AgentMemDB[("agent_memory")]
       end
 
       subgraph PluginApps["Plugin Apps — 4 plugins"]
@@ -520,6 +535,22 @@ const DEFAULT_DIAGRAM = `graph TB
   TrendCrons --> TrendScanner
   IntelDiscovery --> IntelSvc
   IntelSvc --> IntelDB
+
+  %% Knowledge Graph flows
+  KGCrons --> RelExtractor
+  KGCrons --> GraphQuery
+  KGCrons --> AgentMemSvc
+  RelExtractor --> OllamaSvc
+  RelExtractor --> EmbedSvc
+  RelExtractor --> IntelDB
+  RelExtractor --> KnowledgeTagsDB
+  RelExtractor --> CompanyRelsDB
+  GraphQuery --> CompanyRelsDB
+  GraphQuery --> EmbedSvc
+  AgentMemSvc --> AgentMemDB
+  AgentMemSvc --> EmbedSvc
+  IntelQuality --> CompanyRelsDB
+  SEOEngine --> CompanyRelsDB
 
   %% Auto-Reply flows
   AutoReplyCron --> AutoReplySvc
