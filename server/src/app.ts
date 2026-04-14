@@ -94,6 +94,7 @@ import { repoUpdateRoutes } from "./routes/repo-updates.js";
 import { automationHealthRoutes } from "./routes/automation-health.js";
 import { startSeoAuditCron } from "./services/seo-audit-cron.js";
 import { startPluginLogRetention } from "./services/plugin-log-retention.js";
+import { startFirecrawlCrons } from "./services/firecrawl-crons.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -400,6 +401,7 @@ export async function createApp(
   startKnowledgeGraphCrons(db);
   startSeoAuditCron(db);
   startPluginLogRetention(db);
+  startFirecrawlCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);
   // Sync registry to DB + start the single cron scheduler

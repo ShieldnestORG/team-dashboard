@@ -9,6 +9,7 @@ import { XApiClient } from "./x-api/client.js";
 import { loadTokens } from "./x-api/oauth.js";
 import { canUseDailyBudget, canAffordRead, recordReadCost, updateBudgetConfig } from "./x-api/rate-limiter.js";
 import { publishGlobalLiveEvent } from "./live-events.js";
+import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -548,56 +549,42 @@ export function getAutoReplyService(): AutoReplyService | null {
 }
 
 // ---------------------------------------------------------------------------
-// Standalone cron — polls via search at configurable interval
-// Note: This cron manages its own dynamic interval (self-adjusting based on
-// settings), so it keeps its own timer rather than using the central scheduler.
-// It's registered in the cron registry for visibility in the admin UI.
+// Auto-reply cron — registered with the central cron registry so it appears
+// in the admin Cron Jobs UI alongside every other scheduled job.
+//
+// Schedule is fixed at `*/30 * * * *` (every 30 minutes). The poll interval
+// in `autoReplySettings.pollIntervalMinutes` is still the authoritative
+// default, but changing it via the settings API will only take effect on
+// next server restart (or by editing `schedule_override` on the cron row).
+// A future enhancement could add a `getSchedule?: () => string` hook to
+// CronJobDefinition for live re-reads.
 // ---------------------------------------------------------------------------
 
 export function startAutoReplyCron(): () => void {
-  let timer: ReturnType<typeof setInterval> | null = null;
-  let running = false;
-  let currentIntervalMs = 30 * 60 * 1000; // default 30 min
+  registerCronJob({
+    jobName: "auto-reply:poll",
+    schedule: "*/30 * * * *",
+    ownerAgent: "core",
+    sourceFile: "auto-reply.ts",
+    handler: async () => {
+      const svc = getAutoReplyService();
+      if (!svc) return { skipped: true, reason: "service not initialized" };
 
-  const tick = async () => {
-    const svc = getAutoReplyService();
-    if (!svc || running) return;
-
-    // Check if interval changed
-    const newIntervalMs = svc.settings.pollIntervalMinutes * 60 * 1000;
-    if (newIntervalMs !== currentIntervalMs && timer) {
-      currentIntervalMs = newIntervalMs;
-      clearInterval(timer);
-      timer = setInterval(tick, currentIntervalMs);
-      logger.info({ intervalMinutes: svc.settings.pollIntervalMinutes }, "Auto-reply poll interval updated");
-    }
-
-    running = true;
-    try {
-      const result = await svc.pollViaSearch();
-      if (result.found > 0) {
-        logger.info(result, "Auto-reply poll completed");
+      try {
+        const result = await svc.pollViaSearch();
+        if (result.found > 0) {
+          logger.info(result, "Auto-reply poll completed");
+        }
+        return result;
+      } catch (err) {
+        logger.error({ err }, "Auto-reply poll failed");
+        throw err;
       }
-    } catch (err) {
-      logger.error({ err }, "Auto-reply poll failed");
-    } finally {
-      running = false;
-    }
-  };
+    },
+  });
 
-  // Start with default interval, will self-adjust on first tick
-  const svc = getAutoReplyService();
-  if (svc) {
-    currentIntervalMs = svc.settings.pollIntervalMinutes * 60 * 1000;
-  }
-  timer = setInterval(tick, currentIntervalMs);
+  logger.info("Auto-reply cron registered (central registry, */30 min)");
 
-  // Run first tick after 30s to let service initialize
-  setTimeout(tick, 30_000);
-
-  logger.info({ intervalMinutes: currentIntervalMs / 60_000 }, "Auto-reply cron started (search-based polling)");
-
-  return () => {
-    if (timer) clearInterval(timer);
-  };
+  // No timer to stop — the central scheduler owns the tick loop.
+  return () => {};
 }
