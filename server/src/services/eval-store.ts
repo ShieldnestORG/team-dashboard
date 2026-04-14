@@ -1,8 +1,15 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { randomUUID } from "crypto";
+import { tmpdir } from "os";
 
-const STORE_PATH = join(process.cwd(), "data", "eval-results.json");
+// Writable data dir — default to $DATA_DIR, else $HOME/.paperclip, else /tmp/paperclip.
+// The Docker container's WORKDIR (/app) is read-only for the node user, so we
+// cannot write alongside the code. An env override lets ops mount a volume.
+const DATA_DIR =
+  process.env.DATA_DIR ||
+  (process.env.HOME ? join(process.env.HOME, ".paperclip") : join(tmpdir(), "paperclip"));
+const STORE_PATH = join(DATA_DIR, "eval-results.json");
 
 export interface EvalCaseResult {
   case: string;

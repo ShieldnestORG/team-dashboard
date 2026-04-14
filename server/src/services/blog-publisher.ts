@@ -9,7 +9,10 @@ import { logger } from "../middleware/logger.js";
 // ---------------------------------------------------------------------------
 
 import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
-const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://coherencedaddy.com/api/blog/posts";
+// NB: use the www. form — the apex coherencedaddy.com 307-redirects to www, and
+// while node's undici DOES follow 307s on POST, some older Node versions + Vercel
+// edge proxies have a nasty history of dropping bodies mid-redirect. Skip the hop.
+const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://www.coherencedaddy.com/api/blog/posts";
 const BLOG_API_KEY = process.env.CD_BLOG_API_KEY || "";
 const SN_BLOG_API_URL = process.env.SN_BLOG_API_URL || "";
 const SN_BLOG_API_KEY = process.env.SN_BLOG_API_KEY || "";
@@ -212,36 +215,48 @@ export async function publishPost(post: BlogPost): Promise<{ success: boolean; e
     return { success: false, error: "CD_BLOG_API_KEY not set" };
   }
 
-  const res = await fetch(BLOG_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${BLOG_API_KEY}`,
-    },
-    body: JSON.stringify(post),
-  });
-
-  if (res.ok) {
-    return { success: true };
-  }
-
-  const err = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error: string };
-
-  // Duplicate slug — retry with timestamp suffix
-  if (res.status === 409) {
-    post.slug = `${post.slug}-${Date.now()}`;
-    const retry = await fetch(BLOG_API_URL, {
+  try {
+    const res = await fetch(BLOG_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${BLOG_API_KEY}`,
       },
       body: JSON.stringify(post),
+      redirect: "follow",
     });
-    return { success: retry.ok, error: retry.ok ? undefined : `Retry failed: ${retry.status}` };
-  }
 
-  return { success: false, error: err.error };
+    if (res.ok) {
+      logger.info({ slug: post.slug, target: "coherencedaddy" }, "Blog published to CD");
+      return { success: true };
+    }
+
+    const err = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error: string };
+
+    // Duplicate slug — retry with timestamp suffix
+    if (res.status === 409) {
+      post.slug = `${post.slug}-${Date.now()}`;
+      const retry = await fetch(BLOG_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${BLOG_API_KEY}`,
+        },
+        body: JSON.stringify(post),
+        redirect: "follow",
+      });
+      return { success: retry.ok, error: retry.ok ? undefined : `Retry failed: ${retry.status}` };
+    }
+
+    logger.warn({ slug: post.slug, status: res.status, error: err.error }, "Blog publish failed with HTTP error");
+    return { success: false, error: err.error };
+  } catch (err) {
+    // Node fetch throws TypeError("fetch failed") on network errors, DNS failures, TLS issues, etc.
+    // Wrap + log so the cron handler sees a graceful failure instead of an uncaught exception.
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ slug: post.slug, url: BLOG_API_URL, err: msg }, "Blog publish threw — network error");
+    return { success: false, error: `network error: ${msg}` };
+  }
 }
 
 // ---------------------------------------------------------------------------
