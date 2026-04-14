@@ -86,6 +86,7 @@ import { initVpsMonitor } from "./services/vps-monitor.js";
 import { knowledgeGraphRoutes } from "./routes/knowledge-graph.js";
 import { agentMemoryRoutes } from "./routes/agent-memory.js";
 import { startKnowledgeGraphCrons } from "./services/knowledge-graph-crons.js";
+import { startPluginLogRetention } from "./services/plugin-log-retention.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -386,6 +387,7 @@ export async function createApp(
   startMoltbookCrons(db);
   startYouTubeCrons(db);
   startKnowledgeGraphCrons(db);
+  startPluginLogRetention(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);
   // Sync registry to DB + start the single cron scheduler

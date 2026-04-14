@@ -432,6 +432,7 @@ docker image prune -f && docker container prune -f && docker volume prune -f && 
 | `CANVA_CLIENT_SECRET` | Optional | VPS | Canva Connect API client secret |
 | `CANVA_CALLBACK_URL` | Optional | VPS | Canva OAuth callback URL |
 | `CANVA_MEDIA_FOLDER_ID` | Optional | VPS | Canva folder to pull designs from for media tweets |
+| `YT_PIPELINE_ENABLED` | Optional | VPS | Set to `false` to leave the 5 YouTube crons dormant (hosts without Playwright/ffmpeg/Grok TTS). Default: enabled |
 | **Platform Publishing** | | | |
 | `YOUTUBE_CLIENT_ID/SECRET` | Optional | VPS | YouTube Shorts auto-publishing |
 | `YOUTUBE_REFRESH_TOKEN` | Optional | VPS | YouTube OAuth refresh token |
