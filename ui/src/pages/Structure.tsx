@@ -170,6 +170,11 @@ const DEFAULT_DIAGRAM = `graph TB
         RepoUpdateAdvisor(["Repo Update Advisor — Ollama drafts"])
         RepoUpdateDB[("repo_update_suggestions")]
         RepoUpdatePage(["/repo-updates — admin review queue"])
+        RepoUpdatePRWorker(["PR Worker — drafts GitHub PRs (allowlist, never merges)"])
+        GitHubClient(["GitHub REST Client — raw fetch"])
+        FirecrawlSyncCron{{"firecrawl:sync — Sun 3:47am (Echo)"}}
+        FirecrawlSyncSvc(["Firecrawl Sync — top 50 intel companies"])
+        PluginLogRetention(["Plugin Log Retention — 7d prune (Nova)"])
         ContentDB[("content_items")]
         VisualContent(["Visual Content"])
         VisualDB[("visual_content_items + assets")]
@@ -310,6 +315,8 @@ const DEFAULT_DIAGRAM = `graph TB
         SSLMonitor(["SSL Cert Monitor — 6hr"])
         CronMgmt(["Cron Management — UI + API"])
         CronDB[("system_crons")]
+        AutomationHealth(["/automation-health — unified dashboard"])
+        PluginLogRetentionSvc(["Plugin Log Retention — 7d prune"])
       end
 
       subgraph Finance["Financial"]
@@ -484,8 +491,20 @@ const DEFAULT_DIAGRAM = `graph TB
   SeoAuditSvc -->|"failures"| RepoUpdateAdvisor
   RepoUpdateAdvisor --> RepoUpdateDB
   RepoUpdateDB --> RepoUpdatePage
+  RepoUpdatePage -->|"approved"| RepoUpdatePRWorker
+  RepoUpdatePRWorker --> GitHubClient
+  GitHubClient -.->|"draft PR (never merge)"| RepoUpdateDB
   SeoAuditSvc -.->|"audits"| BlogPublisher
   SeoAuditCron -.->|"digest email"| Alerting
+
+  %% Firecrawl sync (Echo)
+  FirecrawlSyncCron --> FirecrawlSyncSvc
+  FirecrawlSyncSvc -->|"scrape + embed"| IntelDB
+
+  %% Automation health aggregator
+  AutomationHealth -->|"reads"| CronDB
+  AutomationHealth -->|"reads"| RepoUpdateDB
+  PluginLogRetentionSvc -.->|"prunes"| CronDB
   SlideshowGen --> BlogPublisher
   ContentSvc --> Templates
   ContentSvc --> ContentDB
