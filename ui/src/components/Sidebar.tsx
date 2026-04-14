@@ -137,6 +137,7 @@ export function Sidebar() {
           <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
           <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
+          <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
           <SidebarNavItem to="/youtube" label="YouTube" icon={Youtube} />
           <SidebarNavItem to="/content-review" label="Content" icon={Newspaper} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
