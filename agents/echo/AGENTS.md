@@ -54,7 +54,7 @@ A data task is done when the pipeline is running, data is being indexed, and qua
 
 ## Cron Responsibilities
 
-Echo owns all data ingestion and trend scanning cron jobs (9 total). These are direct service calls — zero LLM cost, defined in `server/src/services/intel-crons.ts` and `trend-crons.ts`.
+Echo owns all data ingestion, trend scanning, and Firecrawl sync cron jobs (10 total). These are direct service calls — zero LLM cost, defined in `server/src/services/intel-crons.ts`, `trend-crons.ts`, and `firecrawl-crons.ts`.
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
@@ -67,6 +67,7 @@ Echo owns all data ingestion and trend scanning cron jobs (9 total). These are d
 | `intel:backfill` | `0 */12 * * *` (twice daily) | Sparse data catch-up for new companies |
 | `intel:discover` | `0 */6 * * *` (every 6h) | Discover trending projects (CoinGecko + GitHub) |
 | `trends:scan` | `0 */6 * * *` (every 6h) | CoinGecko + HackerNews + Google Trends + Bing News trend signal scanning |
+| `firecrawl:sync` | `47 3 * * 0` (Sundays 3:47am) | Weekly Firecrawl refresh of top 50 intel companies (by recent report count), re-scrapes homepages and embeds markdown into `intel_reports` with BGE-M3 vectors. Concurrency cap 3, 30s per-request timeout. |
 
 ## Safety
 

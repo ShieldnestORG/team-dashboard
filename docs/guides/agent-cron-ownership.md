@@ -48,6 +48,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Service | File | Job Count | Owner Agent(s) |
 |---------|------|-----------|----------------|
 | Intel crons | `server/src/services/intel-crons.ts` | 8 | Echo |
+| Firecrawl sync | `server/src/services/firecrawl-crons.ts` | 1 | Echo |
 | Content crons | `server/src/services/content-crons.ts` | 24 | Sage, Blaze, Cipher, Spark, Prism, Vanguard, Forge |
 | Eval crons | `server/src/services/eval-crons.ts` | 1 | Nova |
 | Alert crons | `server/src/services/alert-crons.ts` | 4 | Nova |
@@ -58,13 +59,13 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Core — Ollama scripts, Grok TTS (xAI Rex voice), Playwright slides + site-walker, FFmpeg, YouTube API |
 | Knowledge graph | `server/src/services/knowledge-graph-crons.ts` | 9 | Nexus (2), Weaver (3), Recall (3), Oracle (1) |
 
-**Total: 60 system cron jobs across 10 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 69 total**
+**Total: 61 system cron jobs across 11 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 70 total**
 
 > **Ready (paused):** `content:canva-media:morning` and `content:canva-media:evening` owned by Sage — posts Canva designs as image tweets 2x/day. Canva OAuth connected (2026-04-11), but paused until Canva folder API is available for image/video separation. Twitter plugin image posting is functional.
 
 ## Full Agent-to-Cron Mapping
 
-### Echo (Data Engineer) — 9 jobs
+### Echo (Data Engineer) — 10 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
@@ -77,6 +78,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | `intel:backfill` | `0 */12 * * *` | intel-crons | Sparse data catch-up twice daily |
 | `intel:discover` | `0 */6 * * *` | intel-crons | Discover trending projects every 6 hours |
 | `trends:scan` | `0 */6 * * *` | trend-crons | CoinGecko + HackerNews + Google Trends + Bing News trend signals every 6 hours |
+| `firecrawl:sync` | `47 3 * * 0` | firecrawl-crons | Weekly Firecrawl refresh of top 50 intel companies (by recent report count), embeds markdown into `intel_reports` with BGE-M3 vectors. Concurrency 3, 30s timeout per request. |
 
 ### Sage (CMO) — 1 job (orchestrator)
 
@@ -150,7 +152,7 @@ Sage orchestrates the 4 content personality agents below.
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
-| `auto-reply:poll` | configurable (default every 30 min) | auto-reply.ts | Single `search/recent` query covering all enabled account + keyword targets. Interval driven by `AutoReplyGlobalSettings.pollIntervalMinutes`, updated live via settings API. Dollar-budget tracked: $0.005/read, $0.01/write. |
+| `auto-reply:poll` | `*/30 * * * *` | auto-reply.ts | Single `search/recent` query covering all enabled account + keyword targets. Registered in the central cron registry (visible in admin Cron Jobs UI). Fixed 30-min schedule; changing `AutoReplyGlobalSettings.pollIntervalMinutes` via settings API takes effect on next server restart, or override live via the cron row's `schedule_override`. Dollar-budget tracked: $0.005/read, $0.01/write. |
 
 ### Bridge (Full-Stack Dev) — 2 jobs
 
