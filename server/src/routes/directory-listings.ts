@@ -229,7 +229,13 @@ export function directoryListingsWebhookRoutes(db: Db): Router {
   const svc = directoryListingsService(db);
 
   router.post("/webhook", async (req, res) => {
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    // Use a dedicated secret so we can register this as a SEPARATE Stripe
+    // webhook endpoint from /api/intel-billing/webhook (each Stripe endpoint
+    // has its own signing secret). Falls back to STRIPE_WEBHOOK_SECRET if the
+    // dedicated var is unset — useful for dev where one endpoint is fine.
+    const secret =
+      process.env.STRIPE_WEBHOOK_SECRET_DIRECTORY ||
+      process.env.STRIPE_WEBHOOK_SECRET;
     if (!secret) {
       res.status(503).json({ error: "Webhook secret not configured" });
       return;
