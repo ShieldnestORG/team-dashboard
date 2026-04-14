@@ -31,6 +31,7 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { siteMetricsRoutes } from "./routes/site-metrics.js";
 import { intelRoutes } from "./routes/intel.js";
+import { intelBillingRoutes, intelBillingWebhookRouter } from "./routes/intel-billing.js";
 import {
   directoryListingsRoutes,
   directoryListingsWebhookRoutes,
@@ -139,6 +140,8 @@ export async function createApp(
     ],
     credentials: true,
   }));
+  // Stripe webhook needs raw body for signature verification — mount before JSON parser.
+  app.use("/api/intel-billing", intelBillingWebhookRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
@@ -238,6 +241,7 @@ export async function createApp(
   api.use(instanceSettingsRoutes(db));
   api.use(siteMetricsRoutes(db));
   api.use("/intel", intelRoutes(db));
+  api.use("/intel-billing", intelBillingRoutes(db));
   api.use("/directory-listings", directoryListingsRoutes(db));
   api.use("/stripe", directoryListingsWebhookRoutes(db));
   api.use("/content", contentRoutes(db));
