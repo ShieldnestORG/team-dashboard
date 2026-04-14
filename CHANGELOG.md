@@ -4,6 +4,60 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14b] — Erroring crons fix pass (post-launch cleanup)
+
+First round of cleanup driven by the new `/automation-health` dashboard,
+which surfaced 4 erroring and 7 stale crons immediately after it went live.
+
+### Fixed
+
+- **`eval:smoke`** — was crashing with `EACCES: permission denied, mkdir
+  '/app/data'` daily. Inside the Docker container, `/app` is read-only for
+  the node user, so the old `process.cwd()/data` path never worked. Now
+  honours `$DATA_DIR`, falls back to `$HOME/.paperclip`, then
+  `/tmp/paperclip`. No Dockerfile / compose change required — the env-var
+  override is there if ops want to mount a real volume later.
+  (`server/src/services/eval-store.ts`)
+
+- **`content:xrp:blog`, `content:aeo:blog`, `content:tokns-promo:blog`** —
+  all failing with an uncaught `TypeError: fetch failed`. Root cause:
+  `publishPost()` had no try/catch, so any network error (undici socket,
+  DNS, TLS) bubbled up through the cron handler. Also the default URL was
+  `coherencedaddy.com/api/blog/posts` which 307-redirects to `www.*`;
+  changed the default to the `www.*` form to skip the hop. Both POSTs now
+  explicitly set `redirect:"follow"`, and the error path logs to `logger`
+  with structured context.
+  (`server/src/services/blog-publisher.ts`)
+
+- **`moltbook:engage`** — failing with `syntax error at or near "$2"` on
+  every run (266 cumulative failures logged in `system_crons.error_count`).
+  Root cause: the SQL template `INTERVAL ${windowInterval}` interpolated as
+  a drizzle parameter binding (`INTERVAL $2`), which PostgreSQL rejects —
+  INTERVAL literals cannot be parameterized. Fixed by switching to
+  `make_interval(hours => ${windowHours}::int)` which takes the hour count
+  as a real parameter.
+  (`server/src/services/moltbook-engine.ts`)
+
+### Verified live
+
+After deploy + manual trigger of the 4 jobs + cron-registry tick refresh,
+`/automation-health` reports:
+```
+crons: 66 total | 53 healthy | 0 erroring | 6 stale
+```
+Down from `48 healthy | 4 erroring | 7 stale` at the start of the session.
+
+### Still outstanding
+
+- **6 stale crons** — haven't run in 2.5×+ their expected interval. Check
+  the Automation Health admin page for names; most are probably disabled or
+  hit budget caps.
+- **1 dormant plugin manifest** — `coherencedaddy.moltbook` — see
+  `docs/guides/plugin-registration.md` + the new Moltbook layman walkthrough
+  in that doc.
+
+---
+
 ## [2026-04-14] — SEO advisory loop + monetization plumbing + unified automation health
 
 This release closes **8 of the 10** P0/P1 items from
