@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-14 (directory listings monetization + Stripe checkout/webhook)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-14 (AEO marketing push — stripe-checkout, email-templates, brand-personas, aeo-cta, campaigns route, directory public enroll, expire-listings cron, DirectoryPricing + MarketingPushes pages)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -96,6 +96,7 @@ const DEFAULT_DIAGRAM = `graph TB
       CDSitemap(["Sitemap — pages/intel/reels"])
       CDPartnerDir(["Partner Directory"])
       CDShop(["shop.coherencedaddy.com"]):::siteNode
+      DirectoryPricingPage(["/directory-pricing — public listing pricing"])
     end
 
     subgraph OtherProps["Ecosystem Properties"]
@@ -164,6 +165,8 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph ContentPipeline["Content Pipeline"]
         direction TB
         ContentSvc(["Content Service — 6 personalities"])
+        BrandPersonas(["Brand Personas — LLM prompt registry"])
+        AeoCta(["AEO CTA Config — funnel CTA per brand"])
         ContentCrons{{"Content Crons — 24 jobs"}}
         SeoAuditCron{{"content:seo-audit — Sun 8:17am (Sage)"}}
         SeoAuditSvc(["SEO/AEO Auditor — 16-item checklist"])
@@ -174,6 +177,13 @@ const DEFAULT_DIAGRAM = `graph TB
         GitHubClient(["GitHub REST Client — raw fetch"])
         FirecrawlSyncCron{{"firecrawl:sync — Sun 3:47am (Echo)"}}
         FirecrawlSyncSvc(["Firecrawl Sync — top 50 intel companies"])
+        FirecrawlAdminRoute(["/api/firecrawl/admin — overview + run-now"])
+        FirecrawlActivityTab(["Firecrawl Activity tab — /instance/settings/plugins/coherencedaddy.firecrawl"])
+        CityCollectorSvc(["City Collector — 5-source local intel"])
+        CityCollectorCron{{"cities:refresh-partners — Mon 4:13am (Echo)"}}
+        CityCollectorRoute(["/api/cities — collect, list, pitch, directory-matches"])
+        CityCollectorPage(["/cities — admin page"])
+        CityIntelligenceDB[("city_intelligence")]
         PluginLogRetention(["Plugin Log Retention — 7d prune (Nova)"])
         ContentDB[("content_items")]
         VisualContent(["Visual Content"])
@@ -268,8 +278,13 @@ const DEFAULT_DIAGRAM = `graph TB
         IntelBillingDB[("intel_plans + customers + api_keys + usage_meter")]
         DirListingsSvc(["Directory Listings — Stripe featured/verified/boosted"])
         DirListingsRoutes(["/api/directory-listings — admin CRUD + checkout"])
+        DirPublicEnroll(["POST /api/directory-listings/public/enroll — no auth"])
         StripeWebhook(["/api/stripe/webhook — signature-verified"])
         DirListingsDB[("directory_listings + directory_listing_events")]
+        StripeCheckoutSvc(["stripe-checkout.ts — shared checkout helper"])
+        EmailTemplatesSvc(["email-templates.ts — 5 HTML transactional templates"])
+        DirExpireCron{{"directory:expire-listings — daily 3am"}}
+        CampaignsRoute(["/api/campaigns — CRUD + content rollup"])
       end
 
       subgraph KnowledgeGraph["Knowledge Graph Engine"]
@@ -347,6 +362,7 @@ const DEFAULT_DIAGRAM = `graph TB
         PartnerReports(["Partner Reports — monthly"])
         PartnerSiteContent[("partner_site_content")]
         PartnerDirectory(["Trusted Companies API — /partner-directory"])
+        MarketingPushesPage(["/marketing-pushes — admin campaign dashboard"])
       end
 
       subgraph MoltbookEngine["Moltbook Social Engine"]
@@ -513,6 +529,18 @@ const DEFAULT_DIAGRAM = `graph TB
   %% Firecrawl sync (Echo)
   FirecrawlSyncCron --> FirecrawlSyncSvc
   FirecrawlSyncSvc -->|"scrape + embed"| IntelDB
+  FirecrawlAdminRoute -->|"reads"| IntelDB
+  FirecrawlAdminRoute -->|"reads"| CronDB
+  FirecrawlActivityTab --> FirecrawlAdminRoute
+
+  %% City Collector (Echo) — multi-source local intel
+  CityCollectorCron --> CityCollectorSvc
+  CityCollectorSvc -->|"Firecrawl search+scrape"| FirecrawlSvc
+  CityCollectorSvc -->|"Ollama merge+rank"| CityIntelligenceDB
+  CityCollectorRoute --> CityCollectorSvc
+  CityCollectorRoute --> CityIntelligenceDB
+  CityCollectorPage --> CityCollectorRoute
+  ContentSvc -.->|"city context"| CityIntelligenceDB
 
   %% Automation health aggregator
   AutomationHealth -->|"reads"| CronDB
@@ -586,12 +614,27 @@ const DEFAULT_DIAGRAM = `graph TB
 
   %% Directory Listings — monetization layer
   DirListingsRoutes --> DirListingsSvc
+  DirPublicEnroll --> DirListingsSvc
   DirListingsSvc --> IntelDB
   DirListingsSvc --> DirListingsDB
-  DirListingsSvc -->|"checkout.sessions"| StripeAPI
+  DirListingsSvc -->|"checkout.sessions"| StripeCheckoutSvc
+  StripeCheckoutSvc --> StripeAPI
+  StripeCheckoutSvc --> EmailTemplatesSvc
+  EmailTemplatesSvc -->|"transactional email"| Alerting
   StripeWebhook -->|"invoice.paid / sub.deleted"| DirListingsSvc
   StripeAPI -.->|"webhook POST"| StripeWebhook
   IntelSvc -->|"featured flag"| DirListingsDB
+  DirExpireCron -->|"daily 3am"| DirListingsSvc
+  CampaignsRoute --> DirListingsSvc
+  CampaignsRoute --> ContentSvc
+  DirectoryPricingPage -->|"public enroll"| DirPublicEnroll
+  MarketingPushesPage --> CampaignsRoute
+
+  %% Brand personas + AEO CTA — content enrichment
+  ContentSvc --> BrandPersonas
+  ContentSvc --> AeoCta
+  BrandPersonas -->|"prompt context"| OllamaSvc
+  AeoCta -->|"funnel CTAs"| BlogPublisher
 
   %% Knowledge Graph flows
   KGCrons --> RelExtractor
@@ -705,7 +748,7 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef storeNode fill:#0891b2,stroke:#0e7490,color:#ecfeff,stroke-width:2px
   classDef readyNode fill:#94a3b8,stroke:#64748b,stroke-width:2px,stroke-dasharray:5 5,color:#f8fafc,font-style:italic
 
-  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons,MoltbookCrons cronNode
+  class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons,MoltbookCrons,DirExpireCron cronNode
   class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent,QualitySignalsDB,IntelBillingDB,DirListingsDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
