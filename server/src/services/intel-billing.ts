@@ -7,7 +7,7 @@ import {
   intelPlans,
   intelUsageMeter,
 } from "@paperclipai/db";
-import { createTransport, type Transporter } from "nodemailer";
+import { sendTransactional } from "./email-templates.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -114,64 +114,16 @@ export function generateApiKey(): { raw: string; prefix: string; hash: string } 
 }
 
 // ---------------------------------------------------------------------------
-// SMTP welcome email
+// SMTP welcome email — thin wrapper around sendTransactional
 // ---------------------------------------------------------------------------
 
-let mailer: Transporter | null = null;
-function getMailer(): Transporter | null {
-  if (mailer) return mailer;
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT) || 587;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  if (!host || !user || !pass) return null;
-  mailer = createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: { user, pass },
-  });
-  return mailer;
-}
-
 async function sendWelcomeEmail(email: string, rawKey: string, planName: string): Promise<void> {
-  const transport = getMailer();
-  const from = process.env.ALERT_EMAIL_FROM || "noreply@coherencedaddy.com";
-  const bcc = process.env.ALERT_EMAIL_TO;
-  const subject = `Your Coherence Daddy Intel API key — ${planName}`;
-  const body = [
-    `Welcome to the Coherence Daddy Intel API (${planName} plan).`,
-    "",
-    "Your API key (save this — it will only be shown once):",
-    "",
-    `  ${rawKey}`,
-    "",
-    "Quickstart:",
-    `  curl -H "Authorization: Bearer ${rawKey}" https://api.coherencedaddy.com/api/intel/companies`,
-    "",
-    "Docs: https://coherencedaddy.com/intel/docs",
-    "Manage your subscription: https://coherencedaddy.com/intel/billing",
-    "",
-    "If you didn't sign up, reply to this email and we'll revoke the key.",
-  ].join("\n");
-
-  if (!transport) {
-    logger.warn({ email }, "intel-billing: SMTP not configured — welcome email skipped");
-    return;
-  }
-
-  try {
-    await transport.sendMail({
-      from,
-      to: email,
-      bcc: bcc || undefined,
-      subject,
-      text: body,
-    });
-    logger.info({ email, bcc }, "intel-billing: welcome email sent");
-  } catch (err) {
-    logger.error({ err, email }, "intel-billing: welcome email failed");
-  }
+  await sendTransactional("intel-welcome", email, {
+    recipientEmail: email,
+    apiKey: rawKey,
+    planName,
+    docsUrl: "https://api.coherencedaddy.com/docs",
+  });
 }
 
 // ---------------------------------------------------------------------------

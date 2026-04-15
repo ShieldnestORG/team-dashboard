@@ -494,6 +494,8 @@ docker image prune -f && docker container prune -f && docker volume prune -f && 
 | `DIRECTORY_CHECKOUT_CANCEL_URL` | Optional | VPS | Abandon-checkout redirect (default `https://directory.coherencedaddy.com/`) |
 | `INTEL_BILLING_SUCCESS_URL` | Optional | VPS | Checkout success redirect (default: dashboard `/billing/success?session_id={CHECKOUT_SESSION_ID}`) |
 | `INTEL_BILLING_CANCEL_URL` | Optional | VPS | Checkout cancel redirect (default: dashboard `/intel/pricing`) |
+| `ENTERPRISE_BOOKING_URL` | Optional | VPS | Cal.com or Calendly booking URL for enterprise calls (e.g. https://cal.com/yourname) |
+| `VITE_ENTERPRISE_BOOKING_URL` | Optional | UI build | Same URL exposed to frontend (Vite public env) — used on Intel Pricing and Directory Pricing enterprise CTAs |
 | **Monitoring** | | | |
 | `SITE_METRICS_KEY` | Yes | VPS + coherencedaddy | Site analytics ingestion auth |
 | `SMTP_HOST/PORT/USER/PASS` | Optional | VPS | Email alerting (Proton Mail) |

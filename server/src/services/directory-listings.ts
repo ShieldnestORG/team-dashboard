@@ -7,6 +7,7 @@ import {
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { stripeRequest, stripeConfigured } from "./stripe-client.js";
+import { sendTransactional } from "./email-templates.js";
 
 // ---------------------------------------------------------------------------
 // Listing tiers — prices are in cents/month. Stripe price IDs resolved via env.
@@ -625,6 +626,27 @@ export function directoryListingsService(db: Db) {
           toStatus: "active",
           payload: { type: event.type, subscription: session.subscription },
         });
+
+        // Send welcome email if we have a contact email
+        {
+          const company = await db
+            .select()
+            .from(intelCompanies)
+            .where(eq(intelCompanies.id, listing.companyId))
+            .limit(1);
+          const c = company[0];
+          if (c?.contactEmail) {
+            const tierLabel = listing.tier.charAt(0).toUpperCase() + listing.tier.slice(1);
+            await sendTransactional("directory-welcome", c.contactEmail, {
+              recipientEmail: c.contactEmail,
+              recipientName: c.contactName ?? undefined,
+              companyName: c.name,
+              listingTier: tierLabel,
+              directoryUrl: `https://directory.coherencedaddy.com`,
+              dashboardUrl: `https://coherencedaddy.com/intel`,
+            });
+          }
+        }
         break;
       }
 

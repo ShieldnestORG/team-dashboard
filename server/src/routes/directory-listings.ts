@@ -18,6 +18,7 @@ import {
 } from "../services/directory-listings.js";
 import { verifyStripeSignature, stripeRequest } from "../services/stripe-client.js";
 import { logger } from "../middleware/logger.js";
+import { sendTransactional } from "../services/email-templates.js";
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.actor?.type !== "board") {
@@ -353,6 +354,27 @@ async function handlePartnerStripeEvent(
         .where(eq(partnerCompanies.slug, partnerSlug));
 
       logger.info({ partnerSlug, subscription: session.subscription }, "partner-network: subscription activated");
+
+      // Send partner welcome email if we have a contact email
+      {
+        const rows = await db
+          .select()
+          .from(partnerCompanies)
+          .where(eq(partnerCompanies.slug, partnerSlug))
+          .limit(1);
+        const partner = rows[0];
+        if (partner?.contactEmail) {
+          const baseUrl = process.env.PAPERCLIP_PUBLIC_URL ?? "https://api.coherencedaddy.com";
+          const dashUrl = `${baseUrl}/partner-dashboard/${partnerSlug}`;
+          await sendTransactional("partner-welcome", partner.contactEmail, {
+            recipientEmail: partner.contactEmail,
+            recipientName: partner.contactName ?? undefined,
+            companyName: partner.name,
+            partnerDashboardUrl: dashUrl,
+            partnerToken: partner.dashboardToken ?? undefined,
+          });
+        }
+      }
       break;
     }
 
