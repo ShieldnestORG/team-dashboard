@@ -4,6 +4,112 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14i] — Firecrawl SPA wait action + dependency vuln audit + local .env sync
+
+Closes the validator-rank parsing follow-up from `[2026-04-14h]` and audits
+the 13 open Dependabot alerts.
+
+### Firecrawl validator scrape — SPA wait action
+
+`server/src/services/firecrawl-validators.ts:80` — added
+`actions: [{ type: "wait", milliseconds: 3500 }]` to the Firecrawl `/v1/scrape`
+request body. Mintscan validator pages are React/Next SPAs; without this wait
+the scrape returned only the navigation chrome before the validator table
+mounted, leaving `validator_rank_history` empty after every cron tick.
+
+This is a no-op until the upstream Firecrawl service recovers (see Known
+Issues below).
+
+### Dependency vulnerability audit — 4 of 5 already fixed
+
+GitHub Dependabot was reporting 13 alerts (9 high, 4 moderate). Most were
+already resolved — the alerts will auto-close on the next scan after this push.
+
+| Package | Severity | Locked version | Status |
+|---|---|---|---|
+| `defu` | high (prototype pollution) | `6.1.6` | ✅ fixed via `pnpm.overrides` |
+| `fast-xml-parser` | medium (entity expansion) | `5.5.10` | ✅ fixed via `pnpm.overrides` |
+| `lodash-es` | high (code injection) + medium | `4.18.1` | ✅ fixed via `pnpm.overrides` |
+| `vite` | high × 3 + medium × 2 | `6.4.2` + `7.3.2` | ✅ both fixed in lockfile |
+| **`drizzle-orm`** | **high × 4 (SQL injection in `sql.identifier()`/`sql.as()`)** | **`0.38.4`** | ⚠️ **needs upgrade to `>=0.45.2`** |
+
+### `drizzle-orm` 0.38.4 → 0.45.2 — deferred to its own session
+
+CVE: `sql.identifier()` and `sql.as()` did not properly escape values, allowing
+SQL injection (CWE-89). All four high-severity Dependabot alerts are the same
+CVE counted once per workspace package (server, packages/db, plus transitive
+peers).
+
+**Why deferred**: this is a 7-minor-version jump (0.38 → 0.45) on a database
+abstraction layer the entire codebase depends on. We use `db.execute(sql\`…\`)`
+with raw SQL extensively in `intel.ts`, `cosmos-lcd.ts`, `defillama.ts`,
+`firecrawl-validators.ts`, `agent-memory.ts`, `graph-query.ts`, and most cron
+services. The schema generator and migration tooling may also have changed.
+Combined with two open chain-metrics commits already in flight, mixing a
+drizzle bump in is exactly the kind of change that bites under load.
+
+**Mitigating factor**: we never pass user-controlled input into
+`sql.identifier()` or `sql.as()`. All identifiers in our codebase are hardcoded
+column/table names (`network`, `moniker`, `validator_rank_history`, etc.).
+Real exploitability against our app is essentially zero — but the alert is
+still legitimate and should be patched in a clean session.
+
+**Next session checklist**:
+1. `pnpm update drizzle-orm@0.45.2 -r --filter ./server --filter ./packages/db`
+2. `npx tsc --noEmit --project server/tsconfig.json` — fix any breaking type
+   changes
+3. Test critical query paths: `intel:chain-metrics`, `intel:prices`,
+   `intel:firecrawl-validators`, `kg:extract-relationships`,
+   `intel:billing-overage`
+4. Run a manual cron of each before declaring victory
+5. Watch the Health page for migration generator regressions
+
+### Local `.env` synced from VPS `.env.production`
+
+35+ env vars that existed on the VPS but were missing locally are now mirrored
+into `.env`, organized under a `─── Synced from VPS .env.production ───`
+banner. Includes `BETTER_AUTH_*`, `EMBED_*`, `SMTP_*`, `CONTENT_API_KEY`,
+`CONSUMER_KEY`/`SECRET_KEY` (X tokens), `STRIPE_PUBLISHABLE_KEY` +
+Directory-Listings tier prices + webhook secret, `CANVA_CLIENT_*`,
+`MOLTBOOK_API_KEY`, `CHATTERBOX_*`, `GOOGLE_TTS_*`, and `YT_PIPELINE_ENABLED` /
+`YT_VISUAL_MODE`.
+
+Also fixed a typo bug in local `.env:76`: `X_TOKEN_TX_RIZZ CONSUMER_KEY=`
+(literal space) → `X_TOKEN_TX_RIZZ_CONSUMER_KEY=` (correct underscore).
+
+### `TX_LCD_URL` placeholder added to both `.env` files
+
+`tx-blockchain` is not in the public Cosmos chain registry, so we don't yet
+have an LCD endpoint for it. Added `TX_LCD_URL=`, `TX_EXPLORER_URL`,
+`TX_MINT_DIALECT=cosmos-sdk`, `TX_VALIDATORS_URL=`, and three
+`SHIELDNEST_*_MONIKER` slots to:
+- Local `.env` (full block under chain metrics section)
+- VPS `/opt/team-dashboard/.env.production` (appended; backup at
+  `.env.production.bak.2026-04-15`)
+
+`server/src/services/cosmos-lcd.ts:36` already gates `tx-blockchain` behind
+`TX_LCD_URL` being set, so this is a no-op until the user plugs in an actual
+endpoint.
+
+### Known issues (not fixed, blocking)
+
+1. **VPS_2 Firecrawl service is unreachable.** Three retries of
+   `POST http://168.231.127.180/v1/scrape` from inside the VPS_1 container all
+   timed out at 12s. The Firecrawl service is either crashed, overloaded, or
+   firewalled. Cannot be diagnosed from VPS_1 — needs SSH access to
+   `168.231.127.180`. Until this is fixed, `firecrawl:sync`,
+   `intel:firecrawl-validators`, and `partner-onboarding` Firecrawl scrapes
+   will all silently no-op.
+2. **No Nginx vhost for `firecrawl.coherencedaddy.com` on VPS_2.** DNS was
+   added by the user and resolves correctly to `168.231.127.180`, but Nginx
+   on VPS_2 returns 404 for the hostname (no `server { server_name
+   firecrawl.coherencedaddy.com; … }` block). Result: we cannot swap the four
+   service-level fallback URLs from the bare IP to the hostname without
+   breaking the routing. Both fixes (#1 and #2) need a session with VPS_2
+   credentials.
+
+---
+
 ## [2026-04-14h] — Firecrawl v1 schema fix + DefiLlama chain name correction
 
 Two follow-ups discovered while triggering the new chain-metrics crons live:
