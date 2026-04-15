@@ -1,7 +1,9 @@
 import type { Db } from "@paperclipai/db";
 import { intelService } from "./intel.js";
 import { intelDiscoveryService } from "./intel-discovery.js";
-import { mintscanService } from "./mintscan.js";
+import { cosmosLcdService } from "./cosmos-lcd.js";
+import { defillamaService } from "./defillama.js";
+import { firecrawlValidatorsService } from "./firecrawl-validators.js";
 import { intelBillingService } from "./intel-billing.js";
 import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
@@ -58,18 +60,22 @@ async function paginatedIngest(
 export function startIntelCrons(db: Db) {
   const svc = intelService(db);
   const discovery = intelDiscoveryService(db);
-  const mintscan = mintscanService(db);
+  const cosmos = cosmosLcdService(db);
+  const defillama = defillamaService(db);
+  const validators = firecrawlValidatorsService(db);
   const billing = intelBillingService(db);
 
-  registerCronJob({ jobName: "intel:billing-overage", schedule: "17 2 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => billing.reportOverageUsage() });
-  registerCronJob({ jobName: "intel:prices",        schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100) });
-  registerCronJob({ jobName: "intel:news",           schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50) });
-  registerCronJob({ jobName: "intel:twitter",        schedule: "*/30 * * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30) });
-  registerCronJob({ jobName: "intel:github",         schedule: "0 */4 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25) });
-  registerCronJob({ jobName: "intel:reddit",         schedule: "0 */2 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30) });
-  registerCronJob({ jobName: "intel:chain-metrics",  schedule: "0 */4 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => mintscan.ingestChainMetrics() });
-  registerCronJob({ jobName: "intel:backfill",       schedule: "0 */12 * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => svc.backfillNewCompanies() });
-  registerCronJob({ jobName: "intel:discover",       schedule: "0 */6 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => discovery.discoverNewProjects() });
+  registerCronJob({ jobName: "intel:billing-overage",     schedule: "17 2 * * *",   ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => billing.reportOverageUsage() });
+  registerCronJob({ jobName: "intel:prices",              schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestPrices(l, o), 100) });
+  registerCronJob({ jobName: "intel:news",                schedule: "0 * * * *",    ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestNews(l, o), 50) });
+  registerCronJob({ jobName: "intel:twitter",             schedule: "*/30 * * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestTwitter(l, o), 30) });
+  registerCronJob({ jobName: "intel:github",              schedule: "0 */4 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestGithub(l, o), 25) });
+  registerCronJob({ jobName: "intel:reddit",              schedule: "0 */2 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => paginatedIngest((l, o) => svc.ingestReddit(l, o), 30) });
+  registerCronJob({ jobName: "intel:chain-metrics",       schedule: "0 */4 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => cosmos.ingestChainMetrics() });
+  registerCronJob({ jobName: "intel:chain-tvl",           schedule: "15 */6 * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => defillama.ingestChainTVL() });
+  registerCronJob({ jobName: "intel:firecrawl-validators",schedule: "30 */6 * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => validators.ingestValidators() });
+  registerCronJob({ jobName: "intel:backfill",            schedule: "0 */12 * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => svc.backfillNewCompanies() });
+  registerCronJob({ jobName: "intel:discover",            schedule: "0 */6 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => discovery.discoverNewProjects() });
 
-  logger.info({ count: 9 }, "Intel cron jobs registered");
+  logger.info({ count: 11 }, "Intel cron jobs registered");
 }

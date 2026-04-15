@@ -161,7 +161,7 @@ function buildChainMetricsEmbed(network: string, data: Record<string, unknown>):
       { name: "Bonded Ratio", value: `${(data.bondedRatio as number)?.toFixed(1) ?? "N/A"}%`, inline: true },
       { name: "Inflation", value: `${(data.inflationRate as number)?.toFixed(2) ?? "N/A"}%`, inline: true },
     )
-    .setFooter({ text: "via Mintscan" })
+    .setFooter({ text: "via Cosmos LCD" })
     .setTimestamp();
 }
 
@@ -326,7 +326,7 @@ export function startPriceFeedPoller(
       const now = Date.now();
       if (now - lastChainPoll > 4 * 60 * 60 * 1000) {
         lastChainPoll = now;
-        for (const network of ["cosmos", "osmosis", "txhuman"]) {
+        for (const network of ["cosmos", "osmosis", "tx-blockchain"]) {
           try {
             const chainRes = await fetch(`${config.dashboardApiUrl}/intel/chain/${network}`);
             if (chainRes.ok) {

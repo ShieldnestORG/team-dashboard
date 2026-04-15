@@ -63,7 +63,9 @@ Echo owns all data ingestion, trend scanning, and Firecrawl sync cron jobs (10 t
 | `intel:twitter` | `*/30 * * * *` (every 30m) | Twitter/X data ingestion |
 | `intel:github` | `0 */4 * * *` (every 4h) | GitHub activity ingestion |
 | `intel:reddit` | `0 */2 * * *` (every 2h) | Reddit discussion ingestion |
-| `intel:chain-metrics` | `0 */4 * * *` (every 4h) | Mintscan Cosmos APR/validator data |
+| `intel:chain-metrics` | `0 */4 * * *` (every 4h) | Direct Cosmos LCD APR/validator/block data (no vendor key) |
+| `intel:chain-tvl` | `15 */6 * * *` (every 6h) | DefiLlama chain TVL ingestion with 24h delta tracking |
+| `intel:firecrawl-validators` | `30 */6 * * *` (every 6h) | Firecrawl scrape of public validator pages → `validator_rank_history` |
 | `intel:backfill` | `0 */12 * * *` (twice daily) | Sparse data catch-up for new companies |
 | `intel:discover` | `0 */6 * * *` (every 6h) | Discover trending projects (CoinGecko + GitHub) |
 | `trends:scan` | `0 */6 * * *` (every 6h) | CoinGecko + HackerNews + Google Trends + Bing News trend signal scanning |

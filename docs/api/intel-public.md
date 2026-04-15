@@ -281,13 +281,13 @@ curl "http://localhost:3100/api/intel/stats"
 
 ## GET /api/intel/chain/:network
 
-Cosmos chain metrics from Mintscan (staking APR, validator data).
+Cosmos chain metrics from direct LCD ingestion (staking APR, validator count, block height, inflation, community tax). Returns the most recent `chain-metrics` report for the network.
 
 **Path Parameters:**
 
-| Param     | Description                           |
-|-----------|---------------------------------------|
-| `network` | Chain name (`cosmos`, `osmosis`, `txhuman`) |
+| Param     | Description                                   |
+|-----------|-----------------------------------------------|
+| `network` | Chain name (`cosmos`, `osmosis`, `tx-blockchain`) |
 
 **Example:**
 

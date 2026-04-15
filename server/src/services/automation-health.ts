@@ -220,7 +220,6 @@ const INTEGRATIONS: IntegrationDef[] = [
   { provider: "coingecko", envVar: "COIN_GECKO_API_KEY", base: "live" },
   { provider: "github", envVar: "GITHUB_TOKEN", base: "live" },
   { provider: "bing-news", envVar: "BING_NEWS_KEY", base: "live" },
-  { provider: "mintscan", envVar: "MINTSCAN_API_KEY", base: "live" },
   { provider: "smtp", envVar: "SMTP_HOST", base: "live" },
   { provider: "gemini", envVar: "GEMINI_API_KEY", base: "live" },
   { provider: "grok", envVar: "GROK_API_KEY", base: "live" },

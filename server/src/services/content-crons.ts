@@ -213,12 +213,12 @@ async function pickIntelAlert(db: Db): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Chain metrics topic picker — builds daily summary from Mintscan intel data
+// Chain metrics topic picker — builds daily summary from Cosmos LCD intel data
 // ---------------------------------------------------------------------------
 
 async function pickChainMetricsTopic(db: Db): Promise<TopicResult | null> {
   try {
-    const networks = ["cosmos", "osmosis", "txhuman"];
+    const networks = ["cosmos", "osmosis", "tx-blockchain"];
     const parts: string[] = [];
 
     for (const network of networks) {
@@ -341,7 +341,7 @@ async function pickComparisonTopic(db: Db): Promise<TopicResult> {
     // Get TX chain metrics
     const txMetrics = (await db.execute(sql`
       SELECT body FROM intel_reports
-      WHERE company_slug IN ('cosmos', 'txhuman')
+      WHERE company_slug IN ('cosmos', 'tx-blockchain')
         AND report_type = 'chain-metrics'
       ORDER BY captured_at DESC
       LIMIT 2
@@ -398,7 +398,7 @@ async function pickToknsPromoTopic(db: Db): Promise<TopicResult> {
   try {
     const latest = (await db.execute(sql`
       SELECT body FROM intel_reports
-      WHERE company_slug = 'txhuman' AND report_type = 'chain-metrics'
+      WHERE company_slug = 'tx-blockchain' AND report_type = 'chain-metrics'
       ORDER BY captured_at DESC LIMIT 1
     `)) as unknown as Array<{ body: string }>;
 

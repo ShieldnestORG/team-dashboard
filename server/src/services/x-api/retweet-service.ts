@@ -46,14 +46,14 @@ function resetDailyIfNeeded(): void {
 
 // Map Twitter handles to intel_companies slugs
 const HANDLE_TO_SLUG: Record<string, string> = {
-  coherencedaddy: "txhuman",
-  txecosystem: "txhuman",
-  tokns_fi: "txhuman",
-  zenlounge369: "txhuman",
-  zenwarrior113: "txhuman",
-  joincruisecrtl: "txhuman",
-  bobrasx: "txhuman",
-  txdevhub: "txhuman",
+  coherencedaddy: "tx-blockchain",
+  txecosystem: "tx-blockchain",
+  tokns_fi: "tx-blockchain",
+  zenlounge369: "tx-blockchain",
+  zenwarrior113: "tx-blockchain",
+  joincruisecrtl: "tx-blockchain",
+  bobrasx: "tx-blockchain",
+  txdevhub: "tx-blockchain",
   realsologenic: "xrpl-ripple",
   ripple: "xrpl-ripple",
 };
@@ -64,7 +64,7 @@ async function saveTweetAsIntel(
 ): Promise<void> {
   try {
     const handle = tweet.author_username?.toLowerCase() || "unknown";
-    const companySlug = HANDLE_TO_SLUG[handle] || "txhuman";
+    const companySlug = HANDLE_TO_SLUG[handle] || "tx-blockchain";
     await db.execute(sql`
       INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, captured_at)
       VALUES (

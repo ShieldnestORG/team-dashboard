@@ -1,8 +1,8 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
+import { sql } from "drizzle-orm";
 import { intelService } from "../services/index.js";
 import { intelDiscoveryService } from "../services/intel-discovery.js";
-import { mintscanService } from "../services/mintscan.js";
 import { logger } from "../middleware/logger.js";
 import { createIntelRateLimit } from "../middleware/intel-rate-limit.js";
 
@@ -39,7 +39,6 @@ export function intelRoutes(db: Db) {
   const router = Router();
   const svc = intelService(db);
   const discovery = intelDiscoveryService(db);
-  const mintscan = mintscanService(db);
 
   router.use(createIntelRateLimit(db));
 
@@ -103,8 +102,36 @@ export function intelRoutes(db: Db) {
 
   router.get("/chain/:network", async (req, res) => {
     try {
-      const result = await mintscan.getLatestChainMetrics(req.params.network as string);
-      res.json(result);
+      const network = req.params.network as string;
+      const rows = (await db.execute(sql`
+        SELECT headline, body, captured_at
+        FROM intel_reports
+        WHERE company_slug = ${network}
+          AND report_type = 'chain-metrics'
+        ORDER BY captured_at DESC
+        LIMIT 1
+      `)) as unknown as Array<{ headline: string; body: string; captured_at: string }>;
+
+      if (rows.length === 0) {
+        res.json({ network, metrics: null });
+        return;
+      }
+
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = JSON.parse(rows[0]!.body);
+      } catch {
+        parsed = { raw: rows[0]!.body };
+      }
+
+      res.json({
+        network,
+        metrics: {
+          ...parsed,
+          headline: rows[0]!.headline,
+          captured_at: rows[0]!.captured_at,
+        },
+      });
     } catch (err) {
       logger.error({ err }, "Chain metrics fetch error");
       res.status(500).json({ error: "Failed to fetch chain metrics" });

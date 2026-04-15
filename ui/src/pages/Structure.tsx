@@ -252,13 +252,16 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph IntelEngine["Intel Engine"]
         direction TB
         IntelSvc(["Intel Service — 4 directories"])
-        IntelCrons{{"Intel Crons — 9 jobs"}}
+        IntelCrons{{"Intel Crons — 11 jobs"}}
         IntelDiscovery(["Intel Discovery — CoinGecko + GitHub"])
         IntelQuality(["Intel Quality — dedup + scoring"])
         Embeddings[("Vector Embeddings — BGE-M3")]
         TrendScanner(["Trend Scanner — 4 sources"])
         TrendCrons{{"Trend Crons — 6hr"}}
-        Mintscan(["Mintscan — Cosmos chain metrics"])
+        CosmosLCD(["Cosmos LCD — chain APR/validators/blocks"])
+        DefiLlamaSvc(["DefiLlama — chain TVL"])
+        FirecrawlValidators(["Firecrawl Validators — rank scrape"])
+        ValidatorRankDB[("validator_rank_history")]
         IntelDB[("intel_companies + intel_reports")]
         IntelBilling(["Intel Billing — Stripe 4 tiers"])
         IntelRateLimit(["Intel Rate Limiter — per-key quota + meter"])
@@ -416,7 +419,8 @@ const DEFAULT_DIAGRAM = `graph TB
       IndexNowAPI(["IndexNow — search ping"])
       YouTubeAPI(["YouTube Data API v3"])
       TikTokAPI(["TikTok Content API"])
-      MintscanAPI(["Mintscan — Cosmostation"])
+      CosmosLCDPub(["Cosmos LCD — publicnode.com"])
+      DefiLlamaAPI(["DefiLlama — public TVL API"])
       StripeAPI(["Stripe — payments"])
       GrokTTS(["Grok TTS — xAI API (Rex voice)"])
       PrintifyAPI(["Printify — print-on-demand"])
@@ -465,8 +469,11 @@ const DEFAULT_DIAGRAM = `graph TB
   IntelSvc --> RedditAPI
   IntelSvc --> CoinGecko
   IntelQuality --> Embeddings
-  Mintscan --> MintscanAPI
-  Mintscan --> TXChain
+  CosmosLCD --> CosmosLCDPub
+  CosmosLCD --> TXChain
+  DefiLlamaSvc --> DefiLlamaAPI
+  FirecrawlValidators --> FirecrawlSvc
+  FirecrawlValidators --> ValidatorRankDB
 
   %% Visual backends → External APIs
   GeminiBack --> GeminiAPI
