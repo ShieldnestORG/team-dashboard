@@ -12,6 +12,7 @@ import * as prism from "../content-templates/prism.js";
 import * as vanguard from "../content-templates/vanguard.js";
 import * as forge from "../content-templates/forge.js";
 import { getPartnerInjection } from "./partner-content.js";
+import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -278,11 +279,12 @@ export function contentService(db: Db) {
     // Fetch admin feedback for training
     const feedbackContext = await buildFeedbackContext(db, companyId, opts.personalityId, platform);
 
-    // Fetch partner context for natural mentions
-    const partnerContext = await getPartnerInjection(db, opts.topic);
+    // Fetch partner context for natural mentions (scoped by brand)
+    const partnerContext = await getPartnerInjection(db, opts.topic, opts.brand);
 
-    // Build the full prompt
-    const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context);
+    // Build the full prompt — append brand persona block so the LLM stays on-brand
+    const brandBlock = buildBrandSystemPromptBlock(opts.brand);
+    const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context) + brandBlock;
     const fullPrompt = `${systemPrompt}${feedbackContext}${partnerContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
     // Call Ollama
