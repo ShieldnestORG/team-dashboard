@@ -4,6 +4,133 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14h] — Firecrawl v1 schema fix + DefiLlama chain name correction
+
+Two follow-ups discovered while triggering the new chain-metrics crons live:
+
+- **Firecrawl v1 API rejects `onlyMainContent`.** The self-hosted Firecrawl was
+  upgraded at some point and the request schema is stricter. All four backend
+  files (`firecrawl-sync.ts`, `firecrawl-validators.ts`, `partner-onboarding.ts`
+  ×2 — both scrape and search) were sending `onlyMainContent: true` and getting
+  `400 Bad Request — unrecognized_keys`. This explains why the existing
+  `firecrawl:sync` cron has been silently no-op'ing for an unknown amount of
+  time. Field removed; `formats: ["markdown"]` is sufficient.
+- **DefiLlama chain name** for Cosmos Hub is `CosmosHub` (no space), not
+  `Cosmos`. Fixed in `server/src/services/defillama.ts`. After the fix, both
+  `cosmos` and `osmosis` chain-tvl rows land on each cron tick.
+
+### Known issue (not blocking)
+
+`intel:firecrawl-validators` ran successfully against the new Nginx URL, but
+the parsed `validator_rank_history` table is still empty: `mintscan.io`'s
+validator pages are JS-rendered SPAs and Firecrawl's basic `/v1/scrape` returns
+only the navigation chrome. Two paths forward, both deferred:
+
+1. Switch the source URL to a server-rendered explorer
+   (`https://staking.cosmos.network/validators` or `stake.fish`).
+2. Use Firecrawl's `actions: [{ type: "wait", milliseconds: 3000 }]` to give
+   the SPA time to render before capture.
+
+Validator-rank tracking is enrichment, not core — the load-bearing
+`intel:chain-metrics` (LCD) and `intel:chain-tvl` (DefiLlama) paths are both
+producing real rows.
+
+---
+
+## [2026-04-14g] — Drop Mintscan, replace with direct Cosmos LCD + DefiLlama + Firecrawl validator scrape
+
+Mintscan token had been silently 401-ing for a week (last successful
+`chain-metrics` ingest 2026-04-07), and its endpoint shapes were stale for
+Mintscan 2.0. Replaced the entire vendor with three independent sources we
+already own.
+
+### Why dropped, not repaired
+
+- Mintscan is a SaaS wrapper around data that's *already public and free* via
+  standard Cosmos SDK LCD endpoints
+- One-week silent failure with zero alerting is exactly the failure mode a
+  vendor-free path prevents
+- Firecrawl is already running on VPS_2 — pure plumbing, no new vendor
+  relationship
+- Cost: $0/month vs Mintscan's per-credit billing on every cron tick
+
+### Added
+
+- **`server/src/services/cosmos-lcd.ts`** — direct Cosmos LCD ingestion via
+  `cosmos-rest.publicnode.com` and `osmosis-rest.publicnode.com`. Computes
+  staking APR locally:
+  - Cosmos-SDK chains: `(annual_provisions × (1 - community_tax)) / bonded_tokens`
+  - Osmosis (different mint module): `(epoch_provisions × 365 × distribution_proportions.staking) / bonded_tokens`
+  - `tx-blockchain` gated behind `TX_LCD_URL` env (and `TX_MINT_DIALECT`)
+- **`server/src/services/defillama.ts`** — free public TVL ingestion via
+  `api.llama.fi/v2/chains` with 24h delta tracking. Writes
+  `report_type='chain-tvl'`.
+- **`server/src/services/firecrawl-validators.ts`** — scrapes public
+  validator-list pages into `validator_rank_history` for time-series rank
+  tracking. Tracked moniker (`SHIELDNEST_*_MONIKER`) shadowed for
+  "ShieldNest moved up 2 ranks" content.
+- **`packages/db/src/migrations/0069_validator_rank_history.sql`** — 8 columns
+  + 2 indexes. Already applied to Neon.
+- **`packages/db/src/schema/validator_rank_history.ts`** — Drizzle schema.
+
+### Removed
+
+- **`server/src/services/mintscan.ts`** — deleted entirely.
+- `mintscanService` import + instantiation from `intel-crons.ts` and
+  `routes/intel.ts`.
+- `MINTSCAN_API_KEY` from the `automation-health.ts` integration checklist.
+
+### Renamed
+
+Phantom `txhuman` `company_slug` was referenced across content-crons,
+retweet-service, plugin-discord/feeds, CLAUDE.md, intel-public.md, and
+Structure.tsx but had **no row in `intel_companies`**. Renamed to
+`tx-blockchain` (the real slug). The single orphan `intel_reports` row was
+migrated in Neon.
+
+### Crons
+
+Intel cron count **9 → 11**:
+
+| Cron | Schedule | Source |
+|---|---|---|
+| `intel:chain-metrics` | `0 */4 * * *` | Cosmos LCD (replaces Mintscan handler) |
+| `intel:chain-tvl` | `15 */6 * * *` | **NEW** — DefiLlama |
+| `intel:firecrawl-validators` | `30 */6 * * *` | **NEW** — Firecrawl validator pages |
+
+### Verification
+
+End-to-end live against production VPS:
+
+```
+report_type    | company_slug | headline                                         | captured_at
+chain-metrics  | cosmos       | APR 16.30%, 200 validators, block #30,667,151    | 2026-04-15 00:59:09
+chain-metrics  | osmosis      | APR 1.65%,  92 validators, block #59,382,914     | 2026-04-15 00:59:11
+chain-tvl      | osmosis      | $16.8M                                           | 2026-04-15 00:59:29
+```
+
+Both APR values match Keplr/Mintscan published values (cosmos hub ≈ 16%,
+osmosis to-stakers ≈ 1.6%).
+
+### Docs
+
+- `CLAUDE.md` — bullet, env table, critical-files table, cron count
+- `agents/echo/AGENTS.md` — Echo's cron table
+- `docs/guides/agent-cron-ownership.md` — same
+- `docs/api/intel-public.md` — `/intel/chain/:network` description, slug list
+- `ui/src/pages/Structure.tsx` `DEFAULT_DIAGRAM` — `Mintscan` node replaced
+  with `CosmosLCD` + `DefiLlamaSvc` + `FirecrawlValidators` + `ValidatorRankDB`
+  in the Intel Engine subgraph; `MintscanAPI` external node replaced with
+  `CosmosLCDPub` + `DefiLlamaAPI`. Cron count chip 9 → 11.
+
+### Hostinger DNS
+
+`firecrawl.coherencedaddy.com` A record → `168.231.127.180` added by user
+during this session. Will be wired into Firecrawl service URLs in a follow-up
+once propagated.
+
+---
+
 ## [2026-04-14f] — Firecrawl connectivity fix (port 3002 → Nginx 80)
 
 `firecrawl:sync`, `intel:firecrawl-validators`, partner-onboarding scrapes, and

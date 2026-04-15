@@ -34,7 +34,6 @@ async function firecrawlScrape(
     body: JSON.stringify({
       url,
       formats: ["markdown"],
-      onlyMainContent: true,
       timeout: 30000,
     }),
     signal: AbortSignal.timeout(60_000),
@@ -71,7 +70,7 @@ async function firecrawlSearch(
       body: JSON.stringify({
         query,
         limit,
-        scrapeOptions: { formats: ["markdown"], onlyMainContent: true },
+        scrapeOptions: { formats: ["markdown"] },
       }),
       signal: AbortSignal.timeout(60_000),
     });

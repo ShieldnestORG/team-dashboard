@@ -36,7 +36,6 @@ async function firecrawlScrape(url: string): Promise<string | null> {
       body: JSON.stringify({
         url,
         formats: ["markdown"],
-        onlyMainContent: true,
         timeout: REQUEST_TIMEOUT_MS,
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS + 5_000),

@@ -23,7 +23,7 @@ interface ChainTVLEntry {
 }
 
 const CHAINS: ChainTVLEntry[] = [
-  { slug: "cosmos", llamaName: "Cosmos" },
+  { slug: "cosmos", llamaName: "CosmosHub" },
   { slug: "osmosis", llamaName: "Osmosis" },
   // tx-blockchain not yet listed on DefiLlama — added when available
 ];
