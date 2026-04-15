@@ -492,6 +492,9 @@ docker image prune -f && docker container prune -f && docker volume prune -f && 
 | `STRIPE_PRICE_FEATURED` | Optional | VPS | Stripe price ID for Directory Listings Featured tier ($199/mo) |
 | `STRIPE_PRICE_VERIFIED` | Optional | VPS | Stripe price ID for Directory Listings Verified tier ($499/mo) |
 | `STRIPE_PRICE_BOOSTED` | Optional | VPS | Stripe price ID for Directory Listings Boosted tier ($1499/mo) |
+| `STRIPE_PRICE_PARTNER_PROOF` | Optional | VPS | Stripe price ID for Partner Network Proof tier ($49/mo — `price_1TMLiiQvkbvTR7OgdRkn30Fg`) |
+| `STRIPE_PRICE_PARTNER_PERFORMANCE` | Optional | VPS | Stripe price ID for Partner Network Performance tier ($149/mo — `price_1TMLijQvkbvTR7Ogl64VLCN3`) |
+| `STRIPE_PRICE_PARTNER_PREMIUM` | Optional | VPS | Stripe price ID for Partner Network Premium tier ($499/mo — `price_1TMLijQvkbvTR7OgxjePNijw`) |
 | `STRIPE_WEBHOOK_SECRET_DIRECTORY` | Optional | VPS | Dedicated signing secret for the Directory Listings webhook endpoint (`/api/stripe/webhook`). Required if you register it as a separate Stripe endpoint from `/api/intel-billing/webhook`. Falls back to `STRIPE_WEBHOOK_SECRET` if unset |
 | `DIRECTORY_CHECKOUT_SUCCESS_URL` | Optional | VPS | Post-checkout redirect (default `https://directory.coherencedaddy.com/thanks`) |
 | `DIRECTORY_CHECKOUT_CANCEL_URL` | Optional | VPS | Abandon-checkout redirect (default `https://directory.coherencedaddy.com/`) |
