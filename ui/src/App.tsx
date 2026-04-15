@@ -57,6 +57,7 @@ import { AgentOps } from "./pages/AgentOps";
 import { ApiDashboard } from "./pages/ApiDashboard";
 import { YouTubePipeline } from "./pages/YouTubePipeline";
 import { YouTubeVideos } from "./pages/YouTubeVideos";
+import { MarketingPushes } from "./pages/MarketingPushes";
 import { Partners } from "./pages/Partners";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
@@ -200,6 +201,7 @@ function boardRoutes() {
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
       <Route path="structure" element={<Structure />} />
+      <Route path="marketing-pushes" element={<MarketingPushes />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />

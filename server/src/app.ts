@@ -100,6 +100,7 @@ import { startSeoAuditCron } from "./services/seo-audit-cron.js";
 import { startPluginLogRetention } from "./services/plugin-log-retention.js";
 import { startFirecrawlCrons } from "./services/firecrawl-crons.js";
 import { startDirectoryCrons } from "./services/directory-crons.js";
+import { campaignRoutes } from "./routes/campaigns.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -270,6 +271,7 @@ export async function createApp(
   api.use("/automation-health", automationHealthRoutes(db));
   api.use("/firecrawl/admin", firecrawlAdminRoutes(db));
   api.use("/cities", citiesRoutes(db));
+  api.use("/campaigns", campaignRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
