@@ -169,7 +169,8 @@ These endpoints are wired, served, and reachable, but nothing in this repo (and 
 | CoinGecko | `intel-discovery.ts`, `trend-scanner.ts` | ✅ live | `COIN_GECKO_API_KEY` | Demo tier, 30 req/min |
 | GitHub | intel, repo-update paths | ✅ live | `GITHUB_TOKEN` | |
 | Bing News | intel/trend crons | ✅ live | `BING_NEWS_KEY` | optional |
-| Mintscan | `mintscan.ts` | ✅ live | `MINTSCAN_API_KEY` | Cosmos chain metrics |
+| Cosmos LCD (publicnode.com) | `cosmos-lcd.ts` | ✅ live | `COSMOS_LCD_URL`, `OSMOSIS_LCD_URL` (optional — defaults built-in) | APR, validators, block height, inflation, community tax — no vendor key required |
+| DefiLlama | `defillama.ts` | ✅ live | none | Chain TVL with 24h delta — free public API, no key |
 | SMTP (Proton) | `alerting.ts` | ✅ live | `SMTP_*`, `ALERT_EMAIL_*` | used by audit digest, alert crons |
 | Gemini (Imagen/Veo) | `visual-backends/gemini.ts` | ✅ auto-enable | `GEMINI_API_KEY` | only runs if key is set |
 | Grok / xAI | visual backends + TTS | ✅ auto-enable | `GROK_API_KEY`, `GROK_TTS_VOICE` | used by YouTube pipeline |

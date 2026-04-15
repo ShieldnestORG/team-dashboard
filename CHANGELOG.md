@@ -4,6 +4,16 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14l] — Documentation cleanup: remove all stale Mintscan / firecrawl-validators references
+
+### Changed
+- `CLAUDE.md` — Validator Rank Tracking bullet updated from `firecrawl-validators.ts` to `cosmos-lcd.ts ingestValidatorRanks()`; cron description updated from `firecrawl-validators` → `validator-ranks LCD`; key files table row replaced; `TX_VALIDATORS_URL` description updated to note LCD covers cosmos/osmosis natively
+- `agents/echo/AGENTS.md` — `intel:firecrawl-validators` row renamed to `intel:validator-ranks` with accurate description
+- `docs/guides/agent-cron-ownership.md` — same cron rename
+- `doc/PRD_automated_services_audit.md` — removed stale Mintscan row; added Cosmos LCD and DefiLlama rows with accurate status
+
+---
+
 ## [2026-04-14k] — firecrawl.coherencedaddy.com HTTPS + VPS credentials saved
 
 Closes the DNS/Nginx vhost follow-up from `[2026-04-14i]` and `[2026-04-14j]`.

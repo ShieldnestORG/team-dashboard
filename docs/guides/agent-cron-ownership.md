@@ -76,7 +76,7 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | `intel:reddit` | `0 */2 * * *` | intel-crons | Reddit discussions every 2 hours |
 | `intel:chain-metrics` | `0 */4 * * *` | intel-crons | Direct Cosmos LCD APR/validator/block data every 4 hours (no vendor key) |
 | `intel:chain-tvl` | `15 */6 * * *` | intel-crons | DefiLlama chain TVL with 24h delta tracking every 6 hours |
-| `intel:firecrawl-validators` | `30 */6 * * *` | intel-crons | Firecrawl scrape of validator-list pages every 6 hours |
+| `intel:validator-ranks` | `30 */6 * * *` | intel-crons | Cosmos LCD validator set fetch → ranked `validator_rank_history` rows every 6 hours |
 | `intel:backfill` | `0 */12 * * *` | intel-crons | Sparse data catch-up twice daily |
 | `intel:discover` | `0 */6 * * *` | intel-crons | Discover trending projects every 6 hours |
 | `trends:scan` | `0 */6 * * *` | trend-crons | CoinGecko + HackerNews + Google Trends + Bing News trend signals every 6 hours |
