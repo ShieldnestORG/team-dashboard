@@ -1,0 +1,24 @@
+-- Drop the unique constraint on (company_slug, source_url) — it was created
+-- in 0046_intel_tables when intel_reports stored ONE current snapshot per
+-- company. The schema has since evolved into time-series storage with
+-- multiple report_type values that should accumulate over time:
+--
+--   chain-metrics  (every 4h)   → cosmos-lcd.ts
+--   chain-tvl      (every 6h)   → defillama.ts
+--   validator-rank (every 6h)   → cosmos-lcd.ts ingestValidatorRanks
+--   firecrawl-sync (weekly)     → firecrawl-sync.ts
+--   prices/news/twitter/...     → intel.ts paginated ingest
+--
+-- The constraint blocks every re-ingest attempt with `duplicate key value
+-- violates unique constraint "idx_intel_reports_dedup"`, silently failing
+-- all of the above crons after their first successful run.
+--
+-- Application-level semantic dedup (intel-quality.ts isDuplicate) handles
+-- proper deduping for the embedding-aware ingest paths (vector similarity
+-- > 0.90 within last 7 days, scoped per report_type), making the DB-level
+-- constraint redundant.
+--
+-- Discovered 2026-04-14 while diagnosing why firecrawl:sync, validator-ranks,
+-- chain-metrics, and chain-tvl all only produced first-run rows.
+
+DROP INDEX IF EXISTS idx_intel_reports_dedup;

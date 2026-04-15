@@ -4,6 +4,135 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14j] — Firecrawl revival + LCD validator ingest + dedup constraint drop
+
+Three layered fixes after gaining SSH access to the Firecrawl host.
+
+### Firecrawl service revived (`168.231.127.180`)
+
+Got the password for the Firecrawl host (`srv1060975`). Diagnosed:
+- **Worker container OOM-crashed** with `FATAL ERROR: Reached heap limit
+  Allocation failed - JavaScript heap out of memory` at ~511 MB heap usage.
+- The worker uses `nodemon` in production (a trieve fork artifact), which
+  doesn't auto-restart on crashes — it waits for file changes that never come.
+- Result: API container alive but every scrape job sat in Redis waiting for a
+  dead worker, returning `Error: Job wait` after timeout.
+
+**Fix on `/opt/firecrawl/docker-compose.yml`:**
+- Worker `mem_limit: 1g → 2g`, `cpus: 0.5 → 1.0`
+- Added `NODE_OPTIONS: --max-old-space-size=1536` to prevent recurrence
+- Backup at `/opt/firecrawl/docker-compose.yml.bak.2026-04-15`
+- `docker compose up -d worker` to recreate
+
+Verified: example.com scrape returns 200 in 6s, iota.org returns 200 in 20s
+with 15.9 KB markdown.
+
+### LCD validator ingest replaces Firecrawl scraping
+
+Discovered while testing the new SPA wait action: **every Cosmos validator
+explorer in 2026 is a JS-rendered SPA** (Mintscan, ping.pub, atomscan,
+bigdipper.live). Tested Firecrawl `waitFor: 10000` — the wait IS applied
+(36s real time) but validator tables are loaded via XHR after page mount and
+never appear in the markdown response. Bot detection or post-mount fetch.
+
+Also confirmed: `trieve/firecrawl:v0.0.55` rejects the `actions` field with
+`400 unrecognized_keys` (only the official Firecrawl supports it). Falls back
+to `waitFor`, which doesn't help with SPA validator tables.
+
+**Switch:** pull validators from the LCD directly. The
+`/cosmos/staking/v1beta1/validators` endpoint returns the full bonded set
+with `tokens`, `commission`, `description.moniker` — sort by `tokens` DESC
+locally to compute rank. Authoritative, no scraping fragility, no rate limits.
+
+Added to `server/src/services/cosmos-lcd.ts`:
+- `getBondedValidators(baseUrl)` — paginated fetch, up to 10 pages × 200
+- `ingestValidatorRanks()` — sorts by tokens DESC, computes voting_power_pct
+  from `total_bonded` sum, writes top 50 + tracked moniker into
+  `validator_rank_history`, plus a `validator-rank` summary row into
+  `intel_reports`. Tracked moniker resolved via `SHIELDNEST_<NETWORK>_MONIKER`
+  env vars
+- Replaced `intel:firecrawl-validators` cron with `intel:validator-ranks`
+- Deleted `server/src/services/firecrawl-validators.ts` entirely
+
+Verified live: 100 rows in `validator_rank_history` (50 cosmos + 50 osmosis),
+real validator names, real voting power. Cosmos top 5: Coinbase01 (19.88%),
+Upbit Staking (7.18%), Cosmostation (5.12%), Kiln (4.60%), Kraken01 (4.35%).
+
+### Dropped `idx_intel_reports_dedup` constraint (migration 0070)
+
+Discovered while triggering `firecrawl:sync` after the Firecrawl revival:
+**every insert was failing with `duplicate key value violates unique
+constraint "idx_intel_reports_dedup"`**. The constraint was created in
+migration `0046_intel_tables.sql`:
+
+```sql
+CREATE UNIQUE INDEX idx_intel_reports_dedup
+  ON intel_reports (company_slug, source_url)
+  WHERE source_url IS NOT NULL;
+```
+
+This made sense when `intel_reports` stored ONE current snapshot per company.
+The schema has since evolved into time-series storage with multiple
+`report_type` values that should accumulate over time:
+
+| report_type | source | cadence |
+|---|---|---|
+| `chain-metrics` | cosmos-lcd.ts | every 4h |
+| `chain-tvl` | defillama.ts | every 6h |
+| `validator-rank` | cosmos-lcd.ts ingestValidatorRanks | every 6h |
+| `firecrawl-sync` | firecrawl-sync.ts | weekly |
+| `prices`/`news`/`twitter`/`github`/`reddit` | intel.ts | hourly–daily |
+
+The constraint was silently failing every re-ingest after the first row,
+which is **why every chain-metrics run since 2026-04-07 only produced one
+batch and then went quiet** — and why the `firecrawl:sync` cron has been
+producing zero new rows for who-knows-how-long.
+
+**Migration 0070 drops the index.** Application-level semantic dedup in
+`intel-quality.ts isDuplicate()` (vector similarity > 0.90 within 7 days,
+scoped per `report_type`) handles proper deduping for embedding-aware
+ingest paths, making the DB-level constraint redundant.
+
+Applied to Neon. Re-tested all four ingest paths immediately after:
+
+```
+report_type    | count | most_recent
+chain-metrics  |     2 | 2026-04-15 02:24:44
+chain-tvl      |     2 | 2026-04-15 02:24:59
+firecrawl-sync |    23 | 2026-04-15 02:24:54  (was 4 before, hitting dedup)
+validator-rank |     2 | 2026-04-15 02:25:23
+```
+
+All four paths now insert fresh rows on every run. **This was a load-bearing
+hidden bug** — likely affecting every time-series cron in the codebase since
+the schema evolved past the original "one snapshot per company" design.
+
+### Files
+
+- `packages/db/src/migrations/0070_drop_intel_reports_dedup.sql` — new, applied
+- `server/src/services/cosmos-lcd.ts` — added `getBondedValidators` + `ingestValidatorRanks`
+- `server/src/services/intel-crons.ts` — removed `intel:firecrawl-validators`, added `intel:validator-ranks`
+- `server/src/services/firecrawl-validators.ts` — deleted
+- `/opt/firecrawl/docker-compose.yml` on VPS_4 (`168.231.127.180`) — worker mem bump, NODE_OPTIONS
+
+### Host topology clarification
+
+While investigating the Firecrawl outage, mapped out which hosts run what:
+
+| Alias | IP | Tailscale | What it actually runs |
+|---|---|---|---|
+| **VPS_1** | `31.220.61.12` | `shield-llm` | team-dashboard backend (1 container), Cubecoders AMP panel |
+| **VPS_2** | `31.220.61.14` | `shield-main` | trustee-gateway-api, 4 Caddy vhosts for `*.dao.nestd.xyz`, Next.js dev server |
+| **VPS_3** | `147.79.78.251` | (not on Tailnet) | `vosk-stt`, BGE-M3 embeddings on :8000, **Ollama on :11434**, nft_ Node service on :3008 |
+| **VPS_4** | `168.231.127.180` | (not on Tailnet) | **Firecrawl stack** (api/worker/puppeteer/redis), **coherence-ollama** on :11434, **coherence-daddy-qdrant** on :6333, **directory-api** on :4000, nft-indexer, PM2, Nginx |
+
+The CLAUDE.md docs called `168.231.127.180` "the Firecrawl host" but it's
+actually doing a lot more — it runs the entire ecosystem services tier
+(LLM, vector DB, directory API, NFT indexer, scraping). Worth knowing for
+future incidents.
+
+---
+
 ## [2026-04-14i] — Firecrawl SPA wait action + dependency vuln audit + local .env sync
 
 Closes the validator-rank parsing follow-up from `[2026-04-14h]` and audits
