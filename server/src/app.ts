@@ -217,6 +217,9 @@ export async function createApp(
 
   // Mount API routes
   const api = Router();
+  // Cities routes are operational triggers (collect, refresh, pitch) — not board mutations.
+  // Mount before boardMutationGuard so they aren't blocked by the CSRF origin check.
+  api.use("/cities", citiesRoutes(db));
   api.use(boardMutationGuard());
   api.use(
     "/health",
@@ -270,7 +273,6 @@ export async function createApp(
   api.use("/repo-updates", repoUpdateRoutes(db));
   api.use("/automation-health", automationHealthRoutes(db));
   api.use("/firecrawl/admin", firecrawlAdminRoutes(db));
-  api.use("/cities", citiesRoutes(db));
   api.use("/campaigns", campaignRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
