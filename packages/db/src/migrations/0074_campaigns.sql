@@ -20,8 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_campaigns_company_id ON campaigns(company_id);
 CREATE INDEX IF NOT EXISTS idx_campaigns_brand ON campaigns(brand);
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
 
--- Add campaign_id FK to content_items
+-- Add campaign_id to content_items (soft reference — campaigns.id is UUID stored as TEXT)
 ALTER TABLE content_items
-  ADD COLUMN IF NOT EXISTS campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS campaign_id TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_content_items_campaign_id ON content_items(campaign_id);
