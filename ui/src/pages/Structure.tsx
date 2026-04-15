@@ -280,12 +280,14 @@ const DEFAULT_DIAGRAM = `graph TB
         AgentMemDB[("agent_memory")]
       end
 
-      subgraph PluginApps["Plugin Apps — 4 plugins"]
+      subgraph PluginApps["Plugin Apps — 4 plugins (all READY)"]
         direction TB
-        DiscordBot(["Discord — 8 tools, 2 jobs"])
-        TwitterPlugin(["Twitter/X — 14 tools, 4 jobs"])
-        FirecrawlPlugin(["Firecrawl — 9 tools, 2 jobs"])
-        MoltbookPlugin(["Moltbook — 11 tools, 3 jobs"])
+        DiscordBot(["Discord — 8 tools, 2 jobs · ready"])
+        TwitterPlugin(["Twitter/X — 14 tools, 4 jobs · ready"])
+        FirecrawlPlugin(["Firecrawl — 9 tools, 2 jobs · ready"])
+        MoltbookPlugin(["Moltbook — 11 tools, 5 jobs · ready"])
+        PluginSecretsBridge(["Plugin Secrets Bridge — apiKeyRef → company_secrets"])
+        CompanySecretsDB[("company_secrets + versions")]
       end
 
       subgraph MCPServer["MCP Server"]
@@ -638,6 +640,8 @@ const DEFAULT_DIAGRAM = `graph TB
   DiscordBot --> DiscordAPI
   TwitterPlugin --> XClient
   FirecrawlPlugin --> FirecrawlSvc
+  MoltbookPlugin -->|"resolves apiKeyRef"| PluginSecretsBridge
+  PluginSecretsBridge -.->|"reads"| CompanySecretsDB
 
   %% MCP Server
   MCPTools --> ExpressRuntime

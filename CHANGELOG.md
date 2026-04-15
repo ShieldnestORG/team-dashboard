@@ -4,6 +4,105 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14e] — All 4 plugins LIVE (framework fix + secrets bridge)
+
+Closes both follow-up items from `[2026-04-14d]`. `/automation-health` now
+shows **4 plugins · 0 dormant · 0 erroring · all status `ready`**.
+
+### Fixed
+
+- **`packages/plugins/sdk/src/worker-rpc-host.ts:runWorker`** — comparison
+  between `process.argv[1]` and `import.meta.url` now goes through
+  `fs.realpathSync` on both sides. Plugin packages staged as symlinks
+  (`/paperclip/.paperclip/plugins/@paperclipai/plugin-x` → `/app/packages/
+  plugins/plugin-x`) had `argv[1] = the symlink path` while
+  `import.meta.url` (after tsx loader processing) was the realpath target.
+  Plain string equality failed → `runWorker` returned without starting the
+  RPC host → process exited with code 0 → loader marked plugin as `error`.
+  Wrapped both `realpathSync` calls in try/catch so the function still works
+  in test mode with synthetic paths (falls back to `path.resolve`).
+  **Affected every plugin equally.** Commit `4d22bc48`.
+
+### Added
+
+- **Moltbook secret-provider flow wired end-to-end.** Used the existing
+  `POST /api/companies/:companyId/secrets` endpoint with
+  `provider: "local_encrypted"` to create a `company_secrets` row holding
+  the Moltbook API key, then passed the resulting UUID as `apiKeyRef` in
+  the plugin config. The plugin worker resolves it at runtime via
+  `ctx.secrets.resolve(config.apiKeyRef)` → `plugin-secrets-handler.ts` →
+  `local-encrypted-provider`. Capability-gated by `secrets.read-ref` in
+  the manifest.
+
+### Configured (live in production)
+
+| Plugin | Status | Config notes |
+|---|---|---|
+| `coherencedaddy.discord` | ✅ ready | Bound to Next.ai guild `1481053410152288422` with the production `DISCORD_TOKEN`. Feeds disabled. |
+| `coherencedaddy.twitter` | ✅ ready | `xApiEnabled: false` initially (read-mode only). Default venture: `coherencedaddy`. Rate limit: 0.5×. Max queue 100. |
+| `coherencedaddy.firecrawl` | ✅ ready | Self-hosted Firecrawl at `http://168.231.127.180:3002`. Directory API at `:4000`. Cloud key blank. |
+| `coherencedaddy.moltbook` | ✅ ready | `apiKeyRef` points at `company_secrets:4f471a6c-cef5-4a89-b0ef-11558e04c4bf` (encrypted Moltbook API key). Manual approval mode. 4 posts / 20 comments / 50 votes per day. |
+
+### Verified
+
+`/automation-health` post-fix:
+
+```
+plugins.installed:        4    (all 4 in `ready` state)
+plugins.dormantManifests: []
+crons.total:              66
+crons.healthy:            53
+crons.erroring:           0
+crons.stale:              6
+warnings:                 1   (only the pre-existing stale-crons one)
+```
+
+The `moltbook:*` job family is now also visible in the cron registry —
+5 backend jobs (`ingest`, `post`, `engage`, `heartbeat`, `performance`)
+all with `staleness: ok`. They were already registered via the cron
+registry earlier, but now they're paired with an actually-running plugin
+worker that handles their tool calls.
+
+### Operations done from the VPS
+
+1. Pushed the SDK fix (commit `4d22bc48`).
+2. SSH'd to VPS, pulled, `docker compose build && up -d`, pruned old
+   images. Container restarted in 7 seconds, healthy.
+3. Restaged plugin symlinks inside the container (ephemeral; reset on
+   container recreate). Rebuilt moltbook `dist/` via in-container `tsc`.
+   Restored moltbook's `node_modules/@paperclipai/plugin-sdk` symlink.
+4. Minted a short-lived board API key
+   (`name='claude-plugin-install-2'`), used it to:
+   a. Create the moltbook `company_secrets` row via `POST /api/companies/
+      :companyId/secrets`
+   b. POST configs to all 4 plugins via `POST /api/plugins/:id/config`
+   c. POST `/enable` on each — every one returned `status: ready, lastError: null`
+5. Revoked the API key + wiped local copy.
+
+### Follow-up paste-bin (informational)
+
+The container's plugin staging is not yet baked into the Docker image. On
+every `docker compose build` the symlinks at
+`/paperclip/.paperclip/plugins/@paperclipai/` are wiped and need to be
+re-created. Two paths to make this permanent:
+
+1. **Add a Dockerfile RUN step** that creates the symlinks at image build
+   time. Simplest. Zero runtime overhead.
+2. **Make `plugin-loader.ts` auto-stage workspace plugins** on first boot
+   when it sees a missing `/paperclip/.paperclip/plugins/` directory.
+   More invasive but cleaner long-term.
+
+Both are deferred — current state is "live for the lifetime of this
+container". A `docker compose restart` will keep them alive; only a full
+rebuild loses them. Track as a separate ticket.
+
+The TS implicit-any warnings in `plugin-moltbook/src/worker.ts` (params
+`runCtx`, `i`, etc.) are still there. They don't block runtime — `tsc`
+emits valid JS regardless — but they should be cleaned up next time
+someone is in that file.
+
+---
+
 ## [2026-04-14d] — Plugin registration cleanup (from VPS)
 
 Driven directly on the VPS via SSH + the real `/api/plugins/install` API.
