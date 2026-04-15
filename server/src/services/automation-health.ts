@@ -93,7 +93,9 @@ export interface AutomationHealthSnapshot {
  *  - every-minute style (`*` minute field) → 1 minute
  *  - stepped minute (`* /N`) → N minutes  (walked via parseCron's array length)
  *  - fixed minute + `*` hour → 1 hour
- *  - fixed minute + fixed hour + `*` day → 1 day
+ *  - fixed minute + fixed hour + `*` day (DOW unrestricted) → 1 day
+ *  - fixed minute + fixed hour + `*` day + specific DOW → ceil(7/dowCount) days
+ *    e.g. "0 10 * * 3,6" (Wed+Sat) → 4 days, "0 9 * * 1" (Mon only) → 7 days
  *  - else → 1 week
  * Returns milliseconds.
  */
@@ -103,6 +105,7 @@ function estimateIntervalMs(schedule: string): number {
     const minuteCount = parsed.minutes.length;
     const hourCount = parsed.hours.length;
     const domCount = parsed.daysOfMonth.length;
+    const dowCount = parsed.daysOfWeek.length;
 
     // A wildcard minute field parses to all 60 values.
     if (minuteCount >= 60) return 60 * 1000;
@@ -111,7 +114,14 @@ function estimateIntervalMs(schedule: string): number {
       return Math.max(1, Math.floor(60 / minuteCount)) * 60 * 1000;
     }
     if (hourCount >= 24) return 60 * 60 * 1000; // every hour
-    if (domCount >= 28) return 24 * 60 * 60 * 1000; // daily
+    if (domCount >= 28) {
+      // DOM is "every day of the month" — but DOW may restrict actual run days.
+      // If DOW is a subset of the week, true interval = ceil(7 / dowCount) days.
+      if (dowCount < 7) {
+        return Math.ceil(7 / dowCount) * 24 * 60 * 60 * 1000;
+      }
+      return 24 * 60 * 60 * 1000; // truly every day
+    }
     return 7 * 24 * 60 * 60 * 1000; // weekly fallback
   } catch {
     return 24 * 60 * 60 * 1000;

@@ -35,6 +35,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "partners",
   "youtube",
   "partner-dashboard",
+  "dashboard",
   "marketing-pushes",
   "intel-billing",
   "knowledge-graph",

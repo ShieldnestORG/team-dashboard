@@ -61,6 +61,7 @@ import { MarketingPushes } from "./pages/MarketingPushes";
 import { Partners } from "./pages/Partners";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
+import { PartnersLanding } from "./pages/PartnersLanding";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -332,7 +333,25 @@ function NoCompaniesStartPage() {
   );
 }
 
+const IS_PARTNERS_SUBDOMAIN =
+  typeof window !== "undefined" &&
+  window.location.hostname.startsWith("partners.");
+
+function PartnersSite() {
+  return (
+    <Routes>
+      <Route index element={<PartnersLanding />} />
+      <Route path="dashboard/:slug" element={<PartnerDashboard />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 export function App() {
+  if (IS_PARTNERS_SUBDOMAIN) {
+    return <PartnersSite />;
+  }
+
   return (
     <>
       <Routes>
