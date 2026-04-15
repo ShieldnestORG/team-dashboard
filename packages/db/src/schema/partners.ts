@@ -83,6 +83,13 @@ export const partnerCompanies = pgTable(
     featured: boolean("featured").notNull().default(false),
     featuredOrder: integer("featured_order"),
     tagline: text("tagline"),
+
+    // ── Stripe billing (partner subscriptions) ────────────────
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    stripePriceId: text("stripe_price_id"),
+    subscriptionStatus: text("subscription_status").default("none"),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   },
   (table) => ({
     companySlugUq: uniqueIndex("partner_companies_company_slug_uq").on(

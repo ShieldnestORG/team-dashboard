@@ -254,6 +254,8 @@ export function contentService(db: Db) {
     topic: string;
     contextQuery?: string;
     companyId?: string;
+    /** brand controls which X account / publish target this content belongs to (default: 'cd') */
+    brand?: string;
   }): Promise<GeneratedContent> {
     const personality = PERSONALITIES[opts.personalityId];
     if (!personality) {
@@ -314,6 +316,7 @@ export function contentService(db: Db) {
       charCount,
       charLimit,
       reviewStatus: "pending",
+      brand: opts.brand ?? "cd",
     }).returning();
 
     logger.info(

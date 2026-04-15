@@ -112,7 +112,25 @@ export function IntelPricing() {
         </div>
       )}
 
-      <footer className="mt-12 text-center text-sm text-muted-foreground">
+      {/* Cross-sell — directory listings */}
+      <div className="mt-10">
+        <Card className="border-muted bg-muted/30">
+          <CardContent className="flex flex-col items-start gap-2 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Also Available — Directory Listing</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Get your company listed in the AI/ML, Crypto, DeFi, and DevTools directory
+                with featured placement and AEO content mentions.
+              </p>
+            </div>
+            <a href="/directory-pricing" className="shrink-0 text-sm underline">
+              See listing plans &rarr;
+            </a>
+          </CardContent>
+        </Card>
+      </div>
+
+      <footer className="mt-8 text-center text-sm text-muted-foreground">
         <p>
           All plans include access to <code>/api/intel/*</code> — companies, search,
           prices, news, Twitter, GitHub, Reddit, chain metrics.

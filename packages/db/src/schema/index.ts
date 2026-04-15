@@ -59,6 +59,8 @@ export { pluginLogs } from "./plugin_logs.js";
 export { intelCompanies } from "./intel_companies.js";
 export { intelReports } from "./intel_reports.js";
 export { validatorRankHistory } from "./validator_rank_history.js";
+export { cityIntelligence } from "./city_intelligence.js";
+export type { CityItem, CityRawSource } from "./city_intelligence.js";
 export { contentItems } from "./content_items.js";
 export { visualContentItems, visualContentAssets } from "./visual_content_items.js";
 export { contentFeedback } from "./content_feedback.js";
@@ -91,3 +93,5 @@ export {
   intelUsageMeter,
 } from "./intel_billing.js";
 export { directoryListings, directoryListingEvents } from "./directory_listings.js";
+export { campaigns } from "./campaigns.js";
+export type { Campaign, NewCampaign } from "./campaigns.js";

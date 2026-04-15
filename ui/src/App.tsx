@@ -43,11 +43,13 @@ import { ContentReview } from "./pages/ContentReview";
 import { Structure } from "./pages/Structure";
 import { Intel } from "./pages/Intel";
 import { KnowledgeGraph } from "./pages/KnowledgeGraph";
+import { CityCollector } from "./pages/CityCollector";
 import { RepoUpdates } from "./pages/RepoUpdates";
 import { AutomationHealth } from "./pages/AutomationHealth";
 import { IntelPricing } from "./pages/IntelPricing";
 import { IntelBillingSuccess } from "./pages/IntelBillingSuccess";
 import { IntelBilling } from "./pages/IntelBilling";
+import { DirectoryPricing } from "./pages/DirectoryPricing";
 import { Discord } from "./pages/Discord";
 import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
@@ -207,6 +209,7 @@ function boardRoutes() {
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="intel-billing" element={<IntelBilling />} />
       <Route path="knowledge-graph" element={<KnowledgeGraph />} />
+      <Route path="cities" element={<CityCollector />} />
       <Route path="repo-updates" element={<RepoUpdates />} />
       <Route path="automation-health" element={<AutomationHealth />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
@@ -337,6 +340,7 @@ export function App() {
         <Route path="invite/:token" element={<InviteLandingPage />} />
         <Route path="partner-dashboard/:slug" element={<PartnerDashboard />} />
         <Route path="intel/pricing" element={<IntelPricing />} />
+        <Route path="directory-pricing" element={<DirectoryPricing />} />
         <Route path="billing/success" element={<IntelBillingSuccess />} />
 
         <Route element={<CloudAccessGate />}>

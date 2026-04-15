@@ -93,9 +93,13 @@ import { agentMemoryRoutes } from "./routes/agent-memory.js";
 import { startKnowledgeGraphCrons } from "./services/knowledge-graph-crons.js";
 import { repoUpdateRoutes } from "./routes/repo-updates.js";
 import { automationHealthRoutes } from "./routes/automation-health.js";
+import { firecrawlAdminRoutes } from "./routes/firecrawl-admin.js";
+import { citiesRoutes } from "./routes/cities.js";
+import { startCityCollectorCrons } from "./services/city-collector-crons.js";
 import { startSeoAuditCron } from "./services/seo-audit-cron.js";
 import { startPluginLogRetention } from "./services/plugin-log-retention.js";
 import { startFirecrawlCrons } from "./services/firecrawl-crons.js";
+import { startDirectoryCrons } from "./services/directory-crons.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -264,6 +268,8 @@ export async function createApp(
   api.use("/agent-memory", agentMemoryRoutes(db));
   api.use("/repo-updates", repoUpdateRoutes(db));
   api.use("/automation-health", automationHealthRoutes(db));
+  api.use("/firecrawl/admin", firecrawlAdminRoutes(db));
+  api.use("/cities", citiesRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -406,6 +412,8 @@ export async function createApp(
   startSeoAuditCron(db);
   startPluginLogRetention(db);
   startFirecrawlCrons(db);
+  startDirectoryCrons(db);
+  startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);
   // Sync registry to DB + start the single cron scheduler

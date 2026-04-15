@@ -9,6 +9,8 @@ import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerClicks } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { runPartnerOnboarding } from "../services/partner-onboarding.js";
+import { createCheckoutSession } from "../services/stripe-checkout.js";
+import { stripeConfigured } from "../services/stripe-client.js";
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID ||
@@ -249,6 +251,90 @@ export function partnerRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to trigger onboarding");
       res.status(500).json({ error: "Failed to trigger onboarding" });
+    }
+  });
+
+  // ── POST /:slug/checkout — Create Stripe Checkout for partner billing ───────
+  router.post("/:slug/checkout", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+
+      const [partner] = await db
+        .select()
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.companyId, COMPANY_ID),
+            eq(partnerCompanies.slug, slug),
+          ),
+        )
+        .limit(1);
+
+      if (!partner) {
+        res.status(404).json({ error: "Partner not found" });
+        return;
+      }
+
+      if (!partner.contactEmail) {
+        res.status(400).json({ error: "Partner has no contact_email — add contact first" });
+        return;
+      }
+
+      if (!stripeConfigured()) {
+        res.status(503).json({ error: "STRIPE_SECRET_KEY not configured" });
+        return;
+      }
+
+      // Resolve the Stripe price ID from the partner's tier.
+      const tierPriceEnv: Record<string, string> = {
+        proof: "STRIPE_PRICE_PARTNER_PROOF",
+        performance: "STRIPE_PRICE_PARTNER_PERFORMANCE",
+        premium: "STRIPE_PRICE_PARTNER_PREMIUM",
+      };
+      const priceIdEnv = tierPriceEnv[partner.tier ?? "proof"] ?? "STRIPE_PRICE_PARTNER_PROOF";
+      const priceId = process.env[priceIdEnv];
+      if (!priceId) {
+        res.status(400).json({
+          error: `No Stripe price configured for tier '${partner.tier ?? "proof"}' (env: ${priceIdEnv})`,
+        });
+        return;
+      }
+
+      const successUrl =
+        process.env.PARTNER_CHECKOUT_SUCCESS_URL ||
+        `${process.env.PAPERCLIP_PUBLIC_URL || "https://api.coherencedaddy.com"}/partners/${slug}?checkout=success`;
+      const cancelUrl =
+        process.env.PARTNER_CHECKOUT_CANCEL_URL ||
+        `${process.env.PAPERCLIP_PUBLIC_URL || "https://api.coherencedaddy.com"}/partners/${slug}`;
+
+      const checkoutResult = await createCheckoutSession({
+        email: partner.contactEmail,
+        priceId,
+        successUrl,
+        cancelUrl,
+        customerId: partner.stripeCustomerId ?? undefined,
+        metadata: {
+          source: "partner_network",
+          partner_slug: slug,
+          partner_id: partner.id,
+          tier: partner.tier ?? "proof",
+        },
+      });
+
+      // Persist the price ID and status on the partner row so webhook can match it.
+      await db
+        .update(partnerCompanies)
+        .set({
+          stripePriceId: priceId,
+          subscriptionStatus: "checkout_sent",
+          updatedAt: new Date(),
+        })
+        .where(eq(partnerCompanies.id, partner.id));
+
+      res.json({ checkoutUrl: checkoutResult.checkoutUrl, sessionId: checkoutResult.sessionId });
+    } catch (err) {
+      logger.error({ err }, "Failed to create partner checkout");
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 
