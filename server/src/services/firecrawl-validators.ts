@@ -77,6 +77,10 @@ async function scrapeMarkdown(url: string): Promise<string | null> {
       body: JSON.stringify({
         url,
         formats: ["markdown"],
+        // Mintscan and most modern explorers are JS-rendered SPAs — without
+        // this wait, /v1/scrape returns just the navigation chrome before
+        // React/Next has populated the validator table.
+        actions: [{ type: "wait", milliseconds: 3500 }],
         timeout: REQUEST_TIMEOUT_MS,
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS + 5_000),
