@@ -4,6 +4,73 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14k] — firecrawl.coherencedaddy.com HTTPS + VPS credentials saved
+
+Closes the DNS/Nginx vhost follow-up from `[2026-04-14i]` and `[2026-04-14j]`.
+
+### nginx vhost + Let's Encrypt cert on VPS_4
+
+User added the `firecrawl` A record to Hostinger pointing at `168.231.127.180`.
+SSH'd into VPS_4 (`srv1060975`) and:
+
+1. Added `firecrawl.coherencedaddy.com` to the existing
+   `/etc/nginx/sites-available/firecrawl` `server_name` line (was just the
+   bare IP). Backup at `firecrawl.bak.2026-04-15`.
+2. `nginx -t && systemctl reload nginx` — clean reload.
+3. `certbot --nginx -d firecrawl.coherencedaddy.com --redirect` — cert
+   issued, deployed, HTTP→HTTPS redirect enabled. Expires `2026-07-14`,
+   auto-renew scheduled.
+
+Verified end-to-end:
+```
+curl -X POST https://firecrawl.coherencedaddy.com/v1/scrape  → 200 in 1.04s
+from VPS_1 container                                          → 200 in 1.31s
+```
+
+### Service-file fallback URLs swapped
+
+Three files updated to use `https://firecrawl.coherencedaddy.com` instead of
+`http://168.231.127.180`:
+
+- `server/src/services/firecrawl-sync.ts:18`
+- `server/src/services/partner-onboarding.ts:16`
+- `server/src/services/vps-monitor.ts:111`
+
+All three retain `process.env.FIRECRAWL_URL || …` so an operator can override
+per-environment. Eliminates the bare-IP single-point-of-config from the
+codebase — future Firecrawl host migrations only need a DNS update, no code
+change.
+
+### Verified live after deploy
+
+Triggered `intel:chain-metrics`, `intel:chain-tvl`, and `intel:validator-ranks`
+through the system-crons API immediately after the new container came up.
+All three returned `{"ok":true}`, all wrote fresh rows to Neon:
+
+```
+report_type    | count | most_recent
+chain-metrics  |     2 | 2026-04-15 02:37:55
+chain-tvl      |     2 | 2026-04-15 02:37:58
+validator-rank |     2 | 2026-04-15 02:38:20  (+ 100 detail rows in validator_rank_history)
+```
+
+### Local `.env` — VPS credential cluster reorganized
+
+Renamed the existing `VPS=` / `VPS_PASSWORD=` lines to `VPS_1=` / `VPS_1_PASSWORD=`
+(kept the originals as legacy aliases so any scripts referencing `$VPS_PASSWORD`
+keep working) and added three new credential pairs:
+
+- `VPS_2=ssh root@31.220.61.14` / `VPS_2_PASSWORD=h#2BEGAE…` — shield-main /
+  trustee-gateway-api host
+- `VPS_3=ssh root@147.79.78.251` / `VPS_3_PASSWORD=iw/x;eahl1?4vy8dv/5Y` —
+  BGE-M3 + Ollama + vosk-stt + nft_ host
+- `VPS_4=ssh root@168.231.127.180` / `VPS_4_PASSWORD=?59bn0Ymj6v3)mA/oKbF` —
+  Firecrawl + coherence-ollama + qdrant + directory-api + nft-indexer host
+
+Future sessions will have all four credentials available without back-and-forth.
+
+---
+
 ## [2026-04-14j] — Firecrawl revival + LCD validator ingest + dedup constraint drop
 
 Three layered fixes after gaining SSH access to the Firecrawl host.
