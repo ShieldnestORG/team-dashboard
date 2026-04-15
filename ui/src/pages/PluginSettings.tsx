@@ -19,6 +19,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { PageTabBar } from "@/components/PageTabBar";
+import { FirecrawlActivityTab } from "@/components/firecrawl/FirecrawlActivityTab";
+
+const FIRECRAWL_MANIFEST_ID = "coherencedaddy.firecrawl";
 import {
   JsonSchemaForm,
   validateJsonSchemaForm,
@@ -61,7 +64,7 @@ export function PluginSettings() {
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { companyPrefix, pluginId } = useParams<{ companyPrefix?: string; pluginId: string }>();
-  const [activeTab, setActiveTab] = useState<"configuration" | "status">("configuration");
+  const [activeTab, setActiveTab] = useState<"configuration" | "status" | "activity">("configuration");
 
   const { data: plugin, isLoading: pluginLoading } = useQuery({
     queryKey: queryKeys.plugins.detail(pluginId!),
@@ -142,6 +145,8 @@ export function PluginSettings() {
         : "secondary";
   const pluginDescription = plugin.manifestJson.description || "No description provided.";
   const pluginCapabilities = plugin.manifestJson.capabilities ?? [];
+  const isFirecrawlPlugin =
+    (plugin.manifestJson as { id?: string })?.id === FIRECRAWL_MANIFEST_ID;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -163,15 +168,31 @@ export function PluginSettings() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "configuration" | "status")} className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) =>
+          setActiveTab(value as "configuration" | "status" | "activity")
+        }
+        className="space-y-6"
+      >
         <PageTabBar
           align="start"
-          items={[
-            { value: "configuration", label: "Configuration" },
-            { value: "status", label: "Status" },
-          ]}
+          items={
+            isFirecrawlPlugin
+              ? [
+                  { value: "configuration", label: "Configuration" },
+                  { value: "status", label: "Status" },
+                  { value: "activity", label: "Activity" },
+                ]
+              : [
+                  { value: "configuration", label: "Configuration" },
+                  { value: "status", label: "Status" },
+                ]
+          }
           value={activeTab}
-          onValueChange={(value) => setActiveTab(value as "configuration" | "status")}
+          onValueChange={(value) =>
+            setActiveTab(value as "configuration" | "status" | "activity")
+          }
         />
 
         <TabsContent value="configuration" className="space-y-6">
@@ -535,6 +556,12 @@ export function PluginSettings() {
             </div>
           </div>
         </TabsContent>
+
+        {isFirecrawlPlugin ? (
+          <TabsContent value="activity" className="space-y-6">
+            <FirecrawlActivityTab />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
