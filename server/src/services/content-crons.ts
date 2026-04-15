@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { contentItems } from "@paperclipai/db";
+import { contentItems, cityIntelligence, partnerCompanies } from "@paperclipai/db";
 import { contentService } from "./content.js";
 import { seoEngineService } from "./seo-engine.js";
 import { autoGenerateAndQueue } from "./x-api/content-bridge.js";
@@ -29,7 +29,7 @@ interface ContentJobDef {
   personality: string;
   ownerAgent: string;
   contentType: string;
-  topicPicker?: "intel-alert" | "chain-metrics" | "xrp-focus" | "comparison" | "tokns-promo";
+  topicPicker?: "intel-alert" | "chain-metrics" | "xrp-focus" | "comparison" | "tokns-promo" | "city-trends";
   useContentBridge?: boolean;
   publishTarget?: PublishTarget;
   // brand controls which X account / publish target this content belongs to
@@ -105,6 +105,17 @@ const JOB_DEFS: ContentJobDef[] = [
     xAccountSlug: "coherencedaddy",
     useContentBridge: true,
     topic: "AEO strategy for 2026: how AI directories are replacing Google for B2B discovery",
+  },
+  // City-trends blog — Tuesday 9am, day after Monday city intelligence refresh
+  {
+    name: "content:city-trends:blog",
+    schedule: "0 9 * * 2",
+    personality: "cipher",
+    ownerAgent: "cipher",
+    contentType: "blog_post",
+    topicPicker: "city-trends",
+    publishTarget: "cd",
+    brand: "cd",
   },
 ];
 
@@ -466,6 +477,83 @@ async function pickToknsPromoTopic(db: Db): Promise<TopicResult> {
 }
 
 // ---------------------------------------------------------------------------
+// City-trends topic picker — pulls fresh local intel for located partners
+// ---------------------------------------------------------------------------
+
+const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+async function pickCityTrendTopic(db: Db): Promise<{ display: string; prompt: string } | null> {
+  // Find city_intelligence rows that are ready and still fresh, joined to
+  // partners that have a location set.
+  const partners = await db
+    .select({
+      location: partnerCompanies.location,
+      contentMentions: partnerCompanies.contentMentions,
+      name: partnerCompanies.name,
+    })
+    .from(partnerCompanies)
+    .where(
+      sql`${partnerCompanies.companyId} = ${COMPANY_ID}
+          AND ${partnerCompanies.location} IS NOT NULL
+          AND ${partnerCompanies.location} <> ''
+          AND ${partnerCompanies.status} IN ('trial', 'active')`,
+    );
+
+  if (partners.length === 0) return null;
+
+  // For each partner, find the city_intelligence row
+  let bestTopic: { term: string; score: number; city: string; mentionWeight: number } | null = null;
+
+  for (const partner of partners) {
+    if (!partner.location) continue;
+    const [cityPart, regionPart] = partner.location.split(",").map((s: string) => s.trim());
+    if (!cityPart) continue;
+
+    const slug = [cityPart, regionPart ?? "", "us"]
+      .map((s) => (s || "").trim().toLowerCase())
+      .filter(Boolean)
+      .map((s) => s.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))
+      .join("-");
+
+    const rows = await db
+      .select({
+        trendingTopics: cityIntelligence.trendingTopics,
+        city: cityIntelligence.city,
+        region: cityIntelligence.region,
+      })
+      .from(cityIntelligence)
+      .where(
+        sql`${cityIntelligence.companyId} = ${COMPANY_ID}
+            AND ${cityIntelligence.slug} = ${slug}
+            AND ${cityIntelligence.collectionStatus} = 'ready'
+            AND ${cityIntelligence.freshUntil} > now()`,
+      )
+      .limit(1);
+
+    const row = rows[0];
+    if (!row || !row.trendingTopics || (row.trendingTopics as unknown[]).length === 0) continue;
+
+    const topics = row.trendingTopics as Array<{ term: string; score: number }>;
+    // Weight by topic score × inverse of content mentions (boost least-mentioned partners)
+    const mentionWeight = 1 / ((partner.contentMentions ?? 0) + 1);
+    for (const t of topics.slice(0, 3)) {
+      const weighted = t.score * mentionWeight;
+      if (!bestTopic || weighted > bestTopic.mentionWeight) {
+        const city = [row.city, row.region].filter(Boolean).join(", ");
+        bestTopic = { term: t.term, score: t.score, city, mentionWeight: weighted };
+      }
+    }
+  }
+
+  if (!bestTopic) return null;
+
+  return {
+    display: `${bestTopic.term} — local trends in ${bestTopic.city}`,
+    prompt: `Write a blog post about "${bestTopic.term}" relevant to local businesses and residents in ${bestTopic.city}. Focus on practical local relevance, community impact, and how small businesses can leverage this trend.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Register all content cron jobs
 // ---------------------------------------------------------------------------
 
@@ -532,6 +620,13 @@ export function startContentCrons(db: Db) {
           topicRaw = await pickComparisonTopic(db);
         } else if (def.topicPicker === "tokns-promo") {
           topicRaw = await pickToknsPromoTopic(db);
+        } else if (def.topicPicker === "city-trends") {
+          const cityResult = await pickCityTrendTopic(db);
+          if (!cityResult) {
+            logger.info({ job: def.name }, "content:city-trends: no fresh city data, skipping");
+            return;
+          }
+          topicRaw = cityResult;
         } else {
           topicRaw = await pickTopic(db);
         }

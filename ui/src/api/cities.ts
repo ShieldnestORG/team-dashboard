@@ -5,6 +5,7 @@ export interface CityItem {
   rank: number;
   score: number;
   source: string;
+  collectedAt?: string;
   meta?: Record<string, unknown>;
 }
 
@@ -101,6 +102,62 @@ export interface DirectoryMatch {
   category: string;
 }
 
+export interface CityBusinessLead {
+  id: string;
+  companyId: string;
+  citySlug: string;
+  topic: string;
+  name: string;
+  website: string | null;
+  phone: string | null;
+  address: string | null;
+  category: string | null;
+  rating: string | null;
+  reviewCount: number | null;
+  source: string;
+  sourceUrl: string | null;
+  rawSnippet: string | null;
+  leadStatus: "new" | "verified" | "promoted_partner" | "skipped";
+  partnerId: string | null;
+  foundAt: string;
+  actionedAt: string | null;
+  notes: string | null;
+}
+
+export interface BusinessFinderRequest {
+  city: string;
+  region?: string | null;
+  topic: string;
+  limit?: number;
+}
+
+export interface BusinessFinderResponse {
+  leads: CityBusinessLead[];
+  count: number;
+}
+
+export interface LeadsListResponse {
+  leads: CityBusinessLead[];
+  count: number;
+  topics: string[];
+}
+
+export interface PartnerPreFill {
+  name: string;
+  website: string;
+  phone: string;
+  address: string;
+  industry: string;
+  location: string;
+  description: string;
+  contactEmail: string;
+}
+
+export interface PromotePartnerResponse {
+  preFill: PartnerPreFill;
+  lead: CityBusinessLead;
+}
+
 export const citiesApi = {
   list: (params?: { status?: string; q?: string }) => {
     const qs = new URLSearchParams();
@@ -120,5 +177,31 @@ export const citiesApi = {
   directoryMatches: (slug: string) =>
     api.get<{ matches: DirectoryMatch[] }>(
       `/cities/${encodeURIComponent(slug)}/directory-matches`,
+    ),
+
+  findBusinesses: (body: BusinessFinderRequest) =>
+    api.post<BusinessFinderResponse>("/cities/find-businesses", body),
+
+  getLeads: (slug: string, params?: { topic?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.topic) q.set("topic", params.topic);
+    if (params?.status) q.set("status", params.status);
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    return api.get<LeadsListResponse>(`/cities/${slug}/leads${qs}`);
+  },
+
+  updateLead: (id: string, body: { leadStatus?: string; notes?: string }) =>
+    api.patch<{ lead: CityBusinessLead }>(`/cities/leads/${id}`, body),
+
+  promoteLead: (id: string) =>
+    api.post<PromotePartnerResponse>(`/cities/leads/${id}/promote-partner`, {}),
+
+  generateLeadContent: (
+    id: string,
+    body?: { personalityId?: string; contentType?: string },
+  ) =>
+    api.post<{ contentItem: unknown; topic: string }>(
+      `/cities/leads/${id}/generate-content`,
+      body ?? {},
     ),
 };

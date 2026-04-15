@@ -32,6 +32,7 @@ export type CityItem = {
   rank: number;
   score: number;
   source: string;
+  collectedAt?: string; // ISO timestamp of the collection run that produced this item
   meta?: Record<string, unknown>;
 };
 

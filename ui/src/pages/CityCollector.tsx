@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   MapPin,
   Search,
@@ -14,6 +15,8 @@ import {
   CheckCircle2,
   ExternalLink,
   X,
+  UserPlus,
+  Star,
 } from "lucide-react";
 
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -37,12 +40,14 @@ import {
   type CityItem,
   type CityPitchResponse,
   type DirectoryMatch,
+  type CityBusinessLead,
 } from "@/api/cities";
 
 const cityKeys = {
   list: ["cities", "list"] as const,
   detail: (slug: string) => ["cities", "detail", slug] as const,
   directory: (slug: string) => ["cities", "directory", slug] as const,
+  leads: (slug: string, topic?: string) => ["cities", "leads", slug, topic] as const,
 };
 
 function formatRelative(iso: string | null): string {
@@ -91,6 +96,7 @@ function RankedList({ items }: { items: CityItem[] }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">No items collected yet.</p>;
   }
+  const hasTimestamps = items.some((item) => Boolean(item.collectedAt));
   return (
     <div className="overflow-hidden rounded-md border">
       <table className="w-full text-sm">
@@ -100,6 +106,7 @@ function RankedList({ items }: { items: CityItem[] }) {
             <th className="px-3 py-2 text-left">Term</th>
             <th className="px-3 py-2 text-left">Source</th>
             <th className="px-3 py-2 text-right">Score</th>
+            {hasTimestamps && <th className="text-right text-xs text-muted-foreground font-normal">Collected</th>}
           </tr>
         </thead>
         <tbody>
@@ -115,6 +122,11 @@ function RankedList({ items }: { items: CityItem[] }) {
               <td className="px-3 py-2 text-right text-xs text-muted-foreground">
                 {item.score.toFixed(2)}
               </td>
+              {hasTimestamps && (
+                <td className="text-right text-xs text-muted-foreground">
+                  {item.collectedAt ? formatRelative(item.collectedAt) : "—"}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -281,6 +293,207 @@ function DirectoryMatchesPanel({ slug }: { slug: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Business Leads Panel
+// ---------------------------------------------------------------------------
+
+interface BusinessLeadsPanelProps {
+  slug: string;
+}
+
+function BusinessLeadsPanel({ slug }: BusinessLeadsPanelProps) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [selectedTopic, setSelectedTopic] = useState<string | undefined>(undefined);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: cityKeys.leads(slug, selectedTopic),
+    queryFn: () => citiesApi.getLeads(slug, { topic: selectedTopic }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { leadStatus?: string; notes?: string } }) =>
+      citiesApi.updateLead(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cities", "leads", slug] });
+    },
+  });
+
+  const promoteMutation = useMutation({
+    mutationFn: (id: string) => citiesApi.promoteLead(id),
+    onSuccess: (result) => {
+      const encoded = btoa(JSON.stringify(result.preFill));
+      navigate(`/partners?prefill=${encoded}`);
+    },
+  });
+
+  const contentMutation = useMutation({
+    mutationFn: (id: string) => citiesApi.generateLeadContent(id),
+    onSuccess: () => {
+      setActioningId(null);
+    },
+  });
+
+  const leads: CityBusinessLead[] = data?.leads ?? [];
+  const topics: string[] = data?.topics ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Topic filter */}
+      {topics.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground">Filter by topic:</span>
+          <button
+            onClick={() => setSelectedTopic(undefined)}
+            className={`text-xs px-2 py-0.5 rounded-full border ${!selectedTopic ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground"}`}
+          >
+            All
+          </button>
+          {topics.map((t) => (
+            <button
+              key={t}
+              onClick={() => setSelectedTopic(t)}
+              className={`text-xs px-2 py-0.5 rounded-full border ${selectedTopic === t ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 text-muted-foreground"}`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {leads.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          <MapPin className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p>No businesses found for this city yet.</p>
+          <p className="mt-1 text-xs">Use the Business Finder form to search by topic.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {leads.map((lead) => (
+            <div
+              key={lead.id}
+              className={`border rounded-lg p-3 text-sm space-y-1 ${
+                lead.leadStatus === "skipped" ? "opacity-40" : ""
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium truncate">{lead.name}</span>
+                    {lead.leadStatus !== "new" && (
+                      <Badge
+                        variant={
+                          lead.leadStatus === "promoted_partner"
+                            ? "default"
+                            : lead.leadStatus === "verified"
+                            ? "secondary"
+                            : "outline"
+                        }
+                        className="text-xs"
+                      >
+                        {lead.leadStatus.replace("_", " ")}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                    {lead.category && <span>{lead.category}</span>}
+                    {lead.rating && (
+                      <span className="flex items-center gap-0.5">
+                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                        {lead.rating}
+                        {lead.reviewCount ? ` (${lead.reviewCount})` : ""}
+                      </span>
+                    )}
+                    {lead.phone && <span>{lead.phone}</span>}
+                    {lead.address && <span className="truncate max-w-[180px]">{lead.address}</span>}
+                  </div>
+                  {lead.website && (
+                    <a
+                      href={lead.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-500 hover:underline flex items-center gap-1 mt-0.5"
+                    >
+                      {lead.website.replace(/^https?:\/\//, "").split("/")[0]}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+                {/* Actions */}
+                {lead.leadStatus !== "promoted_partner" && lead.leadStatus !== "skipped" && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title="Add as Partner"
+                      disabled={promoteMutation.isPending && actioningId === lead.id}
+                      onClick={() => {
+                        setActioningId(lead.id);
+                        promoteMutation.mutate(lead.id);
+                      }}
+                    >
+                      {promoteMutation.isPending && actioningId === lead.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <UserPlus className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title="Generate Content"
+                      disabled={contentMutation.isPending && actioningId === lead.id}
+                      onClick={() => {
+                        setActioningId(lead.id);
+                        contentMutation.mutate(lead.id, {
+                          onSuccess: () => setActioningId(null),
+                        });
+                      }}
+                    >
+                      {contentMutation.isPending && actioningId === lead.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground"
+                      title="Skip"
+                      onClick={() =>
+                        updateMutation.mutate({ id: lead.id, body: { leadStatus: "skipped" } })
+                      }
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline" className="text-xs py-0">{lead.source}</Badge>
+                <span>found {formatRelative(lead.foundAt)}</span>
+                {lead.topic && <span>· topic: {lead.topic}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // City detail drawer (fixed right sheet, simple implementation)
 // ---------------------------------------------------------------------------
 
@@ -383,6 +596,10 @@ function CityDetailDrawer({
                     <TrendingUp className="mr-1.5 h-3.5 w-3.5" />
                     Trending ({data.city.trendingTopics.length})
                   </TabsTrigger>
+                  <TabsTrigger value="leads">
+                    <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                    Business Leads
+                  </TabsTrigger>
                 </TabsList>
                 <TabsContent value="searches">
                   <RankedList items={data.city.topSearches} />
@@ -392,6 +609,9 @@ function CityDetailDrawer({
                 </TabsContent>
                 <TabsContent value="trending">
                   <RankedList items={data.city.trendingTopics} />
+                </TabsContent>
+                <TabsContent value="leads">
+                  <BusinessLeadsPanel slug={data.city.slug} />
                 </TabsContent>
               </Tabs>
 
@@ -434,6 +654,9 @@ export function CityCollector() {
   const [collectCity, setCollectCity] = useState("");
   const [collectRegion, setCollectRegion] = useState("");
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [finderCity, setFinderCity] = useState("");
+  const [finderRegion, setFinderRegion] = useState("");
+  const [finderTopic, setFinderTopic] = useState("");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "City Collector" }]);
@@ -457,6 +680,21 @@ export function CityCollector() {
       setCollectCity("");
       setCollectRegion("");
       if (res.slug) setSelectedSlug(res.slug);
+    },
+  });
+
+  const findBusinessesMutation = useMutation({
+    mutationFn: (body: { city: string; region: string; topic: string }) =>
+      citiesApi.findBusinesses(body),
+    onSuccess: () => {
+      const slug =
+        finderCity.toLowerCase().replace(/[^a-z0-9]+/g, "-") +
+        (finderRegion
+          ? `-${finderRegion.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+          : "") +
+        "-us";
+      queryClient.invalidateQueries({ queryKey: cityKeys.list });
+      queryClient.invalidateQueries({ queryKey: ["cities", "leads", slug] });
     },
   });
 
@@ -518,6 +756,75 @@ export function CityCollector() {
               {(collectMutation.error as Error).message}
             </p>
           ) : null}
+        </CardContent>
+      </Card>
+
+      {/* Business Finder */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            Find Local Businesses
+          </CardTitle>
+          <CardDescription>
+            Search for real businesses in a city by topic (e.g., "handyman", "plumber", "gym")
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input
+              placeholder="City"
+              value={finderCity}
+              onChange={(e) => setFinderCity(e.target.value)}
+              className="sm:w-48"
+            />
+            <Input
+              placeholder="State (optional)"
+              value={finderRegion}
+              onChange={(e) => setFinderRegion(e.target.value)}
+              className="sm:w-24"
+            />
+            <Input
+              placeholder="Topic (e.g. handyman)"
+              value={finderTopic}
+              onChange={(e) => setFinderTopic(e.target.value)}
+              className="sm:flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && finderCity && finderTopic) {
+                  findBusinessesMutation.mutate({
+                    city: finderCity,
+                    region: finderRegion,
+                    topic: finderTopic,
+                  });
+                }
+              }}
+            />
+            <Button
+              onClick={() =>
+                findBusinessesMutation.mutate({
+                  city: finderCity,
+                  region: finderRegion,
+                  topic: finderTopic,
+                })
+              }
+              disabled={!finderCity || !finderTopic || findBusinessesMutation.isPending}
+            >
+              {findBusinessesMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Search className="h-4 w-4 mr-1" />
+              )}
+              {findBusinessesMutation.isPending ? "Searching…" : "Find Businesses"}
+            </Button>
+          </div>
+          {findBusinessesMutation.isSuccess && (
+            <p className="text-sm text-muted-foreground mt-2">
+              Found {findBusinessesMutation.data.count} businesses — see the Business Leads tab in the city drawer.
+            </p>
+          )}
+          {findBusinessesMutation.isError && (
+            <p className="text-sm text-destructive mt-2">Search failed — check server logs.</p>
+          )}
         </CardContent>
       </Card>
 

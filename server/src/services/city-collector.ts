@@ -111,7 +111,7 @@ async function withTimeout<T>(
 // Source 1: Firecrawl search
 // ---------------------------------------------------------------------------
 
-async function firecrawlSearch(query: string, limit = 10): Promise<
+export async function firecrawlSearch(query: string, limit = 10): Promise<
   Array<{ title: string; url: string; content: string }>
 > {
   const res = await fetch(`${FIRECRAWL_URL}/v1/search`, {
@@ -401,7 +401,7 @@ async function collectReddit(q: CityQuery): Promise<{
 // Source 5: Yelp category pages via Firecrawl scrape — proxy for service demand
 // ---------------------------------------------------------------------------
 
-async function firecrawlScrape(url: string): Promise<string | null> {
+export async function firecrawlScrape(url: string): Promise<string | null> {
   try {
     const res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
       method: "POST",
@@ -471,7 +471,7 @@ interface BucketOutput {
   trendingTopics: CityItem[];
 }
 
-function simpleBucketize(raw: RawSignal[]): BucketOutput {
+function simpleBucketize(raw: RawSignal[], runTimestamp: string): BucketOutput {
   // Dedup by lowercase term, sum weight as score, hint → bucket
   const acc = new Map<string, { term: string; score: number; source: string; hint?: string }>();
   for (const s of raw) {
@@ -495,6 +495,7 @@ function simpleBucketize(raw: RawSignal[]): BucketOutput {
         rank: i + 1,
         score: Math.round(a.score * 100) / 100,
         source: a.source,
+        collectedAt: runTimestamp,
       }));
 
   // If a bucket is under-filled, top it up from un-hinted entries
@@ -510,6 +511,7 @@ function simpleBucketize(raw: RawSignal[]): BucketOutput {
         rank: existing.length + i + 1,
         score: Math.round(a.score * 100) / 100,
         source: a.source,
+        collectedAt: runTimestamp,
       }));
     return [...existing, ...extras];
   };
@@ -524,6 +526,7 @@ function simpleBucketize(raw: RawSignal[]): BucketOutput {
 async function ollamaRerank(
   cityLabel: string,
   raw: RawSignal[],
+  runTimestamp: string,
 ): Promise<BucketOutput | null> {
   // Send a compact candidate list to Ollama for classification + dedup.
   // We cap the candidate list to 400 to stay within the model's context.
@@ -587,6 +590,7 @@ ${candidates.map((c, i) => `${i + 1}. ${c}`).join("\n")}
           rank: i + 1,
           score: meta ? Math.round(meta.score * 100) / 100 : 1,
           source: meta?.source ?? "ollama",
+          collectedAt: runTimestamp,
         };
       });
     };
@@ -658,8 +662,12 @@ export async function collectCity(
       "city-collector: sources collected",
     );
 
-    const reranked = await ollamaRerank(cityLabel, rawSignals);
-    const bucketed: BucketOutput = reranked ?? simpleBucketize(rawSignals);
+    const runTimestamp = new Date().toISOString();
+    const reranked = await ollamaRerank(cityLabel, rawSignals, runTimestamp);
+    const allEmpty = (b: BucketOutput) =>
+      b.topSearches.length === 0 && b.serviceDemand.length === 0 && b.trendingTopics.length === 0;
+    const bucketed: BucketOutput =
+      reranked && !allEmpty(reranked) ? reranked : simpleBucketize(rawSignals, runTimestamp);
 
     const durationMs = Date.now() - started;
     const freshUntil = new Date(Date.now() + FRESHNESS_DAYS * 24 * 60 * 60 * 1000);

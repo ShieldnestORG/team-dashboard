@@ -88,5 +88,20 @@ export function startCityCollectorCrons(db: Db): void {
     },
   });
 
-  logger.info({ count: 1 }, "City collector cron jobs registered");
+  registerCronJob({
+    jobName: "cities:trend-content-push",
+    schedule: "17 6 * * 2", // Tuesday 6:17am — day after Monday city refresh
+    ownerAgent: "cipher",
+    sourceFile: "city-collector-crons.ts",
+    handler: async () => {
+      // Content generation from city trends — implemented in Phase 2D via content-crons.ts
+      // This stub ensures the job appears in the cron registry.
+      logger.info(
+        "cities:trend-content-push: delegating to content-crons city-trends picker",
+      );
+      return { skipped: true, reason: "handled by content:city-trends:blog cron" };
+    },
+  });
+
+  logger.info({ count: 2 }, "City collector cron jobs registered");
 }

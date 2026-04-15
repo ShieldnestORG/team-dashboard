@@ -11,14 +11,16 @@
  */
 
 import { Router } from "express";
-import { sql, desc } from "drizzle-orm";
+import { sql, desc, asc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { cityIntelligence } from "@paperclipai/db";
+import { cityIntelligence, cityBusinessLeads, contentItems } from "@paperclipai/db";
+import type { CityBusinessLead } from "@paperclipai/db";
 import {
   collectCity,
   buildCitySlug,
   generatePitch,
 } from "../services/city-collector.js";
+import { findLocalBusinesses, deriveIndustry } from "../services/city-business-finder.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID =
@@ -281,6 +283,279 @@ export function citiesRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "cities directory-matches failed");
       res.status(500).json({ error: "Failed to load directory matches" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /find-businesses — search for local businesses by city + topic
+  // -------------------------------------------------------------------------
+  router.post("/find-businesses", async (req, res) => {
+    try {
+      const { city, region, topic, limit } = req.body as {
+        city?: string;
+        region?: string | null;
+        topic?: string;
+        limit?: number;
+      };
+
+      if (!city || typeof city !== "string") {
+        res.status(400).json({ error: "city is required" });
+        return;
+      }
+      if (!topic || typeof topic !== "string") {
+        res.status(400).json({ error: "topic is required" });
+        return;
+      }
+
+      const leads = await findLocalBusinesses(db, {
+        city,
+        region: region ?? null,
+        topic,
+        limit: typeof limit === "number" ? limit : 30,
+      });
+
+      res.json({ leads, count: leads.length });
+    } catch (err) {
+      logger.error({ err }, "cities find-businesses failed");
+      res.status(500).json({ error: "Failed to find businesses" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /:slug/leads — list business leads for a city
+  // -------------------------------------------------------------------------
+  router.get("/:slug/leads", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const topic = req.query.topic as string | undefined;
+      const status = req.query.status as string | undefined;
+
+      let whereClause = sql`${cityBusinessLeads.companyId} = ${COMPANY_ID}
+        AND ${cityBusinessLeads.citySlug} = ${slug}`;
+
+      if (topic) {
+        whereClause = sql`${whereClause} AND lower(${cityBusinessLeads.topic}) = ${topic.toLowerCase()}`;
+      }
+      if (status) {
+        whereClause = sql`${whereClause} AND ${cityBusinessLeads.leadStatus} = ${status}`;
+      }
+
+      const leads = await db
+        .select()
+        .from(cityBusinessLeads)
+        .where(whereClause)
+        .orderBy(asc(cityBusinessLeads.foundAt))
+        .limit(200);
+
+      // Distinct topics found for this city (for the UI topic filter dropdown)
+      const topicRows = await db
+        .selectDistinct({ topic: cityBusinessLeads.topic })
+        .from(cityBusinessLeads)
+        .where(
+          sql`${cityBusinessLeads.companyId} = ${COMPANY_ID} AND ${cityBusinessLeads.citySlug} = ${slug}`,
+        );
+
+      res.json({
+        leads,
+        count: leads.length,
+        topics: topicRows.map((r) => r.topic),
+      });
+    } catch (err) {
+      logger.error({ err }, "cities get-leads failed");
+      res.status(500).json({ error: "Failed to load leads" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // PATCH /leads/:id — update lead status or notes
+  // -------------------------------------------------------------------------
+  router.patch("/leads/:id", async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const { leadStatus, notes } = req.body as {
+        leadStatus?: string;
+        notes?: string;
+      };
+
+      const validStatuses = ["new", "verified", "promoted_partner", "skipped"];
+      if (leadStatus && !validStatuses.includes(leadStatus)) {
+        res.status(400).json({ error: `leadStatus must be one of: ${validStatuses.join(", ")}` });
+        return;
+      }
+
+      const updates: Record<string, unknown> = { actionedAt: new Date() };
+      if (leadStatus !== undefined) updates.leadStatus = leadStatus;
+      if (notes !== undefined) updates.notes = notes;
+
+      const updated = await db
+        .update(cityBusinessLeads)
+        .set(updates)
+        .where(
+          sql`${cityBusinessLeads.id} = ${id} AND ${cityBusinessLeads.companyId} = ${COMPANY_ID}`,
+        )
+        .returning();
+
+      if (updated.length === 0) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      res.json({ lead: updated[0] });
+    } catch (err) {
+      logger.error({ err }, "cities patch-lead failed");
+      res.status(500).json({ error: "Failed to update lead" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /leads/:id/promote-partner — return pre-fill payload for partner form
+  // -------------------------------------------------------------------------
+
+  // Category → partner industry mapping (mirrors deriveIndustry in city-business-finder)
+  const CATEGORY_TO_INDUSTRY: Record<string, string> = {
+    home_services: "home_services",
+    handyman: "home_services",
+    plumber: "home_services",
+    electrician: "home_services",
+    contractor: "home_services",
+    dining: "dining",
+    restaurant: "dining",
+    fitness: "fitness",
+    gym: "fitness",
+    wellness: "wellness",
+    salon: "salon",
+    auto: "auto",
+    healthcare: "healthcare",
+    legal: "legal",
+    local_business: "retail",
+  };
+
+  router.post("/leads/:id/promote-partner", async (req, res) => {
+    try {
+      const id = req.params.id as string;
+
+      const rows = await db
+        .select()
+        .from(cityBusinessLeads)
+        .where(
+          sql`${cityBusinessLeads.id} = ${id} AND ${cityBusinessLeads.companyId} = ${COMPANY_ID}`,
+        )
+        .limit(1);
+
+      const lead = rows[0] as CityBusinessLead | undefined;
+      if (!lead) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      // Derive city + region from the city slug (slug is like "austin-tx-us")
+      const slugParts = lead.citySlug.split("-");
+      const country = slugParts[slugParts.length - 1]?.toUpperCase() ?? "US";
+      const region =
+        slugParts.length >= 3 ? slugParts[slugParts.length - 2]?.toUpperCase() : undefined;
+      const cityName = slugParts
+        .slice(0, slugParts.length - (region ? 2 : 1))
+        .join(" ");
+      const location = [cityName, region]
+        .filter(Boolean)
+        .map((s) => (s as string).charAt(0).toUpperCase() + (s as string).slice(1))
+        .join(", ");
+
+      const category = lead.category ?? "local_business";
+      const industry =
+        CATEGORY_TO_INDUSTRY[category.toLowerCase()] ?? deriveIndustry(category);
+
+      const preFill = {
+        name: lead.name,
+        website: lead.website ?? "",
+        phone: lead.phone ?? "",
+        address: lead.address ?? "",
+        industry,
+        location,
+        description: lead.rawSnippet
+          ? `${lead.name} — found via ${lead.source} search for "${lead.topic}" in ${location}.`
+          : "",
+        contactEmail: "",
+      };
+
+      // Mark lead as verified (about to be promoted)
+      await db
+        .update(cityBusinessLeads)
+        .set({ leadStatus: "verified", actionedAt: new Date() })
+        .where(sql`${cityBusinessLeads.id} = ${id}`);
+
+      res.json({ preFill, lead });
+    } catch (err) {
+      logger.error({ err }, "cities promote-partner failed");
+      res.status(500).json({ error: "Failed to promote lead" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /leads/:id/generate-content — seed a content item from lead data
+  // -------------------------------------------------------------------------
+  router.post("/leads/:id/generate-content", async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const { personalityId = "cipher", contentType = "blog_post" } = req.body as {
+        personalityId?: string;
+        contentType?: string;
+      };
+
+      const rows = await db
+        .select()
+        .from(cityBusinessLeads)
+        .where(
+          sql`${cityBusinessLeads.id} = ${id} AND ${cityBusinessLeads.companyId} = ${COMPANY_ID}`,
+        )
+        .limit(1);
+
+      const lead = rows[0] as CityBusinessLead | undefined;
+      if (!lead) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      // Build topic from lead data
+      const cityLabel = lead.citySlug
+        .split("-")
+        .slice(0, -1) // drop country suffix
+        .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join(" ");
+      const topic = `${lead.topic} services in ${cityLabel}`;
+
+      // Build context from lead data
+      const contextSnippet = [
+        `Business: ${lead.name}`,
+        lead.category ? `Category: ${lead.category}` : null,
+        lead.address ? `Location: ${lead.address}` : null,
+        lead.rating ? `Rating: ${lead.rating} stars` : null,
+        lead.reviewCount ? `Reviews: ${lead.reviewCount}` : null,
+        lead.website ? `Website: ${lead.website}` : null,
+        lead.rawSnippet ? `Context: ${lead.rawSnippet.slice(0, 200)}` : null,
+      ]
+        .filter(Boolean)
+        .join(". ");
+
+      const [contentItem] = await db
+        .insert(contentItems)
+        .values({
+          companyId: COMPANY_ID,
+          personalityId,
+          contentType,
+          platform: contentType === "blog_post" ? "blog" : "twitter",
+          topic,
+          content: "",
+          status: "pending",
+          contextQuery: contextSnippet,
+          brand: "cd",
+        })
+        .returning();
+
+      res.json({ contentItem, topic });
+    } catch (err) {
+      logger.error({ err }, "cities generate-content failed");
+      res.status(500).json({ error: "Failed to generate content" });
     }
   });
 

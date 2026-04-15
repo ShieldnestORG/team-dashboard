@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { Link } from "@/lib/router";
@@ -66,10 +67,43 @@ export function Partners() {
 
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [prefillForm, setPrefillForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Partners" }]);
   }, [setBreadcrumbs]);
+
+  useEffect(() => {
+    const prefillParam = searchParams.get("prefill");
+    if (!prefillParam) return;
+    try {
+      const preFill = JSON.parse(atob(prefillParam)) as {
+        name?: string;
+        website?: string;
+        industry?: string;
+        location?: string;
+        description?: string;
+        contactEmail?: string;
+        phone?: string;
+        address?: string;
+      };
+      setPrefillForm({
+        ...EMPTY_FORM,
+        name: preFill.name ?? "",
+        website: preFill.website ?? "",
+        industry: preFill.industry ?? "other",
+        location: preFill.location ?? "",
+        description: preFill.description ?? "",
+        contactEmail: preFill.contactEmail ?? "",
+        phone: preFill.phone ?? "",
+        address: preFill.address ?? "",
+      });
+      setShowCreate(true);
+    } catch {
+      // ignore malformed param
+    }
+  }, [searchParams]);
 
   // ---- Queries & Mutations ------------------------------------------------
 
@@ -183,12 +217,22 @@ export function Partners() {
 
       {/* Create Form */}
       {showCreate && (
-        <PartnerForm
-          initial={EMPTY_FORM}
-          onSave={handleCreate}
-          onCancel={() => setShowCreate(false)}
-          saving={createMutation.isPending}
-        />
+        <>
+          {searchParams.get("prefill") && (
+            <div className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded p-2">
+              Pre-filled from city business lead — verify all details before saving.
+            </div>
+          )}
+          <PartnerForm
+            initial={prefillForm}
+            onSave={handleCreate}
+            onCancel={() => {
+              setShowCreate(false);
+              setPrefillForm(EMPTY_FORM);
+            }}
+            saving={createMutation.isPending}
+          />
+        </>
       )}
 
       {/* Partner Table */}
