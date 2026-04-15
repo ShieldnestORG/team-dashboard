@@ -32,39 +32,42 @@ interface ContentJobDef {
   topicPicker?: "intel-alert" | "chain-metrics" | "xrp-focus" | "comparison" | "tokns-promo";
   useContentBridge?: boolean;
   publishTarget?: PublishTarget;
+  // brand controls which X account / publish target this content belongs to
+  brand?: string;
 }
 
 const JOB_DEFS: ContentJobDef[] = [
   // Regular content crons — ownerAgent matches the personality agent responsible
-  { name: "content:twitter",  schedule: "0 8,11,14,17,20,22 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet", useContentBridge: true },
-  { name: "content:blog",     schedule: "0 10 * * 2,4",        personality: "cipher", ownerAgent: "cipher", contentType: "blog_post", publishTarget: "all" },
-  { name: "content:linkedin", schedule: "0 14 * * 1-5",        personality: "prism",  ownerAgent: "prism",  contentType: "linkedin" },
-  { name: "content:discord",  schedule: "0 10,16,21 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "discord" },
-  { name: "content:bluesky",  schedule: "0 14,17,20 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "bluesky" },
-  { name: "content:reddit",   schedule: "0 15 * * *",          personality: "cipher", ownerAgent: "cipher", contentType: "reddit" },
+  // brand controls which X account / publish target this content belongs to
+  { name: "content:twitter",  schedule: "0 8,11,14,17,20,22 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet",      useContentBridge: true, brand: "cd" },
+  { name: "content:blog",     schedule: "0 10 * * 2,4",        personality: "cipher", ownerAgent: "cipher", contentType: "blog_post",   publishTarget: "all",  brand: "cd" },
+  { name: "content:linkedin", schedule: "0 14 * * 1-5",        personality: "prism",  ownerAgent: "prism",  contentType: "linkedin",                          brand: "cd" },
+  { name: "content:discord",  schedule: "0 10,16,21 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "discord",                           brand: "cd" },
+  { name: "content:bluesky",  schedule: "0 14,17,20 * * *",    personality: "spark",  ownerAgent: "spark",  contentType: "bluesky",                           brand: "cd" },
+  { name: "content:reddit",   schedule: "0 15 * * *",          personality: "cipher", ownerAgent: "cipher", contentType: "reddit",                            brand: "cd" },
   // Video script generation — text agents write scripts for visual content
-  { name: "content:video:trend",  schedule: "0 11,14,18 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "video_script" },
-  { name: "content:video:market", schedule: "0 9 * * 1-5",      personality: "prism",  ownerAgent: "prism",  contentType: "video_script" },
-  { name: "content:video:weekly", schedule: "0 10 * * 6",       personality: "prism",  ownerAgent: "prism",  contentType: "video_script" },
+  { name: "content:video:trend",  schedule: "0 11,14,18 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "video_script", brand: "cd" },
+  { name: "content:video:market", schedule: "0 9 * * 1-5",      personality: "prism",  ownerAgent: "prism",  contentType: "video_script", brand: "cd" },
+  { name: "content:video:weekly", schedule: "0 10 * * 6",       personality: "prism",  ownerAgent: "prism",  contentType: "video_script", brand: "cd" },
   // Intel-alert content — reactive, triggered by hot intel signals
-  { name: "content:intel-alert:twitter",  schedule: "0 */3 * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet",   topicPicker: "intel-alert", useContentBridge: true },
-  { name: "content:intel-alert:bluesky",  schedule: "0 */2 * * *",  personality: "spark", ownerAgent: "spark", contentType: "bluesky", topicPicker: "intel-alert" },
+  { name: "content:intel-alert:twitter",  schedule: "0 */3 * * *", personality: "blaze", ownerAgent: "blaze", contentType: "tweet",   topicPicker: "intel-alert", useContentBridge: true, brand: "cd" },
+  { name: "content:intel-alert:bluesky",  schedule: "0 */2 * * *",  personality: "spark", ownerAgent: "spark", contentType: "bluesky", topicPicker: "intel-alert",                        brand: "cd" },
   // TX chain daily — daily chain metrics article published to ShieldNest
-  { name: "content:tx-chain-daily", schedule: "0 8 * * *", personality: "prism", ownerAgent: "prism", contentType: "blog_post", topicPicker: "chain-metrics", publishTarget: "sn" },
-  // XRP-focused content — Vanguard personality (institutional XRP analyst)
-  { name: "content:xrp:blog",     schedule: "0 9 * * 1,3,5",      personality: "vanguard", ownerAgent: "vanguard", contentType: "blog_post", topicPicker: "xrp-focus", publishTarget: "all" },
-  { name: "content:xrp:twitter",  schedule: "0 11,16,19 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "xrp-focus", useContentBridge: true },
-  { name: "content:xrp:linkedin", schedule: "0 13 * * 2,4",       personality: "vanguard", ownerAgent: "vanguard", contentType: "linkedin",  topicPicker: "xrp-focus" },
-  { name: "content:xrp-alert:twitter", schedule: "0 */4 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "intel-alert", useContentBridge: true },
-  // Comparison blogs — Forge personality (AEO-optimized TX vs L1s)
-  { name: "content:comparison:blog",   schedule: "0 10 * * 3,6",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "comparison", publishTarget: "all" },
-  // AEO-optimized general content — Forge personality
-  { name: "content:aeo:blog",          schedule: "0 11 * * 1,4",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", publishTarget: "all" },
-  // tokns.fi promotional blogs — Forge for structured content
-  { name: "content:tokns-promo:blog",  schedule: "0 14 * * 2,5",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "tokns-promo", publishTarget: "all" },
+  { name: "content:tx-chain-daily", schedule: "0 8 * * *", personality: "prism", ownerAgent: "prism", contentType: "blog_post", topicPicker: "chain-metrics", publishTarget: "sn", brand: "tx" },
+  // XRP-focused content — Vanguard personality (institutional XRP analyst) → tokns brand
+  { name: "content:xrp:blog",     schedule: "0 9 * * 1,3,5",      personality: "vanguard", ownerAgent: "vanguard", contentType: "blog_post", topicPicker: "xrp-focus", publishTarget: "all", brand: "tokns" },
+  { name: "content:xrp:twitter",  schedule: "0 11,16,19 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "xrp-focus", useContentBridge: true,           brand: "tokns" },
+  { name: "content:xrp:linkedin", schedule: "0 13 * * 2,4",       personality: "vanguard", ownerAgent: "vanguard", contentType: "linkedin",  topicPicker: "xrp-focus",                                    brand: "tokns" },
+  { name: "content:xrp-alert:twitter", schedule: "0 */4 * * *",   personality: "vanguard", ownerAgent: "vanguard", contentType: "tweet",     topicPicker: "intel-alert", useContentBridge: true,          brand: "tokns" },
+  // Comparison blogs — Forge personality (AEO-optimized TX vs L1s) → tx brand
+  { name: "content:comparison:blog",   schedule: "0 10 * * 3,6",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "comparison", publishTarget: "all", brand: "tx" },
+  // AEO-optimized general content — Forge personality → cd brand
+  { name: "content:aeo:blog",          schedule: "0 11 * * 1,4",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", publishTarget: "all",      brand: "cd" },
+  // tokns.fi promotional blogs — Forge for structured content → tokns brand
+  { name: "content:tokns-promo:blog",  schedule: "0 14 * * 2,5",  personality: "forge", ownerAgent: "forge", contentType: "blog_post", topicPicker: "tokns-promo", publishTarget: "all", brand: "tokns" },
   // Slideshow blogs — animated presentation-style posts (reuses YouTube slide renderer)
-  { name: "content:slideshow-blog:cd", schedule: "0 12 * * 3,6",  personality: "cipher", ownerAgent: "cipher", contentType: "slideshow_blog", publishTarget: "cd" },
-  { name: "content:slideshow-blog:sn", schedule: "0 13 * * 2,5",  personality: "prism",  ownerAgent: "prism",  contentType: "slideshow_blog", publishTarget: "sn" },
+  { name: "content:slideshow-blog:cd", schedule: "0 12 * * 3,6",  personality: "cipher", ownerAgent: "cipher", contentType: "slideshow_blog", publishTarget: "cd", brand: "cd" },
+  { name: "content:slideshow-blog:sn", schedule: "0 13 * * 2,5",  personality: "prism",  ownerAgent: "prism",  contentType: "slideshow_blog", publishTarget: "sn", brand: "tx" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -541,6 +544,7 @@ export function startContentCrons(db: Db) {
             personalityId: def.personality,
             contentType: def.contentType,
             topic: topicPrompt,
+            brand: def.brand,
           });
           logger.info(
             { job: def.name, ownerAgent: def.ownerAgent, contentId: result.contentId, topic: topicDisplay, isAlert: !!def.topicPicker },

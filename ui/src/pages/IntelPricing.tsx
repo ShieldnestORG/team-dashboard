@@ -112,7 +112,44 @@ export function IntelPricing() {
         </div>
       )}
 
-      <footer className="mt-12 text-center text-sm text-muted-foreground">
+      {/* Cross-sell — directory listings */}
+      <div className="mt-10">
+        <Card className="border-muted bg-muted/30">
+          <CardContent className="flex flex-col items-start gap-2 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Also Available — Directory Listing</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Get your company listed in the AI/ML, Crypto, DeFi, and DevTools directory
+                with featured placement and AEO content mentions.
+              </p>
+            </div>
+            <a href="/directory-pricing" className="shrink-0 text-sm underline">
+              See listing plans &rarr;
+            </a>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Enterprise CTA */}
+      <Card className="mt-4 border-muted">
+        <CardContent className="pt-5 text-center">
+          <p className="font-medium">Need Enterprise or custom terms?</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            High-volume data access, SLA guarantees, white-label options, and custom integrations &mdash; let&rsquo;s talk.
+          </p>
+          <a
+            href={
+              (import.meta as unknown as { env: Record<string, string> }).env.VITE_ENTERPRISE_BOOKING_URL ||
+              "mailto:hello@coherencedaddy.com"
+            }
+            className="mt-3 inline-block text-sm underline"
+          >
+            Talk to us &rarr;
+          </a>
+        </CardContent>
+      </Card>
+
+      <footer className="mt-8 text-center text-sm text-muted-foreground">
         <p>
           All plans include access to <code>/api/intel/*</code> — companies, search,
           prices, news, Twitter, GitHub, Reddit, chain metrics.

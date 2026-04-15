@@ -8,14 +8,17 @@
 
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
+import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { intelCompanies, partnerCompanies } from "@paperclipai/db";
 import {
   directoryListingsService,
   LISTING_TIERS,
   type ListingTierSlug,
 } from "../services/directory-listings.js";
-import { verifyStripeSignature } from "../services/stripe-client.js";
+import { verifyStripeSignature, stripeRequest } from "../services/stripe-client.js";
 import { logger } from "../middleware/logger.js";
+import { sendTransactional } from "../services/email-templates.js";
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.actor?.type !== "board") {
@@ -216,7 +219,213 @@ export function directoryListingsRoutes(db: Db): Router {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // POST /api/directory-listings/public/enroll — public self-serve enrollment
+  // No auth required. Body: { companySlug, email, tier, contactName }
+  // ---------------------------------------------------------------------------
+  router.post("/public/enroll", async (req, res) => {
+    try {
+      const companySlug = typeof req.body?.companySlug === "string"
+        ? req.body.companySlug.trim().toLowerCase()
+        : "";
+      const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+      const tier = req.body?.tier as ListingTierSlug;
+      const contactName = typeof req.body?.contactName === "string"
+        ? req.body.contactName.trim()
+        : "";
+
+      if (!companySlug) {
+        res.status(400).json({ error: "companySlug is required" });
+        return;
+      }
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Valid email is required" });
+        return;
+      }
+      if (!tier || !(tier in LISTING_TIERS)) {
+        res.status(400).json({ error: "tier must be one of: featured, verified, boosted" });
+        return;
+      }
+
+      // Look up or create a stub company
+      const existing = await db
+        .select()
+        .from(intelCompanies)
+        .where(eq(intelCompanies.slug, companySlug))
+        .limit(1);
+
+      let companyId: number;
+      if (existing.length > 0) {
+        companyId = existing[0].id;
+        // Update contact email/name if missing
+        const patch: Record<string, unknown> = {};
+        if (!existing[0].contactEmail && email) patch.contactEmail = email;
+        if (!existing[0].contactName && contactName) patch.contactName = contactName;
+        if (Object.keys(patch).length > 0) {
+          await db.update(intelCompanies).set(patch).where(eq(intelCompanies.id, companyId));
+        }
+      } else {
+        // Create minimal stub
+        const inserted = await db
+          .insert(intelCompanies)
+          .values({
+            slug: companySlug,
+            name: contactName || companySlug,
+            category: "Unknown",
+            directory: "crypto",
+            description: "",
+            contactEmail: email,
+            contactName: contactName || null,
+            contactSource: "self_serve",
+          })
+          .returning({ id: intelCompanies.id });
+        companyId = inserted[0].id;
+      }
+
+      // Ensure contact email is set before checkout (required by createCheckoutSession)
+      await db
+        .update(intelCompanies)
+        .set({ contactEmail: email, contactSource: "self_serve" })
+        .where(eq(intelCompanies.id, companyId));
+
+      // Create Stripe Checkout session (inserts checkout_sent listing row)
+      const { url, listingId } = await svc.createCheckoutSession({ companyId, tier });
+
+      logger.info({ companySlug, tier, listingId }, "directory-listings: public enroll checkout created");
+      res.json({ checkoutUrl: url, sessionId: listingId });
+    } catch (err) {
+      logger.error({ err }, "directory-listings: public enroll failed");
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   return router;
+}
+
+// ---------------------------------------------------------------------------
+// Partner Network webhook handler (source = 'partner_network')
+// Called inline from directoryListingsWebhookRoutes below.
+// ---------------------------------------------------------------------------
+async function handlePartnerStripeEvent(
+  db: Db,
+  event: { type: string; data: { object: Record<string, unknown> } },
+): Promise<void> {
+  const obj = event.data.object;
+  logger.info({ type: event.type }, "partner-network: stripe event");
+
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = obj as {
+        id: string;
+        customer?: string;
+        subscription?: string;
+        metadata?: Record<string, string>;
+      };
+      const partnerSlug = session.metadata?.partner_slug;
+      if (!partnerSlug) {
+        logger.warn({ sessionId: session.id }, "partner-network: missing partner_slug in metadata");
+        return;
+      }
+
+      // Fetch subscription for period_end.
+      let currentPeriodEnd: Date | null = null;
+      if (session.subscription) {
+        try {
+          const sub = await stripeRequest<{ current_period_end: number }>(
+            "GET",
+            `/subscriptions/${session.subscription}`,
+          );
+          currentPeriodEnd = new Date(sub.current_period_end * 1000);
+        } catch (err) {
+          logger.warn({ err }, "partner-network: subscription fetch failed");
+        }
+      }
+
+      await db
+        .update(partnerCompanies)
+        .set({
+          stripeCustomerId: session.customer ?? undefined,
+          stripeSubscriptionId: session.subscription ?? undefined,
+          subscriptionStatus: "active",
+          currentPeriodEnd,
+          status: "active",
+          updatedAt: new Date(),
+        })
+        .where(eq(partnerCompanies.slug, partnerSlug));
+
+      logger.info({ partnerSlug, subscription: session.subscription }, "partner-network: subscription activated");
+
+      // Send partner welcome email if we have a contact email
+      {
+        const rows = await db
+          .select()
+          .from(partnerCompanies)
+          .where(eq(partnerCompanies.slug, partnerSlug))
+          .limit(1);
+        const partner = rows[0];
+        if (partner?.contactEmail) {
+          const baseUrl = process.env.PAPERCLIP_PUBLIC_URL ?? "https://api.coherencedaddy.com";
+          const dashUrl = `${baseUrl}/partner-dashboard/${partnerSlug}`;
+          await sendTransactional("partner-welcome", partner.contactEmail, {
+            recipientEmail: partner.contactEmail,
+            recipientName: partner.contactName ?? undefined,
+            companyName: partner.name,
+            partnerDashboardUrl: dashUrl,
+            partnerToken: partner.dashboardToken ?? undefined,
+          });
+        }
+      }
+      break;
+    }
+
+    case "invoice.payment_succeeded":
+    case "invoice.paid": {
+      const inv = obj as { subscription?: string; period_end?: number };
+      if (!inv.subscription) return;
+      const rows = await db
+        .select({ id: partnerCompanies.id, currentPeriodEnd: partnerCompanies.currentPeriodEnd })
+        .from(partnerCompanies)
+        .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription))
+        .limit(1);
+      if (rows.length === 0) return;
+      await db
+        .update(partnerCompanies)
+        .set({
+          subscriptionStatus: "active",
+          currentPeriodEnd: inv.period_end
+            ? new Date(inv.period_end * 1000)
+            : (rows[0].currentPeriodEnd ?? undefined),
+          updatedAt: new Date(),
+        })
+        .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription));
+      break;
+    }
+
+    case "invoice.payment_failed": {
+      const inv = obj as { subscription?: string };
+      if (!inv.subscription) return;
+      await db
+        .update(partnerCompanies)
+        .set({ subscriptionStatus: "past_due", updatedAt: new Date() })
+        .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription));
+      break;
+    }
+
+    case "customer.subscription.deleted": {
+      const sub = obj as { id?: string };
+      if (!sub.id) return;
+      await db
+        .update(partnerCompanies)
+        .set({
+          subscriptionStatus: "canceled",
+          status: "trial",
+          updatedAt: new Date(),
+        })
+        .where(eq(partnerCompanies.stripeSubscriptionId, sub.id));
+      logger.info({ subscriptionId: sub.id }, "partner-network: subscription canceled");
+      break;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -255,8 +464,15 @@ export function directoryListingsWebhookRoutes(db: Db): Router {
         type: string;
         data: { object: Record<string, unknown> };
       };
-      // Only handle events tagged with our source metadata.
+      // Route to the right handler based on metadata.source.
       const src = (event.data.object as { metadata?: Record<string, string> })?.metadata?.source;
+
+      if (src === "partner_network") {
+        await handlePartnerStripeEvent(db, event);
+        res.json({ received: true });
+        return;
+      }
+
       if (event.type === "checkout.session.completed" && src !== "directory_listings") {
         // Let other webhook handlers (intel-billing) take it.
         res.json({ received: true, ignored: true });

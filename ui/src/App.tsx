@@ -43,11 +43,13 @@ import { ContentReview } from "./pages/ContentReview";
 import { Structure } from "./pages/Structure";
 import { Intel } from "./pages/Intel";
 import { KnowledgeGraph } from "./pages/KnowledgeGraph";
+import { CityCollector } from "./pages/CityCollector";
 import { RepoUpdates } from "./pages/RepoUpdates";
 import { AutomationHealth } from "./pages/AutomationHealth";
 import { IntelPricing } from "./pages/IntelPricing";
 import { IntelBillingSuccess } from "./pages/IntelBillingSuccess";
 import { IntelBilling } from "./pages/IntelBilling";
+import { DirectoryPricing } from "./pages/DirectoryPricing";
 import { Discord } from "./pages/Discord";
 import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
@@ -55,6 +57,7 @@ import { AgentOps } from "./pages/AgentOps";
 import { ApiDashboard } from "./pages/ApiDashboard";
 import { YouTubePipeline } from "./pages/YouTubePipeline";
 import { YouTubeVideos } from "./pages/YouTubeVideos";
+import { MarketingPushes } from "./pages/MarketingPushes";
 import { Partners } from "./pages/Partners";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
@@ -198,6 +201,7 @@ function boardRoutes() {
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
       <Route path="structure" element={<Structure />} />
+      <Route path="marketing-pushes" element={<MarketingPushes />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
@@ -207,6 +211,7 @@ function boardRoutes() {
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="intel-billing" element={<IntelBilling />} />
       <Route path="knowledge-graph" element={<KnowledgeGraph />} />
+      <Route path="cities" element={<CityCollector />} />
       <Route path="repo-updates" element={<RepoUpdates />} />
       <Route path="automation-health" element={<AutomationHealth />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
@@ -337,6 +342,7 @@ export function App() {
         <Route path="invite/:token" element={<InviteLandingPage />} />
         <Route path="partner-dashboard/:slug" element={<PartnerDashboard />} />
         <Route path="intel/pricing" element={<IntelPricing />} />
+        <Route path="directory-pricing" element={<DirectoryPricing />} />
         <Route path="billing/success" element={<IntelBillingSuccess />} />
 
         <Route element={<CloudAccessGate />}>

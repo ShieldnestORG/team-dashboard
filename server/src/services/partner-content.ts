@@ -2,6 +2,7 @@ import { eq, and, sql, inArray, asc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { getCityContextForPartner } from "./city-collector.js";
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID ||
@@ -41,13 +42,49 @@ const INDUSTRY_KEYWORDS: Record<string, string[]> = {
   ],
 };
 
+// Brand → allowed industry set. undefined means no restriction.
+const BRAND_INDUSTRY_ALLOW: Record<string, string[] | undefined> = {
+  cd: undefined, // all partners
+  directory: undefined, // all partners
+  tokns: ["tech", "auto", "retail"], // crypto/fintech-adjacent — keep partners relevant; finance-type industries
+  tx: ["tech", "auto", "retail"],
+  shieldnest: ["tech", "education", "realestate"],
+};
+
+// Tag-level filter for brands with tighter restrictions.
+// Partners whose `industry` field maps to a conceptually matching tag set.
+const BRAND_INDUSTRY_TAGS: Record<string, string[]> = {
+  tokns: ["crypto", "fintech", "defi", "blockchain", "nft", "tech", "auto", "retail"],
+  tx: ["crypto", "fintech", "defi", "blockchain", "nft", "tech"],
+  shieldnest: ["tech", "security", "privacy", "devtools", "saas", "education"],
+};
+
+/**
+ * Returns true if a partner's industry is allowed for the given brand.
+ * - cd / directory / default: all partners pass
+ * - tokns / tx: only tech/finance-adjacent industries
+ * - shieldnest: only tech/security-adjacent industries
+ */
+function isBrandMatch(industry: string, brand?: string): boolean {
+  if (!brand || brand === "cd" || brand === "directory") return true;
+
+  const allowed = BRAND_INDUSTRY_TAGS[brand];
+  if (!allowed) return true; // unknown brand → allow all
+
+  const industryLower = industry.toLowerCase();
+  // Direct industry name match or keyword overlap
+  return allowed.some((tag) => industryLower.includes(tag) || tag.includes(industryLower));
+}
+
 /**
  * Find active partners whose industry matches the given topic keywords.
+ * When `brand` is provided, further restrict to partners relevant to that brand.
  * Returns least-mentioned partners first for fair rotation.
  */
 export async function findRelevantPartners(
   db: Db,
   topic: string,
+  brand?: string,
   limit = 2,
 ) {
   const topicLower = topic.toLowerCase();
@@ -75,16 +112,23 @@ export async function findRelevantPartners(
       ),
     )
     .orderBy(asc(partnerCompanies.contentMentions))
-    .limit(limit);
+    .limit(limit * 4); // over-fetch so brand filter has candidates to work with
 
-  return partners;
+  // Apply brand filter in-memory (industry is a plain text column, not jsonb)
+  const filtered = brand
+    ? partners.filter((p) => isBrandMatch(p.industry, brand))
+    : partners;
+
+  return filtered.slice(0, limit);
 }
 
 /**
  * Build a partner mention context string for injection into content prompts.
+ * `brand` is accepted for future per-brand customisation of the CTA text.
  */
 export function buildPartnerContext(
   partners: (typeof partnerCompanies.$inferSelect)[],
+  brand?: string, // eslint-disable-line @typescript-eslint/no-unused-vars — reserved for future use
 ): string {
   if (partners.length === 0) return "";
 
@@ -144,28 +188,40 @@ export async function trackPartnerMention(db: Db, partnerSlug: string) {
  * Main entry point: find relevant partners for a topic, build the prompt
  * injection context, and track mentions. Returns empty string if no
  * partners match.
+ *
+ * @param brand - optional brand slug ('cd' | 'tokns' | 'tx' | 'shieldnest' | 'directory')
+ *                When provided, restricts partners to those relevant to that brand's audience.
  */
 export async function getPartnerInjection(
   db: Db,
   topic: string,
+  brand?: string,
 ): Promise<string> {
   try {
-    const partners = await findRelevantPartners(db, topic);
+    const partners = await findRelevantPartners(db, topic, brand);
     if (partners.length === 0) return "";
 
-    const context = buildPartnerContext(partners);
+    const context = buildPartnerContext(partners, brand);
 
     // Track mentions for each partner
     for (const p of partners) {
       await trackPartnerMention(db, p.slug);
     }
 
+    // Enrich with city intelligence for the first located partner that has
+    // a collected city row. Keeps the prompt grounded in real local signals.
+    let cityContext: string | null = null;
+    for (const p of partners) {
+      cityContext = await getCityContextForPartner(db, p.location).catch(() => null);
+      if (cityContext) break;
+    }
+
     logger.info(
-      { partnerSlugs: partners.map((p) => p.slug), topic },
+      { partnerSlugs: partners.map((p) => p.slug), topic, brand, hasCityContext: Boolean(cityContext) },
       "Injected partner context into content prompt",
     );
 
-    return context;
+    return cityContext ? `${context}\n\n${cityContext}` : context;
   } catch (err) {
     logger.error({ err, topic }, "Failed to build partner injection context");
     return "";

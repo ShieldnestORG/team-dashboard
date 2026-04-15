@@ -2,6 +2,7 @@ import { eq, and } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 
 // ---------------------------------------------------------------------------
 // Blog Publisher — multi-target publishing to coherencedaddy.com + shieldnest.io
@@ -102,7 +103,7 @@ export async function generateBlogPostOllama(signal: {
   type: "crypto" | "ai-agents" | "tools" | "lifestyle";
   topic: string;
   details: string;
-}, intelContext = ""): Promise<BlogPost> {
+}, intelContext = "", brand?: string): Promise<BlogPost> {
   const category = signal.type;
   const relatedTools = TOOL_LINKS[category] || TOOL_LINKS.tools!;
   const toolLinksStr = relatedTools
@@ -111,8 +112,10 @@ export async function generateBlogPostOllama(signal: {
     .join("\n");
 
   const contextBlock = intelContext ? `\nUse this real-time data and analysis to make the article factual and data-backed:\n${intelContext}\n` : "";
+  const brandBlock = buildBrandSystemPromptBlock(brand ?? "cd");
+  const currentYear = new Date().getFullYear();
 
-  const prompt = `You are a content writer for Coherence Daddy, a faith-driven technology ecosystem. Write an SEO-optimized blog post about crypto, AI, tech tools, personal finance, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags only). No markdown.
+  const prompt = `You are a content writer for Coherence Daddy, a faith-driven technology ecosystem. Write an SEO-optimized blog post about crypto, AI, tech tools, personal finance, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags only). No markdown. Frame this content as why Answer Engine Optimization (AEO) outperforms traditional SEO in ${currentYear}. Use the AEO angle — how being findable in AI-powered directories matters more than Google rankings.${brandBlock}
 
 Write a blog post (600-800 words) about: "${signal.topic}"
 

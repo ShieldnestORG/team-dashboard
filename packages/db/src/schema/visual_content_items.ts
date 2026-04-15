@@ -18,6 +18,9 @@ export const visualContentItems = pgTable(
     reviewComment: text("review_comment"),
     jobId: text("job_id"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    // brand controls which X account / publish target this visual content belongs to
+    // Valid: 'cd' | 'tokns' | 'tx' | 'shieldnest' | 'directory' | 'partners'
+    brand: text("brand").notNull().default("cd"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

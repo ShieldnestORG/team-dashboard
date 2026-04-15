@@ -21,6 +21,11 @@ export const contentItems = pgTable(
     clickCount: integer("click_count").notNull().default(0),
     engagementScore: numeric("engagement_score").notNull().default("0"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    // brand controls which X account / publish target this content belongs to
+    // Valid: 'cd' | 'tokns' | 'tx' | 'shieldnest' | 'directory' | 'partners'
+    brand: text("brand").notNull().default("cd"),
+    // campaign_id links this item to a campaign (nullable)
+    campaignId: text("campaign_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
