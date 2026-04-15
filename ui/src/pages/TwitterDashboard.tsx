@@ -138,21 +138,17 @@ interface ExtensionBotStatus {
   ageSeconds: number | null;
 }
 
-interface RateLimitBudgetItem {
-  used: number;
-  limit: number;
-}
-
 interface RateLimitStatus {
   endpoints: Record<string, unknown>;
   dailyBudget: {
-    posts: RateLimitBudgetItem;
-    likes: RateLimitBudgetItem;
-    follows: RateLimitBudgetItem;
-    replies: RateLimitBudgetItem;
+    spentUsd: number;
+    capUsd: number;
+    repliesSent: number;
+    maxReplies: number;
+    readCount: number;
   };
-  multiplier: number;
   panicMode: boolean;
+  multiplier?: number;
 }
 
 interface EngagementData {
@@ -278,10 +274,6 @@ export function TwitterDashboard() {
     return <EmptyState icon={Bird} message="Select a company to view the Twitter dashboard." />;
   }
 
-  if (queueLoading) {
-    return <PageSkeleton variant="dashboard" />;
-  }
-
   const queue = queueData?.result?.data;
   const targets = targetsData?.result?.data?.targets ?? [];
   const analytics = analyticsData?.result?.data?.totals;
@@ -309,7 +301,6 @@ export function TwitterDashboard() {
 
         {/* ── Overview Tab ──────────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-6">
-          {/* Posting health diagnostics */}
           <PostingHealthCard
             pluginHealth={pluginHealthData}
             config={twitterConfig}
@@ -377,18 +368,30 @@ export function TwitterDashboard() {
                 Daily Rate Limits
               </h2>
               <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
-                {Object.entries(rateLimitData.dailyBudget).map(([key, val]) => {
-                  const remaining = val.limit - val.used;
-                  return (
-                    <MetricCard
-                      key={key}
-                      icon={Gauge}
-                      value={remaining}
-                      label={`${key.charAt(0).toUpperCase() + key.slice(1)} Left`}
-                      description={`${val.used}/${val.limit} used`}
-                    />
-                  );
-                })}
+                <MetricCard
+                  icon={Gauge}
+                  value={`$${rateLimitData.dailyBudget.spentUsd.toFixed(3)}`}
+                  label="Spent Today"
+                  description={`cap $${rateLimitData.dailyBudget.capUsd}`}
+                />
+                <MetricCard
+                  icon={Send}
+                  value={rateLimitData.dailyBudget.repliesSent}
+                  label="Replies Sent"
+                  description={`max ${rateLimitData.dailyBudget.maxReplies}/day`}
+                />
+                <MetricCard
+                  icon={BarChart3}
+                  value={rateLimitData.dailyBudget.readCount}
+                  label="Reads Today"
+                  description="search + read calls"
+                />
+                <MetricCard
+                  icon={AlertTriangle}
+                  value={rateLimitData.panicMode ? "ON" : "OFF"}
+                  label="Panic Mode"
+                  description={rateLimitData.panicMode ? "50% caps active" : "normal operation"}
+                />
               </div>
             </div>
           )}
@@ -633,7 +636,7 @@ export function TwitterDashboard() {
         {/* ── Settings Tab ──────────────────────────────────────────────── */}
         <TabsContent value="settings" className="space-y-6">
           <XApiToggle companyId={selectedCompanyId} />
-          <RateMultiplierSetting currentMultiplier={rateLimitData?.multiplier} />
+          <RateMultiplierSetting />
           <PostingSettings />
         </TabsContent>
       </Tabs>
@@ -795,6 +798,8 @@ function PostingHealthCard({
   lastPostAt?: string;
   onNavigateTab: (tab: string) => void;
 }) {
+  if (!connection) return null;
+
   const windowStart = (config?.postingWindowStart as number) ?? 6;
   const windowEnd = (config?.postingWindowEnd as number) ?? 24;
   const minGap = (config?.minPostGapMinutes as number) ?? 30;
@@ -846,10 +851,10 @@ function PostingHealthCard({
       key: "budget",
       label: "Daily budget",
       passed: rateLimitData
-        ? rateLimitData.dailyBudget.posts.used < rateLimitData.dailyBudget.posts.limit
+        ? rateLimitData.dailyBudget.spentUsd < rateLimitData.dailyBudget.capUsd
         : true,
       detail: rateLimitData
-        ? `${rateLimitData.dailyBudget.posts.used}/${rateLimitData.dailyBudget.posts.limit} posts used`
+        ? `$${rateLimitData.dailyBudget.spentUsd.toFixed(3)} / $${rateLimitData.dailyBudget.capUsd} spent today`
         : "Loading...",
       critical: false,
     },
@@ -1048,12 +1053,12 @@ function RateLimitsPanel({ data }: { data?: RateLimitStatus }) {
     );
   }
 
-  const budgetItems = [
-    { key: "posts", label: "Posts", icon: Bird },
-    { key: "likes", label: "Likes", icon: Heart },
-    { key: "follows", label: "Follows", icon: UserPlus },
-    { key: "replies", label: "Replies", icon: MessageSquare },
-  ] as const;
+  const spendPct = data.dailyBudget.capUsd > 0
+    ? (data.dailyBudget.spentUsd / data.dailyBudget.capUsd) * 100
+    : 0;
+  const replyPct = data.dailyBudget.maxReplies > 0
+    ? (data.dailyBudget.repliesSent / data.dailyBudget.maxReplies) * 100
+    : 0;
 
   return (
     <div className="space-y-4">
@@ -1061,44 +1066,62 @@ function RateLimitsPanel({ data }: { data?: RateLimitStatus }) {
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/5">
           <AlertTriangle className="h-4 w-4 text-red-500" />
           <span className="text-sm text-red-400">
-            Panic mode active -- operating at 50% of normal multiplier due to 429 response
+            Panic mode active — operating at 50% capacity due to 429 response
           </span>
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Gauge className="h-4 w-4" />
-        <span>
-          Operating at <span className="font-medium text-foreground">{Math.round(data.multiplier * 100)}%</span> of X API limits
-        </span>
-      </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {budgetItems.map(({ key, label, icon: Icon }) => {
-          const budget = data.dailyBudget[key];
-          const remaining = budget.limit - budget.used;
-          const pct = budget.limit > 0 ? (budget.used / budget.limit) * 100 : 0;
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <Gauge className="h-4 w-4" />
+              Daily Spend
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl font-bold tabular-nums">${data.dailyBudget.spentUsd.toFixed(3)}</span>
+              <span className="text-xs text-muted-foreground">
+                cap ${data.dailyBudget.capUsd}/day
+              </span>
+            </div>
+            <RateLimitBar pct={spendPct} />
+          </CardContent>
+        </Card>
 
-          return (
-            <Card key={key}>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-2xl font-bold tabular-nums">{remaining}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {remaining}/{budget.limit} remaining today
-                  </span>
-                </div>
-                <RateLimitBar pct={pct} />
-              </CardContent>
-            </Card>
-          );
-        })}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <MessageSquare className="h-4 w-4" />
+              Replies Sent
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl font-bold tabular-nums">{data.dailyBudget.repliesSent}</span>
+              <span className="text-xs text-muted-foreground">
+                {data.dailyBudget.repliesSent}/{data.dailyBudget.maxReplies} today
+              </span>
+            </div>
+            <RateLimitBar pct={replyPct} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <BarChart3 className="h-4 w-4" />
+              Read Calls
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl font-bold tabular-nums">{data.dailyBudget.readCount}</span>
+              <span className="text-xs text-muted-foreground">search + read today</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
@@ -1181,14 +1204,10 @@ function SimpleBarChart({
 
 // ── Rate Multiplier Setting ────────────────────────────────────────────────
 
-function RateMultiplierSetting({ currentMultiplier }: { currentMultiplier?: number }) {
+function RateMultiplierSetting() {
   const queryClient = useQueryClient();
-  const [value, setValue] = useState(currentMultiplier ?? 0.5);
+  const [value, setValue] = useState(0.5);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    if (currentMultiplier !== undefined) setValue(currentMultiplier);
-  }, [currentMultiplier]);
 
   const saveMutation = useMutation({
     mutationFn: async (mult: number) => {
@@ -1235,7 +1254,7 @@ function RateMultiplierSetting({ currentMultiplier }: { currentMultiplier?: numb
           <div className="flex items-center gap-3">
             <button
               onClick={() => saveMutation.mutate(value)}
-              disabled={saveMutation.isPending || value === currentMultiplier}
+              disabled={saveMutation.isPending}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {saveMutation.isPending ? (
