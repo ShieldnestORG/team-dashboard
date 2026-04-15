@@ -202,12 +202,15 @@ export function xAnalyticsRoutes(db: Db) {
   });
 
   // ── Connection Status ────────────────────────────────────────────────────
-  router.get("/connection", async (_req, res) => {
+  // Query param: ?account=primary|coherencedaddy (default: primary)
+  router.get("/connection", async (req, res) => {
+    const accountSlug = (req.query.account as string) || "primary";
     try {
       const result = await db.execute(sql`
         SELECT x_username, x_user_id, expires_at, created_at
         FROM x_oauth_tokens
         WHERE company_id = ${COMPANY_ID}
+          AND account_slug = ${accountSlug}
         LIMIT 1
       `);
 
@@ -216,13 +219,14 @@ export function xAnalyticsRoutes(db: Db) {
       if (row) {
         res.json({
           connected: true,
+          accountSlug,
           username: row.x_username as string,
           userId: row.x_user_id as string,
           expiresAt: row.expires_at,
           connectedAt: row.created_at,
         });
       } else {
-        res.json({ connected: false });
+        res.json({ connected: false, accountSlug });
       }
     } catch (err) {
       logger.error({ err }, "Failed to get connection status");

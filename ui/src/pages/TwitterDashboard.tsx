@@ -283,8 +283,9 @@ export function TwitterDashboard() {
   return (
     <div className="space-y-6">
       {/* Connection Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ConnectionCard connection={connection} />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <ConnectionCard accountSlug="primary" label="Primary Account" />
+        <ConnectionCard accountSlug="coherencedaddy" label="Coherence Daddy" />
         <ExtensionBotCard extension={extensionData} />
       </div>
 
@@ -646,70 +647,94 @@ export function TwitterDashboard() {
 
 // ── Connection Card ────────────────────────────────────────────────────────
 
-function ConnectionCard({ connection }: { connection: ConnectionStatus }) {
+function ConnectionCard({
+  accountSlug,
+  label,
+}: {
+  accountSlug: string;
+  label: string;
+}) {
   const queryClient = useQueryClient();
+
+  const { data: connection } = useQuery({
+    queryKey: ["x-analytics", "connection", accountSlug],
+    queryFn: () =>
+      apiFetch<ConnectionStatus>(
+        `/api/x/analytics/connection?account=${accountSlug}`,
+      ),
+    refetchInterval: 60000,
+  });
+
+  const connected = connection?.connected ?? false;
 
   const disconnectMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/x/oauth/revoke", {
-        method: "POST",
-        credentials: "include",
-      });
+      const res = await fetch(
+        `/api/x/oauth/revoke?account=${accountSlug}`,
+        { method: "POST", credentials: "include" },
+      );
       if (!res.ok) throw new Error("Failed to disconnect");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["x-analytics", "connection"] });
+      queryClient.invalidateQueries({
+        queryKey: ["x-analytics", "connection", accountSlug],
+      });
     },
   });
 
   return (
     <Card>
-      <CardContent className="flex items-center justify-between py-4">
-        <div className="flex items-center gap-3">
-          <Bird className="h-5 w-5 text-sky-500" />
-          {connection.connected ? (
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-green-500" />
-              <span className="text-sm font-medium">
-                Connected as <span className="text-sky-500">@{connection.username}</span>
-              </span>
-              {connection.connectedAt && (
-                <span className="text-xs text-muted-foreground">
-                  since {new Date(connection.connectedAt).toLocaleDateString()}
+      <CardContent className="py-4 space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {label}
+        </p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bird className="h-4 w-4 text-sky-500 shrink-0" />
+            {connected ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                <span className="text-sm font-medium truncate">
+                  <span className="text-sky-500">@{connection?.username}</span>
                 </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-yellow-500" />
-              <span className="text-sm text-muted-foreground">Not connected to X</span>
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-yellow-500 shrink-0" />
+                <span className="text-sm text-muted-foreground">Not connected</span>
+              </div>
+            )}
+          </div>
+          <div className="shrink-0">
+            {connected ? (
+              <button
+                onClick={() => disconnectMutation.mutate()}
+                disabled={disconnectMutation.isPending}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-destructive/30 text-destructive hover:bg-destructive/10 disabled:opacity-50 transition-colors"
+              >
+                {disconnectMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Unlink className="h-3 w-3" />
+                )}
+                Disconnect
+              </button>
+            ) : (
+              <a
+                href={`/api/x/oauth/authorize?account=${accountSlug}`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md bg-sky-500 text-white hover:bg-sky-600 transition-colors"
+              >
+                <LinkIcon className="h-3 w-3" />
+                Connect
+              </a>
+            )}
+          </div>
         </div>
-        <div>
-          {connection.connected ? (
-            <button
-              onClick={() => disconnectMutation.mutate()}
-              disabled={disconnectMutation.isPending}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-destructive/30 text-destructive hover:bg-destructive/10 disabled:opacity-50 transition-colors"
-            >
-              {disconnectMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Unlink className="h-3.5 w-3.5" />
-              )}
-              Disconnect
-            </button>
-          ) : (
-            <a
-              href="/api/x/oauth/authorize"
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-sky-500 text-white hover:bg-sky-600 transition-colors"
-            >
-              <LinkIcon className="h-3.5 w-3.5" />
-              Connect X Account
-            </a>
-          )}
-        </div>
+        {connected && connection?.connectedAt && (
+          <p className="text-xs text-muted-foreground">
+            since {new Date(connection.connectedAt).toLocaleDateString()}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

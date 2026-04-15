@@ -1,6 +1,8 @@
 import { Router } from "express";
 import crypto from "node:crypto";
+import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { xOauthTokens } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import {
   generateAuthUrl,
@@ -20,6 +22,7 @@ import {
 
 interface PendingAuth {
   codeVerifier: string;
+  accountSlug: string;
   createdAt: number;
 }
 
@@ -50,20 +53,22 @@ export function xOauthRoutes(db: Db) {
   const router = Router();
 
   // GET /authorize — start OAuth flow
+  // Query param: ?account=primary|coherencedaddy (default: primary)
   router.get("/authorize", (req, res) => {
     if (!COMPANY_ID) {
       res.status(500).json({ error: "TEAM_DASHBOARD_COMPANY_ID not configured" });
       return;
     }
 
+    const accountSlug = (req.query.account as string) || "primary";
     const state = crypto.randomBytes(16).toString("hex");
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
 
-    pendingAuths.set(state, { codeVerifier, createdAt: Date.now() });
+    pendingAuths.set(state, { codeVerifier, accountSlug, createdAt: Date.now() });
 
-    const authUrl = generateAuthUrl(state, codeChallenge);
-    logger.info({ state }, "X OAuth: redirecting to authorization URL");
+    const authUrl = generateAuthUrl(state, codeChallenge, accountSlug);
+    logger.info({ state, accountSlug }, "X OAuth: redirecting to authorization URL");
     res.redirect(authUrl);
   });
 
@@ -93,11 +98,11 @@ export function xOauthRoutes(db: Db) {
     pendingAuths.delete(state);
 
     try {
-      const tokenSet = await exchangeCode(code, pending.codeVerifier);
-      await saveTokens(db, COMPANY_ID, tokenSet);
+      const tokenSet = await exchangeCode(code, pending.codeVerifier, pending.accountSlug);
+      await saveTokens(db, COMPANY_ID, tokenSet, pending.accountSlug);
 
       logger.info(
-        { xUsername: tokenSet.xUsername, xUserId: tokenSet.xUserId },
+        { xUsername: tokenSet.xUsername, xUserId: tokenSet.xUserId, accountSlug: pending.accountSlug },
         "X OAuth: successfully connected",
       );
 
@@ -113,44 +118,88 @@ export function xOauthRoutes(db: Db) {
   });
 
   // GET /status — check connection status
-  router.get("/status", async (_req, res) => {
+  // Query param: ?account=primary|coherencedaddy (default: primary)
+  router.get("/status", async (req, res) => {
     if (!COMPANY_ID) {
       res.json({ connected: false });
       return;
     }
 
+    const accountSlug = (req.query.account as string) || "primary";
+
     try {
-      const tokenSet = await loadTokens(db, COMPANY_ID);
+      const tokenSet = await loadTokens(db, COMPANY_ID, accountSlug);
       if (!tokenSet) {
-        res.json({ connected: false });
+        res.json({ connected: false, accountSlug });
         return;
       }
 
       res.json({
         connected: true,
+        accountSlug,
         username: tokenSet.xUsername,
         xUserId: tokenSet.xUserId,
         expiresAt: tokenSet.expiresAt.toISOString(),
         scope: tokenSet.scope,
       });
     } catch (err) {
-      logger.error({ err }, "X OAuth: failed to check status");
-      res.json({ connected: false, error: "Failed to read token status" });
+      logger.error({ err, accountSlug }, "X OAuth: failed to check status");
+      res.json({ connected: false, accountSlug, error: "Failed to read token status" });
+    }
+  });
+
+  // GET /accounts — list all connected accounts for this company
+  router.get("/accounts", async (_req, res) => {
+    if (!COMPANY_ID) {
+      res.json({ accounts: [] });
+      return;
+    }
+
+    try {
+      const rows = await db
+        .select({
+          accountSlug: xOauthTokens.accountSlug,
+          xUsername: xOauthTokens.xUsername,
+          xUserId: xOauthTokens.xUserId,
+          expiresAt: xOauthTokens.expiresAt,
+          createdAt: xOauthTokens.createdAt,
+        })
+        .from(xOauthTokens)
+        .where(eq(xOauthTokens.companyId, COMPANY_ID));
+
+      res.json({
+        accounts: rows.map((r) => ({
+          accountSlug: r.accountSlug,
+          username: r.xUsername,
+          userId: r.xUserId,
+          expiresAt: r.expiresAt?.toISOString(),
+          connectedAt: r.createdAt?.toISOString(),
+        })),
+      });
+    } catch (err) {
+      logger.error({ err }, "X OAuth: failed to list accounts");
+      res.status(500).json({ error: "Failed to list accounts" });
     }
   });
 
   // POST /revoke — disconnect X account
-  router.post("/revoke", async (_req, res) => {
+  // Query param or body: account=primary|coherencedaddy (default: primary)
+  router.post("/revoke", async (req, res) => {
     if (!COMPANY_ID) {
       res.status(500).json({ error: "TEAM_DASHBOARD_COMPANY_ID not configured" });
       return;
     }
 
+    const accountSlug =
+      (req.query.account as string) ||
+      (req.body?.account as string) ||
+      "primary";
+
     try {
-      await revokeTokens(db, COMPANY_ID);
-      res.json({ success: true });
+      await revokeTokens(db, COMPANY_ID, accountSlug);
+      res.json({ success: true, accountSlug });
     } catch (err) {
-      logger.error({ err }, "X OAuth: failed to revoke tokens");
+      logger.error({ err, accountSlug }, "X OAuth: failed to revoke tokens");
       res.status(500).json({
         error: "Failed to revoke X tokens",
         details: err instanceof Error ? err.message : String(err),
