@@ -4,6 +4,81 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14m] — AEO Marketing Push + Monetization Tighten-Up
+
+### New Features
+
+**Self-Serve Monetization**
+- `POST /api/directory-listings/public/enroll` — public endpoint, no auth required; companies can now pay via Stripe Checkout to get listed without contacting admin
+- `DirectoryPricing.tsx` — public pricing page at `/directory-pricing` with Featured ($199/mo), Verified ($499/mo), Boosted ($1,499/mo) tier cards
+- Partner Stripe billing wired: `stripe-checkout.ts` shared helper, checkout endpoint, webhook handler, welcome email
+- Calendly inline widget on IntelPricing + DirectoryPricing — enterprise booking without email
+
+**Cross-Sell Funnel**
+- IntelPricing ↔ DirectoryPricing ↔ Partner Network — all three products now link to each other
+- Enterprise "Book a Call" via Calendly widget on all pricing pages
+
+**Brand Separation + Campaign System**
+- `brand` column on `content_items` + `visual_content_items` (migration 0073)
+- `campaigns` table with `campaignId` FK on content_items (migration 0074)
+- `brand-personas.ts` — LLM system prompts now include on-brand voice guidelines per brand (cd/tokns/shieldnest/tx/directory/partners)
+- All 24 content cron jobs tagged with explicit brand values
+- `partner-content.ts` now scopes partner injection by brand (tokns/tx → crypto partners, shieldnest → tech)
+
+**Marketing Pushes Dashboard**
+- `MarketingPushes.tsx` — new admin page at `/marketing-pushes` with brand tabs, campaign cards, New Campaign dialog
+- `/api/campaigns` CRUD + content rollup endpoint
+- Sidebar nav entry
+
+**Email Templates**
+- `email-templates.ts` — HTML transactional email service with 5 templates
+- Wired into all 3 billing flows (directory, partner, Intel API)
+- Welcome emails on checkout completion, checkout reminders, renewal reminders
+
+**AEO Content Funnel**
+- `aeo-cta.ts` — brand-scoped CTA config: tweet suffix, blog HTML block, YouTube description block
+- Tweets auto-append directory signup CTA, blog posts get HTML CTA block
+- SEO engine now frames all content with AEO-vs-SEO angle
+- YouTube descriptions get `pinnedCommentText` with directory link
+
+**X Multi-Account (Phase 5)**
+- Migration 0075: drops `companyId` unique on `x_oauth_tokens`, adds composite `(company_id, account_slug)`
+- `X_CLIENT_ID_CD` + `X_CLIENT_SECRET_CD` env vars for @coherencedaddy account
+- 3 new AEO cron jobs targeting @coherencedaddy: daily AEO tips, Mon/Wed/Fri directory spotlights, Tue/Thu blog link pushes
+
+### Bug Fixes
+- Intel billing overage cron confirmed wired (was already correct — audit clarification)
+- `expired` status in directory listings state machine now set by nightly `directory:expire-listings` cron
+
+### New Files
+- `server/src/services/stripe-checkout.ts`
+- `server/src/services/email-templates.ts`
+- `server/src/services/brand-personas.ts`
+- `server/src/services/aeo-cta.ts`
+- `server/src/services/directory-crons.ts`
+- `server/src/routes/campaigns.ts`
+- `ui/src/pages/DirectoryPricing.tsx`
+- `ui/src/pages/MarketingPushes.tsx`
+- `ui/src/components/CalendlyWidget.tsx`
+- `ui/src/api/campaigns.ts`
+- `ui/src/api/directory-listings.ts`
+
+### New Migrations
+- `0072_partner_stripe.sql`
+- `0073_brand_column.sql`
+- `0074_campaigns.sql`
+- `0075_x_multiacccount.sql`
+
+### Environment Variables Added
+- `X_CLIENT_ID_CD` — X OAuth client ID for @coherencedaddy
+- `X_CLIENT_SECRET_CD` — X OAuth client secret for @coherencedaddy
+- `X_CALLBACK_URL_CD` — Optional callback URL override for coherencedaddy OAuth
+- `ENTERPRISE_BOOKING_URL` — Cal.com/Calendly booking URL
+- `VITE_ENTERPRISE_BOOKING_URL` — Same, exposed to frontend
+- `STRIPE_PRICE_PARTNER_PROOF/PERFORMANCE/PREMIUM` — Partner tier Stripe price IDs (pending)
+
+---
+
 ## [2026-04-14l] — Documentation cleanup: remove all stale Mintscan / firecrawl-validators references
 
 ### Changed
