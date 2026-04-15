@@ -12,7 +12,7 @@ import { logger } from "../middleware/logger.js";
 // Uses the same self-hosted Firecrawl endpoint as firecrawl-sync.ts.
 // ---------------------------------------------------------------------------
 
-const FIRECRAWL_URL = process.env.FIRECRAWL_URL || "http://168.231.127.180:3002";
+const FIRECRAWL_URL = process.env.FIRECRAWL_URL || "http://168.231.127.180";
 const REQUEST_TIMEOUT_MS = 45_000;
 
 interface ValidatorPage {

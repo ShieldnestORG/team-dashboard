@@ -15,7 +15,7 @@ import { getEmbedding } from "./intel-embeddings.js";
 import { logger } from "../middleware/logger.js";
 
 const FIRECRAWL_URL =
-  process.env.FIRECRAWL_URL || "http://168.231.127.180:3002";
+  process.env.FIRECRAWL_URL || "http://168.231.127.180";
 
 const DEFAULT_LIMIT = 50;
 const CONCURRENCY = 3;

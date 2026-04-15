@@ -108,7 +108,7 @@ function getServiceChecks(): ServiceCheck[] {
   return [
     { name: "Backend API", url: `http://127.0.0.1:${port}/api/health/readiness` },
     { name: "Ollama LLM", url: `${ollamaUrl}/api/tags`, headers: ollamaHeaders() },
-    { name: "Firecrawl", url: "http://168.231.127.180:3002/", timeoutMs: 10_000 },
+    { name: "Firecrawl", url: "http://168.231.127.180/", timeoutMs: 10_000 },
     { name: "Embedding Service", url: `${embedUrl}/health`, timeoutMs: 10_000 },
   ];
 }

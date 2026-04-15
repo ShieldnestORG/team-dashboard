@@ -4,6 +4,56 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-14f] — Firecrawl connectivity fix (port 3002 → Nginx 80)
+
+`firecrawl:sync`, `intel:firecrawl-validators`, partner-onboarding scrapes, and
+the VPS health monitor were silently failing because four backend files
+hardcoded `http://168.231.127.180:3002` as the Firecrawl default URL — but
+port `3002` is firewalled on VPS_2. Only the Nginx reverse proxy on port `80`
+is reachable. The plugin worker reported `ready` because it uses a
+config-driven `apiUrl` (already pointing at the bare host) — that is why this
+went unnoticed across two cron schedulers.
+
+### Empirical confirmation
+
+```
+port 80   GET  /            → 404      time 0.43s   (Nginx responding)
+port 3002 GET  /            → timeout  time 8.00s   (firewalled)
+port 80   POST /v1/scrape   → 200      with markdown payload
+```
+
+### Fixed
+
+- **`server/src/services/firecrawl-sync.ts:18`** — default `FIRECRAWL_URL`
+  drops `:3002`.
+- **`server/src/services/firecrawl-validators.ts:15`** — same.
+- **`server/src/services/partner-onboarding.ts:16`** — same. Also restores
+  `/v1/scrape` and `/v1/search` paths used by the partner microsite generator.
+- **`server/src/services/vps-monitor.ts:111`** — VPS health probe target
+  switches to `http://168.231.127.180/`. The `Firecrawl` row in
+  `/automation-health` will start reporting healthy on the next tick.
+
+All four files retain the `process.env.FIRECRAWL_URL || …` fallback pattern,
+so an operator can still override per-environment if Firecrawl ever moves.
+
+### Verification
+
+- `npx tsc --noEmit --project server/tsconfig.json` — 0 errors.
+- Live `POST /v1/scrape` returns `200` with real markdown for example.com.
+- Will be confirmed end-to-end on next `firecrawl:sync` (Sun 03:47 local) and
+  next `intel:firecrawl-validators` (every 6h at :30) tick. Manual trigger via
+  the cron API after deploy.
+
+### Out of scope (tracked separately)
+
+- `firecrawl-validators.ts` still scrapes Mintscan validator pages; if Mintscan
+  changes layout the parser will need updating. Not blocking — Firecrawl just
+  renders the public HTML.
+- `FIRECRAWL_URL` is not set in `.env.production` on VPS_1. The code-level
+  default is sufficient and makes fresh installs self-correcting.
+
+---
+
 ## [2026-04-14e] — All 4 plugins LIVE (framework fix + secrets bridge)
 
 Closes both follow-up items from `[2026-04-14d]`. `/automation-health` now

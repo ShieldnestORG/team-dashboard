@@ -13,7 +13,7 @@ import { callOllamaGenerate } from "./ollama-client.js";
 import { logger } from "../middleware/logger.js";
 
 const FIRECRAWL_URL =
-  process.env.FIRECRAWL_URL || "http://168.231.127.180:3002";
+  process.env.FIRECRAWL_URL || "http://168.231.127.180";
 
 // Known industry categories (must stay in sync with partner-content.ts)
 const KNOWN_INDUSTRIES = [
