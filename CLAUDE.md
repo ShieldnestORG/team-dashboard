@@ -453,6 +453,9 @@ docker image prune -f && docker container prune -f && docker volume prune -f && 
 | `TIKTOK_ACCESS_TOKEN` | Optional | VPS | TikTok Content Posting API |
 | `TWITTER_API_KEY/SECRET` | Optional | VPS | Twitter/X video posting |
 | `TWITTER_ACCESS_TOKEN/SECRET` | Optional | VPS | Twitter/X OAuth tokens |
+| `X_CLIENT_ID_CD` | Optional | VPS | X OAuth 2.0 client ID for @coherencedaddy account |
+| `X_CLIENT_SECRET_CD` | Optional | VPS | X OAuth 2.0 client secret for @coherencedaddy account |
+| `X_CALLBACK_URL_CD` | Optional | VPS | OAuth callback URL for coherencedaddy account (defaults to X_CALLBACK_URL) |
 | `INSTAGRAM_ACCESS_TOKEN` | Optional | VPS | Instagram Graph API |
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Optional | VPS | Instagram business account |
 | **Moltbook** | | | |

@@ -351,6 +351,7 @@ export async function autoGenerateAndQueue(
   personality: string,
   companyId: string,
   topic?: string,
+  accountSlug = "primary",
 ): Promise<void> {
   // Check daily cap
   const todayCount = await countTodaysTweets(db, companyId);
@@ -376,7 +377,7 @@ export async function autoGenerateAndQueue(
   const budget = canUseDailyBudget("post");
   if (budget.allowed) {
     try {
-      const client = new XApiClient(db, companyId);
+      const client = new XApiClient(db, companyId, accountSlug);
       const tweetResult = await client.createTweet({ text: result.content });
       const tweetId = tweetResult?.data?.id;
 

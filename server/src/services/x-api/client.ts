@@ -42,11 +42,13 @@ function extractRateLimitHeaders(headers: Headers): Record<string, string> {
 export class XApiClient {
   private db: Db;
   private companyId: string;
+  private accountSlug: string;
   private cachedUserId: string | null = null;
 
-  constructor(db: Db, companyId: string) {
+  constructor(db: Db, companyId: string, accountSlug = "primary") {
     this.db = db;
     this.companyId = companyId;
+    this.accountSlug = accountSlug;
   }
 
   // -----------------------------------------------------------------------
@@ -82,7 +84,7 @@ export class XApiClient {
       }
     }
 
-    const token = await getValidToken(this.db, this.companyId);
+    const token = await getValidToken(this.db, this.companyId, this.accountSlug);
     const url = `${BASE_URL}${path}`;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,

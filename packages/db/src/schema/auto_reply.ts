@@ -26,6 +26,7 @@ export const autoReplyConfig = pgTable(
     maxRepliesPerDay: integer("max_replies_per_day").notNull().default(5),
     minDelaySeconds: integer("min_delay_seconds").notNull().default(3),
     maxDelaySeconds: integer("max_delay_seconds").notNull().default(15),
+    xAccountSlug: text("x_account_slug").notNull().default("primary"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

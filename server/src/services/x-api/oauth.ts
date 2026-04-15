@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { xOauthTokens } from "@paperclipai/db";
 import { logger } from "../../middleware/logger.js";
@@ -26,6 +26,36 @@ const SCOPES = "tweet.read tweet.write users.read like.read like.write follows.r
 
 // Refresh when token is within 5 minutes of expiry
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// Multi-account credential helper
+// ---------------------------------------------------------------------------
+
+export interface XCredentials {
+  clientId: string;
+  clientSecret: string;
+  callbackUrl: string;
+}
+
+/**
+ * Returns the X OAuth credentials for the given account slug.
+ * - 'coherencedaddy' → X_CLIENT_ID_CD / X_CLIENT_SECRET_CD / X_CALLBACK_URL_CD
+ * - anything else  → X_CLIENT_ID / X_CLIENT_SECRET / X_CALLBACK_URL
+ */
+export function getXCredentials(accountSlug?: string): XCredentials {
+  if (accountSlug === "coherencedaddy") {
+    return {
+      clientId: process.env.X_CLIENT_ID_CD || X_CLIENT_ID,
+      clientSecret: process.env.X_CLIENT_SECRET_CD || X_CLIENT_SECRET,
+      callbackUrl: process.env.X_CALLBACK_URL_CD || X_CALLBACK_URL,
+    };
+  }
+  return {
+    clientId: X_CLIENT_ID,
+    clientSecret: X_CLIENT_SECRET,
+    callbackUrl: X_CALLBACK_URL,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // AES-256-GCM encryption for stored tokens
@@ -82,11 +112,12 @@ export function generateCodeChallenge(verifier: string): string {
 // Authorization URL
 // ---------------------------------------------------------------------------
 
-export function generateAuthUrl(state: string, codeChallenge: string): string {
+export function generateAuthUrl(state: string, codeChallenge: string, accountSlug?: string): string {
+  const creds = getXCredentials(accountSlug);
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: X_CLIENT_ID,
-    redirect_uri: X_CALLBACK_URL,
+    client_id: creds.clientId,
+    redirect_uri: creds.callbackUrl,
     scope: SCOPES,
     state,
     code_challenge: codeChallenge,
@@ -99,15 +130,17 @@ export function generateAuthUrl(state: string, codeChallenge: string): string {
 // Token exchange
 // ---------------------------------------------------------------------------
 
-function basicAuthHeader(): string {
-  return `Basic ${Buffer.from(`${X_CLIENT_ID}:${X_CLIENT_SECRET}`).toString("base64")}`;
+function basicAuthHeader(accountSlug?: string): string {
+  const creds = getXCredentials(accountSlug);
+  return `Basic ${Buffer.from(`${creds.clientId}:${creds.clientSecret}`).toString("base64")}`;
 }
 
-export async function exchangeCode(code: string, codeVerifier: string): Promise<TokenSet> {
+export async function exchangeCode(code: string, codeVerifier: string, accountSlug?: string): Promise<TokenSet> {
+  const creds = getXCredentials(accountSlug);
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
-    redirect_uri: X_CALLBACK_URL,
+    redirect_uri: creds.callbackUrl,
     code_verifier: codeVerifier,
   });
 
@@ -115,7 +148,7 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: basicAuthHeader(),
+      Authorization: basicAuthHeader(accountSlug),
     },
     body: body.toString(),
   });
@@ -157,7 +190,7 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
 // Refresh token
 // ---------------------------------------------------------------------------
 
-export async function refreshAccessToken(refreshToken: string): Promise<TokenSet> {
+export async function refreshAccessToken(refreshToken: string, accountSlug?: string): Promise<TokenSet> {
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: refreshToken,
@@ -167,7 +200,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenSet
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: basicAuthHeader(),
+      Authorization: basicAuthHeader(accountSlug),
     },
     body: body.toString(),
   });
@@ -211,9 +244,15 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenSet
 // DB persistence — save / load / revoke
 // ---------------------------------------------------------------------------
 
-export async function saveTokens(db: Db, companyId: string, tokenSet: TokenSet): Promise<void> {
+export async function saveTokens(
+  db: Db,
+  companyId: string,
+  tokenSet: TokenSet,
+  accountSlug = "primary",
+): Promise<void> {
   const values = {
     companyId,
+    accountSlug,
     xUserId: tokenSet.xUserId,
     xUsername: tokenSet.xUsername,
     accessTokenEnc: encrypt(tokenSet.accessToken),
@@ -227,21 +266,31 @@ export async function saveTokens(db: Db, companyId: string, tokenSet: TokenSet):
   const updated = await db
     .update(xOauthTokens)
     .set(values)
-    .where(eq(xOauthTokens.companyId, companyId))
+    .where(and(
+      eq(xOauthTokens.companyId, companyId),
+      eq(xOauthTokens.accountSlug, accountSlug),
+    ))
     .returning({ id: xOauthTokens.id });
 
   if (updated.length === 0) {
     await db.insert(xOauthTokens).values(values);
   }
 
-  logger.info({ companyId, xUsername: tokenSet.xUsername }, "X OAuth tokens saved");
+  logger.info({ companyId, accountSlug, xUsername: tokenSet.xUsername }, "X OAuth tokens saved");
 }
 
-export async function loadTokens(db: Db, companyId: string): Promise<TokenSet | null> {
+export async function loadTokens(
+  db: Db,
+  companyId: string,
+  accountSlug = "primary",
+): Promise<TokenSet | null> {
   const rows = await db
     .select()
     .from(xOauthTokens)
-    .where(eq(xOauthTokens.companyId, companyId))
+    .where(and(
+      eq(xOauthTokens.companyId, companyId),
+      eq(xOauthTokens.accountSlug, accountSlug),
+    ))
     .limit(1);
 
   if (rows.length === 0) return null;
@@ -257,19 +306,30 @@ export async function loadTokens(db: Db, companyId: string): Promise<TokenSet | 
   };
 }
 
-export async function deleteTokens(db: Db, companyId: string): Promise<void> {
-  await db.delete(xOauthTokens).where(eq(xOauthTokens.companyId, companyId));
-  logger.info({ companyId }, "X OAuth tokens deleted from DB");
+export async function deleteTokens(
+  db: Db,
+  companyId: string,
+  accountSlug = "primary",
+): Promise<void> {
+  await db.delete(xOauthTokens).where(and(
+    eq(xOauthTokens.companyId, companyId),
+    eq(xOauthTokens.accountSlug, accountSlug),
+  ));
+  logger.info({ companyId, accountSlug }, "X OAuth tokens deleted from DB");
 }
 
 // ---------------------------------------------------------------------------
 // Get a valid token — auto-refresh if expired
 // ---------------------------------------------------------------------------
 
-export async function getValidToken(db: Db, companyId: string): Promise<string> {
-  const tokenSet = await loadTokens(db, companyId);
+export async function getValidToken(
+  db: Db,
+  companyId: string,
+  accountSlug = "primary",
+): Promise<string> {
+  const tokenSet = await loadTokens(db, companyId, accountSlug);
   if (!tokenSet) {
-    throw new Error("No X OAuth tokens found — connect your X account first");
+    throw new Error(`No X OAuth tokens found for account '${accountSlug}' — connect your X account first`);
   }
 
   // Check if token is still valid (with 5min buffer)
@@ -278,14 +338,14 @@ export async function getValidToken(db: Db, companyId: string): Promise<string> 
   }
 
   // Token expired or about to expire — refresh
-  logger.info({ companyId }, "X OAuth access token expired, refreshing...");
+  logger.info({ companyId, accountSlug }, "X OAuth access token expired, refreshing...");
   try {
-    const refreshed = await refreshAccessToken(tokenSet.refreshToken);
-    await saveTokens(db, companyId, refreshed);
+    const refreshed = await refreshAccessToken(tokenSet.refreshToken, accountSlug);
+    await saveTokens(db, companyId, refreshed, accountSlug);
     return refreshed.accessToken;
   } catch (err) {
-    logger.error({ err, companyId }, "Failed to refresh X OAuth token");
-    throw new Error("X OAuth token refresh failed — reconnect your X account");
+    logger.error({ err, companyId, accountSlug }, "Failed to refresh X OAuth token");
+    throw new Error(`X OAuth token refresh failed for account '${accountSlug}' — reconnect your X account`);
   }
 }
 
@@ -293,8 +353,12 @@ export async function getValidToken(db: Db, companyId: string): Promise<string> 
 // Revoke tokens
 // ---------------------------------------------------------------------------
 
-export async function revokeTokens(db: Db, companyId: string): Promise<void> {
-  const tokenSet = await loadTokens(db, companyId);
+export async function revokeTokens(
+  db: Db,
+  companyId: string,
+  accountSlug = "primary",
+): Promise<void> {
+  const tokenSet = await loadTokens(db, companyId, accountSlug);
 
   if (tokenSet) {
     // Attempt to revoke at X's endpoint (best effort)
@@ -303,7 +367,7 @@ export async function revokeTokens(db: Db, companyId: string): Promise<void> {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: basicAuthHeader(),
+          Authorization: basicAuthHeader(accountSlug),
         },
         body: new URLSearchParams({
           token: tokenSet.accessToken,
@@ -311,10 +375,10 @@ export async function revokeTokens(db: Db, companyId: string): Promise<void> {
         }).toString(),
       });
     } catch (err) {
-      logger.warn({ err, companyId }, "Failed to revoke X access token at provider (non-fatal)");
+      logger.warn({ err, companyId, accountSlug }, "Failed to revoke X access token at provider (non-fatal)");
     }
   }
 
-  await deleteTokens(db, companyId);
-  logger.info({ companyId }, "X OAuth tokens revoked and deleted");
+  await deleteTokens(db, companyId, accountSlug);
+  logger.info({ companyId, accountSlug }, "X OAuth tokens revoked and deleted");
 }

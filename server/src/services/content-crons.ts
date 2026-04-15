@@ -34,6 +34,10 @@ interface ContentJobDef {
   publishTarget?: PublishTarget;
   // brand controls which X account / publish target this content belongs to
   brand?: string;
+  // xAccountSlug routes tweet dispatch to a specific X account (default: 'primary')
+  xAccountSlug?: string;
+  // topic overrides the topic picker with a fixed string
+  topic?: string;
 }
 
 const JOB_DEFS: ContentJobDef[] = [
@@ -68,6 +72,40 @@ const JOB_DEFS: ContentJobDef[] = [
   // Slideshow blogs — animated presentation-style posts (reuses YouTube slide renderer)
   { name: "content:slideshow-blog:cd", schedule: "0 12 * * 3,6",  personality: "cipher", ownerAgent: "cipher", contentType: "slideshow_blog", publishTarget: "cd", brand: "cd" },
   { name: "content:slideshow-blog:sn", schedule: "0 13 * * 2,5",  personality: "prism",  ownerAgent: "prism",  contentType: "slideshow_blog", publishTarget: "sn", brand: "tx" },
+  // AEO push crons for @coherencedaddy X account
+  {
+    name: "content:aeo-tips-cd",
+    schedule: "0 9 * * *",
+    personality: "prism",
+    ownerAgent: "prism",
+    contentType: "tweet",
+    brand: "cd",
+    xAccountSlug: "coherencedaddy",
+    useContentBridge: true,
+    topic: "Why AEO outperforms SEO in 2026 — AI-powered directory discovery vs traditional search rankings",
+  },
+  {
+    name: "content:directory-spotlight-cd",
+    schedule: "0 14 * * 1,3,5",
+    personality: "cipher",
+    ownerAgent: "cipher",
+    contentType: "tweet",
+    brand: "directory",
+    xAccountSlug: "coherencedaddy",
+    useContentBridge: true,
+    topic: "Spotlight on innovative AI/ML and DeFi companies in the Coherence Daddy directory",
+  },
+  {
+    name: "content:blog-link-push-cd",
+    schedule: "30 16 * * 2,4",
+    personality: "blaze",
+    ownerAgent: "blaze",
+    contentType: "tweet",
+    brand: "cd",
+    xAccountSlug: "coherencedaddy",
+    useContentBridge: true,
+    topic: "AEO strategy for 2026: how AI directories are replacing Google for B2B discovery",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -473,7 +511,10 @@ export function startContentCrons(db: Db) {
         // display = clean title (no LLM instructions), prompt = full LLM input
         let topicRaw: string | TopicResult | null;
 
-        if (def.topicPicker === "intel-alert") {
+        // Fixed topic override (e.g. for @coherencedaddy account crons)
+        if (def.topic) {
+          topicRaw = def.topic;
+        } else if (def.topicPicker === "intel-alert") {
           topicRaw = await pickIntelAlert(db);
           if (!topicRaw) {
             logger.info({ job: def.name, ownerAgent: def.ownerAgent }, "No hot intel signals, skipping alert content");
@@ -534,9 +575,9 @@ export function startContentCrons(db: Db) {
         // Use enriched content bridge for twitter jobs
         if (def.useContentBridge && def.contentType === "tweet") {
           const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
-          await autoGenerateAndQueue(db, def.personality, companyId, topicPrompt || undefined);
+          await autoGenerateAndQueue(db, def.personality, companyId, topicPrompt || undefined, def.xAccountSlug ?? "primary");
           logger.info(
-            { job: def.name, ownerAgent: def.ownerAgent, topic: topicDisplay, isAlert: !!def.topicPicker },
+            { job: def.name, ownerAgent: def.ownerAgent, topic: topicDisplay, isAlert: !!def.topicPicker, xAccountSlug: def.xAccountSlug ?? "primary" },
             "Content cron completed via content-bridge — tweet queued as draft",
           );
         } else {
@@ -627,5 +668,5 @@ export function startContentCrons(db: Db) {
     },
   });
 
-  logger.info({ count: JOB_DEFS.length + 4 }, "Content cron jobs registered");
+  logger.info({ count: JOB_DEFS.length + 4, cdAccountJobs: 3 }, "Content cron jobs registered");
 }
