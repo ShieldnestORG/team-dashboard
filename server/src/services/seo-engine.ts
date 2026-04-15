@@ -14,6 +14,7 @@ import {
 import { embedPublishedContent } from "./content-embedder.js";
 import { fetchQualityContext } from "./intel-quality.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
+import { getAeoCta } from "./aeo-cta.js";
 
 // ---------------------------------------------------------------------------
 // SEO Content Engine — generates blog posts from trend signals and publishes
@@ -184,7 +185,8 @@ async function generateBlogPostClaude(signal: NonNullable<ReturnType<typeof pick
     .map((t) => `- <a href="https://freetools.coherencedaddy.com/${t.slug}">${t.name}</a>`)
     .join("\n");
 
-  const system = `You are a content writer for Coherence Daddy, a 508(c)(1)(A) faith-driven technology ecosystem. Write engaging, SEO-optimized blog posts about crypto, AI, tech tools, personal finance, passive income, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags). No markdown.${buildBrandSystemPromptBlock("cd")}`;
+  const currentYear = new Date().getFullYear();
+  const system = `You are a content writer for Coherence Daddy, a 508(c)(1)(A) faith-driven technology ecosystem. Write engaging, SEO-optimized blog posts about crypto, AI, tech tools, personal finance, passive income, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags). No markdown. Frame this content as why Answer Engine Optimization (AEO) outperforms traditional SEO in ${currentYear}. Use the AEO angle — how being findable in AI-powered directories matters more than Google rankings.${buildBrandSystemPromptBlock("cd")}`;
 
   const contextBlock = intelContext ? `\n\nUse this real-time data and analysis to make the article factual and data-backed:\n${intelContext}\n` : "";
 
@@ -278,6 +280,12 @@ export function seoEngineService(db?: Db) {
 
       // 3. Generate blog post (Ollama first, Claude fallback)
       const post = await generateBlogPost(signal, intelContext);
+
+      // 3b. Append AEO directory CTA block to blog HTML before publishing
+      const cdCta = getAeoCta('cd');
+      if (cdCta.blogCtaBlock) {
+        post.content = post.content + '\n' + cdCta.blogCtaBlock;
+      }
 
       // 4. Publish to coherencedaddy + app.tokns.fi
       const results = await publishToTargets(post, "all");

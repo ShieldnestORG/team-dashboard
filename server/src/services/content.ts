@@ -13,6 +13,7 @@ import * as vanguard from "../content-templates/vanguard.js";
 import * as forge from "../content-templates/forge.js";
 import { getPartnerInjection } from "./partner-content.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
+import { getAeoCta } from "./aeo-cta.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -288,7 +289,25 @@ export function contentService(db: Db) {
     const fullPrompt = `${systemPrompt}${feedbackContext}${partnerContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
     // Call Ollama
-    const generatedText = await callOllama(fullPrompt);
+    const rawGeneratedText = await callOllama(fullPrompt);
+
+    // Append AEO funnel CTA (only when brand is explicitly set)
+    let generatedText = rawGeneratedText;
+    if (opts.brand) {
+      const cta = getAeoCta(opts.brand);
+      if (opts.contentType === 'tweet') {
+        // Only append if adding the suffix keeps us under the 280-char limit
+        const suffix = cta.tweetSuffix;
+        if (generatedText.length + suffix.length <= 280) {
+          generatedText = generatedText + suffix;
+        }
+      } else if (opts.contentType === 'blog_post') {
+        if (cta.blogCtaBlock) {
+          generatedText = generatedText + '\n' + cta.blogCtaBlock;
+        }
+      }
+      // For other types (linkedin, reddit, discord, bluesky, thread) — no suffix
+    }
 
     const charCount = generatedText.length;
     const withinLimit = charCount <= charLimit;

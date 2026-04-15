@@ -11,6 +11,7 @@ import { callOllamaChat } from "../ollama-client.js";
 import { logger } from "../../middleware/logger.js";
 import type { ContentStrategy } from "./content-strategy.js";
 import type { ScriptData } from "./script-writer.js";
+import { getAeoCta } from "../aeo-cta.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
@@ -28,6 +29,8 @@ export interface SeoData {
   endScreen: Record<string, unknown>;
   seoScore: number;
   metadata: Record<string, unknown>;
+  /** AEO funnel pinned comment text — post as first comment after upload */
+  pinnedCommentText: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -330,9 +333,22 @@ export async function optimizeSEO(
   db: Db,
   script: ScriptData,
   strategy: ContentStrategy,
+  brand?: string,
 ): Promise<SeoData> {
   const title = optimizeTitle(script.title, strategy);
-  const description = generateDescription(script, strategy);
+  const baseDescription = generateDescription(script, strategy);
+  const cta = getAeoCta(brand ?? 'cd');
+
+  // Append the AEO CTA block before any trailing hashtag section
+  const hashtagIndex = baseDescription.lastIndexOf('#');
+  let description: string;
+  if (hashtagIndex > 0 && hashtagIndex > baseDescription.length - 200) {
+    // Insert CTA block before the hashtags section
+    description = baseDescription.slice(0, hashtagIndex).trimEnd() + '\n\n' + cta.youtubeDescriptionBlock + '\n\n' + baseDescription.slice(hashtagIndex);
+  } else {
+    description = baseDescription.trimEnd() + '\n\n' + cta.youtubeDescriptionBlock;
+  }
+
   const rawTags = generateTags(script, strategy);
   const tags = sanitizeTags(rawTags);
   const hashtags = generateHashtags(strategy);
@@ -362,6 +378,7 @@ export async function optimizeSEO(
       language: "en",
       category: 28, // Science & Technology
     },
+    pinnedCommentText: cta.youtubePinnedComment,
   };
 
   // Save to database
