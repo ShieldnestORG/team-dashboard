@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { CalendlyWidget } from "@/components/CalendlyWidget";
 
 function formatPrice(cents: number): string {
   if (cents === 0) return "Free";
@@ -130,24 +131,26 @@ export function IntelPricing() {
         </Card>
       </div>
 
-      {/* Enterprise CTA */}
-      <Card className="mt-4 border-muted">
-        <CardContent className="pt-5 text-center">
-          <p className="font-medium">Need Enterprise or custom terms?</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            High-volume data access, SLA guarantees, white-label options, and custom integrations &mdash; let&rsquo;s talk.
-          </p>
-          <a
-            href={
-              (import.meta as unknown as { env: Record<string, string> }).env.VITE_ENTERPRISE_BOOKING_URL ||
-              "mailto:hello@coherencedaddy.com"
-            }
-            className="mt-3 inline-block text-sm underline"
-          >
-            Talk to us &rarr;
-          </a>
-        </CardContent>
-      </Card>
+      {/* Enterprise CTA — inline Calendly */}
+      <div className="mt-4">
+        <Card className="border-muted">
+          <CardContent className="pt-5 text-center">
+            <p className="font-medium">Need Enterprise or custom terms?</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              High-volume data access, SLA guarantees, white-label options, and custom integrations &mdash; book a call below.
+            </p>
+          </CardContent>
+        </Card>
+        <CalendlyWidget
+          url={
+            (import.meta as unknown as { env: Record<string, string> }).env
+              .VITE_ENTERPRISE_BOOKING_URL ||
+            "https://calendly.com/coherencedaddy-info?background_color=ff876d&primary_color=ff876d"
+          }
+          title="Book a Call"
+          subtitle="Questions about the Intel API? Let's talk."
+        />
+      </div>
 
       <footer className="mt-8 text-center text-sm text-muted-foreground">
         <p>

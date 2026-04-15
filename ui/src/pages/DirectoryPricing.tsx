@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { directoryListingsApi, type DirectoryTier } from "../api/directory-listings";
+import { CalendlyWidget } from "@/components/CalendlyWidget";
 
 // ---------------------------------------------------------------------------
 // Tier definitions — mirrors server/src/services/directory-listings.ts
@@ -170,7 +171,7 @@ export function DirectoryPricing() {
 
   const enterpriseBookingUrl =
     (import.meta as unknown as { env: Record<string, string> }).env.VITE_ENTERPRISE_BOOKING_URL ||
-    "mailto:hello@coherencedaddy.com";
+    "https://calendly.com/coherencedaddy-info?background_color=ff876d&primary_color=ff876d";
 
   return (
     <div className="mx-auto max-w-5xl p-8">
@@ -269,19 +270,23 @@ export function DirectoryPricing() {
         </Card>
       </div>
 
-      {/* Enterprise card */}
-      <Card className="mt-6 border-muted">
-        <CardContent className="pt-5 text-center">
-          <p className="font-medium">Enterprise or custom needs?</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Multi-directory bundles, white-label integrations, custom analytics dashboards —
-            let&apos;s talk.
-          </p>
-          <a href={enterpriseBookingUrl} className="mt-3 inline-block text-sm underline">
-            Contact us &rarr;
-          </a>
-        </CardContent>
-      </Card>
+      {/* Enterprise card — inline Calendly */}
+      <div className="mt-6">
+        <Card className="border-muted">
+          <CardContent className="pt-5 text-center">
+            <p className="font-medium">Enterprise or custom needs?</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Multi-directory bundles, white-label integrations, custom analytics dashboards —
+              book a discovery call below.
+            </p>
+          </CardContent>
+        </Card>
+        <CalendlyWidget
+          url={enterpriseBookingUrl}
+          title="Book a Discovery Call"
+          subtitle="Want a custom tier or have questions about the directory?"
+        />
+      </div>
 
       <footer className="mt-10 text-center text-sm text-muted-foreground">
         <p>
