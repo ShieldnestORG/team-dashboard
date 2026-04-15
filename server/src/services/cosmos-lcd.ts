@@ -185,6 +185,45 @@ async function getValidatorCount(baseUrl: string): Promise<number | null> {
   }
 }
 
+interface LCDValidator {
+  operator_address: string;
+  jailed: boolean;
+  status: string;
+  tokens: string;
+  description: { moniker?: string };
+  commission: { commission_rates: { rate: string } };
+}
+
+/**
+ * Fetch the FULL bonded validator set, paginated. Used for rank tracking —
+ * sorted by tokens DESC server-side by default, so element 0 = #1 by voting
+ * power. Replaces Firecrawl scraping of mintscan.io which is a JS SPA.
+ */
+async function getBondedValidators(baseUrl: string): Promise<LCDValidator[]> {
+  const all: LCDValidator[] = [];
+  let nextKey: string | undefined;
+  for (let i = 0; i < 10; i++) {
+    const qs = new URLSearchParams({
+      "status": "BOND_STATUS_BONDED",
+      "pagination.limit": "200",
+    });
+    if (nextKey) qs.set("pagination.key", nextKey);
+    try {
+      const data = await lcdFetch<{
+        validators: LCDValidator[];
+        pagination: { next_key: string | null };
+      }>(baseUrl, `/cosmos/staking/v1beta1/validators?${qs.toString()}`);
+      all.push(...data.validators);
+      if (!data.pagination?.next_key) break;
+      nextKey = data.pagination.next_key;
+    } catch (err) {
+      logger.warn({ err, baseUrl, page: i }, "LCD validator page fetch failed");
+      break;
+    }
+  }
+  return all;
+}
+
 async function getLatestBlockHeight(baseUrl: string): Promise<number | null> {
   try {
     const data = await lcdFetch<{ block: { header: { height: string } } }>(
@@ -316,5 +355,138 @@ export function cosmosLcdService(db: Db) {
     return { success: errors.length === 0 && processed > 0, processed, errors };
   }
 
-  return { ingestChainMetrics };
+  // -------------------------------------------------------------------------
+  // Validator rank tracking (replaces firecrawl-validators.ts)
+  //
+  // Mintscan and other Cosmos explorers are JS-rendered SPAs in 2026 — basic
+  // Firecrawl /v1/scrape returns only nav chrome. The LCD has the full
+  // validator set with tokens, commission, and moniker, so we sort locally
+  // and write the same shape into validator_rank_history that the old
+  // Firecrawl path produced. Authoritative, no scraping fragility.
+  // -------------------------------------------------------------------------
+
+  async function ingestValidatorsForNetwork(
+    network: LCDNetwork,
+  ): Promise<{ ok: boolean; processed: number; tracked: number | null; error?: string }> {
+    try {
+      const trackedMonikerEnv = `SHIELDNEST_${network.slug.toUpperCase().replace(/-/g, "_")}_MONIKER`;
+      const trackedMoniker = process.env[trackedMonikerEnv] || (network.slug === "tx-blockchain" ? "ShieldNest" : null);
+
+      const validators = await getBondedValidators(network.baseUrl);
+      if (validators.length === 0) {
+        return { ok: false, processed: 0, tracked: null, error: `${network.slug}: no validators returned` };
+      }
+
+      // Sort by tokens DESC → rank
+      const sorted = [...validators].sort((a, b) => {
+        const at = BigInt(a.tokens || "0");
+        const bt = BigInt(b.tokens || "0");
+        return at > bt ? -1 : at < bt ? 1 : 0;
+      });
+
+      const totalBonded = sorted.reduce((sum, v) => sum + BigInt(v.tokens || "0"), 0n);
+
+      // Top 50 + tracked moniker (if outside top 50)
+      const top50 = sorted.slice(0, 50);
+      let trackedRank: number | null = null;
+      let trackedRow: LCDValidator | null = null;
+      if (trackedMoniker) {
+        const idx = sorted.findIndex(
+          (v) => (v.description?.moniker || "").toLowerCase().includes(trackedMoniker.toLowerCase()),
+        );
+        if (idx >= 0) {
+          trackedRank = idx + 1;
+          trackedRow = sorted[idx]!;
+          if (trackedRank > 50) top50.push(trackedRow);
+        }
+      }
+
+      // Bulk insert into validator_rank_history
+      for (let i = 0; i < top50.length; i++) {
+        const v = top50[i]!;
+        const rank = sorted.indexOf(v) + 1;
+        const moniker = (v.description?.moniker || v.operator_address).slice(0, 200);
+        const tokensBig = BigInt(v.tokens || "0");
+        const votingPowerPct =
+          totalBonded > 0n ? Number((tokensBig * 1_000_000n) / totalBonded) / 10_000 : null;
+        const commissionPct = Number(v.commission?.commission_rates?.rate || "0") * 100;
+        await db.execute(sql`
+          INSERT INTO validator_rank_history (network, moniker, rank, voting_power, commission)
+          VALUES (
+            ${network.slug},
+            ${moniker},
+            ${rank},
+            ${votingPowerPct},
+            ${commissionPct}
+          )
+        `);
+      }
+
+      // Also write a summary intel_reports row for content-cron consumption
+      const headlineParts = [`${sorted.length} validators`];
+      if (top50[0]) headlineParts.push(`#1 ${top50[0].description?.moniker?.slice(0, 40) || top50[0].operator_address.slice(0, 12)}`);
+      if (trackedRow) headlineParts.push(`tracked: ${trackedRow.description?.moniker} #${trackedRank}`);
+      const headline = `Validators: ${network.slug} — ${headlineParts.join(", ")}`;
+
+      const summaryPayload = {
+        chain: network.slug,
+        source: "cosmos-lcd",
+        total_bonded_validators: sorted.length,
+        top10: sorted.slice(0, 10).map((v, i) => ({
+          rank: i + 1,
+          moniker: v.description?.moniker || v.operator_address,
+          tokens: v.tokens,
+          commission: Number(v.commission?.commission_rates?.rate || "0"),
+        })),
+        tracked: trackedRow
+          ? {
+              moniker: trackedRow.description?.moniker,
+              rank: trackedRank,
+              tokens: trackedRow.tokens,
+            }
+          : null,
+        captured_at: new Date().toISOString(),
+      };
+
+      const embedding = await getEmbedding(`${headline} ${JSON.stringify(summaryPayload)}`);
+      await db.execute(sql`
+        INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, embedding)
+        VALUES (
+          ${network.slug},
+          'validator-rank',
+          ${headline},
+          ${JSON.stringify(summaryPayload)},
+          ${`${network.explorerUrl}/validators`},
+          ${`[${embedding.join(",")}]`}::vector
+        )
+      `);
+
+      logger.info(
+        { network: network.slug, total: sorted.length, tracked: trackedRank },
+        "LCD validator ranks ingested",
+      );
+      return { ok: true, processed: top50.length, tracked: trackedRank };
+    } catch (err) {
+      const msg = `${network.slug}: ${String(err)}`;
+      logger.error({ err, network: network.slug }, "LCD validator rank ingest failed");
+      return { ok: false, processed: 0, tracked: null, error: msg };
+    }
+  }
+
+  async function ingestValidatorRanks(): Promise<{
+    success: boolean;
+    processed: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    let processed = 0;
+    for (const network of NETWORKS) {
+      const result = await ingestValidatorsForNetwork(network);
+      if (result.ok) processed += result.processed;
+      else if (result.error) errors.push(result.error);
+    }
+    return { success: errors.length === 0 && processed > 0, processed, errors };
+  }
+
+  return { ingestChainMetrics, ingestValidatorRanks };
 }
