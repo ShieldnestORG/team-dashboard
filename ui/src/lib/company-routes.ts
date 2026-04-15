@@ -35,6 +35,12 @@ const BOARD_ROUTE_ROOTS = new Set([
   "partners",
   "youtube",
   "partner-dashboard",
+  "marketing-pushes",
+  "intel-billing",
+  "knowledge-graph",
+  "cities",
+  "repo-updates",
+  "automation-health",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
