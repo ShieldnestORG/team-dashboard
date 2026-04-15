@@ -8,7 +8,7 @@ import { execSync } from "child_process";
 import type { Db } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import { sendAlert } from "./alerting.js";
-import { OLLAMA_URL as SHARED_OLLAMA_URL, ollamaHeaders } from "./ollama-client.js";
+import { OLLAMA_URL as SHARED_OLLAMA_URL, ollamaHeaders, ollamaHealth, markOllamaFailure } from "./ollama-client.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,9 @@ function getServiceChecks(): ServiceCheck[] {
 
   return [
     { name: "Backend API", url: `http://127.0.0.1:${port}/api/health/readiness` },
-    { name: "Ollama LLM", url: `${ollamaUrl}/api/tags`, headers: ollamaHeaders() },
+    // /api/version is lighter than /api/tags and works on both self-hosted and Ollama Cloud.
+    // Timeout is 15s — cloud endpoints can be slow on first hit.
+    { name: "Ollama LLM", url: `${ollamaUrl}/api/version`, headers: ollamaHeaders(), timeoutMs: 15_000 },
     { name: "Firecrawl", url: "https://firecrawl.coherencedaddy.com/", timeoutMs: 10_000 },
     { name: "Embedding Service", url: `${embedUrl}/health`, timeoutMs: 10_000 },
   ];
@@ -140,13 +142,43 @@ async function checkService(svc: ServiceCheck): Promise<ServiceStatus> {
     status.latencyMs = Date.now() - start;
 
     if (resp.ok) {
-      status.status = "up";
-      status.lastUpAt = status.lastCheckedAt;
-      status.consecutiveFailures = 0;
+      // For Ollama, validate the /api/version response is valid JSON with a version field
+      if (svc.name === "Ollama LLM") {
+        try {
+          const data = await resp.json() as { version?: string };
+          if (!data.version) {
+            status.status = "degraded";
+            status.error = "Unexpected response: missing version field";
+            status.consecutiveFailures++;
+            markOllamaFailure(status.error);
+          } else {
+            status.status = "up";
+            status.lastUpAt = status.lastCheckedAt;
+            status.consecutiveFailures = 0;
+            // Health check success also counts as a signal the service is reachable
+            ollamaHealth.lastSuccess = ollamaHealth.lastSuccess ?? new Date();
+            ollamaHealth.consecutiveFailures = 0;
+            ollamaHealth.lastError = null;
+            ollamaHealth.lastCheckedAt = new Date();
+          }
+        } catch {
+          status.status = "degraded";
+          status.error = "Invalid JSON response from /api/version";
+          status.consecutiveFailures++;
+          markOllamaFailure(status.error);
+        }
+      } else {
+        status.status = "up";
+        status.lastUpAt = status.lastCheckedAt;
+        status.consecutiveFailures = 0;
+      }
     } else {
       status.status = "degraded";
       status.error = `HTTP ${resp.status}`;
       status.consecutiveFailures++;
+      if (svc.name === "Ollama LLM") {
+        markOllamaFailure(`HTTP ${resp.status} from ${svc.url}`);
+      }
     }
   } catch (err) {
     status.latencyMs = Date.now() - start;
@@ -154,6 +186,9 @@ async function checkService(svc: ServiceCheck): Promise<ServiceStatus> {
     status.error = err instanceof Error ? err.message : String(err);
     status.lastDownAt = status.lastCheckedAt;
     status.consecutiveFailures++;
+    if (svc.name === "Ollama LLM") {
+      markOllamaFailure(status.error);
+    }
   }
 
   return status;
@@ -313,6 +348,82 @@ async function collectServiceResources(): Promise<Map<string, ServiceResources>>
 }
 
 // ---------------------------------------------------------------------------
+// Ollama alert helpers — diagnostic subject + body for enriched emails
+// ---------------------------------------------------------------------------
+
+function classifyOllamaError(error: string | null): { type: string; hint: string } {
+  if (!error) return { type: "unknown", hint: "Check VPS connectivity and Ollama Cloud status at https://ollama.com/status" };
+  const e = error.toLowerCase();
+  if (e.includes("timeout") || e.includes("aborted") || e.includes("abort")) {
+    return {
+      type: "timeout",
+      hint: "Cloud API may be rate-limited, slow, or the endpoint URL has changed. Check https://ollama.com/status",
+    };
+  }
+  if (e.includes("401") || e.includes("403") || e.includes("unauthorized") || e.includes("forbidden")) {
+    return {
+      type: "auth error",
+      hint: "OLLAMA_API_KEY may be expired or invalid. Regenerate at https://ollama.com/settings/api-keys",
+    };
+  }
+  if (e.includes("5") && (e.includes("500") || e.includes("502") || e.includes("503") || e.includes("504"))) {
+    return {
+      type: "server error",
+      hint: "Ollama Cloud service error. Check https://ollama.com/status for ongoing incidents",
+    };
+  }
+  if (e.includes("enotfound") || e.includes("dns") || e.includes("getaddrinfo") || e.includes("network")) {
+    return {
+      type: "network error",
+      hint: "DNS resolution failure or VPS network issue. Check VPS connectivity: curl -I https://ollama.com",
+    };
+  }
+  return {
+    type: "unknown error",
+    hint: "Check VPS connectivity and Ollama Cloud status at https://ollama.com/status",
+  };
+}
+
+function buildOllamaAlertSubject(error: string | null, consecutiveFailures: number): string {
+  const { type } = classifyOllamaError(error);
+  return `⚠️ Ollama LLM Unreachable — ${type} — ${consecutiveFailures} failure${consecutiveFailures !== 1 ? "s" : ""}`;
+}
+
+function buildOllamaAlertBody(svc: ServiceStatus): string {
+  const { type, hint } = classifyOllamaError(svc.error);
+  const ollamaUrlDomain = (() => {
+    try { return new URL(SHARED_OLLAMA_URL).hostname; } catch { return SHARED_OLLAMA_URL; }
+  })();
+  const lastSuccess = ollamaHealth.lastSuccess
+    ? ollamaHealth.lastSuccess.toISOString()
+    : "never recorded (server may have just started)";
+  const now = new Date().toISOString();
+
+  return [
+    `OLLAMA LLM UNREACHABLE`,
+    ``,
+    `Timestamp:           ${now}`,
+    `Endpoint checked:    ${svc.url}`,
+    `OLLAMA_URL domain:   ${ollamaUrlDomain}`,
+    `Error type:          ${type}`,
+    `Exact error:         ${svc.error ?? "none"}`,
+    `Consecutive failures:${svc.consecutiveFailures}`,
+    `Last successful call: ${lastSuccess}`,
+    `Latency (ms):        ${svc.latencyMs ?? "n/a"}`,
+    ``,
+    `PROBABLE CAUSE`,
+    hint,
+    ``,
+    `NEXT STEPS`,
+    `1. Check Ollama Cloud status: https://ollama.com/status`,
+    `2. Verify OLLAMA_API_KEY is set and valid`,
+    `3. Test from VPS: curl -H "Authorization: Bearer $OLLAMA_API_KEY" https://ollama.com/api/version`,
+    `4. If key expired, regenerate at: https://ollama.com/settings/api-keys`,
+    `5. If network issue: ping ollama.com from VPS`,
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Main check function
 // ---------------------------------------------------------------------------
 
@@ -345,11 +456,13 @@ async function checkAllServices(db: Db): Promise<void> {
       // State transition alerts
       if (prev && prev !== svc.status) {
         if (svc.status === "down" && prev !== "down") {
-          await sendAlert(
-            "service_down",
-            `Service DOWN: ${svc.name}`,
-            `${svc.name} at ${svc.url} is unreachable.\nError: ${svc.error}\nConsecutive failures: ${svc.consecutiveFailures}`,
-          );
+          const alertSubject = svc.name === "Ollama LLM"
+            ? buildOllamaAlertSubject(svc.error, svc.consecutiveFailures)
+            : `Service DOWN: ${svc.name}`;
+          const alertBody = svc.name === "Ollama LLM"
+            ? buildOllamaAlertBody(svc)
+            : `${svc.name} at ${svc.url} is unreachable.\nError: ${svc.error}\nConsecutive failures: ${svc.consecutiveFailures}`;
+          await sendAlert("service_down", alertSubject, alertBody);
         } else if (svc.status === "up" && prev === "down") {
           await sendAlert(
             "service_recovered",

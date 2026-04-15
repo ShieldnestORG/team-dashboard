@@ -27,6 +27,39 @@ export function ollamaHeaders(): Record<string, string> {
 }
 
 // ---------------------------------------------------------------------------
+// Health state — tracks last success and consecutive failures for alerting
+// ---------------------------------------------------------------------------
+
+export interface OllamaHealth {
+  lastSuccess: Date | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastCheckedAt: Date | null;
+}
+
+export const ollamaHealth: OllamaHealth = {
+  lastSuccess: null,
+  consecutiveFailures: 0,
+  lastError: null,
+  lastCheckedAt: null,
+};
+
+/** Call after a successful Ollama API response to reset failure state. */
+export function markOllamaSuccess(): void {
+  ollamaHealth.lastSuccess = new Date();
+  ollamaHealth.consecutiveFailures = 0;
+  ollamaHealth.lastError = null;
+  ollamaHealth.lastCheckedAt = new Date();
+}
+
+/** Call after a failed Ollama health check or API error. */
+export function markOllamaFailure(error: string): void {
+  ollamaHealth.consecutiveFailures++;
+  ollamaHealth.lastError = error;
+  ollamaHealth.lastCheckedAt = new Date();
+}
+
+// ---------------------------------------------------------------------------
 // Usage tracking — in-memory daily bucket (resets at midnight UTC)
 // ---------------------------------------------------------------------------
 
@@ -141,13 +174,16 @@ export async function callOllamaGenerate(prompt: string): Promise<string> {
     });
   } catch (err) {
     recordError();
+    markOllamaFailure(err instanceof Error ? err.message : String(err));
     throw err;
   }
 
   if (!res.ok) {
     recordError();
     const errorText = await res.text().catch(() => "Unknown error");
-    throw new Error(`Ollama error (${res.status}): ${errorText}`);
+    const msg = `Ollama error (${res.status}): ${errorText}`;
+    markOllamaFailure(msg);
+    throw new Error(msg);
   }
 
   const data = await res.json() as {
@@ -163,6 +199,7 @@ export async function callOllamaGenerate(prompt: string): Promise<string> {
     Date.now() - start,
   );
 
+  markOllamaSuccess();
   return data.response.trim();
 }
 
@@ -213,13 +250,16 @@ export async function callOllamaChat(
     });
   } catch (err) {
     recordError();
+    markOllamaFailure(err instanceof Error ? err.message : String(err));
     throw err;
   }
 
   if (!res.ok) {
     recordError();
     const errorText = await res.text().catch(() => "Unknown error");
-    throw new Error(`Ollama API error (${res.status}): ${errorText}`);
+    const msg = `Ollama API error (${res.status}): ${errorText}`;
+    markOllamaFailure(msg);
+    throw new Error(msg);
   }
 
   const data = await res.json() as {
@@ -233,6 +273,7 @@ export async function callOllamaChat(
   const outputTokens = data.eval_count || 0;
 
   recordUsage("chat", inputTokens, outputTokens, Date.now() - start);
+  markOllamaSuccess();
 
   return {
     content: data.message?.content || "",
