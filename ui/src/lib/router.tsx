@@ -24,12 +24,23 @@ function resolveTo(to: To, companyPrefix: string | null): To {
 }
 
 function useActiveCompanyPrefix(): string | null {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, companies, loading: companiesLoading } = useCompany();
   const params = RouterDom.useParams<{ companyPrefix?: string }>();
   const location = RouterDom.useLocation();
 
   if (params.companyPrefix) {
-    return normalizeCompanyPrefix(params.companyPrefix);
+    const normalizedParam = normalizeCompanyPrefix(params.companyPrefix);
+    // Validate that this param is actually a real company prefix, not a board route
+    // that got matched to /:companyPrefix because the real prefix was missing from the URL.
+    // During initial load we can't validate yet, so we tentatively trust it.
+    const isValidCompany =
+      companiesLoading ||
+      companies.some((c) => c.issuePrefix.toUpperCase() === normalizedParam);
+    if (isValidCompany) {
+      return normalizedParam;
+    }
+    // Not a known company prefix — the URL is missing the real company prefix.
+    // Fall through to use selectedCompany so sidebar links don't inherit the bad value.
   }
 
   const pathPrefix = extractCompanyPrefixFromPath(location.pathname);

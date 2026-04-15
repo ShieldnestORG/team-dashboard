@@ -25,6 +25,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
 import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
+import { isBoardPathWithoutPrefix } from "../lib/company-routes";
 import {
   DEFAULT_INSTANCE_SETTINGS_PATH,
   normalizeRememberedInstanceSettingsPath,
@@ -104,6 +105,12 @@ export function Layout() {
         ?? null;
       if (fallback && selectedCompanyId !== fallback.id) {
         setSelectedCompanyId(fallback.id, { source: "route_sync" });
+      }
+      // If the "company prefix" segment is actually a board route (URL is missing the real
+      // prefix, e.g. /automation-health instead of /CD/automation-health), auto-correct by
+      // prepending the correct prefix. This prevents the stuck-navigation state.
+      if (fallback && companyPrefix && isBoardPathWithoutPrefix(companyPrefix)) {
+        navigate(`/${fallback.issuePrefix}${location.pathname}${location.search}`, { replace: true });
       }
       return;
     }
