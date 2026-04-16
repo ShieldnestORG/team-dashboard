@@ -17,7 +17,7 @@ import {
 import { HowToGuide } from "../components/HowToGuide";
 import {
   Handshake, Plus, MousePointerClick, FileText, TrendingUp, Users,
-  ExternalLink, MapPin, ChevronRight, Globe,
+  ExternalLink, MapPin, ChevronRight, Globe, Wand2, Loader2,
 } from "lucide-react";
 
 const PARTNER_GUIDE_SECTIONS = [
@@ -68,6 +68,10 @@ export function Partners() {
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [prefillForm, setPrefillForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
+  const [scrapeUrl, setScrapeUrl] = useState("");
+  const [scraping, setScraping] = useState(false);
+  const [scrapeError, setScrapeError] = useState<string | null>(null);
+  const [scrapeVersion, setScrapeVersion] = useState(0);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -139,6 +143,32 @@ export function Partners() {
   const totalMentions = partners.reduce((sum, p) => sum + (p.contentMentions ?? 0), 0);
 
   // ---- Handlers -----------------------------------------------------------
+
+  async function handleScrape() {
+    const url = scrapeUrl.trim();
+    if (!url) return;
+    setScraping(true);
+    setScrapeError(null);
+    try {
+      const result = await partnersApi.prefill(url);
+      setPrefillForm({
+        ...EMPTY_FORM,
+        website: url,
+        industry: result.industry ?? "other",
+        description: result.description ?? "",
+        services: result.services?.join(", ") ?? "",
+        targetKeywords: result.targetKeywords?.join(", ") ?? "",
+        phone: result.contactInfo?.phone ?? "",
+        address: result.contactInfo?.address ?? "",
+        contactEmail: result.contactInfo?.email ?? "",
+      });
+      setScrapeVersion((v) => v + 1);
+    } catch (err) {
+      setScrapeError(err instanceof Error ? err.message : "Scrape failed — check the URL and try again.");
+    } finally {
+      setScraping(false);
+    }
+  }
 
   function handleCreate(form: PartnerFormState) {
     createMutation.mutate(formToInput(form));
@@ -223,12 +253,54 @@ export function Partners() {
               Pre-filled from city business lead — verify all details before saving.
             </div>
           )}
+
+          {/* Scrape & Fill */}
+          <Card className="border-dashed border-blue-400/40 bg-blue-500/5">
+            <CardContent className="pt-4 pb-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Wand2 className="h-4 w-4 text-blue-400 shrink-0" />
+                <span className="text-sm font-medium">Scrape & Fill</span>
+                <span className="text-xs text-muted-foreground">— enter the partner's website to auto-fill the form</span>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={scrapeUrl}
+                  onChange={(e) => setScrapeUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !scraping && handleScrape()}
+                  placeholder="https://example.com"
+                  disabled={scraping}
+                  className="flex-1"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleScrape}
+                  disabled={!scrapeUrl.trim() || scraping}
+                >
+                  {scraping
+                    ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    : <Wand2 className="h-3.5 w-3.5 mr-1.5" />}
+                  {scraping ? "Scraping..." : "Scrape & Fill"}
+                </Button>
+              </div>
+              {scraping && (
+                <p className="text-xs text-muted-foreground">
+                  Scraping website and extracting business data — this can take 30–60 seconds...
+                </p>
+              )}
+              {scrapeError && <p className="text-xs text-red-500">{scrapeError}</p>}
+            </CardContent>
+          </Card>
+
           <PartnerForm
+            key={scrapeVersion}
             initial={prefillForm}
             onSave={handleCreate}
             onCancel={() => {
               setShowCreate(false);
               setPrefillForm(EMPTY_FORM);
+              setScrapeUrl("");
+              setScrapeError(null);
             }}
             saving={createMutation.isPending}
           />

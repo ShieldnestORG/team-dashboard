@@ -8,7 +8,7 @@ import { randomUUID } from "crypto";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerClicks } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
-import { runPartnerOnboarding } from "../services/partner-onboarding.js";
+import { runPartnerOnboarding, prefillPartnerFromWebsite } from "../services/partner-onboarding.js";
 import { createCheckoutSession } from "../services/stripe-checkout.js";
 import { stripeConfigured } from "../services/stripe-client.js";
 
@@ -25,6 +25,22 @@ function slugify(name: string): string {
 
 export function partnerRoutes(db: Db): Router {
   const router = Router();
+
+  // ── POST /prefill — Scrape a website and extract partner data (no save) ──
+  router.post("/prefill", async (req, res) => {
+    try {
+      const { website, name } = req.body as { website?: string; name?: string };
+      if (!website || typeof website !== "string") {
+        res.status(400).json({ error: "website is required" });
+        return;
+      }
+      const result = await prefillPartnerFromWebsite(website.trim(), name?.trim());
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Failed to prefill partner from website");
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
 
   // ── GET / — List all partners ───────────────────────────────────
   router.get("/", async (req, res) => {

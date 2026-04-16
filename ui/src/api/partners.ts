@@ -128,6 +128,16 @@ export interface PartnerSiteConfig {
   siteVercelProjectId: string | null;
 }
 
+export interface PartnerPrefillResult {
+  industry: string;
+  description: string;
+  services: string[];
+  targetKeywords: string[];
+  tagline: string;
+  brandColors?: { primary: string; secondary: string; accent: string };
+  contactInfo?: { phone?: string; address?: string; email?: string };
+}
+
 export interface CreatePartnerInput {
   name: string;
   slug?: string;
@@ -168,6 +178,8 @@ export const partnersApi = {
   delete: (slug: string) => api.delete<{ ok: boolean }>(`/partners/${slug}`),
   getMetrics: (slug: string) => api.get<PartnerMetrics>(`/partners/${slug}/metrics`),
   getDashboard: (slug: string, token: string) => api.get<PartnerDashboardData>(`/partners/${slug}/dashboard?token=${token}`),
+  prefill: (website: string, name?: string) =>
+    api.post<PartnerPrefillResult>("/partners/prefill", { website, name }),
   triggerOnboarding: (slug: string) =>
     api.post<{ ok: boolean; status: string }>(`/partners/${slug}/onboard`, {}),
   getClicks: (slug: string, opts?: { limit?: number; offset?: number }) => {

@@ -212,6 +212,38 @@ Return ONLY a brief 1-2 sentence summary.`;
 }
 
 // ---------------------------------------------------------------------------
+// Prefill: scrape + extract without saving (for the admin create form)
+// ---------------------------------------------------------------------------
+
+export interface PartnerPrefillResult {
+  industry: string;
+  description: string;
+  services: string[];
+  targetKeywords: string[];
+  tagline: string;
+  brandColors?: { primary: string; secondary: string; accent: string };
+  contactInfo?: { phone?: string; address?: string; email?: string };
+}
+
+export async function prefillPartnerFromWebsite(
+  website: string,
+  name?: string,
+): Promise<PartnerPrefillResult> {
+  const { markdown } = await firecrawlScrape(website);
+  const partnerName = name ?? new URL(website).hostname.replace(/^www\./, "");
+  const intel = await extractBusinessIntel(markdown, partnerName, "other");
+  return {
+    industry: intel.industry,
+    description: intel.description,
+    services: intel.services,
+    targetKeywords: intel.targetKeywords,
+    tagline: intel.tagline,
+    brandColors: intel.brandColors ?? undefined,
+    contactInfo: intel.contactInfo ?? undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main onboarding pipeline
 // ---------------------------------------------------------------------------
 
