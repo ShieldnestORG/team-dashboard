@@ -21,6 +21,7 @@ import {
   TrendingUp, Calendar, Globe, Pencil, Trash2, Copy, CheckCircle,
   ArrowLeft, Clock, Tag, Shield, DollarSign, RefreshCw, Rocket,
   Target, Palette, Building, KeyRound, Loader2, AlertCircle, Scan,
+  Sparkles, Upload, CreditCard, Trophy, Send, Info,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -33,11 +34,11 @@ const TABS: PageTabItem[] = [
   { value: "content", label: "Content" },
   { value: "site", label: "Site" },
   { value: "clicks", label: "Clicks" },
-  { value: "settings", label: "Settings" },
+  { value: "crm", label: "CRM" },
 ];
 
 // ---------------------------------------------------------------------------
-// Helper: format date
+// Helpers
 // ---------------------------------------------------------------------------
 
 function fmtDate(dateStr: string) {
@@ -50,11 +51,24 @@ function fmtDateTime(dateStr: string) {
   });
 }
 
+function InfoRow({ icon: Icon, label, value }: { icon: typeof Globe; label: string; value: React.ReactNode }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start gap-2">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+      <span className="text-xs text-muted-foreground w-24 shrink-0">{label}</span>
+      <span className="text-sm">{value}</span>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Overview Tab
 // ---------------------------------------------------------------------------
 
 function OverviewTab({ partner }: { partner: Partner }) {
+  const competitors = partner.baselineAnalytics?.competitorSites ?? [];
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {/* Business Info */}
@@ -74,10 +88,18 @@ function OverviewTab({ partner }: { partner: Partner }) {
           } />
           <InfoRow icon={MapPin} label="Location" value={partner.location} />
           <InfoRow icon={Tag} label="Industry" value={partner.industry} />
+          <InfoRow icon={Building} label="Address" value={partner.address} />
+          <InfoRow icon={Phone} label="Phone" value={partner.phone} />
           {partner.description && (
             <div className="pt-2 border-t">
               <p className="text-xs text-muted-foreground mb-1">Description</p>
               <p className="text-sm">{partner.description}</p>
+            </div>
+          )}
+          {partner.baselineAnalytics?.businessSummary && !partner.description && (
+            <div className="pt-2 border-t">
+              <p className="text-xs text-muted-foreground mb-1">AI Summary</p>
+              <p className="text-sm text-muted-foreground italic">{partner.baselineAnalytics.businessSummary}</p>
             </div>
           )}
           {partner.services && partner.services.length > 0 && (
@@ -90,8 +112,6 @@ function OverviewTab({ partner }: { partner: Partner }) {
               </div>
             </div>
           )}
-          <InfoRow icon={Building} label="Address" value={partner.address} />
-          <InfoRow icon={Phone} label="Phone" value={partner.phone} />
           {partner.hours && Object.keys(partner.hours).length > 0 && (
             <div className="pt-2 border-t">
               <p className="text-xs text-muted-foreground mb-1.5">Hours</p>
@@ -108,64 +128,24 @@ function OverviewTab({ partner }: { partner: Partner }) {
         </CardContent>
       </Card>
 
-      {/* Contact & Status */}
+      {/* SEO Intelligence */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Contact & Status</CardTitle>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            SEO Intelligence
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <InfoRow icon={User} label="Contact" value={partner.contactName} />
-          <InfoRow icon={Mail} label="Email" value={
-            partner.contactEmail ? (
-              <a href={`mailto:${partner.contactEmail}`} className="text-primary hover:underline">
-                {partner.contactEmail}
-              </a>
-            ) : null
-          } />
-          <div className="pt-2 border-t flex flex-wrap gap-2">
-            <div className="flex items-center gap-1.5">
-              <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Status:</span>
-              <Badge variant="outline" className={`text-xs ${STATUS_COLORS[partner.status] ?? ""}`}>
-                {partner.status}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Tier:</span>
-              <Badge variant="outline" className="text-xs">{partner.tier}</Badge>
-            </div>
-          </div>
-          <div className="pt-2 border-t space-y-2">
-            {partner.referralFeePerClient != null && (
-              <InfoRow icon={DollarSign} label="Referral Fee" value={`$${(partner.referralFeePerClient / 100).toFixed(2)}/client/mo`} />
-            )}
-            {partner.monthlyFee != null && (
-              <InfoRow icon={DollarSign} label="Monthly Fee" value={`$${(partner.monthlyFee / 100).toFixed(2)}/mo`} />
-            )}
-          </div>
-          <div className="pt-2 border-t">
-            <InfoRow icon={Clock} label="Partner Since" value={
-              partner.partnerSince ? new Date(partner.partnerSince).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : null
-            } />
-          </div>
-          {partner.socialHandles && Object.keys(partner.socialHandles).length > 0 && (
-            <div className="pt-2 border-t">
-              <p className="text-xs text-muted-foreground mb-1.5">Social</p>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(partner.socialHandles).map(([platform, handle]) => (
-                  <Badge key={platform} variant="secondary" className="text-xs">
-                    {platform}: {handle}
-                  </Badge>
-                ))}
-              </div>
+        <CardContent className="space-y-4 text-sm">
+          {partner.tagline && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Tagline</p>
+              <p className="text-sm italic">"{partner.tagline}"</p>
             </div>
           )}
           {partner.targetKeywords && partner.targetKeywords.length > 0 && (
-            <div className="pt-2 border-t">
-              <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
-                <Target className="h-3 w-3" /> Target Keywords
-              </p>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Target Keywords</p>
               <div className="flex flex-wrap gap-1.5">
                 {partner.targetKeywords.map((kw) => (
                   <Badge key={kw} variant="outline" className="text-xs">{kw}</Badge>
@@ -184,15 +164,31 @@ function OverviewTab({ partner }: { partner: Partner }) {
               <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
                 <Palette className="h-3 w-3" /> Brand Colors
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 {Object.entries(partner.brandColors).map(([name, color]) => (
                   <div key={name} className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded border" style={{ backgroundColor: color }} />
+                    <div className="w-5 h-5 rounded border shadow-sm" style={{ backgroundColor: color }} />
                     <span className="text-xs text-muted-foreground">{name}</span>
+                    <span className="text-xs font-mono text-muted-foreground">{color}</span>
                   </div>
                 ))}
               </div>
             </div>
+          )}
+          {partner.socialHandles && Object.keys(partner.socialHandles).length > 0 && (
+            <div className="pt-2 border-t">
+              <p className="text-xs text-muted-foreground mb-1.5">Social Handles</p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(partner.socialHandles).map(([platform, handle]) => (
+                  <Badge key={platform} variant="secondary" className="text-xs">
+                    {platform}: {handle}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {!partner.tagline && !partner.targetKeywords?.length && (
+            <p className="text-xs text-muted-foreground">Run the onboarding scan to extract SEO data.</p>
           )}
         </CardContent>
       </Card>
@@ -201,7 +197,7 @@ function OverviewTab({ partner }: { partner: Partner }) {
       <OnboardingStatus partner={partner} />
 
       {/* Quick Stats */}
-      <Card className="lg:col-span-2">
+      <Card>
         <CardContent className="py-4">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
@@ -210,15 +206,47 @@ function OverviewTab({ partner }: { partner: Partner }) {
             </div>
             <div>
               <p className="text-2xl font-bold">{partner.contentMentions.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">Content Mentions</p>
+              <p className="text-xs text-muted-foreground">CD Mentions</p>
             </div>
             <div>
-              <p className="text-2xl font-bold">{partner.totalClicks > 0 ? "Active" : "New"}</p>
-              <p className="text-xs text-muted-foreground">Traffic Status</p>
+              <p className="text-2xl font-bold">{partner.contentPostCount ?? 0}</p>
+              <p className="text-xs text-muted-foreground">Site Posts</p>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Competitor Intelligence */}
+      {competitors.length > 0 && (
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-amber-500" />
+              Competitor Intelligence
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Found during onboarding scan
+              {partner.baselineCapturedAt && ` · ${fmtDate(partner.baselineCapturedAt)}`}
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {competitors.map((c) => (
+                <div key={c.url} className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium leading-tight">{c.name}</p>
+                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5">
+                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+                    </a>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">{c.url.replace(/^https?:\/\//, "")}</p>
+                  <p className="text-xs leading-relaxed">{c.summary}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -247,7 +275,7 @@ function OnboardingStatus({ partner }: { partner: Partner }) {
   const isRunning = status === "scraping" || status === "analyzing";
 
   return (
-    <Card className="lg:col-span-2">
+    <Card>
       <CardContent className="py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -257,16 +285,14 @@ function OnboardingStatus({ partner }: { partner: Partner }) {
             <div>
               <p className="text-sm font-medium">{cfg.label}</p>
               {status === "complete" && partner.onboardingCompletedAt && (
-                <p className="text-xs text-muted-foreground">
-                  {fmtDateTime(partner.onboardingCompletedAt)}
-                </p>
+                <p className="text-xs text-muted-foreground">{fmtDateTime(partner.onboardingCompletedAt)}</p>
               )}
               {status === "failed" && partner.onboardingError && (
                 <p className="text-xs text-red-400 max-w-md truncate">{partner.onboardingError}</p>
               )}
               {status === "none" && (
                 <p className="text-xs text-muted-foreground">
-                  Scan this partner's website to auto-populate keywords, industry, and competitor data.
+                  Scan to auto-populate keywords, industry, and competitor data.
                 </p>
               )}
             </div>
@@ -288,17 +314,6 @@ function OnboardingStatus({ partner }: { partner: Partner }) {
   );
 }
 
-function InfoRow({ icon: Icon, label, value }: { icon: typeof Globe; label: string; value: React.ReactNode }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-center gap-2">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <span className="text-xs text-muted-foreground w-20 shrink-0">{label}</span>
-      <span className="text-sm">{value}</span>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Analytics Tab
 // ---------------------------------------------------------------------------
@@ -317,7 +332,6 @@ function AnalyticsTab({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4">
-      {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 py-4">
@@ -343,7 +357,6 @@ function AnalyticsTab({ slug }: { slug: string }) {
         </Card>
       </div>
 
-      {/* Clicks by Day */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -385,7 +398,6 @@ function AnalyticsTab({ slug }: { slug: string }) {
         </CardContent>
       </Card>
 
-      {/* Traffic Sources */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium">Traffic Sources</CardTitle>
@@ -406,10 +418,7 @@ function AnalyticsTab({ slug }: { slug: string }) {
                       </span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );
@@ -423,17 +432,41 @@ function AnalyticsTab({ slug }: { slug: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Content Tab (Placeholder for Phase 3)
+// Content Tab
 // ---------------------------------------------------------------------------
 
 function ContentTab({ partner }: { partner: Partner }) {
+  const queryClient = useQueryClient();
+  const [genMsg, setGenMsg] = useState<string | null>(null);
+  const [pubMsg, setPubMsg] = useState<string | null>(null);
+
   const { data, isLoading } = useQuery({
     queryKey: ["partners", "site-content", partner.slug, "all"],
     queryFn: () => partnersApi.site.getContent(partner.slug, { limit: 50 }),
   });
 
+  const generateMutation = useMutation({
+    mutationFn: () => partnersApi.site.generateContent(partner.slug),
+    onSuccess: (res) => {
+      setGenMsg(`Generated: "${res.title}"`);
+      queryClient.invalidateQueries({ queryKey: ["partners", "site-content", partner.slug] });
+      queryClient.invalidateQueries({ queryKey: ["partners", "detail", partner.slug] });
+      setTimeout(() => setGenMsg(null), 5000);
+    },
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: () => partnersApi.site.publishDrafts(partner.slug),
+    onSuccess: (res) => {
+      setPubMsg(`Published ${res.published} of ${res.total} drafts`);
+      queryClient.invalidateQueries({ queryKey: ["partners", "site-content", partner.slug] });
+      setTimeout(() => setPubMsg(null), 5000);
+    },
+  });
+
   const items = data?.content ?? [];
   const total = data?.total ?? 0;
+  const draftCount = items.filter((i) => i.status === "draft").length;
 
   return (
     <div className="space-y-4">
@@ -447,7 +480,7 @@ function ContentTab({ partner }: { partner: Partner }) {
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <p className="text-2xl font-bold">{partner.contentPostCount}</p>
+            <p className="text-2xl font-bold">{partner.contentPostCount ?? 0}</p>
             <p className="text-xs text-muted-foreground">Site Posts</p>
           </CardContent>
         </Card>
@@ -459,12 +492,53 @@ function ContentTab({ partner }: { partner: Partner }) {
         </Card>
       </div>
 
+      {/* AI Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            AI Content Actions
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Generate uses {partner.name}'s target keywords and industry context
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={() => generateMutation.mutate()}
+            disabled={generateMutation.isPending}
+          >
+            {generateMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+            {generateMutation.isPending ? "Generating..." : "Generate Blog Post"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => publishMutation.mutate()}
+            disabled={publishMutation.isPending || draftCount === 0}
+          >
+            {publishMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+            {publishMutation.isPending ? "Publishing..." : `Publish Drafts${draftCount > 0 ? ` (${draftCount})` : ""}`}
+          </Button>
+          {genMsg && <p className="text-xs text-green-500 self-center">{genMsg}</p>}
+          {pubMsg && <p className="text-xs text-green-500 self-center">{pubMsg}</p>}
+          {generateMutation.isError && (
+            <p className="text-xs text-red-500 self-center">
+              {(generateMutation.error as Error).message}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Content List */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">
-            Site Content ({total})
-          </CardTitle>
+          <CardTitle className="text-sm font-medium">Site Content ({total})</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -473,8 +547,7 @@ function ContentTab({ partner }: { partner: Partner }) {
             <div className="text-center py-8">
               <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">
-                No content generated for {partner.name}'s site yet.
-                Agents will auto-generate blog posts based on the partner's target keywords and industry.
+                No content yet — click "Generate Blog Post" above to create the first one.
               </p>
             </div>
           ) : (
@@ -486,16 +559,18 @@ function ContentTab({ partner }: { partner: Partner }) {
                     <div className="flex items-center gap-2 mt-0.5">
                       <Badge variant="secondary" className="text-[10px]">{item.contentType}</Badge>
                       <span className="text-xs text-muted-foreground">{fmtDate(item.createdAt)}</span>
-                      {item.metaDescription && (
-                        <span className="text-xs text-muted-foreground truncate max-w-[200px]">{item.metaDescription}</span>
+                      {item.publishedUrl && (
+                        <a href={item.publishedUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline flex items-center gap-0.5">
+                          View <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
                       )}
                     </div>
                   </div>
                   <Badge variant="outline" className={`text-xs shrink-0 ml-2 ${
                     item.status === "published" ? "bg-green-500/20 text-green-400" :
                     item.status === "queued" ? "bg-yellow-500/20 text-yellow-400" :
-                    item.status === "failed" ? "bg-red-500/20 text-red-400" :
-                    ""
+                    item.status === "failed" ? "bg-red-500/20 text-red-400" : ""
                   }`}>
                     {item.status}
                   </Badge>
@@ -510,7 +585,7 @@ function ContentTab({ partner }: { partner: Partner }) {
 }
 
 // ---------------------------------------------------------------------------
-// Site Tab (Placeholder for Phase 2)
+// Site Tab
 // ---------------------------------------------------------------------------
 
 const DEPLOY_STATUS_COLORS: Record<string, string> = {
@@ -522,6 +597,12 @@ const DEPLOY_STATUS_COLORS: Record<string, string> = {
 };
 
 function SiteTab({ partner }: { partner: Partner }) {
+  const queryClient = useQueryClient();
+  const [deploying, setDeploying] = useState(false);
+  const [deployMsg, setDeployMsg] = useState<string | null>(null);
+  const [deployErr, setDeployErr] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
   const { data: contentData, isLoading: contentLoading } = useQuery({
     queryKey: ["partners", "site-content", partner.slug],
     queryFn: () => partnersApi.site.getContent(partner.slug, { limit: 10 }),
@@ -529,106 +610,141 @@ function SiteTab({ partner }: { partner: Partner }) {
 
   const siteContent = contentData?.content ?? [];
   const hasDeployedSite = partner.siteDeployStatus === "deployed" && partner.siteUrl;
+  const baseline = partner.baselineAnalytics;
+  const topKeywords = baseline?.topKeywords ?? partner.targetKeywords ?? [];
+
+  async function handleDeploy() {
+    setDeploying(true);
+    setDeployMsg(null);
+    setDeployErr(null);
+    try {
+      const result = await partnersApi.site.deploy(partner.slug);
+      setDeployMsg(`Deployed: ${result.message}`);
+      queryClient.invalidateQueries({ queryKey: ["partners", "detail", partner.slug] });
+    } catch (err) {
+      setDeployErr(err instanceof Error ? err.message : "Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  }
+
+  function copyDashboardLink() {
+    if (!partner.dashboardToken) return;
+    const url = `${window.location.origin}/partner-dashboard/${partner.slug}?token=${partner.dashboardToken}`;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  }
 
   return (
     <div className="space-y-4">
-      {/* Site Status */}
+      {/* Microsite Deploy */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Rocket className="h-4 w-4 text-primary" />
-            Microsite Status
+            Microsite
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className={`text-xs ${DEPLOY_STATUS_COLORS[partner.siteDeployStatus] ?? ""}`}>
-              {partner.siteDeployStatus}
-            </Badge>
-            {partner.siteLastDeployedAt && (
-              <span className="text-xs text-muted-foreground">
-                Last deployed: {fmtDateTime(partner.siteLastDeployedAt)}
-              </span>
-            )}
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className={`text-xs ${DEPLOY_STATUS_COLORS[partner.siteDeployStatus] ?? ""}`}>
+                  {partner.siteDeployStatus === "none" ? "Not deployed" : partner.siteDeployStatus}
+                </Badge>
+                {partner.siteLastDeployedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    Last: {fmtDateTime(partner.siteLastDeployedAt)}
+                  </span>
+                )}
+              </div>
+              {hasDeployedSite && (
+                <a href={partner.siteUrl!} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+                  {partner.siteUrl!.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+              {partner.siteRepoUrl && (
+                <a href={partner.siteRepoUrl} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                  GitHub Repo <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant={partner.siteDeployStatus === "deployed" ? "outline" : "default"}
+              onClick={handleDeploy}
+              disabled={deploying}
+            >
+              {deploying
+                ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                : <Rocket className="h-3.5 w-3.5 mr-1.5" />}
+              {deploying ? "Deploying..." :
+                partner.siteDeployStatus === "deployed" ? "Re-deploy" :
+                partner.siteDeployStatus === "failed" ? "Retry Deploy" : "Deploy Microsite"}
+            </Button>
           </div>
-
-          {hasDeployedSite && (
-            <a
-              href={partner.siteUrl!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-            >
-              {partner.siteUrl!.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          )}
-
-          {partner.siteRepoUrl && (
-            <a
-              href={partner.siteRepoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              GitHub Repo <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
-
+          {deployMsg && <p className="text-xs text-green-500">{deployMsg}</p>}
+          {deployErr && <p className="text-xs text-red-500">{deployErr}</p>}
           {partner.siteDeployStatus === "none" && (
-            <p className="text-xs text-muted-foreground">
-              No microsite deployed yet. Agents will build a dedicated landing page
-              and blog for {partner.name} with SEO/AEO optimization.
-            </p>
-          )}
-
-          {partner.website && (
-            <div className="pt-2 border-t">
-              <p className="text-xs text-muted-foreground mb-1">Current website</p>
-              <a
-                href={partner.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-              >
-                {partner.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
+            <div className="rounded-md bg-muted/40 border border-dashed p-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Deploying creates a GitHub repo in ShieldnestORG, renders an HTML microsite from {partner.name}'s
+                brand data, and optionally connects a Vercel project. MWF blog posts will be published to this repo automatically.
+              </p>
             </div>
           )}
         </CardContent>
       </Card>
 
       {/* Baseline Analytics */}
-      {partner.baselineAnalytics && (
+      {baseline && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Baseline Analytics</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Captured {partner.baselineCapturedAt ? fmtDateTime(partner.baselineCapturedAt) : "unknown"}
-            </p>
+            {baseline.capturedAt && (
+              <p className="text-xs text-muted-foreground">Captured {fmtDateTime(baseline.capturedAt)}</p>
+            )}
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-center">
-              {partner.baselineAnalytics.monthlyVisitors != null && (
-                <div>
-                  <p className="text-xl font-bold">{partner.baselineAnalytics.monthlyVisitors.toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">Monthly Visitors</p>
-                </div>
-              )}
-              {partner.baselineAnalytics.domainAuthority != null && (
-                <div>
-                  <p className="text-xl font-bold">{partner.baselineAnalytics.domainAuthority}</p>
-                  <p className="text-xs text-muted-foreground">Domain Authority</p>
-                </div>
-              )}
-            </div>
-            {partner.baselineAnalytics.topKeywords && partner.baselineAnalytics.topKeywords.length > 0 && (
-              <div className="mt-3 pt-3 border-t">
+          <CardContent className="space-y-4">
+            {(baseline.monthlyVisitors != null || baseline.domainAuthority != null) && (
+              <div className="grid grid-cols-2 gap-4 text-center">
+                {baseline.monthlyVisitors != null && (
+                  <div>
+                    <p className="text-xl font-bold">{baseline.monthlyVisitors.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">Monthly Visitors</p>
+                  </div>
+                )}
+                {baseline.domainAuthority != null && (
+                  <div>
+                    <p className="text-xl font-bold">{baseline.domainAuthority}</p>
+                    <p className="text-xs text-muted-foreground">Domain Authority</p>
+                  </div>
+                )}
+              </div>
+            )}
+            {topKeywords.length > 0 && (
+              <div>
                 <p className="text-xs text-muted-foreground mb-1.5">Top Keywords</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {partner.baselineAnalytics.topKeywords.map((kw) => (
+                  {topKeywords.map((kw) => (
                     <Badge key={kw} variant="outline" className="text-xs">{kw}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {baseline.sourceBreakdown && Object.keys(baseline.sourceBreakdown).length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Source Breakdown</p>
+                <div className="space-y-1.5">
+                  {Object.entries(baseline.sourceBreakdown).map(([src, val]) => (
+                    <div key={src} className="flex justify-between text-xs">
+                      <span className="text-muted-foreground capitalize">{src}</span>
+                      <span className="font-medium">{val.toLocaleString()}</span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -641,7 +757,7 @@ function SiteTab({ partner }: { partner: Partner }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium">
-            Site Content ({contentData?.total ?? 0})
+            Recent Site Content ({contentData?.total ?? 0})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -649,7 +765,7 @@ function SiteTab({ partner }: { partner: Partner }) {
             <p className="text-sm text-muted-foreground">Loading...</p>
           ) : siteContent.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
-              No content generated for this partner's site yet.
+              No content yet — go to the Content tab to generate posts.
             </p>
           ) : (
             <div className="space-y-2">
@@ -661,8 +777,7 @@ function SiteTab({ partner }: { partner: Partner }) {
                   </div>
                   <Badge variant="outline" className={`text-xs ${
                     item.status === "published" ? "bg-green-500/20 text-green-400" :
-                    item.status === "queued" ? "bg-yellow-500/20 text-yellow-400" :
-                    ""
+                    item.status === "queued" ? "bg-yellow-500/20 text-yellow-400" : ""
                   }`}>
                     {item.status}
                   </Badge>
@@ -727,9 +842,7 @@ function ClicksTab({ slug }: { slug: string }) {
               <tr key={click.id} className="border-b last:border-0">
                 <td className="px-4 py-2 text-xs">{fmtDateTime(click.clickedAt)}</td>
                 <td className="px-4 py-2">
-                  <Badge variant="secondary" className="text-xs">
-                    {click.sourceType ?? "direct"}
-                  </Badge>
+                  <Badge variant="secondary" className="text-xs">{click.sourceType ?? "direct"}</Badge>
                 </td>
                 <td className="px-4 py-2 text-xs text-muted-foreground hidden sm:table-cell">
                   {click.clickOrigin ?? "cd"}
@@ -752,15 +865,9 @@ function ClicksTab({ slug }: { slug: string }) {
       </div>
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 border-t">
-          <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>
-            Previous
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            Page {page + 1} of {totalPages}
-          </span>
-          <Button size="sm" variant="ghost" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>
-            Next
-          </Button>
+          <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button>
+          <span className="text-xs text-muted-foreground">Page {page + 1} of {totalPages}</span>
+          <Button size="sm" variant="ghost" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>Next</Button>
         </div>
       )}
     </Card>
@@ -768,10 +875,10 @@ function ClicksTab({ slug }: { slug: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Settings Tab
+// CRM Tab (formerly Settings — now includes billing, access, and edit)
 // ---------------------------------------------------------------------------
 
-function SettingsTab({
+function CrmTab({
   partner,
   onUpdate,
   onDelete,
@@ -784,14 +891,44 @@ function SettingsTab({
 }) {
   const [editing, setEditing] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [welcomeMsg, setWelcomeMsg] = useState<string | null>(null);
+  const [welcomeErr, setWelcomeErr] = useState<string | null>(null);
 
-  function handleCopyDashboardLink() {
+  const welcomeMutation = useMutation({
+    mutationFn: () => partnersApi.sendWelcome(partner.slug),
+    onSuccess: (res) => {
+      setWelcomeMsg(`Sent to ${res.sentTo}`);
+      setTimeout(() => setWelcomeMsg(null), 5000);
+    },
+    onError: (err) => {
+      setWelcomeErr(err instanceof Error ? err.message : "Send failed");
+      setTimeout(() => setWelcomeErr(null), 5000);
+    },
+  });
+
+  const checkoutMutation = useMutation({
+    mutationFn: () =>
+      fetch(`/api/partners/${partner.slug}/checkout`, { method: "POST" }).then((r) => r.json()),
+    onSuccess: (data) => {
+      if (data.checkoutUrl) window.open(data.checkoutUrl, "_blank");
+    },
+  });
+
+  function copyDashboardLink() {
     if (!partner.dashboardToken) return;
     const url = `${window.location.origin}/partner-dashboard/${partner.slug}?token=${partner.dashboardToken}`;
     navigator.clipboard.writeText(url);
     setCopiedToken(true);
     setTimeout(() => setCopiedToken(false), 2000);
   }
+
+  const stripeStatusColor: Record<string, string> = {
+    active: "bg-green-500/20 text-green-400",
+    past_due: "bg-red-500/20 text-red-400",
+    canceled: "bg-gray-500/20 text-gray-400",
+    checkout_sent: "bg-yellow-500/20 text-yellow-400",
+    trialing: "bg-blue-500/20 text-blue-400",
+  };
 
   return (
     <div className="space-y-4">
@@ -811,43 +948,120 @@ function SettingsTab({
             <PartnerForm
               variant="inline"
               initial={formFromPartner(partner)}
-              onSave={(form) => {
-                onUpdate(form);
-                setEditing(false);
-              }}
+              onSave={(form) => { onUpdate(form); setEditing(false); }}
               onCancel={() => setEditing(false)}
               saving={updating}
             />
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Click Edit to modify partner details.
-            </p>
+            <p className="text-sm text-muted-foreground">Click Edit to modify partner details.</p>
           )}
         </CardContent>
       </Card>
 
-      {/* Dashboard Access */}
+      {/* Partner Access */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Dashboard Access</CardTitle>
+          <CardTitle className="text-sm font-medium">Partner Access</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Dashboard is token-authenticated — no login required for the partner.
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Share this link with the partner so they can view their performance metrics.
-          </p>
-          <Button size="sm" variant="outline" onClick={handleCopyDashboardLink} disabled={!partner.dashboardToken}>
-            {copiedToken ? (
-              <>
-                <CheckCircle className="h-3.5 w-3.5 mr-1.5 text-green-500" />
-                Copied!
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5 mr-1.5" />
-                Copy Dashboard Link
-              </>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={copyDashboardLink} disabled={!partner.dashboardToken}>
+              {copiedToken ? (
+                <><CheckCircle className="h-3.5 w-3.5 mr-1.5 text-green-500" />Copied!</>
+              ) : (
+                <><Copy className="h-3.5 w-3.5 mr-1.5" />Copy Dashboard Link</>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => welcomeMutation.mutate()}
+              disabled={!partner.contactEmail || welcomeMutation.isPending}
+              title={!partner.contactEmail ? "Add a contact email first" : ""}
+            >
+              {welcomeMutation.isPending
+                ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                : <Send className="h-3.5 w-3.5 mr-1.5" />}
+              {welcomeMutation.isPending ? "Sending..." : "Send Welcome Email"}
+            </Button>
+          </div>
+          {!partner.contactEmail && (
+            <p className="text-xs text-amber-500 flex items-center gap-1">
+              <Info className="h-3 w-3" /> No contact email — add one in Edit to enable welcome emails.
+            </p>
+          )}
+          {welcomeMsg && <p className="text-xs text-green-500">{welcomeMsg}</p>}
+          {welcomeErr && <p className="text-xs text-red-500">{welcomeErr}</p>}
+          {partner.dashboardToken && (
+            <div className="rounded-md bg-muted/40 p-3">
+              <p className="text-xs text-muted-foreground mb-1">Access Token</p>
+              <code className="text-xs font-mono break-all">{partner.dashboardToken}</code>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Billing & Subscription */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-primary" />
+            Billing & Subscription
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Tier</p>
+              <Badge variant="outline" className="capitalize">{partner.tier}</Badge>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Status</p>
+              <Badge variant="outline" className={`text-xs ${stripeStatusColor[partner.subscriptionStatus ?? ""] ?? ""}`}>
+                {partner.subscriptionStatus ?? "no subscription"}
+              </Badge>
+            </div>
+            {partner.monthlyFee != null && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Monthly Fee</p>
+                <span className="text-sm font-medium">${(partner.monthlyFee / 100).toFixed(2)}/mo</span>
+              </div>
             )}
-          </Button>
+            {partner.referralFeePerClient != null && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Referral Fee</p>
+                <span className="text-sm font-medium">${(partner.referralFeePerClient / 100).toFixed(2)}/client</span>
+              </div>
+            )}
+          </div>
+          {partner.currentPeriodEnd && (
+            <p className="text-xs text-muted-foreground">
+              Period ends: {fmtDateTime(partner.currentPeriodEnd)}
+            </p>
+          )}
+          {partner.stripeCustomerId && (
+            <p className="text-xs text-muted-foreground font-mono">
+              Stripe: {partner.stripeCustomerId}
+            </p>
+          )}
+          <div className="pt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => checkoutMutation.mutate()}
+              disabled={checkoutMutation.isPending || !partner.contactEmail}
+              title={!partner.contactEmail ? "Add a contact email first" : ""}
+            >
+              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
+              {checkoutMutation.isPending ? "Loading..." : "Send Checkout Link"}
+            </Button>
+            {!partner.contactEmail && (
+              <p className="text-xs text-muted-foreground mt-1">Requires a contact email.</p>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -878,8 +1092,6 @@ export function PartnerDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const activeTab = tab || "overview";
 
-  // ---- Query ---------------------------------------------------------------
-
   const { data, isLoading } = useQuery({
     queryKey: ["partners", "detail", slug],
     queryFn: () => partnersApi.get(slug!),
@@ -888,16 +1100,12 @@ export function PartnerDetail() {
 
   const partner = data?.partner ?? null;
 
-  // ---- Breadcrumbs ---------------------------------------------------------
-
   useEffect(() => {
     setBreadcrumbs([
       { label: "Partners", href: "/partners" },
       { label: partner?.name ?? slug ?? "Partner" },
     ]);
   }, [setBreadcrumbs, partner, slug]);
-
-  // ---- Mutations -----------------------------------------------------------
 
   const updateMutation = useMutation({
     mutationFn: (updates: Partial<Partner>) => partnersApi.update(slug!, updates),
@@ -914,8 +1122,6 @@ export function PartnerDetail() {
     },
   });
 
-  // ---- Handlers ------------------------------------------------------------
-
   function handleTabChange(value: string) {
     navigate(`/partners/${slug}/${value}`, { replace: true });
   }
@@ -928,8 +1134,6 @@ export function PartnerDetail() {
     if (!window.confirm(`Delete partner "${partner?.name}"? This cannot be undone.`)) return;
     deleteMutation.mutate();
   }
-
-  // ---- Render --------------------------------------------------------------
 
   if (isLoading) return <PageSkeleton variant="list" />;
 
@@ -953,9 +1157,8 @@ export function PartnerDetail() {
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl font-semibold">{partner.name}</h1>
             <Badge variant="secondary">{partner.industry}</Badge>
-            <Badge variant="outline" className={STATUS_COLORS[partner.status] ?? ""}>
-              {partner.status}
-            </Badge>
+            <Badge variant="outline" className={STATUS_COLORS[partner.status] ?? ""}>{partner.status}</Badge>
+            <Badge variant="outline" className="capitalize text-xs">{partner.tier}</Badge>
           </div>
           {partner.location && (
             <p className="text-sm text-muted-foreground flex items-center gap-1">
@@ -963,17 +1166,20 @@ export function PartnerDetail() {
               {partner.location}
             </p>
           )}
+          {partner.website && (
+            <a href={partner.website} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 mt-0.5">
+              <Globe className="h-3 w-3" />
+              {partner.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <PageTabBar
-          items={TABS}
-          value={activeTab}
-          onValueChange={handleTabChange}
-          align="start"
-        />
+        <PageTabBar items={TABS} value={activeTab} onValueChange={handleTabChange} align="start" />
       </Tabs>
 
       {/* Tab Content */}
@@ -982,8 +1188,8 @@ export function PartnerDetail() {
       {activeTab === "content" && <ContentTab partner={partner} />}
       {activeTab === "site" && <SiteTab partner={partner} />}
       {activeTab === "clicks" && <ClicksTab slug={partner.slug} />}
-      {activeTab === "settings" && (
-        <SettingsTab
+      {activeTab === "crm" && (
+        <CrmTab
           partner={partner}
           onUpdate={handleUpdate}
           onDelete={handleDelete}

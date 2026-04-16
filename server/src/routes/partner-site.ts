@@ -4,7 +4,8 @@
 
 import { Router, type Request } from "express";
 import { deployPartnerMicrosite } from "../services/partner-deployment.js";
-import { publishPartnerContent } from "../services/partner-site-publisher.js";
+import { publishPartnerContent, publishAllDraftContent } from "../services/partner-site-publisher.js";
+import { generatePartnerBlogPost } from "../services/partner-site-content.js";
 import { eq, and, desc, count } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerSiteContent } from "@paperclipai/db";
@@ -246,6 +247,44 @@ export function partnerSiteRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to publish partner content");
       res.status(500).json({ error: "Failed to publish partner content" });
+    }
+  });
+
+  // ── POST /generate-content — Generate one blog post for this partner ──
+  router.post("/generate-content", async (req, res) => {
+    try {
+      const partner = await resolvePartner(getSlug(req));
+      if (!partner) { res.status(404).json({ error: "Partner not found" }); return; }
+      const result = await generatePartnerBlogPost(db, partner.id);
+      if (!result) {
+        res.status(500).json({ error: "Content generation returned no output — check Ollama is running" });
+        return;
+      }
+      res.json({ ok: true, contentId: result.id, title: result.title });
+    } catch (err) {
+      logger.error({ err }, "Failed to generate partner content");
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ── POST /publish-drafts — Publish all draft content for this partner ──
+  router.post("/publish-drafts", async (req, res) => {
+    try {
+      const partner = await resolvePartner(getSlug(req));
+      if (!partner) { res.status(404).json({ error: "Partner not found" }); return; }
+      const drafts = await db
+        .select({ contentId: partnerSiteContent.id })
+        .from(partnerSiteContent)
+        .where(and(eq(partnerSiteContent.partnerId, partner.id), eq(partnerSiteContent.status, "draft")));
+      let published = 0;
+      for (const d of drafts) {
+        const ok = await publishPartnerContent(db, d.contentId);
+        if (ok) published++;
+      }
+      res.json({ ok: true, published, total: drafts.length });
+    } catch (err) {
+      logger.error({ err }, "Failed to publish partner drafts");
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 

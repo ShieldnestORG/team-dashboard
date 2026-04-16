@@ -54,6 +54,9 @@ export interface Partner {
     domainAuthority?: number;
     topKeywords?: string[];
     sourceBreakdown?: Record<string, number>;
+    // Populated by onboarding pipeline
+    competitorSites?: { name: string; url: string; summary: string }[];
+    businessSummary?: string;
   } | null;
   baselineCapturedAt: string | null;
 
@@ -70,6 +73,13 @@ export interface Partner {
   featured: boolean;
   featuredOrder: number | null;
   tagline: string | null;
+
+  // Stripe billing
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+  subscriptionStatus: string | null;
+  currentPeriodEnd: string | null;
 }
 
 export interface PartnerMetrics {
@@ -182,6 +192,8 @@ export const partnersApi = {
   getDashboard: (slug: string, token: string) => api.get<PartnerDashboardData>(`/partners/${slug}/dashboard?token=${token}`),
   prefill: (website: string, name?: string) =>
     api.post<PartnerPrefillResult>("/partners/prefill", { website, name }),
+  sendWelcome: (slug: string) =>
+    api.post<{ ok: boolean; sentTo: string }>(`/partners/${slug}/send-welcome`, {}),
   triggerOnboarding: (slug: string) =>
     api.post<{ ok: boolean; status: string }>(`/partners/${slug}/onboard`, {}),
   getClicks: (slug: string, opts?: { limit?: number; offset?: number }) => {
@@ -209,6 +221,10 @@ export const partnersApi = {
         `/partners/${slug}/site/content${qs ? `?${qs}` : ""}`,
       );
     },
+    generateContent: (slug: string) =>
+      api.post<{ ok: boolean; contentId: string; title: string }>(`/partners/${slug}/site/generate-content`, {}),
+    publishDrafts: (slug: string) =>
+      api.post<{ ok: boolean; published: number; total: number }>(`/partners/${slug}/site/publish-drafts`, {}),
     createContent: (slug: string, input: { title: string; body: string; contentType?: string; metaDescription?: string; keywords?: string[] }) =>
       api.post<{ content: PartnerSiteContent }>(`/partners/${slug}/site/content`, input),
     updateContent: (slug: string, contentId: string, updates: Partial<PartnerSiteContent>) =>

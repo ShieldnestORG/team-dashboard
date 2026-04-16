@@ -11,6 +11,7 @@ import { logger } from "../middleware/logger.js";
 import { runPartnerOnboarding, prefillPartnerFromWebsite } from "../services/partner-onboarding.js";
 import { createCheckoutSession } from "../services/stripe-checkout.js";
 import { stripeConfigured } from "../services/stripe-client.js";
+import { sendTransactional } from "../services/email-templates.js";
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID ||
@@ -229,6 +230,42 @@ export function partnerRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to update partner");
       res.status(500).json({ error: "Failed to update partner" });
+    }
+  });
+
+  // ── POST /:slug/send-welcome — Email partner their dashboard link ─
+  router.post("/:slug/send-welcome", async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const [partner] = await db
+        .select()
+        .from(partnerCompanies)
+        .where(and(eq(partnerCompanies.companyId, COMPANY_ID), eq(partnerCompanies.slug, slug)))
+        .limit(1);
+
+      if (!partner) { res.status(404).json({ error: "Partner not found" }); return; }
+      if (!partner.contactEmail) {
+        res.status(400).json({ error: "Partner has no contact email — add one first" });
+        return;
+      }
+
+      const BASE_URL =
+        process.env.ADMIN_URL ||
+        process.env.PAPERCLIP_PUBLIC_URL ||
+        "https://api.coherencedaddy.com";
+
+      await sendTransactional("partner-welcome", partner.contactEmail, {
+        recipientEmail: partner.contactEmail,
+        companyName: partner.name,
+        recipientName: partner.contactName ?? partner.name,
+        partnerDashboardUrl: `${BASE_URL}/partner-dashboard/${slug}`,
+        partnerToken: partner.dashboardToken ?? undefined,
+      });
+
+      res.json({ ok: true, sentTo: partner.contactEmail });
+    } catch (err) {
+      logger.error({ err }, "Failed to send partner welcome email");
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 
