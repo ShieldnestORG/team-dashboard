@@ -18,6 +18,11 @@ function requireContentKey(
   res: import("express").Response,
   next: import("express").NextFunction,
 ) {
+  // Board (session) users always pass — they're already authenticated via the actor middleware
+  if (req.actor?.type === "board") {
+    next();
+    return;
+  }
   if (!CONTENT_API_KEY) {
     res.status(503).json({ error: "Content API key not configured" });
     return;
