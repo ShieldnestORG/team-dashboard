@@ -105,6 +105,7 @@ export const ytProductions = pgTable(
     }>(),
     scheduledPublishTime: timestamp("scheduled_publish_time", { withTimezone: true }),
     error: text("error"),
+    filesPurgedAt: timestamp("files_purged_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -114,6 +115,10 @@ export const ytProductions = pgTable(
       table.status,
     ),
     createdIdx: index("yt_productions_created_idx").on(table.createdAt),
+    purgeCandidatesIdx: index("yt_productions_purge_candidates_idx").on(
+      table.companyId,
+      table.createdAt,
+    ),
   }),
 );
 

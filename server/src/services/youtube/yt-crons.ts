@@ -9,9 +9,10 @@ import { registerCronJob } from "../cron-registry.js";
 import { runProductionPipeline } from "./production.js";
 import { processPublishQueue } from "./publish-queue.js";
 import { collectAnalytics, generateOptimizationInsights } from "./analytics.js";
+import { cleanupOldVideoFiles } from "./video-cleanup.js";
 import { logger } from "../../middleware/logger.js";
 
-// Default: enabled. Set YT_PIPELINE_ENABLED=false to leave all 5 YouTube crons dormant
+// Default: enabled. Set YT_PIPELINE_ENABLED=false to leave all YouTube crons dormant
 // (useful when the pipeline's heavy dependencies — Playwright, ffmpeg, Grok TTS — are
 // not available on a given host). See CLAUDE.md env var reference.
 const ENABLED = process.env.YT_PIPELINE_ENABLED !== "false";
@@ -19,7 +20,7 @@ const ENABLED = process.env.YT_PIPELINE_ENABLED !== "false";
 export function startYouTubeCrons(db: Db): void {
   if (!ENABLED) {
     logger.warn(
-      "YouTube pipeline crons dormant (YT_PIPELINE_ENABLED=false) — yt:daily-production, yt:publish-queue, yt:daily-analytics, yt:weekly-strategy, yt:optimization will NOT run",
+      "YouTube pipeline crons dormant (YT_PIPELINE_ENABLED=false) — yt:daily-production, yt:publish-queue, yt:daily-analytics, yt:weekly-strategy, yt:optimization, yt:cleanup-videos will NOT run",
     );
     return;
   }
@@ -49,7 +50,7 @@ export function startYouTubeCrons(db: Db): void {
     },
   });
 
-  // Collect analytics — 9 AM daily
+  // Collect analytics — 9 AM daily (also refreshes keyword performance table)
   registerCronJob({
     jobName: "yt:daily-analytics",
     schedule: "0 9 * * *",
@@ -85,5 +86,19 @@ export function startYouTubeCrons(db: Db): void {
     },
   });
 
-  logger.info("YouTube pipeline crons registered (5 jobs)");
+  // 30-day video file cleanup — 2 AM daily
+  // Deletes .mp4 / .mp3 / .srt files for productions older than 30 days.
+  // Thumbnails and slide images are kept. DB records are never deleted.
+  registerCronJob({
+    jobName: "yt:cleanup-videos",
+    schedule: "0 2 * * *",
+    ownerAgent: "core",
+    sourceFile: "services/youtube/yt-crons.ts",
+    handler: async () => {
+      const purged = await cleanupOldVideoFiles(db);
+      if (purged > 0) logger.info({ purged }, "YT cleanup: old video files purged");
+    },
+  });
+
+  logger.info("YouTube pipeline crons registered (6 jobs)");
 }
