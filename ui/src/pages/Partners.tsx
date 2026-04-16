@@ -153,8 +153,10 @@ export function Partners() {
       const result = await partnersApi.prefill(url);
       setPrefillForm({
         ...EMPTY_FORM,
+        name: result.name ?? "",
         website: url,
         industry: result.industry ?? "other",
+        location: result.location ?? "",
         description: result.description ?? "",
         services: result.services?.join(", ") ?? "",
         targetKeywords: result.targetKeywords?.join(", ") ?? "",

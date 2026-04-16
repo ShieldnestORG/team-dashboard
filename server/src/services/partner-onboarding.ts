@@ -102,7 +102,9 @@ async function firecrawlSearch(
 // ---------------------------------------------------------------------------
 
 interface ExtractedIntel {
+  name?: string;
   industry: string;
+  location?: string;
   description: string;
   services: string[];
   targetKeywords: string[];
@@ -130,7 +132,9 @@ ${markdown.slice(0, 20_000)}
 
 Return ONLY a JSON object with these fields:
 {
+  "name": "official business name as it appears on the site",
   "industry": "best matching category from the list above (if none fit well, pick the closest match)",
+  "location": "City, State or City, Country if found on the site, otherwise null",
   "description": "concise 1-2 sentence business description based on what the site actually says",
   "services": ["service1", "service2", ...],
   "targetKeywords": ["keyword1", "keyword2", ...] (8-12 SEO keywords relevant to this business),
@@ -216,7 +220,9 @@ Return ONLY a brief 1-2 sentence summary.`;
 // ---------------------------------------------------------------------------
 
 export interface PartnerPrefillResult {
+  name?: string;
   industry: string;
+  location?: string;
   description: string;
   services: string[];
   targetKeywords: string[];
@@ -233,7 +239,9 @@ export async function prefillPartnerFromWebsite(
   const partnerName = name ?? new URL(website).hostname.replace(/^www\./, "");
   const intel = await extractBusinessIntel(markdown, partnerName, "other");
   return {
+    name: intel.name ?? undefined,
     industry: intel.industry,
+    location: intel.location ?? undefined,
     description: intel.description,
     services: intel.services,
     targetKeywords: intel.targetKeywords,

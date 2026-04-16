@@ -129,7 +129,9 @@ export interface PartnerSiteConfig {
 }
 
 export interface PartnerPrefillResult {
+  name?: string;
   industry: string;
+  location?: string;
   description: string;
   services: string[];
   targetKeywords: string[];
