@@ -33,6 +33,7 @@ export function AffiliateLanding() {
   const [regName, setRegName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
   const [regLoading, setRegLoading] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
   const [regSuccess, setRegSuccess] = useState(false);
@@ -54,6 +55,14 @@ export function AffiliateLanding() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (regPassword.length < 8) {
+      setRegError("Password must be at least 8 characters");
+      return;
+    }
+    if (regPassword !== regConfirm) {
+      setRegError("Passwords do not match");
+      return;
+    }
     setRegLoading(true);
     setRegError(null);
     try {
@@ -219,8 +228,21 @@ export function AffiliateLanding() {
                   <input
                     type="password"
                     required
+                    minLength={8}
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">At least 8 characters</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={regConfirm}
+                    onChange={(e) => setRegConfirm(e.target.value)}
                     placeholder="••••••••"
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />

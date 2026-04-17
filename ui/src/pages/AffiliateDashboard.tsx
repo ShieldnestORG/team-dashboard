@@ -165,7 +165,7 @@ export function AffiliateDashboard() {
           </div>
           <div className="hidden sm:flex items-center gap-2">
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
-              {affiliate.commissionRate} commission
+              {(parseFloat(affiliate.commissionRate) * 100).toFixed(0)}% commission
             </span>
           </div>
           <button

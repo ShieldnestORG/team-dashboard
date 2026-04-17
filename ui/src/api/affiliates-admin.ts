@@ -5,6 +5,7 @@ export interface AdminAffiliate {
   status: string;          // "pending" | "active" | "suspended"
   commissionRate: string;  // e.g. "0.10"
   prospectCount: number;
+  convertedCount: number;
   createdAt: string;
 }
 

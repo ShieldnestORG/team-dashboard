@@ -107,6 +107,11 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
+      if (password.length < 8) {
+        res.status(400).json({ error: "Password must be at least 8 characters" });
+        return;
+      }
+
       const normalizedEmail = email.toLowerCase().trim();
 
       const existing = await db
@@ -675,24 +680,33 @@ export function affiliateAdminRoutes(db: Db): Router {
         })
         .from(affiliates);
 
-      // Fetch prospect counts in a second query (simple approach)
-      const prospectCounts = await db
-        .select({
-          affiliateId: partnerCompanies.affiliateId,
-          prospectCount: count(),
-        })
-        .from(partnerCompanies)
-        .where(eq(partnerCompanies.companyId, COMPANY_ID))
-        .groupBy(partnerCompanies.affiliateId);
+      // Fetch prospect counts and converted counts in parallel
+      const [prospectCounts, convertedCounts] = await Promise.all([
+        db
+          .select({ affiliateId: partnerCompanies.affiliateId, prospectCount: count() })
+          .from(partnerCompanies)
+          .where(eq(partnerCompanies.companyId, COMPANY_ID))
+          .groupBy(partnerCompanies.affiliateId),
+        db
+          .select({ affiliateId: partnerCompanies.affiliateId, convertedCount: count() })
+          .from(partnerCompanies)
+          .where(and(eq(partnerCompanies.companyId, COMPANY_ID), eq(partnerCompanies.isPaying, true)))
+          .groupBy(partnerCompanies.affiliateId),
+      ]);
 
       const countMap = new Map<string, number>();
       for (const row of prospectCounts) {
         if (row.affiliateId) countMap.set(row.affiliateId, Number(row.prospectCount));
       }
+      const convertedMap = new Map<string, number>();
+      for (const row of convertedCounts) {
+        if (row.affiliateId) convertedMap.set(row.affiliateId, Number(row.convertedCount));
+      }
 
       const affiliateList = rows.map((row) => ({
         ...row,
         prospectCount: countMap.get(row.id) ?? 0,
+        convertedCount: convertedMap.get(row.id) ?? 0,
       }));
 
       res.json({ affiliates: affiliateList });

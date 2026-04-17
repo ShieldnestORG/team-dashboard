@@ -97,6 +97,7 @@ export function AffiliatesAdmin() {
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium hidden md:table-cell">Commission</th>
                   <th className="px-4 py-3 font-medium hidden md:table-cell text-right">Prospects</th>
+                  <th className="px-4 py-3 font-medium hidden lg:table-cell text-right">Converted</th>
                   <th className="px-4 py-3 font-medium hidden lg:table-cell">Applied</th>
                   <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
@@ -124,6 +125,11 @@ export function AffiliatesAdmin() {
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell text-right">
                       <span className="text-xs font-medium">{a.prospectCount}</span>
+                    </td>
+                    <td className="px-4 py-3 hidden lg:table-cell text-right">
+                      <span className={`text-xs font-medium ${a.convertedCount > 0 ? "text-green-600" : "text-muted-foreground"}`}>
+                        {a.convertedCount}
+                      </span>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <span className="text-xs text-muted-foreground">
