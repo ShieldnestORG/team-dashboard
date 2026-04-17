@@ -40,7 +40,10 @@ export type EmailTemplate =
   | "partner-welcome"
   | "intel-welcome"
   | "checkout-reminder"
-  | "renewal-reminder";
+  | "renewal-reminder"
+  | "affiliate-application"
+  | "affiliate-approved"
+  | "affiliate-reset-password";
 
 export interface EmailVars {
   // Common
@@ -65,6 +68,11 @@ export interface EmailVars {
   renewalDate?: string;
   subscriptionName?: string;
   manageUrl?: string;
+  // Affiliate
+  affiliateName?: string;
+  affiliateDashboardUrl?: string;
+  adminAffiliatesUrl?: string;
+  resetToken?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +292,76 @@ function buildRenewalReminder(vars: EmailVars): { subject: string; html: string 
   return { subject, html: htmlShell(subject, body) };
 }
 
+function buildAffiliateApplication(vars: EmailVars): { subject: string; html: string } {
+  const affiliateName = vars.affiliateName ?? "Unknown";
+  const email = vars.recipientEmail;
+  const adminUrl =
+    (vars.adminAffiliatesUrl ?? "https://teamdashboard.coherencedaddy.com") + "/affiliates";
+
+  const subject = `New Affiliate Application — ${affiliateName}`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">New Affiliate Application</h2>
+    <p style="margin:0 0 16px;">
+      <strong>${affiliateName}</strong> (<a href="mailto:${email}" style="color:#4ECDC4;">${email}</a>)
+      has applied to become a Coherence Daddy affiliate. Their account is currently <strong>pending</strong> — review and approve or reject below.
+    </p>
+    ${ctaButton(adminUrl, "Review Application →")}
+    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
+      Log in to the admin dashboard to change their status to <em>active</em> or <em>suspended</em>.
+    </p>
+  `;
+
+  return { subject, html: htmlShell(subject, body) };
+}
+
+function buildAffiliateApproved(vars: EmailVars): { subject: string; html: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const dashUrl = vars.affiliateDashboardUrl ?? "https://affiliates.coherencedaddy.com/dashboard";
+
+  const subject = "You're approved — Welcome to the Coherence Daddy Affiliate Program";
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Congratulations, ${name}!</h2>
+    <p style="margin:0 0 16px;">
+      Your affiliate account is now <strong>active</strong>. You can start adding prospects and earning commissions right away.
+    </p>
+    <p style="margin:0 0 8px;font-weight:600;">What to do next:</p>
+    <ul style="margin:0 0 16px;padding-left:20px;">
+      <li style="margin-bottom:8px;">Log in to your dashboard and add your first prospect</li>
+      <li style="margin-bottom:8px;">Share your referrals and track your earnings in real time</li>
+      <li style="margin-bottom:8px;">Reach out if you have any questions — we&rsquo;re here to help</li>
+    </ul>
+    ${ctaButton(dashUrl, "Go to Your Dashboard →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? Reply to this email or reach us at <a href="mailto:hello@coherencedaddy.com" style="color:#4ECDC4;">hello@coherencedaddy.com</a>.
+    </p>
+  `;
+
+  return { subject, html: htmlShell(subject, body) };
+}
+
+function buildAffiliateResetPassword(vars: EmailVars): { subject: string; html: string } {
+  const token = vars.resetToken ?? "";
+  const resetUrl = `https://affiliates.coherencedaddy.com/reset-password?token=${token}`;
+
+  const subject = "Reset your Coherence Daddy affiliate password";
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Password reset request</h2>
+    <p style="margin:0 0 16px;">
+      Someone requested a password reset for your Coherence Daddy affiliate account. If that was you, click the button below. The link is valid for <strong>1 hour</strong>.
+    </p>
+    ${ctaButton(resetUrl, "Reset My Password →")}
+    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
+      If you didn&rsquo;t request this, you can safely ignore this email — your password will not change.
+    </p>
+  `;
+
+  return { subject, html: htmlShell(subject, body) };
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -324,6 +402,15 @@ export async function sendTransactional(
       break;
     case "renewal-reminder":
       ({ subject, html } = buildRenewalReminder(vars));
+      break;
+    case "affiliate-application":
+      ({ subject, html } = buildAffiliateApplication(vars));
+      break;
+    case "affiliate-approved":
+      ({ subject, html } = buildAffiliateApproved(vars));
+      break;
+    case "affiliate-reset-password":
+      ({ subject, html } = buildAffiliateResetPassword(vars));
       break;
     default: {
       const _exhaustive: never = template;

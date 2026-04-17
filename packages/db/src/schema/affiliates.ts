@@ -12,6 +12,8 @@ export const affiliates = pgTable(
     status: text("status").notNull().default("pending"),
     commissionRate: numeric("commission_rate", { precision: 5, scale: 4 }).notNull().default("0.10"),
     totalEarned: numeric("total_earned", { precision: 12, scale: 2 }).notNull().default("0"),
+    resetToken: text("reset_token"),
+    resetTokenExpiresAt: timestamp("reset_token_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

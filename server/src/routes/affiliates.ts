@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
-import { eq, and, ilike, count } from "drizzle-orm";
-import { randomBytes } from "node:crypto";
+import { eq, and, ilike, count, sql } from "drizzle-orm";
+import { randomBytes, createHash } from "node:crypto";
 import { scryptSync, timingSafeEqual } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import { affiliates, partnerCompanies } from "@paperclipai/db";
@@ -13,6 +13,7 @@ import { requireAffiliate } from "../middleware/affiliate-auth.js";
 import { createAffiliateJwt } from "../affiliate-auth-jwt.js";
 import { assertBoard } from "./authz.js";
 import { prefillPartnerFromWebsite, runPartnerOnboarding } from "../services/partner-onboarding.js";
+import { sendTransactional } from "../services/email-templates.js";
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
@@ -91,6 +92,16 @@ export function affiliateRoutes(db: Db): Router {
           email: affiliates.email,
           status: affiliates.status,
         });
+
+      // Notify admin — fire and forget
+      const adminEmail = process.env.ALERT_EMAIL_TO ?? process.env.SMTP_USER;
+      if (adminEmail) {
+        sendTransactional("affiliate-application", adminEmail, {
+          recipientName: "Team",
+          recipientEmail: adminEmail,
+          affiliateName: name,
+        }).catch(() => {});
+      }
 
       res.status(201).json({ affiliate });
     } catch (err) {
@@ -185,8 +196,19 @@ export function affiliateRoutes(db: Db): Router {
         );
 
       const prospectCount = Number(prospectResult?.count ?? 0);
+
+      const [feeResult] = await db
+        .select({ totalFee: sql<number>`coalesce(sum(monthly_fee), 0)` })
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.affiliateId, id),
+            eq(partnerCompanies.companyId, COMPANY_ID),
+          ),
+        );
+      const totalMonthlyFees = Number(feeResult?.totalFee ?? 0);
       const estimatedEarned =
-        parseFloat(affiliate.commissionRate ?? "0.10") * prospectCount * 149;
+        parseFloat(affiliate.commissionRate ?? "0.10") * totalMonthlyFees;
 
       res.json({ affiliate, prospectCount, estimatedEarned });
     } catch (err) {
@@ -258,24 +280,10 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
-      // Scrape and prefill from website
-      let prefill: Awaited<ReturnType<typeof prefillPartnerFromWebsite>>;
-      try {
-        prefill = await prefillPartnerFromWebsite(website.trim());
-      } catch (_err) {
-        // Use hostname as fallback name if scrape fails
-        prefill = {
-          name: new URL(website).hostname.replace(/^www\./, ""),
-          industry: "other",
-          description: "",
-          services: [],
-          targetKeywords: [],
-          tagline: "",
-        };
-      }
-
-      const baseName = prefill.name ?? new URL(website).hostname.replace(/^www\./, "");
-      const baseSlug = slugify(baseName);
+      const url = new URL(website.trim());
+      const hostname = url.hostname.replace(/^www\./, "");
+      const baseName = hostname; // onboarding pipeline will update this
+      const baseSlug = slugify(hostname);
 
       // Insert with conflict retry on slug
       let slug = baseSlug;
@@ -289,14 +297,8 @@ export function affiliateRoutes(db: Db): Router {
               companyId: COMPANY_ID,
               slug,
               name: baseName,
-              industry: prefill.industry ?? "other",
-              location: prefill.location,
+              industry: "other",
               website: website.trim(),
-              description: prefill.description,
-              services: prefill.services,
-              targetKeywords: prefill.targetKeywords,
-              tagline: prefill.tagline,
-              brandColors: prefill.brandColors,
               affiliateId,
               status: "trial",
               tier: "proof",
@@ -425,6 +427,98 @@ export function affiliateRoutes(db: Db): Router {
     }
   });
 
+  // ── POST /forgot-password — Public password reset request ────────────────
+  router.post("/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body as { email?: string };
+
+      // Always return 200 — don't reveal if email exists
+      if (!email) {
+        res.json({ ok: true });
+        return;
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+
+      const [affiliate] = await db
+        .select({ id: affiliates.id, email: affiliates.email, name: affiliates.name })
+        .from(affiliates)
+        .where(ilike(affiliates.email, normalizedEmail))
+        .limit(1);
+
+      if (affiliate) {
+        // Generate raw token, store SHA-256 hash
+        const rawToken = randomBytes(32).toString("hex");
+        const hashedToken = createHash("sha256").update(rawToken).digest("hex");
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        await db
+          .update(affiliates)
+          .set({ resetToken: hashedToken, resetTokenExpiresAt: expiresAt, updatedAt: new Date() })
+          .where(eq(affiliates.id, affiliate.id));
+
+        sendTransactional("affiliate-reset-password", affiliate.email, {
+          recipientName: affiliate.name,
+          recipientEmail: affiliate.email,
+          resetToken: rawToken,
+        }).catch(() => {});
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "Failed to process forgot-password request");
+      res.json({ ok: true }); // still return 200
+    }
+  });
+
+  // ── POST /reset-password — Public password reset confirmation ─────────────
+  router.post("/reset-password", async (req, res) => {
+    try {
+      const { token, password } = req.body as { token?: string; password?: string };
+
+      if (!token || !password) {
+        res.status(400).json({ error: "token and password are required" });
+        return;
+      }
+
+      if (password.length < 8) {
+        res.status(400).json({ error: "Password must be at least 8 characters" });
+        return;
+      }
+
+      // Hash the incoming token to compare against the stored hash
+      const hashedToken = createHash("sha256").update(token).digest("hex");
+
+      const [affiliate] = await db
+        .select({ id: affiliates.id, resetTokenExpiresAt: affiliates.resetTokenExpiresAt })
+        .from(affiliates)
+        .where(eq(affiliates.resetToken, hashedToken))
+        .limit(1);
+
+      if (!affiliate || !affiliate.resetTokenExpiresAt || affiliate.resetTokenExpiresAt < new Date()) {
+        res.status(400).json({ error: "Invalid or expired reset link" });
+        return;
+      }
+
+      const newPasswordHash = hashPassword(password);
+
+      await db
+        .update(affiliates)
+        .set({
+          passwordHash: newPasswordHash,
+          resetToken: null,
+          resetTokenExpiresAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(affiliates.id, affiliate.id));
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "Failed to reset password");
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+
   // ── PUT /prospects/:slug — Update prospect basic info (JWT-auth) ──────────
   router.put("/prospects/:slug", authMiddleware, async (req, res) => {
     try {
@@ -525,15 +619,30 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const result = await db
-        .update(affiliates)
-        .set({ status, updatedAt: new Date() })
+      // Fetch affiliate before update so we have email + name for notification
+      const [affiliate] = await db
+        .select({ id: affiliates.id, name: affiliates.name, email: affiliates.email })
+        .from(affiliates)
         .where(eq(affiliates.id, id))
-        .returning({ id: affiliates.id });
+        .limit(1);
 
-      if (result.length === 0) {
+      if (!affiliate) {
         res.status(404).json({ error: "Affiliate not found" });
         return;
+      }
+
+      await db
+        .update(affiliates)
+        .set({ status, updatedAt: new Date() })
+        .where(eq(affiliates.id, id));
+
+      // Notify affiliate if newly approved
+      if (status === "active") {
+        sendTransactional("affiliate-approved", affiliate.email, {
+          recipientName: affiliate.name,
+          recipientEmail: affiliate.email,
+          affiliateName: affiliate.name,
+        }).catch(() => {});
       }
 
       res.json({ ok: true });
