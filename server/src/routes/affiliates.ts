@@ -235,32 +235,30 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
-      const [prospectResult] = await db
-        .select({ count: count() })
-        .from(partnerCompanies)
-        .where(
-          and(
-            eq(partnerCompanies.affiliateId, id),
-            eq(partnerCompanies.companyId, COMPANY_ID),
-          ),
-        );
+      const affiliateWhere = and(
+        eq(partnerCompanies.affiliateId, id),
+        eq(partnerCompanies.companyId, COMPANY_ID),
+      );
+
+      const [[prospectResult], [convertedResult], [feeResult]] = await Promise.all([
+        db.select({ count: count() }).from(partnerCompanies).where(affiliateWhere),
+        db
+          .select({ count: count() })
+          .from(partnerCompanies)
+          .where(and(eq(partnerCompanies.affiliateId, id), eq(partnerCompanies.companyId, COMPANY_ID), eq(partnerCompanies.isPaying, true))),
+        db
+          .select({ totalFee: sql<number>`coalesce(sum(monthly_fee), 0)` })
+          .from(partnerCompanies)
+          .where(and(eq(partnerCompanies.affiliateId, id), eq(partnerCompanies.companyId, COMPANY_ID), eq(partnerCompanies.isPaying, true))),
+      ]);
 
       const prospectCount = Number(prospectResult?.count ?? 0);
-
-      const [feeResult] = await db
-        .select({ totalFee: sql<number>`coalesce(sum(monthly_fee), 0)` })
-        .from(partnerCompanies)
-        .where(
-          and(
-            eq(partnerCompanies.affiliateId, id),
-            eq(partnerCompanies.companyId, COMPANY_ID),
-          ),
-        );
+      const convertedCount = Number(convertedResult?.count ?? 0);
       const totalMonthlyFees = Number(feeResult?.totalFee ?? 0);
       const estimatedEarned =
         parseFloat(affiliate.commissionRate ?? "0.10") * totalMonthlyFees;
 
-      res.json({ affiliate, prospectCount, estimatedEarned });
+      res.json({ affiliate, prospectCount, convertedCount, estimatedEarned });
     } catch (err) {
       logger.error({ err }, "Failed to get affiliate profile");
       res.status(500).json({ error: "Failed to get affiliate profile" });
@@ -295,6 +293,7 @@ export function affiliateRoutes(db: Db): Router {
             location: partnerCompanies.location,
             website: partnerCompanies.website,
             onboardingStatus: partnerCompanies.onboardingStatus,
+            isPaying: partnerCompanies.isPaying,
             createdAt: partnerCompanies.createdAt,
             affiliateNotes: partnerCompanies.affiliateNotes,
             storeNotes: partnerCompanies.storeNotes,
@@ -340,7 +339,12 @@ export function affiliateRoutes(db: Db): Router {
 
       // Check for existing prospect with this website
       const existingWebsite = await db
-        .select({ slug: partnerCompanies.slug })
+        .select({
+          slug: partnerCompanies.slug,
+          name: partnerCompanies.name,
+          affiliateId: partnerCompanies.affiliateId,
+          onboardingStatus: partnerCompanies.onboardingStatus,
+        })
         .from(partnerCompanies)
         .where(
           and(
@@ -351,10 +355,20 @@ export function affiliateRoutes(db: Db): Router {
         .limit(1);
 
       if (existingWebsite.length > 0) {
-        res.status(409).json({
-          error: "This business is already in our system.",
-          slug: existingWebsite[0].slug,
-        });
+        const dup = existingWebsite[0];
+        // Allow re-trigger if this affiliate's own prospect previously failed
+        if (dup.affiliateId === affiliateId && dup.onboardingStatus === "failed") {
+          await db
+            .update(partnerCompanies)
+            .set({ onboardingStatus: "none", onboardingError: null, updatedAt: new Date() })
+            .where(eq(partnerCompanies.slug, dup.slug));
+          runPartnerOnboarding(db, dup.slug).catch((err) =>
+            logger.error({ err, slug: dup.slug }, "Affiliate prospect re-onboarding failed"),
+          );
+          res.json({ prospect: { slug: dup.slug, name: dup.name, onboardingStatus: "none" }, resubmitted: true });
+          return;
+        }
+        res.status(409).json({ error: "This business is already in our system.", slug: dup.slug });
         return;
       }
 

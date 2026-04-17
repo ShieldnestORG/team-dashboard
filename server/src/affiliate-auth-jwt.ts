@@ -21,6 +21,7 @@ const AUDIENCE = "affiliate-api";
 
 function getSecret(): string {
   return (
+    process.env.AFFILIATE_JWT_SECRET ??
     process.env.BETTER_AUTH_SECRET ??
     process.env.PAPERCLIP_AGENT_JWT_SECRET ??
     "paperclip-dev-secret"

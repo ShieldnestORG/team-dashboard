@@ -35,6 +35,7 @@ export function AffiliateDashboard() {
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [prospects, setProspects] = useState<AffiliateProspect[]>([]);
   const [prospectCount, setProspectCount] = useState(0);
+  const [convertedCount, setConvertedCount] = useState(0);
   const [estimatedEarned, setEstimatedEarned] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export function AffiliateDashboard() {
       .then(([meRes, prospectsRes]) => {
         setAffiliate(meRes.affiliate);
         setProspectCount(meRes.prospectCount);
+        setConvertedCount(meRes.convertedCount);
         setEstimatedEarned(meRes.estimatedEarned);
         setProspects(prospectsRes.prospects);
       })
@@ -201,6 +203,10 @@ export function AffiliateDashboard() {
             <span className="text-gray-500 ml-2">Prospects</span>
           </div>
           <div>
+            <span className="font-bold text-2xl text-green-600">{convertedCount}</span>
+            <span className="text-gray-500 ml-2">Converted</span>
+          </div>
+          <div>
             <span className="font-bold text-2xl text-gray-900">
               ${estimatedEarned.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
@@ -240,7 +246,14 @@ export function AffiliateDashboard() {
                         <p className="text-xs text-gray-400">{p.industry}</p>
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
-                        <OnboardingBadge status={p.onboardingStatus} />
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <OnboardingBadge status={p.onboardingStatus} />
+                          {p.isPaying && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border bg-green-100 text-green-700 border-green-200">
+                              Converted
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">
                         {new Date(p.createdAt).toLocaleDateString("en-US", {

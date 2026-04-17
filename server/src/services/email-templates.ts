@@ -43,7 +43,8 @@ export type EmailTemplate =
   | "renewal-reminder"
   | "affiliate-application"
   | "affiliate-approved"
-  | "affiliate-reset-password";
+  | "affiliate-reset-password"
+  | "affiliate-pending-digest";
 
 export interface EmailVars {
   // Common
@@ -73,6 +74,7 @@ export interface EmailVars {
   affiliateDashboardUrl?: string;
   adminAffiliatesUrl?: string;
   resetToken?: string;
+  supportEmail?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -362,6 +364,30 @@ function buildAffiliateResetPassword(vars: EmailVars): { subject: string; html: 
   return { subject, html: htmlShell(subject, body) };
 }
 
+function buildAffiliatePendingDigest(vars: EmailVars): { subject: string; html: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "affiliates@coherencedaddy.com";
+
+  const subject = "Your Coherence Daddy affiliate application — still under review";
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">We haven&rsquo;t forgotten you, ${name}</h2>
+    <p style="margin:0 0 16px;">
+      Your application to join the Coherence Daddy Affiliate Program is still under review by our team.
+      We typically respond within <strong>1–2 business days</strong> — we appreciate your patience.
+    </p>
+    <p style="margin:0 0 16px;">
+      Once approved, you&rsquo;ll receive an email with a link to your dashboard where you can start submitting prospects and tracking your earnings.
+    </p>
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions or concerns? Reach us at
+      <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a> — we&rsquo;re happy to help.
+    </p>
+  `;
+
+  return { subject, html: htmlShell(subject, body) };
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -411,6 +437,9 @@ export async function sendTransactional(
       break;
     case "affiliate-reset-password":
       ({ subject, html } = buildAffiliateResetPassword(vars));
+      break;
+    case "affiliate-pending-digest":
+      ({ subject, html } = buildAffiliatePendingDigest(vars));
       break;
     default: {
       const _exhaustive: never = template;

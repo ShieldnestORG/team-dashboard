@@ -29,6 +29,7 @@ export interface AffiliateProspect {
   description: string | null;
   services: string[] | null;
   onboardingStatus: string;
+  isPaying: boolean;
   baselineAnalytics: {
     competitorSites?: CompetitorSite[];
     topKeywords?: string[];
@@ -72,7 +73,7 @@ export const affiliatesApi = {
     }),
 
   me: () =>
-    affiliateRequest<{ affiliate: Affiliate; prospectCount: number; estimatedEarned: number }>("/me"),
+    affiliateRequest<{ affiliate: Affiliate; prospectCount: number; convertedCount: number; estimatedEarned: number }>("/me"),
 
   listProspects: (opts?: { status?: string; limit?: number; offset?: number }) => {
     const params = new URLSearchParams();

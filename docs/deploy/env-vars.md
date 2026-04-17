@@ -15,6 +15,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `BETTER_AUTH_TRUSTED_ORIGINS` | Yes | VPS | CORS origins — comma-separated (Vercel URL + `https://affiliates.coherencedaddy.com`) |
 | `PAPERCLIP_PUBLIC_URL` | Yes | VPS | Public URL for auth callbacks |
 | `PAPERCLIP_ALLOWED_HOSTNAMES` | Yes | VPS | Allowed hostnames — comma-separated (includes `affiliates.coherencedaddy.com`) |
+| `AFFILIATE_JWT_SECRET` | Recommended | VPS | Dedicated signing secret for affiliate JWTs — falls back to `BETTER_AUTH_SECRET`. Rotate independently of admin auth. Generate: `openssl rand -hex 32` |
 | **API** | | | |
 | `PAPERCLIP_API_URL` | Yes | VPS | Backend API base URL |
 | `TEAM_DASHBOARD_COMPANY_ID` | Yes | VPS + Local | `8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy) |

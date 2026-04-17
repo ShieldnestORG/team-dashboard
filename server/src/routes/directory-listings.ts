@@ -349,6 +349,8 @@ async function handlePartnerStripeEvent(
           subscriptionStatus: "active",
           currentPeriodEnd,
           status: "active",
+          isPaying: true,
+          convertedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(partnerCompanies.slug, partnerSlug));
@@ -383,7 +385,11 @@ async function handlePartnerStripeEvent(
       const inv = obj as { subscription?: string; period_end?: number };
       if (!inv.subscription) return;
       const rows = await db
-        .select({ id: partnerCompanies.id, currentPeriodEnd: partnerCompanies.currentPeriodEnd })
+        .select({
+          id: partnerCompanies.id,
+          currentPeriodEnd: partnerCompanies.currentPeriodEnd,
+          convertedAt: partnerCompanies.convertedAt,
+        })
         .from(partnerCompanies)
         .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription))
         .limit(1);
@@ -392,6 +398,8 @@ async function handlePartnerStripeEvent(
         .update(partnerCompanies)
         .set({
           subscriptionStatus: "active",
+          isPaying: true,
+          convertedAt: rows[0].convertedAt ?? new Date(),
           currentPeriodEnd: inv.period_end
             ? new Date(inv.period_end * 1000)
             : (rows[0].currentPeriodEnd ?? undefined),

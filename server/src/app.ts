@@ -50,6 +50,7 @@ import { startTrendCrons } from "./services/trend-crons.js";
 import { initFeedbackDb } from "./services/intel-quality.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
 import { startMoltbookCrons } from "./services/moltbook-crons.js";
+import { startAffiliateCrons } from "./services/affiliate-crons.js";
 import { trendRoutes } from "./routes/trends.js";
 import { logAvailableBackends } from "./services/visual-backends/index.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -416,6 +417,7 @@ export async function createApp(
   startTrendCrons(db);
   startMaintenanceCrons(db);
   startMoltbookCrons(db);
+  startAffiliateCrons(db);
   startYouTubeCrons(db);
   startKnowledgeGraphCrons(db);
   startSeoAuditCron(db);

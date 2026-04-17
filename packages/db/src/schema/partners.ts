@@ -95,6 +95,8 @@ export const partnerCompanies = pgTable(
     affiliateId: uuid("affiliate_id"),
     affiliateNotes: text("affiliate_notes"),
     storeNotes: text("store_notes"),
+    isPaying: boolean("is_paying").notNull().default(false),
+    convertedAt: timestamp("converted_at", { withTimezone: true }),
   },
   (table) => ({
     companySlugUq: uniqueIndex("partner_companies_company_slug_uq").on(
