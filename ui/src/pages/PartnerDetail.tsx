@@ -21,7 +21,7 @@ import {
   TrendingUp, Calendar, Globe, Pencil, Trash2, Copy, CheckCircle,
   ArrowLeft, Clock, Tag, Shield, DollarSign, RefreshCw, Rocket,
   Target, Palette, Building, KeyRound, Loader2, AlertCircle, Scan,
-  Sparkles, Upload, CreditCard, Trophy, Send, Info,
+  Sparkles, Upload, CreditCard, Trophy, Send, Info, Users,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -90,6 +90,9 @@ function OverviewTab({ partner }: { partner: Partner }) {
           <InfoRow icon={Tag} label="Industry" value={partner.industry} />
           <InfoRow icon={Building} label="Address" value={partner.address} />
           <InfoRow icon={Phone} label="Phone" value={partner.phone} />
+          {partner.affiliateName && (
+            <InfoRow icon={Users} label="Referred by" value={partner.affiliateName} />
+          )}
           {partner.description && (
             <div className="pt-2 border-t">
               <p className="text-xs text-muted-foreground mb-1">Description</p>

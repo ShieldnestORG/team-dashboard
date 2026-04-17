@@ -40,6 +40,7 @@ import { TxEcosystem } from "./pages/TxEcosystem";
 import Tokns from "./pages/Tokns";
 import { SystemHealth } from "./pages/SystemHealth";
 import { ContentReview } from "./pages/ContentReview";
+import { ContentAnalytics } from "./pages/ContentAnalytics";
 import { Structure } from "./pages/Structure";
 import { Intel } from "./pages/Intel";
 import { KnowledgeGraph } from "./pages/KnowledgeGraph";
@@ -62,6 +63,9 @@ import { Partners } from "./pages/Partners";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
 import { PartnersLanding } from "./pages/PartnersLanding";
+import { AffiliateLanding } from "./pages/AffiliateLanding";
+import { AffiliateDashboard } from "./pages/AffiliateDashboard";
+import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -201,6 +205,7 @@ function boardRoutes() {
       <Route path="agent-ops" element={<AgentOps />} />
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
+      <Route path="content-analytics" element={<ContentAnalytics />} />
       <Route path="structure" element={<Structure />} />
       <Route path="marketing-pushes" element={<MarketingPushes />} />
       <Route path="partners" element={<Partners />} />
@@ -347,7 +352,26 @@ function PartnersSite() {
   );
 }
 
+const IS_AFFILIATES_SUBDOMAIN =
+  typeof window !== "undefined" &&
+  window.location.hostname.startsWith("affiliates.");
+
+function AffiliateSite() {
+  return (
+    <Routes>
+      <Route index element={<AffiliateLanding />} />
+      <Route path="dashboard" element={<AffiliateDashboard />} />
+      <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 export function App() {
+  if (IS_AFFILIATES_SUBDOMAIN) {
+    return <AffiliateSite />;
+  }
+
   if (IS_PARTNERS_SUBDOMAIN) {
     return <PartnersSite />;
   }

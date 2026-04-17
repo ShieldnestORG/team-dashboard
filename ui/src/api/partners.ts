@@ -74,6 +74,10 @@ export interface Partner {
   featuredOrder: number | null;
   tagline: string | null;
 
+  // Affiliate attribution
+  affiliateId: string | null;
+  affiliateName: string | null;
+
   // Stripe billing
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;

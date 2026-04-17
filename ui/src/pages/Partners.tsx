@@ -347,7 +347,7 @@ export function Partners() {
                         to={`/partners/${partner.slug}`}
                         className="block"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium text-foreground group-hover:text-primary transition-colors">
                             {partner.name}
                           </span>
@@ -357,6 +357,11 @@ export function Partners() {
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                             {partner.tier}
                           </Badge>
+                          {partner.affiliateId && partner.affiliateName && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                              via {partner.affiliateName}
+                            </span>
+                          )}
                         </div>
                         {partner.website && (
                           <span className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
