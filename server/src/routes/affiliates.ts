@@ -605,7 +605,14 @@ export function affiliateRoutes(db: Db): Router {
       const updateFields: Record<string, unknown> = { updatedAt: new Date() };
       if (body.name !== undefined) updateFields.name = body.name;
       if (body.location !== undefined) updateFields.location = body.location;
-      if (body.website !== undefined) updateFields.website = body.website;
+      if (body.website !== undefined) {
+        try {
+          updateFields.website = new URL(body.website.trim()).toString();
+        } catch {
+          res.status(400).json({ error: "Please enter a full URL including https:// (e.g. https://example.com)" });
+          return;
+        }
+      }
 
       const result = await db
         .update(partnerCompanies)
