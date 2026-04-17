@@ -62,6 +62,7 @@ export { validatorRankHistory } from "./validator_rank_history.js";
 export { cityIntelligence } from "./city_intelligence.js";
 export type { CityItem, CityRawSource } from "./city_intelligence.js";
 export { contentItems } from "./content_items.js";
+export { contentClicks } from "./content_clicks.js";
 export { visualContentItems, visualContentAssets } from "./visual_content_items.js";
 export { contentFeedback } from "./content_feedback.js";
 export { xOauthTokens } from "./x_oauth_tokens.js";

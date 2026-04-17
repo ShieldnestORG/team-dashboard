@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { sql, eq } from "drizzle-orm";
+import { sql, eq, desc, count } from "drizzle-orm";
+import { createHash } from "crypto";
 import type { Db } from "@paperclipai/db";
-import { contentItems } from "@paperclipai/db";
+import { contentItems, contentClicks } from "@paperclipai/db";
 import { contentService } from "../services/content.js";
 import { contentFeedbackService } from "../services/content-feedback.js";
 import { recordNegativeFeedback, recordPositiveFeedback } from "../services/intel-quality.js";
@@ -344,11 +345,25 @@ export function contentRoutes(db: Db) {
     }
   });
 
-  // ---- POST /api/content/:id/track — lightweight performance tracking (no auth) ----
+  // ---- POST /api/content/:id/track — performance tracking (no auth) ----
 
   router.post("/:id/track", async (req, res) => {
     const contentItemId = req.params.id as string;
-    const { type } = req.body as { type?: string };
+    const {
+      type,
+      companyId,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      origin,
+    } = req.body as {
+      type?: string;
+      companyId?: string;
+      utmSource?: string;
+      utmMedium?: string;
+      utmCampaign?: string;
+      origin?: string;
+    };
 
     if (!type || !["view", "click", "share"].includes(type)) {
       res.status(400).json({ error: "type must be view, click, or share" });
@@ -363,6 +378,31 @@ export function contentRoutes(db: Db) {
             engagement_score = engagement_score + ${scoreInc}
         WHERE id = ${contentItemId}
       `);
+
+      // Record full event row for analytics
+      const ip = req.ip || "unknown";
+      const ipHash = createHash("sha256").update(ip).digest("hex").slice(0, 16);
+      const ua = (req.headers["user-agent"] as string) || null;
+      const referrer =
+        (req.headers.referer as string) ||
+        (req.headers.referrer as string) ||
+        null;
+      const visitorType = detectVisitorType(ua ?? undefined);
+
+      await db.insert(contentClicks).values({
+        contentItemId,
+        companyId: companyId ?? null,
+        eventType: type,
+        referrer,
+        userAgent: ua,
+        ipHash,
+        clickOrigin: origin ?? "cd",
+        visitorType,
+        utmSource: utmSource ?? null,
+        utmMedium: utmMedium ?? null,
+        utmCampaign: utmCampaign ?? null,
+      });
+
       res.json({ ok: true });
     } catch (err) {
       logger.warn({ err, contentItemId }, "Content tracking error");
@@ -370,5 +410,127 @@ export function contentRoutes(db: Db) {
     }
   });
 
+  // ---- GET /api/content/clicks — paginated event log (auth required) ----
+
+  router.get("/clicks", requireContentKey, async (req, res) => {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+    const filterContentId = req.query.contentItemId as string | undefined;
+    const filterCompanyId = req.query.companyId as string | undefined;
+
+    try {
+      const rows = await db
+        .select()
+        .from(contentClicks)
+        .where(
+          filterContentId
+            ? eq(contentClicks.contentItemId, filterContentId)
+            : filterCompanyId
+            ? eq(contentClicks.companyId, filterCompanyId)
+            : undefined,
+        )
+        .orderBy(desc(contentClicks.clickedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(contentClicks)
+        .where(
+          filterContentId
+            ? eq(contentClicks.contentItemId, filterContentId)
+            : filterCompanyId
+            ? eq(contentClicks.companyId, filterCompanyId)
+            : undefined,
+        );
+
+      res.json({ rows, total });
+    } catch (err) {
+      logger.error({ err }, "Content clicks list error");
+      res.status(500).json({ error: "Failed to fetch clicks" });
+    }
+  });
+
+  // ---- GET /api/content/clicks/metrics — aggregated analytics (auth required) ----
+
+  router.get("/clicks/metrics", requireContentKey, async (req, res) => {
+    const filterCompanyId = req.query.companyId as string | undefined;
+    const whereClause = filterCompanyId
+      ? sql`WHERE company_id = ${filterCompanyId}`
+      : sql``;
+    const whereAnd = filterCompanyId
+      ? sql`AND company_id = ${filterCompanyId}`
+      : sql``;
+
+    try {
+      type Row = Record<string, unknown>;
+      const totalResult = await db.execute<Row>(
+        sql`SELECT COUNT(*)::text AS total FROM content_clicks ${whereClause}`,
+      );
+      const byTypeResult = await db.execute<Row>(
+        sql`SELECT event_type, COUNT(*)::text AS cnt FROM content_clicks ${whereClause} GROUP BY event_type`,
+      );
+      const byDayResult = await db.execute<Row>(sql`
+        SELECT DATE_TRUNC('day', clicked_at)::date::text AS date, COUNT(*)::text AS cnt
+        FROM content_clicks
+        WHERE clicked_at >= NOW() - INTERVAL '30 days' ${whereAnd}
+        GROUP BY 1
+        ORDER BY 1
+      `);
+      const byOriginResult = await db.execute<Row>(
+        sql`SELECT click_origin, COUNT(*)::text AS cnt FROM content_clicks ${whereClause} GROUP BY click_origin`,
+      );
+      const byVisitorResult = await db.execute<Row>(
+        sql`SELECT visitor_type, COUNT(*)::text AS cnt FROM content_clicks ${whereClause} GROUP BY visitor_type`,
+      );
+
+      const totalRow = (totalResult as unknown as Row[])[0] ?? {};
+      res.json({
+        total: Number((totalRow as { total?: string }).total ?? 0),
+        byType: (byTypeResult as unknown as Row[]).map((r) => ({
+          eventType: r.event_type as string,
+          count: Number(r.cnt),
+        })),
+        byDay: (byDayResult as unknown as Row[]).map((r) => ({
+          date: r.date as string,
+          count: Number(r.cnt),
+        })),
+        byOrigin: (byOriginResult as unknown as Row[]).map((r) => ({
+          origin: r.click_origin as string,
+          count: Number(r.cnt),
+        })),
+        byVisitorType: (byVisitorResult as unknown as Row[]).map((r) => ({
+          visitorType: r.visitor_type as string,
+          count: Number(r.cnt),
+        })),
+      });
+    } catch (err) {
+      logger.error({ err }, "Content clicks metrics error");
+      res.status(500).json({ error: "Failed to fetch metrics" });
+    }
+  });
+
   return router;
+}
+
+// ---------------------------------------------------------------------------
+// Bot/agent user-agent detection (mirrors partner-go.ts)
+// ---------------------------------------------------------------------------
+
+const AGENT_UA_PATTERNS = [
+  /googlebot/i, /bingbot/i, /yandexbot/i, /baiduspider/i,
+  /gptbot/i, /claudebot/i, /chatgpt/i, /anthropic/i,
+  /perplexity/i, /cohere/i, /ai2bot/i, /ccbot/i,
+  /bytespider/i, /applebot/i, /facebookexternalhit/i,
+  /twitterbot/i, /slackbot/i, /discordbot/i,
+  /semrushbot/i, /ahrefsbot/i, /mj12bot/i,
+  /duckduckbot/i, /ia_archiver/i, /petalbot/i,
+];
+
+function detectVisitorType(ua: string | undefined): string {
+  if (!ua) return "unknown";
+  for (const pattern of AGENT_UA_PATTERNS) {
+    if (pattern.test(ua)) return "agent";
+  }
+  return "human";
 }

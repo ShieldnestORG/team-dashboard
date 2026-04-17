@@ -43,6 +43,51 @@ export interface ContentQueueListResponse {
   total: number;
 }
 
+export interface ContentClickEvent {
+  id: string;
+  contentItemId: string;
+  companyId: string | null;
+  eventType: string;
+  referrer: string | null;
+  userAgent: string | null;
+  ipHash: string | null;
+  clickOrigin: string;
+  visitorType: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  clickedAt: string;
+}
+
+export interface ContentClicksResponse {
+  rows: ContentClickEvent[];
+  total: number;
+}
+
+export interface ContentClickMetrics {
+  total: number;
+  byType: { eventType: string; count: number }[];
+  byDay: { date: string; count: number }[];
+  byOrigin: { origin: string; count: number }[];
+  byVisitorType: { visitorType: string; count: number }[];
+}
+
+export const contentClicksApi = {
+  list: (params: { limit?: number; offset?: number; contentItemId?: string; companyId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.offset) qs.set("offset", String(params.offset));
+    if (params.contentItemId) qs.set("contentItemId", params.contentItemId);
+    if (params.companyId) qs.set("companyId", params.companyId);
+    return api.get<ContentClicksResponse>(`/content/clicks${qs.toString() ? `?${qs}` : ""}`);
+  },
+  metrics: (params?: { companyId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.companyId) qs.set("companyId", params.companyId);
+    return api.get<ContentClickMetrics>(`/content/clicks/metrics${qs.toString() ? `?${qs}` : ""}`);
+  },
+};
+
 export const contentApi = {
   listQueue: (params: {
     status?: string;

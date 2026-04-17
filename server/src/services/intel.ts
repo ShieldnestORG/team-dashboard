@@ -9,6 +9,7 @@ import { AI_COMPANIES } from "../data/intel-companies-ai.js";
 import { DEFI_COMPANIES } from "../data/intel-companies-defi.js";
 import { DEVTOOLS_COMPANIES } from "../data/intel-companies-devtools.js";
 import { logger } from "../middleware/logger.js";
+import { nitterHealthService } from "./nitter-health.js";
 
 // ---------------------------------------------------------------------------
 // Merge all directory seed data, deduplicating by slug (first occurrence wins)
@@ -113,15 +114,9 @@ interface RedditPost {
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-const NITTER_INSTANCES = [
-  "https://nitter.privacydev.net",
-  "https://nitter.poast.org",
-  "https://nitter.1d4.us",
-  "https://nitter.tiekoetter.com",
-  "https://nitter.nl",
-];
-
 const GITHUB_API = "https://api.github.com";
+const FIRECRAWL_URL = process.env.FIRECRAWL_URL || "https://firecrawl.coherencedaddy.com";
+const FIRECRAWL_TIMEOUT_MS = 30_000;
 
 function parseRSSItems(xml: string): RSSItem[] {
   const items: RSSItem[] = [];
@@ -660,11 +655,19 @@ export function intelService(db: Db) {
 
     const cutoff = new Date(Date.now() - SEVEN_DAYS_MS);
 
+    const nitterSvc = nitterHealthService(db);
+    const liveInstances = await nitterSvc.getLiveInstanceUrls();
+    if (liveInstances.length === 0) {
+      logger.warn("No live Nitter instances — falling back to RSSHub only for all handles");
+    }
+
     for (const company of companies) {
       const handle = company.twitter_handle;
 
       try {
-        const xmlContent = await fetchNitterRSS(handle) ?? await fetchRSSHubTwitter(handle);
+        const xmlContent = liveInstances.length > 0
+          ? await fetchNitterRSS(handle, liveInstances) ?? await fetchRSSHubTwitter(handle)
+          : await fetchRSSHubTwitter(handle);
         if (!xmlContent) {
           errors.push(`${company.slug}: all sources failed for @${handle}`);
           continue;
@@ -1117,12 +1120,12 @@ async function fetchCoinGeckoMarkets(ids: string[]): Promise<Map<string, CoinGec
   return result;
 }
 
-async function fetchNitterRSS(handle: string): Promise<string | null> {
-  for (const instance of NITTER_INSTANCES) {
+async function fetchNitterRSS(handle: string, instances: string[]): Promise<string | null> {
+  for (const instance of instances) {
     try {
       const res = await fetch(`${instance}/${handle}/rss`, {
         headers: { "User-Agent": "Mozilla/5.0 (compatible; CoherenceDaddy/1.0)" },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(6_000),
       });
       if (res.ok) return await res.text();
     } catch {

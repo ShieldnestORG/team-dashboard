@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { systemHealthApi } from "../api/system-health";
-import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, SystemMetricsInfo, InfraCostItem, SslCertStatusInfo } from "../api/system-health";
+import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, InfraCostItem, SslCertStatusInfo } from "../api/system-health";
+import { nitterApi } from "../api/nitter";
+import type { NitterInstance } from "../api/nitter";
 import {
   Card,
   CardContent,
@@ -11,6 +13,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   HeartPulse,
   Activity,
@@ -45,6 +49,7 @@ const systemHealthKeys = {
   alerts: ["system-health", "alerts"] as const,
   logs: (level?: string, limit?: number) =>
     ["system-health", "logs", level, limit] as const,
+  nitter: ["nitter-instances"] as const,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -304,6 +309,7 @@ export function SystemHealth() {
   const [logLevelFilter, setLogLevelFilter] = useState<string | undefined>(
     undefined,
   );
+  const [nitterAddUrl, setNitterAddUrl] = useState("");
 
   const {
     data: overview,
@@ -331,6 +337,36 @@ export function SystemHealth() {
     queryKey: ["system-health", "services"] as const,
     queryFn: () => systemHealthApi.services(),
     refetchInterval: 30_000,
+  });
+
+  const queryClient = useQueryClient();
+
+  const { data: nitterData, isLoading: nitterLoading } = useQuery({
+    queryKey: systemHealthKeys.nitter,
+    queryFn: () => nitterApi.list(),
+    refetchInterval: 300_000,
+  });
+
+  const nitterAddMutation = useMutation({
+    mutationFn: (url: string) => nitterApi.add(url),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: systemHealthKeys.nitter });
+      setNitterAddUrl("");
+    },
+  });
+
+  const nitterRemoveMutation = useMutation({
+    mutationFn: (url: string) => nitterApi.remove(url),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: systemHealthKeys.nitter });
+    },
+  });
+
+  const nitterCheckMutation = useMutation({
+    mutationFn: () => nitterApi.check(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: systemHealthKeys.nitter });
+    },
   });
 
   if (isLoading) {
@@ -390,6 +426,100 @@ export function SystemHealth() {
           </p>
         </div>
       </div>
+
+      {/* ── Nitter Instances ───────────────────────────────────────────── */}
+      <Card className="rounded-xl">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Wifi className="h-4 w-4 text-muted-foreground" />
+                Nitter Instances
+              </CardTitle>
+              <CardDescription>Manage and health-check Nitter RSS proxy instances</CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => nitterCheckMutation.mutate()}
+              disabled={nitterCheckMutation.isPending}
+            >
+              {nitterCheckMutation.isPending ? "Checking..." : "Run Health Check"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {nitterLoading ? (
+            <p className="text-sm text-muted-foreground">Loading instances...</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {(nitterData?.instances ?? []).map((inst: NitterInstance) => (
+                <div key={inst.url} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${
+                      inst.alive === true ? "bg-emerald-400" :
+                      inst.alive === false ? "bg-red-400" :
+                      "bg-zinc-400"
+                    }`} />
+                    <span className="text-sm font-mono truncate">{inst.url}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {inst.consecutiveFailures > 0 && (
+                      <Badge variant="outline" className="text-[10px] text-red-400 border-red-500/30">
+                        {inst.consecutiveFailures} fail{inst.consecutiveFailures !== 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                    {inst.lastCheckedAt ? (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatDate(inst.lastCheckedAt)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">never checked</span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-red-400 hover:text-red-300"
+                      onClick={() => nitterRemoveMutation.mutate(inst.url)}
+                      disabled={nitterRemoveMutation.isPending}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {(nitterData?.instances ?? []).length === 0 && (
+                <p className="text-sm text-muted-foreground py-2">No instances configured.</p>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2 pt-2 border-t">
+            <Input
+              placeholder="https://nitter.example.com"
+              value={nitterAddUrl}
+              onChange={(e) => setNitterAddUrl(e.target.value)}
+              className="text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                if (nitterAddUrl.trim()) nitterAddMutation.mutate(nitterAddUrl.trim());
+              }}
+              disabled={nitterAddMutation.isPending || !nitterAddUrl.trim()}
+            >
+              {nitterAddMutation.isPending ? "Adding..." : "Add Instance"}
+            </Button>
+          </div>
+          {nitterAddMutation.isError && (
+            <p className="text-xs text-red-400">{String((nitterAddMutation.error as Error).message)}</p>
+          )}
+          {nitterCheckMutation.isSuccess && (
+            <p className="text-xs text-emerald-400">
+              Check complete: {nitterCheckMutation.data.alive}/{nitterCheckMutation.data.checked} alive
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ── Service Status ──────────────────────────────────────────────── */}
       {servicesData && (

@@ -3,6 +3,7 @@ import type { Db } from "@paperclipai/db";
 import { sql } from "drizzle-orm";
 import { intelService } from "../services/index.js";
 import { intelDiscoveryService } from "../services/intel-discovery.js";
+import { nitterHealthService } from "../services/nitter-health.js";
 import { logger } from "../middleware/logger.js";
 import { createIntelRateLimit } from "../middleware/intel-rate-limit.js";
 
@@ -360,6 +361,48 @@ export function intelRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "Intel related companies error");
       res.status(500).json({ error: "Failed to fetch related companies" });
+    }
+  });
+
+  // ── Nitter instance management ──────────────────────────────────────────────
+  const nitterSvc = nitterHealthService(db);
+
+  router.get("/nitter/instances", requireIngestKey, async (_req, res) => {
+    try {
+      res.json({ instances: await nitterSvc.getInstances() });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.post("/nitter/instances", requireIngestKey, async (req, res) => {
+    try {
+      const { url } = req.body as { url?: string };
+      if (!url || !url.startsWith("http")) { res.status(400).json({ error: "Valid URL required" }); return; }
+      const instance = await nitterSvc.addInstance(url.trim().replace(/\/$/, ""));
+      res.json({ ok: true, instance });
+    } catch (err) {
+      res.status(400).json({ error: String(err) });
+    }
+  });
+
+  router.delete("/nitter/instances", requireIngestKey, async (req, res) => {
+    try {
+      const { url } = req.body as { url?: string };
+      if (!url) { res.status(400).json({ error: "URL required" }); return; }
+      await nitterSvc.removeInstance(url);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.post("/nitter/check", requireIngestKey, async (_req, res) => {
+    try {
+      const result = await nitterSvc.runHealthCheck();
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
     }
   });
 

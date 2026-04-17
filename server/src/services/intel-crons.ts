@@ -4,6 +4,7 @@ import { intelDiscoveryService } from "./intel-discovery.js";
 import { cosmosLcdService } from "./cosmos-lcd.js";
 import { defillamaService } from "./defillama.js";
 import { intelBillingService } from "./intel-billing.js";
+import { nitterHealthService } from "./nitter-health.js";
 import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 
@@ -75,5 +76,16 @@ export function startIntelCrons(db: Db) {
   registerCronJob({ jobName: "intel:backfill",            schedule: "0 */12 * * *", ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => svc.backfillNewCompanies() });
   registerCronJob({ jobName: "intel:discover",            schedule: "0 */6 * * *",  ownerAgent: "echo", sourceFile: "intel-crons.ts", handler: () => discovery.discoverNewProjects() });
 
-  logger.info({ count: 11 }, "Intel cron jobs registered");
+  registerCronJob({
+    jobName: "nitter:health-check",
+    schedule: "0 */6 * * *",
+    ownerAgent: "echo",
+    sourceFile: "intel-crons.ts",
+    handler: async () => {
+      const svc = nitterHealthService(db);
+      return await svc.runHealthCheck();
+    },
+  });
+
+  logger.info({ count: 12 }, "Intel cron jobs registered");
 }
