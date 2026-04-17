@@ -80,6 +80,7 @@ import { logConfiguredPublishers } from "./services/platform-publishers/index.js
 import { autoReplyRoutes } from "./routes/auto-reply.js";
 import { moltbookRoutes } from "./routes/moltbook.js";
 import { partnerRoutes, partnerDirectoryRoutes } from "./routes/partner.js";
+import { affiliateRoutes, affiliateAdminRoutes } from "./routes/affiliates.js";
 import { partnerGoRoutes } from "./routes/partner-go.js";
 import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
 import { agentOpsRoutes } from "./routes/agent-ops.js";
@@ -141,6 +142,7 @@ export async function createApp(
       "https://www.coherencedaddy.com",
       "https://api.coherencedaddy.com",
       "https://directory.coherencedaddy.com",
+      "https://affiliates.coherencedaddy.com",
       /localhost/,
     ],
     credentials: true,
@@ -274,6 +276,7 @@ export async function createApp(
   api.use("/automation-health", automationHealthRoutes(db));
   api.use("/firecrawl/admin", firecrawlAdminRoutes(db));
   api.use("/campaigns", campaignRoutes(db));
+  api.use("/affiliates/admin", affiliateAdminRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -336,6 +339,8 @@ export async function createApp(
   app.use("/api/partner-sites", partnerSiteFeedRoutes(db));
   // Public partner directory — unauthenticated, for coherencedaddy.com "Trusted Partners" section
   app.use("/api/partner-directory", partnerDirectoryRoutes(db));
+  // Public + JWT-auth affiliate routes — register, login, prospects
+  app.use("/api/affiliates", affiliateRoutes(db));
   // Sitemap + robots — unauthenticated, for search engine crawlers
   app.use("/", sitemapRoutes(db));
 

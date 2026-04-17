@@ -90,6 +90,11 @@ export const partnerCompanies = pgTable(
     stripePriceId: text("stripe_price_id"),
     subscriptionStatus: text("subscription_status").default("none"),
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+
+    // ── Affiliate attribution ─────────────────────────────────────
+    affiliateId: uuid("affiliate_id"),
+    affiliateNotes: text("affiliate_notes"),
+    storeNotes: text("store_notes"),
   },
   (table) => ({
     companySlugUq: uniqueIndex("partner_companies_company_slug_uq").on(
@@ -111,6 +116,7 @@ export const partnerCompanies = pgTable(
       table.companyId,
       table.siteDeployStatus,
     ),
+    affiliateIdx: index("partner_companies_affiliate_idx").on(table.affiliateId),
   }),
 );
 

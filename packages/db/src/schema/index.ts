@@ -72,6 +72,7 @@ export { mediaDrops } from "./media_drops.js";
 export { autoReplyConfig, autoReplyLog, autoReplySettings } from "./auto_reply.js";
 export { systemCrons } from "./system_crons.js";
 export { partnerCompanies, partnerClicks, partnerSiteContent } from "./partners.js";
+export { affiliates } from "./affiliates.js";
 export { moltbookFeed, moltbookPosts, moltbookStats } from "./moltbook.js";
 export { contentQualitySignals } from "./content_quality_signals.js";
 export {

@@ -6,7 +6,7 @@ import { Router } from "express";
 import { eq, and, desc, gte, sql, count, or, inArray, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { Db } from "@paperclipai/db";
-import { partnerCompanies, partnerClicks } from "@paperclipai/db";
+import { partnerCompanies, partnerClicks, affiliates } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { runPartnerOnboarding, prefillPartnerFromWebsite } from "../services/partner-onboarding.js";
 import { createCheckoutSession } from "../services/stripe-checkout.js";
@@ -59,8 +59,64 @@ export function partnerRoutes(db: Db): Router {
 
       const [partners, totalResult] = await Promise.all([
         db
-          .select()
+          .select({
+            id: partnerCompanies.id,
+            companyId: partnerCompanies.companyId,
+            slug: partnerCompanies.slug,
+            name: partnerCompanies.name,
+            industry: partnerCompanies.industry,
+            location: partnerCompanies.location,
+            website: partnerCompanies.website,
+            description: partnerCompanies.description,
+            services: partnerCompanies.services,
+            socialHandles: partnerCompanies.socialHandles,
+            contactName: partnerCompanies.contactName,
+            contactEmail: partnerCompanies.contactEmail,
+            tier: partnerCompanies.tier,
+            status: partnerCompanies.status,
+            monthlyFee: partnerCompanies.monthlyFee,
+            referralFeePerClient: partnerCompanies.referralFeePerClient,
+            contentMentions: partnerCompanies.contentMentions,
+            totalClicks: partnerCompanies.totalClicks,
+            dashboardToken: partnerCompanies.dashboardToken,
+            partnerSince: partnerCompanies.partnerSince,
+            createdAt: partnerCompanies.createdAt,
+            updatedAt: partnerCompanies.updatedAt,
+            address: partnerCompanies.address,
+            phone: partnerCompanies.phone,
+            hours: partnerCompanies.hours,
+            logoUrl: partnerCompanies.logoUrl,
+            brandColors: partnerCompanies.brandColors,
+            targetKeywords: partnerCompanies.targetKeywords,
+            targetAudience: partnerCompanies.targetAudience,
+            siteUrl: partnerCompanies.siteUrl,
+            siteRepoUrl: partnerCompanies.siteRepoUrl,
+            siteDeployStatus: partnerCompanies.siteDeployStatus,
+            siteLastDeployedAt: partnerCompanies.siteLastDeployedAt,
+            siteConfig: partnerCompanies.siteConfig,
+            siteVercelProjectId: partnerCompanies.siteVercelProjectId,
+            baselineAnalytics: partnerCompanies.baselineAnalytics,
+            baselineCapturedAt: partnerCompanies.baselineCapturedAt,
+            contentPostCount: partnerCompanies.contentPostCount,
+            lastContentGeneratedAt: partnerCompanies.lastContentGeneratedAt,
+            onboardingStatus: partnerCompanies.onboardingStatus,
+            onboardingError: partnerCompanies.onboardingError,
+            onboardingCompletedAt: partnerCompanies.onboardingCompletedAt,
+            featured: partnerCompanies.featured,
+            featuredOrder: partnerCompanies.featuredOrder,
+            tagline: partnerCompanies.tagline,
+            stripeCustomerId: partnerCompanies.stripeCustomerId,
+            stripeSubscriptionId: partnerCompanies.stripeSubscriptionId,
+            stripePriceId: partnerCompanies.stripePriceId,
+            subscriptionStatus: partnerCompanies.subscriptionStatus,
+            currentPeriodEnd: partnerCompanies.currentPeriodEnd,
+            affiliateId: partnerCompanies.affiliateId,
+            affiliateNotes: partnerCompanies.affiliateNotes,
+            storeNotes: partnerCompanies.storeNotes,
+            affiliateName: affiliates.name,
+          })
           .from(partnerCompanies)
+          .leftJoin(affiliates, eq(partnerCompanies.affiliateId, affiliates.id))
           .where(where)
           .orderBy(desc(partnerCompanies.createdAt))
           .limit(limit)
