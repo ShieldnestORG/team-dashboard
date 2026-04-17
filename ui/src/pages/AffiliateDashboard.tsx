@@ -109,19 +109,44 @@ export function AffiliateDashboard() {
   if (!affiliate) return null;
 
   if (affiliate.status === "pending") {
+    const appliedDate = new Date(affiliate.createdAt).toLocaleDateString("en-US", {
+      year: "numeric", month: "long", day: "numeric",
+    });
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md">
-          <h1 className="text-2xl font-bold text-gray-900 mb-3">Application Under Review</h1>
-          <p className="text-gray-500 mb-6">
-            Your affiliate account is pending approval. We'll get back to you shortly.
-          </p>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-gray-400 hover:text-gray-600"
-          >
-            Log out
-          </button>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Minimal header */}
+        <header className="bg-white border-b border-gray-200">
+          <div className="max-w-lg mx-auto px-6 py-4 flex items-center justify-between">
+            <span className="font-bold text-gray-900">Coherence Daddy</span>
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-400 hover:text-gray-600"
+            >
+              Log out
+            </button>
+          </div>
+        </header>
+        {/* Holding content */}
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="text-center max-w-md">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-50 border border-amber-200 mb-6">
+              <span className="text-2xl">⏳</span>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-3">Application Under Review</h1>
+            <p className="text-gray-500 mb-2">
+              Your application is being reviewed by our team. We typically respond within 1–2 business days.
+            </p>
+            <p className="text-xs text-gray-400 mb-8">Applied on {appliedDate}</p>
+            <p className="text-sm text-gray-500">
+              Questions?{" "}
+              <a
+                href="mailto:affiliates@coherencedaddy.com"
+                className="text-amber-600 hover:text-amber-700 font-medium"
+              >
+                affiliates@coherencedaddy.com
+              </a>
+            </p>
+          </div>
         </div>
       </div>
     );

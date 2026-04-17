@@ -164,6 +164,11 @@ export function AffiliateLanding() {
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
                 </div>
+                <div className="text-right">
+                  <a href="/reset-password" className="text-xs text-amber-600 hover:text-amber-700">
+                    Forgot password?
+                  </a>
+                </div>
                 <button
                   type="submit"
                   disabled={loginLoading}

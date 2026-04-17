@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "@/lib/router";
 import { affiliatesApi, type AffiliateProspect } from "@/api/affiliates";
 import { ExternalLink, Globe, MapPin, Tag, ArrowLeft } from "lucide-react";
 
@@ -371,6 +371,23 @@ export function AffiliateProspectDetail() {
       .finally(() => setLoading(false));
   }, [slug]);
 
+  useEffect(() => {
+    // Only poll while onboarding is not terminal
+    if (!prospect) return;
+    if (prospect.onboardingStatus === "complete" || prospect.onboardingStatus === "failed") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await affiliatesApi.getProspect(slug!);
+        setProspect(res.prospect);
+      } catch {
+        // silently ignore poll errors
+      }
+    }, 6000); // poll every 6 seconds
+
+    return () => clearInterval(interval);
+  }, [prospect?.onboardingStatus, slug]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -407,6 +424,9 @@ export function AffiliateProspectDetail() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-bold text-gray-900">{prospect.name}</h1>
             <StatusBadge status={prospect.onboardingStatus} />
+            {(prospect.onboardingStatus === "scraping" || prospect.onboardingStatus === "analyzing" || prospect.onboardingStatus === "none") && (
+              <span className="text-xs text-gray-400 animate-pulse">Updating automatically...</span>
+            )}
           </div>
           {prospect.website && (
             <a

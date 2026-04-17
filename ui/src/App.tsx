@@ -66,6 +66,7 @@ import { PartnersLanding } from "./pages/PartnersLanding";
 import { AffiliateLanding } from "./pages/AffiliateLanding";
 import { AffiliateDashboard } from "./pages/AffiliateDashboard";
 import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
+import { AffiliateResetPassword } from "./pages/AffiliateResetPassword";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -362,6 +363,7 @@ function AffiliateSite() {
       <Route index element={<AffiliateLanding />} />
       <Route path="dashboard" element={<AffiliateDashboard />} />
       <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
+      <Route path="reset-password" element={<AffiliateResetPassword />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

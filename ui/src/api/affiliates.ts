@@ -105,4 +105,16 @@ export const affiliatesApi = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+
+  forgotPassword: (email: string) =>
+    affiliateRequest<{ ok: boolean }>("/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    affiliateRequest<{ ok: boolean }>("/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    }),
 };
