@@ -60,7 +60,7 @@ export function xOauthRoutes(db: Db) {
       return;
     }
 
-    const accountSlug = (req.query.account as string) || "primary";
+    const accountSlug = (req.query.account as string) || "tx_rizz";
     const state = crypto.randomBytes(16).toString("hex");
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
@@ -125,7 +125,7 @@ export function xOauthRoutes(db: Db) {
       return;
     }
 
-    const accountSlug = (req.query.account as string) || "primary";
+    const accountSlug = (req.query.account as string) || "tx_rizz";
 
     try {
       const tokenSet = await loadTokens(db, COMPANY_ID, accountSlug);

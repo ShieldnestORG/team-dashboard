@@ -670,9 +670,9 @@ export function startContentCrons(db: Db) {
         // Use enriched content bridge for twitter jobs
         if (def.useContentBridge && def.contentType === "tweet") {
           const companyId = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
-          await autoGenerateAndQueue(db, def.personality, companyId, topicPrompt || undefined, def.xAccountSlug ?? "primary");
+          await autoGenerateAndQueue(db, def.personality, companyId, topicPrompt || undefined, def.xAccountSlug ?? "tx_rizz");
           logger.info(
-            { job: def.name, ownerAgent: def.ownerAgent, topic: topicDisplay, isAlert: !!def.topicPicker, xAccountSlug: def.xAccountSlug ?? "primary" },
+            { job: def.name, ownerAgent: def.ownerAgent, topic: topicDisplay, isAlert: !!def.topicPicker, xAccountSlug: def.xAccountSlug ?? "tx_rizz" },
             "Content cron completed via content-bridge — tweet queued as draft",
           );
         } else {

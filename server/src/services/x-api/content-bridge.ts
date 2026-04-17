@@ -351,7 +351,7 @@ export async function autoGenerateAndQueue(
   personality: string,
   companyId: string,
   topic?: string,
-  accountSlug = "primary",
+  accountSlug = "tx_rizz",
 ): Promise<void> {
   // Check daily cap
   const todayCount = await countTodaysTweets(db, companyId);

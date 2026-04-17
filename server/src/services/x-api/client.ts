@@ -45,7 +45,7 @@ export class XApiClient {
   private accountSlug: string;
   private cachedUserId: string | null = null;
 
-  constructor(db: Db, companyId: string, accountSlug = "primary") {
+  constructor(db: Db, companyId: string, accountSlug = "tx_rizz") {
     this.db = db;
     this.companyId = companyId;
     this.accountSlug = accountSlug;

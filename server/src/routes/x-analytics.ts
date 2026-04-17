@@ -202,9 +202,9 @@ export function xAnalyticsRoutes(db: Db) {
   });
 
   // ── Connection Status ────────────────────────────────────────────────────
-  // Query param: ?account=primary|coherencedaddy (default: primary)
+  // Query param: ?account=tx_rizz|coherencedaddy (default: tx_rizz)
   router.get("/connection", async (req, res) => {
-    const accountSlug = (req.query.account as string) || "primary";
+    const accountSlug = (req.query.account as string) || "tx_rizz";
     try {
       const result = await db.execute(sql`
         SELECT x_username, x_user_id, expires_at, created_at

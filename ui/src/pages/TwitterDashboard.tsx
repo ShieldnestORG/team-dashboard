@@ -284,7 +284,7 @@ export function TwitterDashboard() {
     <div className="space-y-6">
       {/* Connection Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <ConnectionCard accountSlug="primary" label="Primary Account" />
+        <ConnectionCard accountSlug="tx_rizz" label="TX Rizz" />
         <ConnectionCard accountSlug="coherencedaddy" label="Coherence Daddy" />
         <ExtensionBotCard extension={extensionData} />
       </div>

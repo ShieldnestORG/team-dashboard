@@ -195,7 +195,7 @@ class AutoReplyService {
         maxRepliesPerDay: row.maxRepliesPerDay,
         minDelaySeconds: row.minDelaySeconds,
         maxDelaySeconds: row.maxDelaySeconds,
-        xAccountSlug: (row.xAccountSlug as string | null) ?? "primary",
+        xAccountSlug: (row.xAccountSlug as string | null) ?? "tx_rizz",
       };
 
       this.allConfigs.push(config);
@@ -448,7 +448,7 @@ class AutoReplyService {
             continue;
           }
 
-          const client = new XApiClient(this.db, COMPANY_ID, config.xAccountSlug ?? "primary");
+          const client = new XApiClient(this.db, COMPANY_ID, config.xAccountSlug ?? "tx_rizz");
           const result = await client.createTweet({ text: replyText, replyTo: tweet.id });
           const latencyMs = Date.now() - startTime;
 

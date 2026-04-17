@@ -39,10 +39,18 @@ export interface XCredentials {
 
 /**
  * Returns the X OAuth credentials for the given account slug.
+ * - 'tx_rizz'       → X_CLIENT_ID_TX / X_CLIENT_SECRET_TX / X_CALLBACK_URL_TX
  * - 'coherencedaddy' → X_CLIENT_ID_CD / X_CLIENT_SECRET_CD / X_CALLBACK_URL_CD
- * - anything else  → X_CLIENT_ID / X_CLIENT_SECRET / X_CALLBACK_URL
+ * - anything else   → X_CLIENT_ID / X_CLIENT_SECRET / X_CALLBACK_URL
  */
 export function getXCredentials(accountSlug?: string): XCredentials {
+  if (accountSlug === "tx_rizz") {
+    return {
+      clientId: process.env.X_CLIENT_ID_TX || X_CLIENT_ID,
+      clientSecret: process.env.X_CLIENT_SECRET_TX || X_CLIENT_SECRET,
+      callbackUrl: process.env.X_CALLBACK_URL_TX || X_CALLBACK_URL,
+    };
+  }
   if (accountSlug === "coherencedaddy") {
     return {
       clientId: process.env.X_CLIENT_ID_CD || X_CLIENT_ID,
@@ -248,7 +256,7 @@ export async function saveTokens(
   db: Db,
   companyId: string,
   tokenSet: TokenSet,
-  accountSlug = "primary",
+  accountSlug = "tx_rizz",
 ): Promise<void> {
   const values = {
     companyId,
@@ -282,7 +290,7 @@ export async function saveTokens(
 export async function loadTokens(
   db: Db,
   companyId: string,
-  accountSlug = "primary",
+  accountSlug = "tx_rizz",
 ): Promise<TokenSet | null> {
   const rows = await db
     .select()
@@ -309,7 +317,7 @@ export async function loadTokens(
 export async function deleteTokens(
   db: Db,
   companyId: string,
-  accountSlug = "primary",
+  accountSlug = "tx_rizz",
 ): Promise<void> {
   await db.delete(xOauthTokens).where(and(
     eq(xOauthTokens.companyId, companyId),
@@ -325,7 +333,7 @@ export async function deleteTokens(
 export async function getValidToken(
   db: Db,
   companyId: string,
-  accountSlug = "primary",
+  accountSlug = "tx_rizz",
 ): Promise<string> {
   const tokenSet = await loadTokens(db, companyId, accountSlug);
   if (!tokenSet) {
@@ -356,7 +364,7 @@ export async function getValidToken(
 export async function revokeTokens(
   db: Db,
   companyId: string,
-  accountSlug = "primary",
+  accountSlug = "tx_rizz",
 ): Promise<void> {
   const tokenSet = await loadTokens(db, companyId, accountSlug);
 
