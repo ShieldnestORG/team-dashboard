@@ -50,7 +50,10 @@
   "packageManager": "pnpm@9.15.4",
   "pnpm": {
     "overrides": {
-      "axios": "1.14.0",
+      "axios": ">=1.15.0",
+      "esbuild": ">=0.25.0",
+      "follow-redirects": ">=1.16.0",
+      "hono": ">=4.12.14",
       "rollup": ">=4.59.0",
       "multer": ">=2.1.0",
       "picomatch": ">=4.0.4",
@@ -60,12 +63,15 @@
       "fast-xml-parser": ">=5.5.7",
       "defu": ">=6.1.5"
     },
+    "auditConfig": {
+      "ignoreCves": ["CVE-2016-10538"]
+    },
     "patchedDependencies": {
       "embedded-postgres@18.1.0-beta.16": "patches/embedded-postgres@18.1.0-beta.16.patch"
     }
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
-    "nodemailer": "^8.0.4"
+    "nodemailer": "^8.0.5"
   }
 }
