@@ -24,6 +24,7 @@ import {
   Reply,
   Clock,
   Handshake,
+  UsersRound,
   Youtube,
   Globe,
   MapPin,
@@ -145,6 +146,7 @@ export function Sidebar() {
           <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
           <SidebarNavItem to="/marketing-pushes" label="Marketing Pushes" icon={Megaphone} />
           <SidebarNavItem to="/org" label="Org" icon={Network} />
+          <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
           <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
           <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />

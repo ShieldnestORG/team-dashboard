@@ -60,6 +60,7 @@ import { YouTubePipeline } from "./pages/YouTubePipeline";
 import { YouTubeVideos } from "./pages/YouTubeVideos";
 import { MarketingPushes } from "./pages/MarketingPushes";
 import { Partners } from "./pages/Partners";
+import { AffiliatesAdmin } from "./pages/AffiliatesAdmin";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
 import { PartnersLanding } from "./pages/PartnersLanding";
@@ -209,6 +210,7 @@ function boardRoutes() {
       <Route path="content-analytics" element={<ContentAnalytics />} />
       <Route path="structure" element={<Structure />} />
       <Route path="marketing-pushes" element={<MarketingPushes />} />
+      <Route path="affiliates" element={<AffiliatesAdmin />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
