@@ -12,11 +12,49 @@ import { logger } from "../middleware/logger.js";
 import { requireAffiliate } from "../middleware/affiliate-auth.js";
 import { createAffiliateJwt } from "../affiliate-auth-jwt.js";
 import { assertBoard } from "./authz.js";
-import { prefillPartnerFromWebsite, runPartnerOnboarding } from "../services/partner-onboarding.js";
+import { runPartnerOnboarding } from "../services/partner-onboarding.js";
 import { sendTransactional } from "../services/email-templates.js";
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+// ── Simple in-memory rate limiter for auth endpoints ────────────────────────
+// Limits: 10 attempts per IP per 15-minute window
+// Resets automatically via TTL cleanup; safe for single-server deployment.
+
+interface RateBucket {
+  count: number;
+  resetAt: number;
+}
+
+const rateBuckets = new Map<string, RateBucket>();
+const RATE_LIMIT = 10;
+const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const bucket = rateBuckets.get(ip);
+
+  if (!bucket || now > bucket.resetAt) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true; // allowed
+  }
+
+  if (bucket.count >= RATE_LIMIT) {
+    return false; // blocked
+  }
+
+  bucket.count += 1;
+  return true; // allowed
+}
+
+// Cleanup stale buckets every 30 minutes to prevent unbounded growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateBuckets) {
+    if (now > bucket.resetAt) rateBuckets.delete(key);
+  }
+}, 30 * 60 * 1000).unref();
 
 // ── Internal password helpers ────────────────────────────────────────────────
 
@@ -52,6 +90,12 @@ export function affiliateRoutes(db: Db): Router {
   // ── POST /register — Public registration ──────────────────────────────────
   router.post("/register", async (req, res) => {
     try {
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
+      if (!checkRateLimit(clientIp)) {
+        res.status(429).json({ error: "Too many attempts. Please try again in 15 minutes." });
+        return;
+      }
+
       const { name, email, password } = req.body as {
         name?: string;
         email?: string;
@@ -113,6 +157,12 @@ export function affiliateRoutes(db: Db): Router {
   // ── POST /login — Public login ────────────────────────────────────────────
   router.post("/login", async (req, res) => {
     try {
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
+      if (!checkRateLimit(clientIp)) {
+        res.status(429).json({ error: "Too many attempts. Please try again in 15 minutes." });
+        return;
+      }
+
       const { email, password } = req.body as { email?: string; password?: string };
 
       if (!email || !password) {
@@ -280,10 +330,36 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
-      const url = new URL(website.trim());
-      const hostname = url.hostname.replace(/^www\./, "");
-      const baseName = hostname; // onboarding pipeline will update this
-      const baseSlug = slugify(hostname);
+      let url: URL;
+      try {
+        url = new URL(website.trim());
+      } catch {
+        res.status(400).json({ error: "Please enter a full URL including https:// (e.g. https://example.com)" });
+        return;
+      }
+
+      // Check for existing prospect with this website
+      const existingWebsite = await db
+        .select({ slug: partnerCompanies.slug })
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.website, url.toString()),
+            eq(partnerCompanies.companyId, COMPANY_ID),
+          ),
+        )
+        .limit(1);
+
+      if (existingWebsite.length > 0) {
+        res.status(409).json({
+          error: "This business is already in our system.",
+          slug: existingWebsite[0].slug,
+        });
+        return;
+      }
+
+      const baseName = url.hostname.replace(/^www\./, "");
+      const baseSlug = slugify(baseName);
 
       // Insert with conflict retry on slug
       let slug = baseSlug;
@@ -298,7 +374,7 @@ export function affiliateRoutes(db: Db): Router {
               slug,
               name: baseName,
               industry: "other",
-              website: website.trim(),
+              website: url.toString(),
               affiliateId,
               status: "trial",
               tier: "proof",
