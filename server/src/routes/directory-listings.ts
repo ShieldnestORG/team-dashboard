@@ -8,9 +8,15 @@
 
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { intelCompanies, partnerCompanies } from "@paperclipai/db";
+import {
+  affiliates,
+  commissions,
+  intelCompanies,
+  partnerCompanies,
+  referralAttribution,
+} from "@paperclipai/db";
 import {
   directoryListingsService,
   LISTING_TIERS,
@@ -319,6 +325,8 @@ async function handlePartnerStripeEvent(
         id: string;
         customer?: string;
         subscription?: string;
+        invoice?: string;
+        amount_total?: number;
         metadata?: Record<string, string>;
       };
       const partnerSlug = session.metadata?.partner_slug;
@@ -377,12 +385,84 @@ async function handlePartnerStripeEvent(
           });
         }
       }
+
+      // Create the initial commission row if this lead has an active attribution.
+      // Wrapped in try/catch so a commission failure never breaks activation.
+      try {
+        const [attribution] = await db
+          .select({
+            attributionId: referralAttribution.id,
+            affiliateId: referralAttribution.affiliateId,
+            leadId: referralAttribution.leadId,
+            rate: affiliates.commissionRate,
+          })
+          .from(referralAttribution)
+          .innerJoin(partnerCompanies, eq(partnerCompanies.id, referralAttribution.leadId))
+          .innerJoin(affiliates, eq(affiliates.id, referralAttribution.affiliateId))
+          .where(
+            and(
+              eq(partnerCompanies.slug, partnerSlug),
+              isNull(referralAttribution.lockReleasedAt),
+            ),
+          )
+          .limit(1);
+
+        if (attribution) {
+          const basisCents = session.amount_total ?? 0;
+          const rateNum = Number(attribution.rate ?? "0.10");
+          const amountCents = Math.round(basisCents * rateNum);
+          const now = new Date();
+          const periodEnd = currentPeriodEnd ?? now;
+          const holdExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+          await db
+            .insert(commissions)
+            .values({
+              affiliateId: attribution.affiliateId,
+              leadId: attribution.leadId,
+              attributionId: attribution.attributionId,
+              type: "initial",
+              rate: attribution.rate,
+              amountCents,
+              basisCents,
+              periodStart: now,
+              periodEnd,
+              status: "pending_activation",
+              stripeInvoiceId: session.invoice ?? session.id,
+              holdExpiresAt,
+            })
+            .onConflictDoNothing();
+
+          logger.info(
+            {
+              partnerSlug,
+              affiliateId: attribution.affiliateId,
+              amountCents,
+              basisCents,
+              stripeInvoiceId: session.invoice ?? session.id,
+            },
+            "partner-network: initial commission created",
+          );
+        }
+      } catch (err) {
+        logger.error(
+          { err, partnerSlug, sessionId: session.id },
+          "partner-network: commission insert failed (non-fatal)",
+        );
+      }
       break;
     }
 
     case "invoice.payment_succeeded":
     case "invoice.paid": {
-      const inv = obj as { subscription?: string; period_end?: number };
+      const inv = obj as {
+        id?: string;
+        subscription?: string;
+        amount_paid?: number;
+        period_start?: number;
+        period_end?: number;
+        billing_reason?: string;
+      };
       if (!inv.subscription) return;
       const rows = await db
         .select({
@@ -406,6 +486,78 @@ async function handlePartnerStripeEvent(
           updatedAt: new Date(),
         })
         .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription));
+
+      // Skip the initial invoice — it's handled by checkout.session.completed.
+      if (inv.billing_reason === "subscription_create") break;
+
+      // Create a recurring commission row if an active attribution exists for the
+      // subscribed partner. Wrapped in try/catch so it can never break billing.
+      try {
+        if (!inv.id) break;
+
+        const [row] = await db
+          .select({
+            leadId: partnerCompanies.id,
+            attributionId: referralAttribution.id,
+            affiliateId: referralAttribution.affiliateId,
+            rate: affiliates.commissionRate,
+          })
+          .from(partnerCompanies)
+          .innerJoin(
+            referralAttribution,
+            and(
+              eq(referralAttribution.leadId, partnerCompanies.id),
+              isNull(referralAttribution.lockReleasedAt),
+            ),
+          )
+          .innerJoin(affiliates, eq(affiliates.id, referralAttribution.affiliateId))
+          .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription))
+          .limit(1);
+
+        if (!row) break;
+
+        const basisCents = inv.amount_paid ?? 0;
+        const rateNum = Number(row.rate ?? "0.10");
+        const amountCents = Math.round(basisCents * rateNum);
+        const now = new Date();
+        const periodStart = inv.period_start ? new Date(inv.period_start * 1000) : now;
+        const periodEnd = inv.period_end ? new Date(inv.period_end * 1000) : now;
+        const holdExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+        await db
+          .insert(commissions)
+          .values({
+            affiliateId: row.affiliateId,
+            leadId: row.leadId,
+            attributionId: row.attributionId,
+            type: "recurring",
+            rate: row.rate,
+            amountCents,
+            basisCents,
+            periodStart,
+            periodEnd,
+            status: "pending_activation",
+            stripeInvoiceId: inv.id,
+            holdExpiresAt,
+          })
+          .onConflictDoNothing();
+
+        logger.info(
+          {
+            affiliateId: row.affiliateId,
+            leadId: row.leadId,
+            amountCents,
+            basisCents,
+            stripeInvoiceId: inv.id,
+          },
+          "partner-network: recurring commission created",
+        );
+      } catch (err) {
+        logger.error(
+          { err, subscriptionId: inv.subscription, invoiceId: inv.id },
+          "partner-network: recurring commission insert failed (non-fatal)",
+        );
+      }
       break;
     }
 
@@ -431,6 +583,35 @@ async function handlePartnerStripeEvent(
         })
         .where(eq(partnerCompanies.stripeSubscriptionId, sub.id));
       logger.info({ subscriptionId: sub.id }, "partner-network: subscription canceled");
+      break;
+    }
+
+    case "charge.refunded": {
+      const charge = obj as { id?: string; invoice?: string };
+      if (!charge.invoice) return;
+
+      // If the commission was already paid, flag it 'clawed_back' (requires admin
+      // follow-up). Otherwise it's simply 'reversed' — idempotent by state.
+      try {
+        await db
+          .update(commissions)
+          .set({
+            status: sql`CASE WHEN ${commissions.status} = 'paid' THEN 'clawed_back' ELSE 'reversed' END`,
+            clawbackReason: "stripe_refund",
+            updatedAt: new Date(),
+          })
+          .where(eq(commissions.stripeInvoiceId, charge.invoice));
+
+        logger.info(
+          { chargeId: charge.id, invoiceId: charge.invoice },
+          "partner-network: commission reversed/clawed_back on refund",
+        );
+      } catch (err) {
+        logger.error(
+          { err, chargeId: charge.id, invoiceId: charge.invoice },
+          "partner-network: charge.refunded handler failed (non-fatal)",
+        );
+      }
       break;
     }
   }

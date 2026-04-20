@@ -48,6 +48,74 @@ export interface CompetitorSite {
   summary: string;
 }
 
+export type CommissionType = "initial" | "recurring";
+export type CommissionStatus =
+  | "pending_activation"
+  | "approved"
+  | "scheduled_for_payout"
+  | "paid"
+  | "held"
+  | "reversed"
+  | "clawed_back";
+
+export interface Commission {
+  id: string;
+  type: CommissionType | string;
+  rate: string;
+  amountCents: number;
+  basisCents: number;
+  periodStart: string;
+  periodEnd: string;
+  status: CommissionStatus | string;
+  stripeInvoiceId: string | null;
+  holdExpiresAt: string | null;
+  leadName: string | null;
+  leadSlug: string | null;
+  createdAt: string;
+  clawbackReason?: string | null;
+}
+
+export type PayoutMethod = "stripe_connect" | "manual_ach" | "manual_paypal" | "manual_check";
+export type PayoutStatus = "scheduled" | "sent" | "paid" | "failed";
+
+export interface Payout {
+  id: string;
+  amountCents: number;
+  commissionCount: number;
+  method: PayoutMethod | string;
+  externalId: string | null;
+  status: PayoutStatus | string;
+  batchMonth: string; // 'YYYY-MM'
+  scheduledFor: string;
+  sentAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export interface AffiliateMeResponse {
+  affiliate: Affiliate;
+  prospectCount: number;
+  convertedCount: number;
+  estimatedEarned: number;
+  pendingCents: number;
+  approvedCents: number;
+  scheduledCents: number;
+  paidCents: number;
+  lifetimeCents: number;
+}
+
+export interface ListEarningsResponse {
+  commissions: Commission[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ListPayoutsResponse {
+  payouts: Payout[];
+  total: number;
+}
+
 export interface AffiliateProspect {
   id: string;
   slug: string;
@@ -106,7 +174,19 @@ export const affiliatesApi = {
     }),
 
   me: () =>
-    affiliateRequest<{ affiliate: Affiliate; prospectCount: number; convertedCount: number; estimatedEarned: number }>("/me"),
+    affiliateRequest<AffiliateMeResponse>("/me"),
+
+  listEarnings: (opts?: { limit?: number; offset?: number; status?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.offset != null) params.set("offset", String(opts.offset));
+    if (opts?.status) params.set("status", opts.status);
+    const qs = params.toString();
+    return affiliateRequest<ListEarningsResponse>(`/earnings${qs ? `?${qs}` : ""}`);
+  },
+
+  listPayouts: () =>
+    affiliateRequest<ListPayoutsResponse>("/payouts"),
 
   acceptPolicy: () =>
     affiliateRequest<{ acceptedAt: string }>("/accept-policy", { method: "POST" }),

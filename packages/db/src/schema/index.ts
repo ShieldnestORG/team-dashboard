@@ -75,6 +75,8 @@ export { systemCrons } from "./system_crons.js";
 export { partnerCompanies, partnerClicks, partnerSiteContent } from "./partners.js";
 export { affiliates } from "./affiliates.js";
 export { referralAttribution } from "./referral_attribution.js";
+export { payouts } from "./payouts.js";
+export { commissions } from "./commissions.js";
 export { moltbookFeed, moltbookPosts, moltbookStats } from "./moltbook.js";
 export { contentQualitySignals } from "./content_quality_signals.js";
 export {

@@ -44,7 +44,11 @@ export type EmailTemplate =
   | "affiliate-application"
   | "affiliate-approved"
   | "affiliate-reset-password"
-  | "affiliate-pending-digest";
+  | "affiliate-pending-digest"
+  | "affiliate-commission-created"
+  | "affiliate-commission-approved"
+  | "affiliate-payout-sent"
+  | "affiliate-payout-held";
 
 export interface EmailVars {
   // Common
@@ -75,6 +79,16 @@ export interface EmailVars {
   adminAffiliatesUrl?: string;
   resetToken?: string;
   supportEmail?: string;
+  // Affiliate commissions / payouts
+  leadName?: string;
+  amountCents?: number;
+  totalCents?: number;
+  count?: number;
+  type?: string;
+  commissionCount?: number;
+  method?: string;
+  externalId?: string;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +378,175 @@ function buildAffiliateResetPassword(vars: EmailVars): { subject: string; html: 
   return { subject, html: htmlShell(subject, body) };
 }
 
+// ---------------------------------------------------------------------------
+// Affiliate commission + payout helpers
+// ---------------------------------------------------------------------------
+
+function formatDollars(cents: number | undefined): string {
+  return ((cents ?? 0) / 100).toFixed(2);
+}
+
+function payoutMethodLabel(method: string | undefined): string {
+  switch (method) {
+    case "manual_ach":
+      return "ACH transfer";
+    case "manual_paypal":
+      return "PayPal";
+    case "manual_check":
+      return "Check";
+    case "stripe_connect":
+      return "Stripe Connect";
+    default:
+      return method ?? "bank transfer";
+  }
+}
+
+export function buildAffiliateCommissionCreated(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl =
+    vars.dashboardUrl ??
+    vars.affiliateDashboardUrl ??
+    "https://affiliates.coherencedaddy.com/earnings";
+  const amount = formatDollars(vars.amountCents);
+  const lead = vars.leadName ?? "a new lead";
+  const kind = vars.type === "recurring" ? "recurring" : "initial";
+
+  const subject = `New commission pending — $${amount} from ${lead}`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Nice work, ${name}!</h2>
+    <p style="margin:0 0 16px;">
+      A new <strong>${kind}</strong> commission of <strong>$${amount}</strong> just dropped into your ledger from <strong>${lead}</strong>.
+    </p>
+    <p style="margin:0 0 16px;">
+      Heads up: there&rsquo;s a standard <strong>30-day hold window</strong> — after that the commission moves from <em>pending</em> to <em>approved</em> and rolls into your next monthly payout batch.
+    </p>
+    ${ctaButton(dashUrl, "View Your Earnings →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Nice work, ${name}!\n\nA new ${kind} commission of $${amount} just dropped into your ledger from ${lead}.\n\nThere is a standard 30-day hold window — after that the commission moves from pending to approved and rolls into your next monthly payout batch.\n\nView your earnings: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliateCommissionApproved(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl =
+    vars.dashboardUrl ??
+    vars.affiliateDashboardUrl ??
+    "https://affiliates.coherencedaddy.com/earnings";
+  const total = formatDollars(vars.totalCents);
+  const count = vars.count ?? 0;
+  const plural = count === 1 ? "commission" : "commissions";
+
+  const subject = `$${total} in commissions approved`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Great news, ${name}!</h2>
+    <p style="margin:0 0 16px;">
+      <strong>${count}</strong> ${plural} totaling <strong>$${total}</strong> just passed the hold window and will be paid in your next monthly batch.
+    </p>
+    ${ctaButton(dashUrl, "View Your Earnings →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Great news, ${name}!\n\n${count} ${plural} totaling $${total} just passed the hold window and will be paid in your next monthly batch.\n\nView your earnings: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliatePayoutSent(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl =
+    vars.dashboardUrl ??
+    vars.affiliateDashboardUrl ??
+    "https://affiliates.coherencedaddy.com/payouts";
+  const amount = formatDollars(vars.amountCents);
+  const count = vars.commissionCount ?? 0;
+  const methodLabel = payoutMethodLabel(vars.method);
+  const ref = vars.externalId ?? "(reference pending)";
+  const landing =
+    vars.method === "manual_check"
+      ? "7–10 business days"
+      : vars.method === "manual_paypal"
+      ? "1–2 business days"
+      : vars.method === "stripe_connect"
+      ? "1–2 business days"
+      : "2–5 business days";
+
+  const subject = `Payout sent — $${amount}`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Your payout is on its way, ${name}</h2>
+    <p style="margin:0 0 16px;">
+      We just sent <strong>$${amount}</strong> covering <strong>${count}</strong> commission${count === 1 ? "" : "s"} via <strong>${methodLabel}</strong>.
+    </p>
+    <p style="margin:0 0 4px;font-weight:600;font-size:13px;color:#555555;">REFERENCE</p>
+    ${monoBox(ref)}
+    <p style="margin:0 0 16px;">
+      Expected to land within <strong>${landing}</strong>.
+    </p>
+    ${ctaButton(dashUrl, "View Payout History →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Your payout is on its way, ${name}.\n\nWe just sent $${amount} covering ${count} commission${count === 1 ? "" : "s"} via ${methodLabel}.\n\nReference: ${ref}\nExpected to land within ${landing}.\n\nView payout history: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliatePayoutHeld(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl =
+    vars.dashboardUrl ??
+    vars.affiliateDashboardUrl ??
+    "https://affiliates.coherencedaddy.com/payouts";
+  const amount = formatDollars(vars.amountCents);
+  const reason = vars.reason ?? "Awaiting admin review.";
+
+  const subject = "Action needed on your payout";
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Payout on hold, ${name}</h2>
+    <p style="margin:0 0 16px;">
+      Your pending payout of <strong>$${amount}</strong> has been placed on hold.
+    </p>
+    <p style="margin:0 0 4px;font-weight:600;font-size:13px;color:#555555;">REASON</p>
+    ${monoBox(reason)}
+    <p style="margin:16px 0;">
+      Please reply directly to this email, or reach us at
+      <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>, and we&rsquo;ll help sort it out.
+    </p>
+    ${ctaButton(dashUrl, "View Payouts →")}
+  `;
+
+  const text = `Payout on hold, ${name}.\n\nYour pending payout of $${amount} has been placed on hold.\n\nReason: ${reason}\n\nPlease reply directly to this email, or reach us at ${support}, and we will help sort it out.\n\nView payouts: ${dashUrl}`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
 function buildAffiliatePendingDigest(vars: EmailVars): { subject: string; html: string } {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
@@ -440,6 +623,18 @@ export async function sendTransactional(
       break;
     case "affiliate-pending-digest":
       ({ subject, html } = buildAffiliatePendingDigest(vars));
+      break;
+    case "affiliate-commission-created":
+      ({ subject, html } = buildAffiliateCommissionCreated(vars));
+      break;
+    case "affiliate-commission-approved":
+      ({ subject, html } = buildAffiliateCommissionApproved(vars));
+      break;
+    case "affiliate-payout-sent":
+      ({ subject, html } = buildAffiliatePayoutSent(vars));
+      break;
+    case "affiliate-payout-held":
+      ({ subject, html } = buildAffiliatePayoutHeld(vars));
       break;
     default: {
       const _exhaustive: never = template;

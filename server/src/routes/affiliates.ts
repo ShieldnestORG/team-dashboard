@@ -3,11 +3,11 @@
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
-import { eq, and, ilike, count, sql, isNull, gt } from "drizzle-orm";
+import { eq, and, ilike, count, sql, isNull, gt, desc, inArray, gte, lte } from "drizzle-orm";
 import { randomBytes, createHash } from "node:crypto";
 import { scryptSync, timingSafeEqual } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { affiliates, partnerCompanies, referralAttribution } from "@paperclipai/db";
+import { affiliates, partnerCompanies, referralAttribution, commissions, payouts } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { requireAffiliate } from "../middleware/affiliate-auth.js";
 import { createAffiliateJwt } from "../affiliate-auth-jwt.js";
@@ -264,7 +264,52 @@ export function affiliateRoutes(db: Db): Router {
       const estimatedEarned =
         parseFloat(affiliate.commissionRate ?? "0.10") * totalMonthlyFees;
 
-      res.json({ affiliate, prospectCount, convertedCount, estimatedEarned });
+      // Commission bucket aggregates — one grouped query for all statuses.
+      const bucketRows = await db
+        .select({
+          status: commissions.status,
+          total: sql<number>`coalesce(sum(${commissions.amountCents}), 0)`,
+        })
+        .from(commissions)
+        .where(eq(commissions.affiliateId, id))
+        .groupBy(commissions.status);
+
+      let pendingCents = 0;
+      let approvedCents = 0;
+      let scheduledCents = 0;
+      let paidCents = 0;
+      for (const row of bucketRows) {
+        const amt = Number(row.total ?? 0);
+        switch (row.status) {
+          case "pending_activation":
+            pendingCents = amt;
+            break;
+          case "approved":
+            approvedCents = amt;
+            break;
+          case "scheduled_for_payout":
+            scheduledCents = amt;
+            break;
+          case "paid":
+            paidCents = amt;
+            break;
+          default:
+            break;
+        }
+      }
+      const lifetimeCents = approvedCents + scheduledCents + paidCents;
+
+      res.json({
+        affiliate,
+        prospectCount,
+        convertedCount,
+        estimatedEarned,
+        pendingCents,
+        approvedCents,
+        scheduledCents,
+        paidCents,
+        lifetimeCents,
+      });
     } catch (err) {
       logger.error({ err }, "Failed to get affiliate profile");
       res.status(500).json({ error: "Failed to get affiliate profile" });
@@ -813,6 +858,105 @@ export function affiliateRoutes(db: Db): Router {
     }
   });
 
+  // ── GET /earnings — Affiliate commission history (JWT-auth) ──────────────
+  router.get("/earnings", authMiddleware, async (req, res) => {
+    try {
+      const affiliateId = req.affiliateClaims!.sub;
+
+      const rawLimit = Number(req.query.limit);
+      const rawOffset = Number(req.query.offset);
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.max(Math.floor(rawLimit), 1), 200) : 50;
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+
+      const statusParam = req.query.status as string | undefined;
+      const statusFilter =
+        statusParam && statusParam.length > 0
+          ? statusParam
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0)
+          : undefined;
+
+      const conditions = [eq(commissions.affiliateId, affiliateId)];
+      if (statusFilter && statusFilter.length > 0) {
+        conditions.push(inArray(commissions.status, statusFilter));
+      }
+      const where = and(...conditions);
+
+      const [rows, totalRows] = await Promise.all([
+        db
+          .select({
+            id: commissions.id,
+            leadId: commissions.leadId,
+            leadSlug: partnerCompanies.slug,
+            leadName: partnerCompanies.name,
+            type: commissions.type,
+            rate: commissions.rate,
+            amountCents: commissions.amountCents,
+            basisCents: commissions.basisCents,
+            periodStart: commissions.periodStart,
+            periodEnd: commissions.periodEnd,
+            status: commissions.status,
+            stripeInvoiceId: commissions.stripeInvoiceId,
+            holdExpiresAt: commissions.holdExpiresAt,
+            payoutBatchId: commissions.payoutBatchId,
+            createdAt: commissions.createdAt,
+          })
+          .from(commissions)
+          .leftJoin(partnerCompanies, eq(partnerCompanies.id, commissions.leadId))
+          .where(where)
+          .orderBy(desc(commissions.createdAt))
+          .limit(limit)
+          .offset(offset),
+        db.select({ total: count() }).from(commissions).where(where),
+      ]);
+
+      res.json({
+        commissions: rows,
+        total: Number(totalRows[0]?.total ?? 0),
+        limit,
+        offset,
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to list affiliate earnings");
+      res.status(500).json({ error: "Failed to list earnings" });
+    }
+  });
+
+  // ── GET /payouts — Affiliate payout batches (JWT-auth) ───────────────────
+  router.get("/payouts", authMiddleware, async (req, res) => {
+    try {
+      const affiliateId = req.affiliateClaims!.sub;
+
+      const [rows, totalRows] = await Promise.all([
+        db
+          .select({
+            id: payouts.id,
+            amountCents: payouts.amountCents,
+            commissionCount: payouts.commissionCount,
+            method: payouts.method,
+            externalId: payouts.externalId,
+            status: payouts.status,
+            batchMonth: payouts.batchMonth,
+            scheduledFor: payouts.scheduledFor,
+            sentAt: payouts.sentAt,
+            paidAt: payouts.paidAt,
+            notes: payouts.notes,
+            createdAt: payouts.createdAt,
+          })
+          .from(payouts)
+          .where(eq(payouts.affiliateId, affiliateId))
+          .orderBy(desc(payouts.createdAt)),
+        db.select({ total: count() }).from(payouts).where(eq(payouts.affiliateId, affiliateId)),
+      ]);
+
+      res.json({ payouts: rows, total: Number(totalRows[0]?.total ?? 0) });
+    } catch (err) {
+      logger.error({ err }, "Failed to list affiliate payouts");
+      res.status(500).json({ error: "Failed to list payouts" });
+    }
+  });
+
   // ── PUT /prospects/:slug — Update prospect basic info (JWT-auth) ──────────
   router.put("/prospects/:slug", authMiddleware, async (req, res) => {
     try {
@@ -959,6 +1103,417 @@ export function affiliateAdminRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to update affiliate status");
       res.status(500).json({ error: "Failed to update affiliate status" });
+    }
+  });
+
+  // ── GET /commissions — List commissions with filters (board auth) ────────
+  router.get("/commissions", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const rawLimit = Number(req.query.limit);
+      const rawOffset = Number(req.query.offset);
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.max(Math.floor(rawLimit), 1), 200) : 50;
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+
+      const affiliateIdFilter = req.query.affiliateId as string | undefined;
+      const statusParam = req.query.status as string | undefined;
+      const fromParam = req.query.from as string | undefined;
+      const toParam = req.query.to as string | undefined;
+
+      const conditions = [] as ReturnType<typeof eq>[];
+      if (affiliateIdFilter) {
+        conditions.push(eq(commissions.affiliateId, affiliateIdFilter));
+      }
+      if (statusParam) {
+        const statusList = statusParam
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        if (statusList.length === 1) {
+          conditions.push(eq(commissions.status, statusList[0]));
+        } else if (statusList.length > 1) {
+          conditions.push(inArray(commissions.status, statusList));
+        }
+      }
+      if (fromParam) {
+        const fromDate = new Date(fromParam);
+        if (!isNaN(fromDate.getTime())) {
+          conditions.push(gte(commissions.createdAt, fromDate));
+        }
+      }
+      if (toParam) {
+        const toDate = new Date(toParam);
+        if (!isNaN(toDate.getTime())) {
+          conditions.push(lte(commissions.createdAt, toDate));
+        }
+      }
+
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const selectQuery = db
+        .select({
+          id: commissions.id,
+          affiliateId: commissions.affiliateId,
+          affiliateName: affiliates.name,
+          leadId: commissions.leadId,
+          leadName: partnerCompanies.name,
+          leadSlug: partnerCompanies.slug,
+          attributionId: commissions.attributionId,
+          type: commissions.type,
+          rate: commissions.rate,
+          amountCents: commissions.amountCents,
+          basisCents: commissions.basisCents,
+          periodStart: commissions.periodStart,
+          periodEnd: commissions.periodEnd,
+          status: commissions.status,
+          stripeInvoiceId: commissions.stripeInvoiceId,
+          stripeChargeId: commissions.stripeChargeId,
+          holdExpiresAt: commissions.holdExpiresAt,
+          payoutBatchId: commissions.payoutBatchId,
+          clawbackReason: commissions.clawbackReason,
+          createdAt: commissions.createdAt,
+          updatedAt: commissions.updatedAt,
+        })
+        .from(commissions)
+        .leftJoin(affiliates, eq(affiliates.id, commissions.affiliateId))
+        .leftJoin(partnerCompanies, eq(partnerCompanies.id, commissions.leadId));
+
+      const listQuery = where ? selectQuery.where(where) : selectQuery;
+
+      const countQueryBase = db.select({ total: count() }).from(commissions);
+      const countQuery = where ? countQueryBase.where(where) : countQueryBase;
+
+      const [rows, totalRows] = await Promise.all([
+        listQuery.orderBy(desc(commissions.createdAt)).limit(limit).offset(offset),
+        countQuery,
+      ]);
+
+      res.json({
+        commissions: rows,
+        total: Number(totalRows[0]?.total ?? 0),
+        limit,
+        offset,
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to list commissions (admin)");
+      res.status(500).json({ error: "Failed to list commissions" });
+    }
+  });
+
+  // ── PUT /commissions/:id/approve — Force-approve a commission ────────────
+  router.put("/commissions/:id/approve", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const id = req.params.id as string;
+      const { reason } = (req.body ?? {}) as { reason?: string };
+
+      const [existing] = await db
+        .select({ id: commissions.id, status: commissions.status })
+        .from(commissions)
+        .where(eq(commissions.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Commission not found" });
+        return;
+      }
+
+      if (existing.status !== "pending_activation" && existing.status !== "held") {
+        res.status(409).json({
+          error: `Cannot approve commission in status '${existing.status}'`,
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      const now = new Date();
+      const [updated] = await db
+        .update(commissions)
+        .set({ status: "approved", updatedAt: now })
+        .where(eq(commissions.id, id))
+        .returning({ id: commissions.id, status: commissions.status });
+
+      logger.info(
+        { commissionId: id, priorStatus: existing.status, reason: reason ?? null },
+        "Commission approved by admin",
+      );
+
+      res.json({ commission: updated });
+    } catch (err) {
+      logger.error({ err }, "Failed to approve commission");
+      res.status(500).json({ error: "Failed to approve commission" });
+    }
+  });
+
+  // ── PUT /commissions/:id/reverse — Reverse a commission ──────────────────
+  router.put("/commissions/:id/reverse", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const id = req.params.id as string;
+      const { reason } = (req.body ?? {}) as { reason?: string };
+
+      if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+        res.status(400).json({ error: "reason is required" });
+        return;
+      }
+
+      const [existing] = await db
+        .select({ id: commissions.id, status: commissions.status })
+        .from(commissions)
+        .where(eq(commissions.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Commission not found" });
+        return;
+      }
+
+      const now = new Date();
+      const [updated] = await db
+        .update(commissions)
+        .set({ status: "reversed", clawbackReason: reason, updatedAt: now })
+        .where(eq(commissions.id, id))
+        .returning({
+          id: commissions.id,
+          status: commissions.status,
+          clawbackReason: commissions.clawbackReason,
+        });
+
+      logger.info(
+        { commissionId: id, priorStatus: existing.status, reason },
+        "Commission reversed by admin",
+      );
+
+      res.json({ commission: updated });
+    } catch (err) {
+      logger.error({ err }, "Failed to reverse commission");
+      res.status(500).json({ error: "Failed to reverse commission" });
+    }
+  });
+
+  // ── PUT /commissions/:id/hold — Put commission on hold ───────────────────
+  router.put("/commissions/:id/hold", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const id = req.params.id as string;
+      const { reason } = (req.body ?? {}) as { reason?: string };
+
+      if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+        res.status(400).json({ error: "reason is required" });
+        return;
+      }
+
+      const [existing] = await db
+        .select({ id: commissions.id, status: commissions.status })
+        .from(commissions)
+        .where(eq(commissions.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Commission not found" });
+        return;
+      }
+
+      if (existing.status !== "pending_activation" && existing.status !== "approved") {
+        res.status(409).json({
+          error: `Cannot hold commission in status '${existing.status}'`,
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      const now = new Date();
+      const [updated] = await db
+        .update(commissions)
+        .set({ status: "held", clawbackReason: reason, updatedAt: now })
+        .where(eq(commissions.id, id))
+        .returning({
+          id: commissions.id,
+          status: commissions.status,
+          clawbackReason: commissions.clawbackReason,
+        });
+
+      logger.info(
+        { commissionId: id, priorStatus: existing.status, reason },
+        "Commission put on hold by admin",
+      );
+
+      res.json({ commission: updated });
+    } catch (err) {
+      logger.error({ err }, "Failed to hold commission");
+      res.status(500).json({ error: "Failed to hold commission" });
+    }
+  });
+
+  // ── GET /payouts — List payout batches (board auth) ──────────────────────
+  router.get("/payouts", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const statusParam = req.query.status as string | undefined;
+      const monthParam = req.query.month as string | undefined;
+      const affiliateIdFilter = req.query.affiliateId as string | undefined;
+
+      const conditions = [] as ReturnType<typeof eq>[];
+      if (statusParam) {
+        conditions.push(eq(payouts.status, statusParam));
+      }
+      if (monthParam) {
+        conditions.push(eq(payouts.batchMonth, monthParam));
+      }
+      if (affiliateIdFilter) {
+        conditions.push(eq(payouts.affiliateId, affiliateIdFilter));
+      }
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const baseQuery = db
+        .select({
+          id: payouts.id,
+          affiliateId: payouts.affiliateId,
+          affiliateName: affiliates.name,
+          amountCents: payouts.amountCents,
+          commissionCount: payouts.commissionCount,
+          method: payouts.method,
+          externalId: payouts.externalId,
+          status: payouts.status,
+          batchMonth: payouts.batchMonth,
+          scheduledFor: payouts.scheduledFor,
+          sentAt: payouts.sentAt,
+          paidAt: payouts.paidAt,
+          notes: payouts.notes,
+          createdAt: payouts.createdAt,
+          updatedAt: payouts.updatedAt,
+        })
+        .from(payouts)
+        .leftJoin(affiliates, eq(affiliates.id, payouts.affiliateId));
+
+      const listQuery = where ? baseQuery.where(where) : baseQuery;
+
+      const countBase = db.select({ total: count() }).from(payouts);
+      const countQuery = where ? countBase.where(where) : countBase;
+
+      const [rows, totalRows] = await Promise.all([
+        listQuery.orderBy(desc(payouts.createdAt)),
+        countQuery,
+      ]);
+
+      res.json({ payouts: rows, total: Number(totalRows[0]?.total ?? 0) });
+    } catch (err) {
+      logger.error({ err }, "Failed to list payouts (admin)");
+      res.status(500).json({ error: "Failed to list payouts" });
+    }
+  });
+
+  // ── PUT /payouts/:id/mark-sent — Mark payout sent (board auth) ───────────
+  router.put("/payouts/:id/mark-sent", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const id = req.params.id as string;
+      const { externalId, method } = (req.body ?? {}) as {
+        externalId?: string;
+        method?: string;
+      };
+
+      if (!externalId || typeof externalId !== "string" || externalId.trim().length === 0) {
+        res.status(400).json({ error: "externalId is required" });
+        return;
+      }
+
+      const [existing] = await db
+        .select({ id: payouts.id, status: payouts.status })
+        .from(payouts)
+        .where(eq(payouts.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Payout not found" });
+        return;
+      }
+
+      if (existing.status !== "scheduled") {
+        res.status(409).json({
+          error: `Cannot mark payout sent in status '${existing.status}'`,
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      const now = new Date();
+      const updateFields: Record<string, unknown> = {
+        status: "sent",
+        sentAt: now,
+        externalId,
+        updatedAt: now,
+      };
+      if (method && typeof method === "string" && method.trim().length > 0) {
+        updateFields.method = method;
+      }
+
+      const [updated] = await db
+        .update(payouts)
+        .set(updateFields)
+        .where(eq(payouts.id, id))
+        .returning();
+
+      res.json({ payout: updated });
+    } catch (err) {
+      logger.error({ err }, "Failed to mark payout sent");
+      res.status(500).json({ error: "Failed to mark payout sent" });
+    }
+  });
+
+  // ── PUT /payouts/:id/mark-paid — Mark payout + commissions paid ──────────
+  router.put("/payouts/:id/mark-paid", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const id = req.params.id as string;
+
+      const [existing] = await db
+        .select({ id: payouts.id, status: payouts.status })
+        .from(payouts)
+        .where(eq(payouts.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Payout not found" });
+        return;
+      }
+
+      if (existing.status !== "sent") {
+        res.status(409).json({
+          error: `Cannot mark payout paid in status '${existing.status}'`,
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      const now = new Date();
+
+      const updated = await db.transaction(async (tx) => {
+        const [payoutRow] = await tx
+          .update(payouts)
+          .set({ status: "paid", paidAt: now, updatedAt: now })
+          .where(eq(payouts.id, id))
+          .returning();
+
+        await tx
+          .update(commissions)
+          .set({ status: "paid", updatedAt: now })
+          .where(eq(commissions.payoutBatchId, id));
+
+        return payoutRow;
+      });
+
+      res.json({ payout: updated });
+    } catch (err) {
+      logger.error({ err }, "Failed to mark payout paid");
+      res.status(500).json({ error: "Failed to mark payout paid" });
     }
   });
 

@@ -6,6 +6,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { EmptyState } from "../components/EmptyState";
 import { UsersRound } from "lucide-react";
 import { affiliatesAdminApi, type AdminAffiliate } from "@/api/affiliates-admin";
+import { AffiliateAdminTabs } from "@/components/AffiliateAdminTabs";
 
 function statusBadgeClass(status: string): string {
   if (status === "active") return "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500/15 text-green-600 border border-green-500/30";
@@ -68,6 +69,8 @@ export function AffiliatesAdmin() {
         <h1 className="text-xl font-semibold">Affiliates</h1>
         <p className="text-sm text-muted-foreground">Manage affiliate marketer accounts</p>
       </div>
+
+      <AffiliateAdminTabs active="affiliates" />
 
       {/* Summary stats */}
       <p className="text-sm text-muted-foreground">

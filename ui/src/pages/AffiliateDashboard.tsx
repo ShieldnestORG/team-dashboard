@@ -83,6 +83,11 @@ const POLICY_STEPS: { title: string; body: string }[] = [
   },
 ];
 
+function formatDollars(cents: number): string {
+  const dollars = (cents || 0) / 100;
+  return `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function todayIsoDate(): string {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -96,7 +101,11 @@ export function AffiliateDashboard() {
   const [prospects, setProspects] = useState<AffiliateProspect[]>([]);
   const [prospectCount, setProspectCount] = useState(0);
   const [convertedCount, setConvertedCount] = useState(0);
-  const [estimatedEarned, setEstimatedEarned] = useState(0);
+  const [pendingCents, setPendingCents] = useState(0);
+  const [approvedCents, setApprovedCents] = useState(0);
+  const [scheduledCents, setScheduledCents] = useState(0);
+  const [paidCents, setPaidCents] = useState(0);
+  const [lifetimeCents, setLifetimeCents] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -132,7 +141,11 @@ export function AffiliateDashboard() {
         setAffiliate(meRes.affiliate);
         setProspectCount(meRes.prospectCount);
         setConvertedCount(meRes.convertedCount);
-        setEstimatedEarned(meRes.estimatedEarned);
+        setPendingCents(meRes.pendingCents ?? 0);
+        setApprovedCents(meRes.approvedCents ?? 0);
+        setScheduledCents(meRes.scheduledCents ?? 0);
+        setPaidCents(meRes.paidCents ?? 0);
+        setLifetimeCents(meRes.lifetimeCents ?? 0);
         setProspects(prospectsRes.prospects);
         if (meRes.affiliate.status === "active" && !meRes.affiliate.policyAcceptedAt) {
           setShowPolicyModal(true);
@@ -354,7 +367,7 @@ export function AffiliateDashboard() {
           </button>
         </div>
 
-        {/* Stats */}
+        {/* Lead stats */}
         <div className="flex flex-wrap gap-6 text-sm">
           <div>
             <span className="font-bold text-2xl text-foreground">{prospectCount}</span>
@@ -364,13 +377,57 @@ export function AffiliateDashboard() {
             <span className="font-bold text-2xl text-green-600">{convertedCount}</span>
             <span className="text-muted-foreground ml-2">Converted</span>
           </div>
-          <div>
-            <span className="font-bold text-2xl text-foreground">
-              ${estimatedEarned.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            <span className="text-muted-foreground ml-2">Est. Earnings</span>
-          </div>
         </div>
+
+        {/* Earnings buckets */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-foreground">Earnings</h2>
+            <a
+              href="/earnings"
+              className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]/90"
+            >
+              View all →
+            </a>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <a
+              href="/earnings?status=pending_activation"
+              className="rounded-xl border border-border bg-card p-4 hover:border-[#ff876d]/40 transition-colors"
+            >
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pending</p>
+              <p className="mt-1 text-xl font-bold text-[#ff876d]">{formatDollars(pendingCents)}</p>
+            </a>
+            <a
+              href="/earnings?status=approved"
+              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
+            >
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Approved</p>
+              <p className="mt-1 text-xl font-bold text-foreground">{formatDollars(approvedCents)}</p>
+            </a>
+            <a
+              href="/earnings?status=scheduled_for_payout"
+              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
+            >
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Scheduled</p>
+              <p className="mt-1 text-xl font-bold text-foreground">{formatDollars(scheduledCents)}</p>
+            </a>
+            <a
+              href="/earnings?status=paid"
+              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
+            >
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Paid</p>
+              <p className="mt-1 text-xl font-bold text-green-500">{formatDollars(paidCents)}</p>
+            </a>
+            <a
+              href="/payouts"
+              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
+            >
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Lifetime</p>
+              <p className="mt-1 text-xl font-bold text-foreground">{formatDollars(lifetimeCents)}</p>
+            </a>
+          </div>
+        </section>
 
         {/* Prospects List */}
         <section id="prospects" className="space-y-3">
