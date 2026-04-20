@@ -1,6 +1,11 @@
 import { Link } from "@/lib/router";
 
-type TabKey = "affiliates" | "commissions" | "payouts";
+type TabKey =
+  | "affiliates"
+  | "leads"
+  | "attribution"
+  | "commissions"
+  | "payouts";
 
 interface Tab {
   key: TabKey;
@@ -10,6 +15,8 @@ interface Tab {
 
 const TABS: Tab[] = [
   { key: "affiliates", label: "Affiliates", href: "/affiliates" },
+  { key: "leads", label: "Leads", href: "/affiliates/leads" },
+  { key: "attribution", label: "Attribution", href: "/affiliates/attribution" },
   { key: "commissions", label: "Commissions", href: "/affiliates/commissions" },
   { key: "payouts", label: "Payouts", href: "/affiliates/payouts" },
 ];

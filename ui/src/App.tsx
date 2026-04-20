@@ -73,6 +73,8 @@ import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
 import { AffiliateResetPassword } from "./pages/AffiliateResetPassword";
 import { AffiliateAdminCommissions } from "./pages/AffiliateAdminCommissions";
 import { AffiliateAdminPayouts } from "./pages/AffiliateAdminPayouts";
+import { AffiliateAdminLeads } from "./pages/AffiliateAdminLeads";
+import { AffiliateAdminLeadDetail } from "./pages/AffiliateAdminLeadDetail";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -216,6 +218,9 @@ function boardRoutes() {
       <Route path="structure" element={<Structure />} />
       <Route path="marketing-pushes" element={<MarketingPushes />} />
       <Route path="affiliates" element={<AffiliatesAdmin />} />
+      <Route path="affiliates/leads" element={<AffiliateAdminLeads />} />
+      <Route path="affiliates/leads/:id" element={<AffiliateAdminLeadDetail />} />
+      <Route path="affiliates/attribution" element={<AffiliateAdminLeads />} />
       <Route path="affiliates/commissions" element={<AffiliateAdminCommissions />} />
       <Route path="affiliates/payouts" element={<AffiliateAdminPayouts />} />
       <Route path="partners" element={<Partners />} />
@@ -441,6 +446,9 @@ export function App() {
           <Route path="partners/:slug" element={<UnprefixedBoardRedirect />} />
           <Route path="partners/:slug/:tab" element={<UnprefixedBoardRedirect />} />
           <Route path="affiliates" element={<UnprefixedBoardRedirect />} />
+          <Route path="affiliates/leads" element={<UnprefixedBoardRedirect />} />
+          <Route path="affiliates/leads/:id" element={<UnprefixedBoardRedirect />} />
+          <Route path="affiliates/attribution" element={<UnprefixedBoardRedirect />} />
           <Route path="affiliates/commissions" element={<UnprefixedBoardRedirect />} />
           <Route path="affiliates/payouts" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>
