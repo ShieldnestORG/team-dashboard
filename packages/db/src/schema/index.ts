@@ -77,6 +77,8 @@ export { affiliates } from "./affiliates.js";
 export { referralAttribution } from "./referral_attribution.js";
 export { payouts } from "./payouts.js";
 export { commissions } from "./commissions.js";
+export { crmActivities } from "./crm_activities.js";
+export { attributionOverrides } from "./attribution_overrides.js";
 export { moltbookFeed, moltbookPosts, moltbookStats } from "./moltbook.js";
 export { contentQualitySignals } from "./content_quality_signals.js";
 export {

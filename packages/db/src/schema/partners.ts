@@ -97,6 +97,12 @@ export const partnerCompanies = pgTable(
     storeNotes: text("store_notes"),
     isPaying: boolean("is_paying").notNull().default(false),
     convertedAt: timestamp("converted_at", { withTimezone: true }),
+
+    // ── CRM pipeline (Phase 3) ────────────────────────────────────
+    leadStatus: text("lead_status").notNull().default("submitted"),
+    assignedRepId: text("assigned_rep_id"),
+    pipelineEnteredAt: timestamp("pipeline_entered_at", { withTimezone: true }),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
   },
   (table) => ({
     companySlugUq: uniqueIndex("partner_companies_company_slug_uq").on(
@@ -119,6 +125,10 @@ export const partnerCompanies = pgTable(
       table.siteDeployStatus,
     ),
     affiliateIdx: index("partner_companies_affiliate_idx").on(table.affiliateId),
+    leadStatusIdx: index("partner_companies_lead_status_idx").on(
+      table.companyId,
+      table.leadStatus,
+    ),
   }),
 );
 
