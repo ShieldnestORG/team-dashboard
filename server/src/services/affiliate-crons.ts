@@ -449,13 +449,9 @@ export function startAffiliateCrons(db: Db): void {
       let emailsFailed = 0;
 
       for (const c of actualReleased) {
-        // TODO: the "affiliate-lock-expired" template is owned by the template author.
-        // buildAffiliateLockExpired signature is exported at the top of this file.
-        // Once the template lands in email-templates.ts and joins the EmailTemplate
-        // union, the `as` cast below becomes a clean named template dispatch.
         try {
           await sendTransactional(
-            AFFILIATE_LOCK_EXPIRED_TEMPLATE as Parameters<typeof sendTransactional>[0],
+            AFFILIATE_LOCK_EXPIRED_TEMPLATE,
             c.affiliateEmail,
             {
               recipientName: c.affiliateName,
