@@ -7,7 +7,10 @@ import { verifyAffiliateJwt, type AffiliateJwtClaims } from "../affiliate-auth-j
 declare global {
   namespace Express {
     interface Request {
-      affiliateClaims?: AffiliateJwtClaims & { status: string };
+      affiliateClaims?: AffiliateJwtClaims & {
+        status: string;
+        policyAcceptedAt: Date | null;
+      };
     }
   }
 }
@@ -28,7 +31,10 @@ export function requireAffiliate(
       return;
     }
     const [row] = await db
-      .select({ status: affiliates.status })
+      .select({
+        status: affiliates.status,
+        policyAcceptedAt: affiliates.policyAcceptedAt,
+      })
       .from(affiliates)
       .where(eq(affiliates.id, claims.sub))
       .limit(1);
@@ -40,7 +46,11 @@ export function requireAffiliate(
       res.status(403).json({ error: "Account suspended" });
       return;
     }
-    req.affiliateClaims = { ...claims, status: row.status };
+    req.affiliateClaims = {
+      ...claims,
+      status: row.status,
+      policyAcceptedAt: row.policyAcceptedAt ?? null,
+    };
     next();
   };
 }

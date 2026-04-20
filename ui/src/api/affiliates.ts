@@ -10,7 +10,36 @@ export interface Affiliate {
   name: string;
   status: string; // "pending" | "active" | "suspended"
   commissionRate: string;
+  policyAcceptedAt: string | null;
   createdAt: string;
+}
+
+export type ProspectFirstTouchType = "in-person" | "call" | "text" | "email" | "social-dm";
+export type ProspectFirstTouchWarmth = "strong" | "medium" | "weak";
+export type ProspectClosePath = "cd" | "shared" | "affiliate";
+
+export interface ProspectFirstTouchInput {
+  logged: boolean;
+  type?: ProspectFirstTouchType;
+  date?: string;
+  notes?: string;
+  warmth?: ProspectFirstTouchWarmth;
+}
+
+export interface SubmitProspectOptions {
+  firstTouch?: ProspectFirstTouchInput;
+  closePath?: ProspectClosePath;
+}
+
+export class AffiliateApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "AffiliateApiError";
+    this.status = status;
+    this.code = code;
+  }
 }
 
 export interface CompetitorSite {
@@ -53,8 +82,12 @@ async function affiliateRequest<T>(path: string, init?: RequestInit): Promise<T>
     throw new Error("Session expired");
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => null) as { error?: string } | null;
-    throw new Error(body?.error ?? `Request failed: ${res.status}`);
+    const body = await res.json().catch(() => null) as { error?: string; code?: string } | null;
+    throw new AffiliateApiError(
+      body?.error ?? `Request failed: ${res.status}`,
+      res.status,
+      body?.code,
+    );
   }
   return res.json() as Promise<T>;
 }
@@ -75,6 +108,9 @@ export const affiliatesApi = {
   me: () =>
     affiliateRequest<{ affiliate: Affiliate; prospectCount: number; convertedCount: number; estimatedEarned: number }>("/me"),
 
+  acceptPolicy: () =>
+    affiliateRequest<{ acceptedAt: string }>("/accept-policy", { method: "POST" }),
+
   listProspects: (opts?: { status?: string; limit?: number; offset?: number }) => {
     const params = new URLSearchParams();
     if (opts?.status) params.set("status", opts.status);
@@ -86,11 +122,19 @@ export const affiliatesApi = {
     );
   },
 
-  submitProspect: (website: string) =>
-    affiliateRequest<{ prospect: { slug: string; name: string; onboardingStatus: string } }>(
+  submitProspect: (website: string, options?: SubmitProspectOptions) => {
+    const payload: {
+      website: string;
+      firstTouch?: ProspectFirstTouchInput;
+      closePath?: ProspectClosePath;
+    } = { website };
+    if (options?.firstTouch) payload.firstTouch = options.firstTouch;
+    if (options?.closePath) payload.closePath = options.closePath;
+    return affiliateRequest<{ prospect: { slug: string; name: string; onboardingStatus: string } }>(
       "/prospects",
-      { method: "POST", body: JSON.stringify({ website }) },
-    ),
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  },
 
   getProspect: (slug: string) =>
     affiliateRequest<{ prospect: AffiliateProspect }>(`/prospects/${slug}`),

@@ -3,11 +3,11 @@
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
-import { eq, and, ilike, count, sql } from "drizzle-orm";
+import { eq, and, ilike, count, sql, isNull, gt } from "drizzle-orm";
 import { randomBytes, createHash } from "node:crypto";
 import { scryptSync, timingSafeEqual } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { affiliates, partnerCompanies } from "@paperclipai/db";
+import { affiliates, partnerCompanies, referralAttribution } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { requireAffiliate } from "../middleware/affiliate-auth.js";
 import { createAffiliateJwt } from "../affiliate-auth-jwt.js";
@@ -229,6 +229,7 @@ export function affiliateRoutes(db: Db): Router {
           email: affiliates.email,
           status: affiliates.status,
           commissionRate: affiliates.commissionRate,
+          policyAcceptedAt: affiliates.policyAcceptedAt,
           createdAt: affiliates.createdAt,
         })
         .from(affiliates)
@@ -322,7 +323,29 @@ export function affiliateRoutes(db: Db): Router {
     try {
       const affiliateId = req.affiliateClaims!.sub;
       const affiliateStatus = req.affiliateClaims!.status;
-      const { website } = req.body as { website?: string };
+      const policyAcceptedAt = req.affiliateClaims!.policyAcceptedAt;
+
+      // Policy gate — must accept policy before submitting prospects
+      if (!policyAcceptedAt) {
+        res.status(403).json({
+          error: "Policy acceptance required",
+          code: "POLICY_NOT_ACCEPTED",
+        });
+        return;
+      }
+
+      const body = req.body as {
+        website?: string;
+        firstTouch?: {
+          logged?: boolean;
+          type?: string;
+          date?: string;
+          notes?: string;
+          warmth?: string;
+        };
+        closePath?: string;
+      };
+      const { website, firstTouch, closePath } = body;
 
       if (!website) {
         res.status(400).json({ error: "website is required" });
@@ -332,6 +355,54 @@ export function affiliateRoutes(db: Db): Router {
       if (affiliateStatus !== "active") {
         res.status(403).json({ error: "Account must be active to add prospects" });
         return;
+      }
+
+      // Validate firstTouch if provided
+      const VALID_TOUCH_TYPES = ["in-person", "call", "text", "email", "social-dm"];
+      const VALID_WARMTH = ["strong", "medium", "weak"];
+      const VALID_CLOSE_PATHS = ["cd", "shared", "affiliate"];
+
+      if (firstTouch !== undefined) {
+        if (typeof firstTouch !== "object" || firstTouch === null) {
+          res.status(400).json({ error: "firstTouch must be an object" });
+          return;
+        }
+        if (firstTouch.logged !== undefined && typeof firstTouch.logged !== "boolean") {
+          res.status(400).json({ error: "firstTouch.logged must be a boolean" });
+          return;
+        }
+        if (firstTouch.type !== undefined && !VALID_TOUCH_TYPES.includes(firstTouch.type)) {
+          res.status(400).json({ error: `firstTouch.type must be one of: ${VALID_TOUCH_TYPES.join(", ")}` });
+          return;
+        }
+        if (firstTouch.warmth !== undefined && !VALID_WARMTH.includes(firstTouch.warmth)) {
+          res.status(400).json({ error: `firstTouch.warmth must be one of: ${VALID_WARMTH.join(", ")}` });
+          return;
+        }
+        if (firstTouch.date !== undefined && typeof firstTouch.date !== "string") {
+          res.status(400).json({ error: "firstTouch.date must be an ISO string" });
+          return;
+        }
+        if (firstTouch.notes !== undefined && typeof firstTouch.notes !== "string") {
+          res.status(400).json({ error: "firstTouch.notes must be a string" });
+          return;
+        }
+      }
+
+      if (closePath !== undefined && !VALID_CLOSE_PATHS.includes(closePath)) {
+        res.status(400).json({ error: `closePath must be one of: ${VALID_CLOSE_PATHS.join(", ")}` });
+        return;
+      }
+
+      // Parse firstTouch.date into Date, rejecting invalid ISO
+      let firstTouchDateParsed: Date | null = null;
+      if (firstTouch?.date) {
+        const d = new Date(firstTouch.date);
+        if (isNaN(d.getTime())) {
+          res.status(400).json({ error: "firstTouch.date must be a valid ISO date string" });
+          return;
+        }
+        firstTouchDateParsed = d;
       }
 
       let url: URL;
@@ -345,6 +416,7 @@ export function affiliateRoutes(db: Db): Router {
       // Check for existing prospect with this website
       const existingWebsite = await db
         .select({
+          id: partnerCompanies.id,
           slug: partnerCompanies.slug,
           name: partnerCompanies.name,
           affiliateId: partnerCompanies.affiliateId,
@@ -361,6 +433,7 @@ export function affiliateRoutes(db: Db): Router {
 
       if (existingWebsite.length > 0) {
         const dup = existingWebsite[0];
+
         // Allow re-trigger if this affiliate's own prospect previously failed
         if (dup.affiliateId === affiliateId && dup.onboardingStatus === "failed") {
           await db
@@ -370,10 +443,92 @@ export function affiliateRoutes(db: Db): Router {
           runPartnerOnboarding(db, dup.slug).catch((err) =>
             logger.error({ err, slug: dup.slug }, "Affiliate prospect re-onboarding failed"),
           );
-          res.json({ prospect: { slug: dup.slug, name: dup.name, onboardingStatus: "none" }, resubmitted: true });
+          // Re-submission path: do NOT create a new attribution row — reuse existing active one
+          res.json({
+            prospect: { slug: dup.slug, name: dup.name, onboardingStatus: "none" },
+            resubmitted: true,
+          });
           return;
         }
-        res.status(409).json({ error: "This business is already in our system.", slug: dup.slug });
+
+        // Check if there's an active, unexpired attribution owned by another affiliate
+        const now = new Date();
+        const [activeAttribution] = await db
+          .select({
+            id: referralAttribution.id,
+            affiliateId: referralAttribution.affiliateId,
+          })
+          .from(referralAttribution)
+          .where(
+            and(
+              eq(referralAttribution.leadId, dup.id),
+              isNull(referralAttribution.lockReleasedAt),
+              gt(referralAttribution.lockExpiresAt, now),
+            ),
+          )
+          .limit(1);
+
+        if (activeAttribution && activeAttribution.affiliateId !== affiliateId) {
+          // Actively locked by another affiliate — block
+          res.status(409).json({ error: "This business is already in our system.", slug: dup.slug });
+          return;
+        }
+
+        if (activeAttribution && activeAttribution.affiliateId === affiliateId) {
+          // Same affiliate already has an active attribution — treat as duplicate of their own prospect
+          res.status(409).json({ error: "This business is already in our system.", slug: dup.slug });
+          return;
+        }
+
+        // No active attribution (or existing is already released). If there's a stale active
+        // attribution that's expired, mark it released so the new one becomes the owner.
+        const [expiredActive] = await db
+          .select({ id: referralAttribution.id })
+          .from(referralAttribution)
+          .where(
+            and(
+              eq(referralAttribution.leadId, dup.id),
+              isNull(referralAttribution.lockReleasedAt),
+            ),
+          )
+          .limit(1);
+        if (expiredActive) {
+          await db
+            .update(referralAttribution)
+            .set({ lockReleasedAt: now, updatedAt: now })
+            .where(eq(referralAttribution.id, expiredActive.id));
+        }
+
+        // Fall through: the existing partner_companies row was never successfully owned
+        // by an active attribution. Re-own it under this affiliate and create a fresh
+        // attribution row.
+        await db
+          .update(partnerCompanies)
+          .set({ affiliateId, updatedAt: now })
+          .where(eq(partnerCompanies.id, dup.id));
+
+        const lockExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        await db.insert(referralAttribution).values({
+          leadId: dup.id,
+          affiliateId,
+          attributionType: "affiliate_referred_cd_closed",
+          lockStartAt: now,
+          lockExpiresAt,
+          firstTouchLogged: firstTouch?.logged ?? false,
+          firstTouchType: firstTouch?.type ?? null,
+          firstTouchDate: firstTouchDateParsed,
+          firstTouchNotes: firstTouch?.notes ?? null,
+          relationshipWarmth: firstTouch?.warmth ?? null,
+          affiliateClosePreference: closePath ?? null,
+        });
+
+        res.status(201).json({
+          prospect: {
+            slug: dup.slug,
+            name: dup.name,
+            onboardingStatus: dup.onboardingStatus,
+          },
+        });
         return;
       }
 
@@ -418,6 +573,23 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
+      // Create referral attribution row for this new prospect
+      const attributionNow = new Date();
+      const attributionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await db.insert(referralAttribution).values({
+        leadId: partner.id,
+        affiliateId,
+        attributionType: "affiliate_referred_cd_closed",
+        lockStartAt: attributionNow,
+        lockExpiresAt: attributionExpiresAt,
+        firstTouchLogged: firstTouch?.logged ?? false,
+        firstTouchType: firstTouch?.type ?? null,
+        firstTouchDate: firstTouchDateParsed,
+        firstTouchNotes: firstTouch?.notes ?? null,
+        relationshipWarmth: firstTouch?.warmth ?? null,
+        affiliateClosePreference: closePath ?? null,
+      });
+
       // Fire-and-forget onboarding
       runPartnerOnboarding(db, partner.slug).catch((err) =>
         logger.error({ err, slug: partner!.slug }, "Affiliate prospect onboarding failed"),
@@ -433,6 +605,33 @@ export function affiliateRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to create prospect");
       res.status(500).json({ error: "Failed to create prospect" });
+    }
+  });
+
+  // ── POST /accept-policy — Record policy acceptance (JWT-auth) ─────────────
+  router.post("/accept-policy", authMiddleware, async (req, res) => {
+    try {
+      const id = req.affiliateClaims!.sub;
+      const existing = req.affiliateClaims!.policyAcceptedAt;
+
+      // Idempotent — if already accepted, return the stored timestamp
+      if (existing) {
+        res.json({ acceptedAt: existing.toISOString() });
+        return;
+      }
+
+      const now = new Date();
+      const [updated] = await db
+        .update(affiliates)
+        .set({ policyAcceptedAt: now, updatedAt: now })
+        .where(eq(affiliates.id, id))
+        .returning({ policyAcceptedAt: affiliates.policyAcceptedAt });
+
+      const acceptedAt = updated?.policyAcceptedAt ?? now;
+      res.json({ acceptedAt: acceptedAt.toISOString() });
+    } catch (err) {
+      logger.error({ err }, "Failed to accept policy");
+      res.status(500).json({ error: "Failed to accept policy" });
     }
   });
 

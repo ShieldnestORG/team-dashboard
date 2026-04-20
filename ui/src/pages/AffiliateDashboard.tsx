@@ -3,8 +3,13 @@ import {
   affiliatesApi,
   getAffiliateToken,
   clearAffiliateToken,
+  AffiliateApiError,
   type Affiliate,
   type AffiliateProspect,
+  type ProspectClosePath,
+  type ProspectFirstTouchType,
+  type ProspectFirstTouchWarmth,
+  type SubmitProspectOptions,
 } from "@/api/affiliates";
 import {
   Dialog,
@@ -31,6 +36,38 @@ function OnboardingBadge({ status }: { status: string }) {
   );
 }
 
+const TOUCH_TYPE_OPTIONS: { value: ProspectFirstTouchType; label: string }[] = [
+  { value: "in-person", label: "In-person visit" },
+  { value: "call", label: "Phone call" },
+  { value: "text", label: "Text" },
+  { value: "email", label: "Email" },
+  { value: "social-dm", label: "Social DM" },
+];
+
+const WARMTH_OPTIONS: { value: ProspectFirstTouchWarmth; label: string; hint: string }[] = [
+  { value: "strong", label: "Strong", hint: "I know them well" },
+  { value: "medium", label: "Medium", hint: "We've connected before" },
+  { value: "weak", label: "Weak", hint: "Just a brief intro" },
+];
+
+const CLOSE_PATH_OPTIONS: { value: ProspectClosePath; label: string; helper?: string }[] = [
+  { value: "cd", label: "Let Coherence Daddy close it." },
+  { value: "shared", label: "We'll close it together." },
+  {
+    value: "affiliate",
+    label: "I'll attempt first, then hand off.",
+    helper: "Heads up: cold leads tend to do best when CD takes the first swing.",
+  },
+];
+
+function todayIsoDate(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export function AffiliateDashboard() {
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [prospects, setProspects] = useState<AffiliateProspect[]>([]);
@@ -45,6 +82,20 @@ export function AffiliateDashboard() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Optional "lead context" fields
+  const [showLeadContext, setShowLeadContext] = useState(false);
+  const [hasSpoken, setHasSpoken] = useState(false);
+  const [warmth, setWarmth] = useState<ProspectFirstTouchWarmth | "">("");
+  const [touchType, setTouchType] = useState<ProspectFirstTouchType | "">("");
+  const [touchDate, setTouchDate] = useState("");
+  const [touchNotes, setTouchNotes] = useState("");
+  const [closePath, setClosePath] = useState<ProspectClosePath>("cd");
+
+  // Policy acceptance
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!getAffiliateToken()) {
       window.location.href = "/";
@@ -58,6 +109,9 @@ export function AffiliateDashboard() {
         setConvertedCount(meRes.convertedCount);
         setEstimatedEarned(meRes.estimatedEarned);
         setProspects(prospectsRes.prospects);
+        if (meRes.affiliate.status === "active" && !meRes.affiliate.policyAcceptedAt) {
+          setShowPolicyModal(true);
+        }
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Failed to load dashboard");
@@ -70,18 +124,75 @@ export function AffiliateDashboard() {
     window.location.href = "/";
   }
 
+  function resetProspectForm() {
+    setProspectUrl("");
+    setShowLeadContext(false);
+    setHasSpoken(false);
+    setWarmth("");
+    setTouchType("");
+    setTouchDate("");
+    setTouchNotes("");
+    setClosePath("cd");
+    setSubmitError(null);
+  }
+
+  function handleOpenNewClient() {
+    if (affiliate && affiliate.status === "active" && !affiliate.policyAcceptedAt) {
+      setShowPolicyModal(true);
+      return;
+    }
+    setShowModal(true);
+  }
+
+  async function handleAcceptPolicy() {
+    setPolicyLoading(true);
+    setPolicyError(null);
+    try {
+      const res = await affiliatesApi.acceptPolicy();
+      setAffiliate((prev) => (prev ? { ...prev, policyAcceptedAt: res.acceptedAt } : prev));
+      setShowPolicyModal(false);
+    } catch (err) {
+      setPolicyError(err instanceof Error ? err.message : "Failed to accept policy");
+    } finally {
+      setPolicyLoading(false);
+    }
+  }
+
   async function handleSubmitProspect(e: React.FormEvent) {
     e.preventDefault();
-    if (!prospectUrl.trim()) return;
+    const trimmed = prospectUrl.trim();
+    if (!trimmed) return;
     setSubmitLoading(true);
     setSubmitError(null);
     try {
-      const res = await affiliatesApi.submitProspect(prospectUrl.trim());
+      // Build optional payload. If nothing optional is set, send only { url }.
+      const options: SubmitProspectOptions = {};
+      if (showLeadContext && hasSpoken) {
+        const firstTouch: SubmitProspectOptions["firstTouch"] = { logged: true };
+        if (warmth) firstTouch.warmth = warmth;
+        if (touchType) firstTouch.type = touchType;
+        if (touchDate) firstTouch.date = new Date(touchDate).toISOString();
+        if (touchNotes.trim()) firstTouch.notes = touchNotes.trim().slice(0, 500);
+        options.firstTouch = firstTouch;
+      }
+      if (showLeadContext && closePath && closePath !== "cd") {
+        options.closePath = closePath;
+      }
+      const res = await affiliatesApi.submitProspect(
+        trimmed,
+        Object.keys(options).length > 0 ? options : undefined,
+      );
       setShowModal(false);
-      setProspectUrl("");
+      resetProspectForm();
       window.location.href = `/prospects/${res.prospect.slug}`;
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to submit prospect");
+      if (err instanceof AffiliateApiError && err.status === 403 && err.code === "POLICY_NOT_ACCEPTED") {
+        setShowModal(false);
+        setShowPolicyModal(true);
+        setSubmitError(null);
+      } else {
+        setSubmitError(err instanceof Error ? err.message : "Failed to submit prospect");
+      }
     } finally {
       setSubmitLoading(false);
     }
@@ -188,7 +299,7 @@ export function AffiliateDashboard() {
             <p className="text-sm text-gray-500 mt-1">View your submitted prospects and their status.</p>
           </button>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={handleOpenNewClient}
             className="rounded-xl border border-amber-400 bg-amber-50 p-6 text-left hover:bg-amber-100 hover:shadow-sm transition-all"
           >
             <p className="text-lg font-bold text-amber-700">New Client</p>
@@ -221,7 +332,7 @@ export function AffiliateDashboard() {
             <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
               <p className="text-gray-400 text-sm">No prospects yet.</p>
               <button
-                onClick={() => setShowModal(true)}
+                onClick={handleOpenNewClient}
                 className="mt-3 text-sm text-amber-600 hover:text-amber-700 font-medium"
               >
                 Submit your first client
@@ -280,8 +391,15 @@ export function AffiliateDashboard() {
       </main>
 
       {/* New Client Modal */}
-      <Dialog open={showModal} onOpenChange={(open) => { if (!submitLoading) setShowModal(open); }}>
-        <DialogContent>
+      <Dialog
+        open={showModal}
+        onOpenChange={(open) => {
+          if (submitLoading) return;
+          setShowModal(open);
+          if (!open) resetProspectForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add New Client</DialogTitle>
           </DialogHeader>
@@ -306,10 +424,152 @@ export function AffiliateDashboard() {
                 <p className="text-xs text-red-500 mt-1.5">{submitError}</p>
               )}
             </div>
+
+            {/* Optional: lead context */}
+            <div className="rounded-lg border border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowLeadContext((v) => !v)}
+                disabled={submitLoading}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-60"
+                aria-expanded={showLeadContext}
+              >
+                <span>Tell us about this lead (optional)</span>
+                <span className="text-gray-400" aria-hidden="true">
+                  {showLeadContext ? "−" : "+"}
+                </span>
+              </button>
+              {showLeadContext && (
+                <div className="px-3 pb-3 pt-1 space-y-4 border-t border-gray-100">
+                  {/* Already spoken */}
+                  <label className="flex items-start gap-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={hasSpoken}
+                      onChange={(e) => setHasSpoken(e.target.checked)}
+                      disabled={submitLoading}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+                    />
+                    <span>I've already spoken with the owner</span>
+                  </label>
+
+                  {hasSpoken && (
+                    <div className="space-y-3 pl-5 border-l-2 border-gray-100">
+                      {/* Warmth */}
+                      <div>
+                        <p className="text-[11px] font-medium text-gray-600 mb-1.5">Relationship</p>
+                        <div className="flex flex-wrap gap-2">
+                          {WARMTH_OPTIONS.map((opt) => (
+                            <label
+                              key={opt.value}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] cursor-pointer transition-colors ${
+                                warmth === opt.value
+                                  ? "bg-amber-50 text-amber-700 border-amber-300"
+                                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="warmth"
+                                value={opt.value}
+                                checked={warmth === opt.value}
+                                onChange={() => setWarmth(opt.value)}
+                                disabled={submitLoading}
+                                className="sr-only"
+                              />
+                              <span className="font-medium">{opt.label}</span>
+                              <span className="text-gray-400">· {opt.hint}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Touch type + date */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">How you touched base</label>
+                          <select
+                            value={touchType}
+                            onChange={(e) => setTouchType(e.target.value as ProspectFirstTouchType | "")}
+                            disabled={submitLoading}
+                            className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60"
+                          >
+                            <option value="">Select…</option>
+                            {TOUCH_TYPE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">When</label>
+                          <input
+                            type="date"
+                            max={todayIsoDate()}
+                            value={touchDate}
+                            onChange={(e) => setTouchDate(e.target.value)}
+                            disabled={submitLoading}
+                            className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-600 mb-1">Short note (optional)</label>
+                        <textarea
+                          value={touchNotes}
+                          onChange={(e) => setTouchNotes(e.target.value.slice(0, 500))}
+                          disabled={submitLoading}
+                          rows={2}
+                          maxLength={500}
+                          placeholder="Anything useful about the conversation…"
+                          className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60 resize-none"
+                        />
+                        <p className="text-[10px] text-gray-400 mt-0.5 text-right">{touchNotes.length}/500</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Close path */}
+                  <div>
+                    <p className="text-[11px] font-medium text-gray-600 mb-1.5">Who closes?</p>
+                    <div className="space-y-1.5">
+                      {CLOSE_PATH_OPTIONS.map((opt) => (
+                        <label
+                          key={opt.value}
+                          className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs cursor-pointer transition-colors ${
+                            closePath === opt.value
+                              ? "bg-amber-50 text-amber-800 border-amber-300"
+                              : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="closePath"
+                            value={opt.value}
+                            checked={closePath === opt.value}
+                            onChange={() => setClosePath(opt.value)}
+                            disabled={submitLoading}
+                            className="mt-0.5 h-3.5 w-3.5 border-gray-300 text-amber-500 focus:ring-amber-400"
+                          />
+                          <span className="flex-1">
+                            <span className="block">{opt.label}</span>
+                            {opt.helper && (
+                              <span className="block text-[10px] text-amber-600 mt-0.5">{opt.helper}</span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <DialogFooter>
               <button
                 type="button"
-                onClick={() => { setShowModal(false); setProspectUrl(""); setSubmitError(null); }}
+                onClick={() => { setShowModal(false); resetProspectForm(); }}
                 disabled={submitLoading}
                 className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-60"
               >
@@ -324,6 +584,80 @@ export function AffiliateDashboard() {
               </button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Policy Acceptance Modal (blocking) */}
+      <Dialog open={showPolicyModal} onOpenChange={() => { /* blocking: cannot dismiss */ }}>
+        <DialogContent
+          showCloseButton={false}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          className="sm:max-w-lg"
+        >
+          <DialogHeader>
+            <DialogTitle>One quick thing before you submit leads</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-gray-700">
+            <p>
+              <span className="font-semibold text-gray-900">Lead Ownership.</span>{" "}
+              When you submit a valid new business lead, that lead is reserved under your account
+              for a limited ownership period. If the business signs during that period and your
+              referral stays valid, you receive credit per program rules.
+            </p>
+            <p>
+              <span className="font-semibold text-gray-900">Warm Introductions.</span>{" "}
+              If you already know the owner or have spoken with them, log that in the lead form.
+              Warm referrals often move faster and help us coordinate the best outreach plan.
+            </p>
+            <p>
+              <span className="font-semibold text-gray-900">Closing Support.</span>{" "}
+              You can introduce, follow up, or help support a deal — but you cannot promise
+              pricing, discounts, guarantees, or custom terms unless Coherence Daddy approves it.
+            </p>
+            <p>
+              <span className="font-semibold text-gray-900">Shared Credit.</span>{" "}
+              Many deals close through a mix of your relationship and our sales process.
+              If your referral is valid and tracked correctly, your credit stays protected.
+            </p>
+            <p>
+              <span className="font-semibold text-gray-900">Duplicate Leads.</span>{" "}
+              The first valid qualified submission usually wins ownership. Duplicates and edge
+              cases are reviewed by admin.
+            </p>
+            <p className="pt-1">
+              <a
+                href="/affiliate-program-rules"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-amber-600 hover:text-amber-700 font-medium"
+              >
+                Read full program rules →
+              </a>
+            </p>
+            {policyError && (
+              <p className="text-xs text-red-500">{policyError}</p>
+            )}
+          </div>
+          <DialogFooter className="sm:justify-between items-center">
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={policyLoading}
+              className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-60"
+            >
+              Log out
+            </button>
+            <button
+              type="button"
+              onClick={handleAcceptPolicy}
+              disabled={policyLoading}
+              className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+            >
+              {policyLoading ? "Saving..." : "I understand and agree"}
+            </button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

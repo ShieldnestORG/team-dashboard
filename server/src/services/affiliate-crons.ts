@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { affiliates } from "@paperclipai/db";
+import { affiliates, partnerCompanies, referralAttribution } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import { sendTransactional } from "./email-templates.js";
 
@@ -35,6 +35,36 @@ export function startAffiliateCrons(db: Db): void {
       }
 
       return { sent: pending.length };
+    },
+  });
+
+  registerCronJob({
+    jobName: "affiliate:lock-expiry",
+    schedule: "0 3 * * *", // Daily 3 AM UTC
+    ownerAgent: "nova",
+    sourceFile: "affiliate-crons.ts",
+    handler: async () => {
+      // Release expired attribution locks whose associated lead has NOT converted.
+      // Conversion signal: partner_companies.is_paying = true → lock stays (referrer of record).
+      // Single-statement UPDATE with an EXISTS subquery that requires is_paying = false.
+      const now = new Date();
+      const released = await db
+        .update(referralAttribution)
+        .set({ lockReleasedAt: now, updatedAt: now })
+        .where(
+          and(
+            isNull(referralAttribution.lockReleasedAt),
+            lt(referralAttribution.lockExpiresAt, sql`NOW()`),
+            sql`EXISTS (
+              SELECT 1 FROM ${partnerCompanies}
+              WHERE ${partnerCompanies.id} = ${referralAttribution.leadId}
+                AND ${partnerCompanies.isPaying} = false
+            )`,
+          ),
+        )
+        .returning({ id: referralAttribution.id });
+
+      return { released: released.length };
     },
   });
 }
