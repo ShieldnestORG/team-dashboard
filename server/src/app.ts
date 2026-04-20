@@ -141,11 +141,8 @@ export async function createApp(
   app.use(cors({
     origin: [
       /\.vercel\.app$/,
+      /\.coherencedaddy\.com$/,
       "https://coherencedaddy.com",
-      "https://www.coherencedaddy.com",
-      "https://api.coherencedaddy.com",
-      "https://directory.coherencedaddy.com",
-      "https://affiliates.coherencedaddy.com",
       /localhost/,
     ],
     credentials: true,
