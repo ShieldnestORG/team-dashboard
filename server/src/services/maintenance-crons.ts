@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
@@ -80,5 +81,73 @@ export function startMaintenanceCrons(db: Db) {
     },
   });
 
-  logger.info({ count: 2 }, "Maintenance cron jobs registered");
+  registerCronJob({
+    jobName: "maintenance:failed-jobs-alert",
+    schedule: "0 */6 * * *",
+    ownerAgent: "bridge",
+    sourceFile: "maintenance-crons.ts",
+    handler: async () => {
+      let failedCount = 0;
+      let sample: Array<{ plugin_name: string; cnt: number }> = [];
+
+      try {
+        const rows = await db.execute(
+          sql`SELECT COUNT(*) as cnt, plugin_name FROM plugin_job_runs
+              WHERE status = 'failed' AND created_at > NOW() - INTERVAL '24 hours'
+              GROUP BY plugin_name
+              LIMIT 10`,
+        ) as unknown as Array<{ cnt: number; plugin_name: string }>;
+
+        failedCount = rows.reduce((sum, r) => sum + Number(r.cnt), 0);
+        sample = rows.map((r) => ({ plugin_name: r.plugin_name, cnt: Number(r.cnt) }));
+      } catch {
+        // Table may not exist yet — skip silently
+        return { failedCount: 0 };
+      }
+
+      if (failedCount > 10) {
+        logger.error(
+          { failedCount, sample },
+          "Maintenance: high failed plugin job count in last 24h",
+        );
+      } else if (failedCount > 0) {
+        logger.warn(
+          { failedCount, sample },
+          "Maintenance: failed plugin jobs detected in last 24h",
+        );
+      }
+
+      return { failedCount };
+    },
+  });
+
+  registerCronJob({
+    jobName: "maintenance:disk-space",
+    schedule: "0 * * * *",
+    ownerAgent: "bridge",
+    sourceFile: "maintenance-crons.ts",
+    handler: async () => {
+      // df -k output: Filesystem  1K-blocks  Used  Available  Use%  Mounted on
+      const dfLine = execSync("df -k / | tail -1").toString().trim();
+      const parts = dfLine.split(/\s+/);
+      const totalKb = parseInt(parts[1] ?? "0", 10);
+      const usedKb = parseInt(parts[2] ?? "0", 10);
+      const availKb = parseInt(parts[3] ?? "0", 10);
+
+      const usedPercent = totalKb > 0 ? Math.round((usedKb / totalKb) * 100) : 0;
+      const freeGb = Math.round((availKb / 1024 / 1024) * 10) / 10;
+
+      if (usedPercent >= 90) {
+        logger.error({ usedPercent, freeGb }, "Maintenance: disk usage critical (>=90%)");
+      } else if (usedPercent >= 80) {
+        logger.warn({ usedPercent, freeGb }, "Maintenance: disk usage high (>=80%)");
+      } else {
+        logger.info({ usedPercent, freeGb }, "Maintenance: disk space OK");
+      }
+
+      return { usedPercent, freeGb };
+    },
+  });
+
+  logger.info({ count: 4 }, "Maintenance cron jobs registered");
 }

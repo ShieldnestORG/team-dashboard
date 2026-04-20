@@ -10,7 +10,17 @@ import { workspaceRuntimeServices } from "@paperclipai/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { asNumber, asString, parseObject, renderTemplate } from "../adapters/utils.js";
 import { resolveHomeAwarePath } from "../home-paths.js";
+import { logger } from "../middleware/logger.js";
 import type { WorkspaceOperationRecorder } from "./workspace-operations.js";
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms)
+    ),
+  ]);
+}
 
 export interface ExecutionWorkspaceInput {
   baseCwd: string;
@@ -705,135 +715,149 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
   teardownCommand?: string | null;
   recorder?: WorkspaceOperationRecorder | null;
 }) {
-  const warnings: string[] = [];
   const workspacePath = input.workspace.providerRef ?? input.workspace.cwd;
-  const cleanupEnv = buildExecutionWorkspaceCleanupEnv({
-    workspace: input.workspace,
-    projectWorkspaceCwd: input.projectWorkspace?.cwd ?? null,
-  });
-  const createdByRuntime = input.workspace.metadata?.createdByRuntime === true;
-  const cleanupCommands = [
-    input.projectWorkspace?.cleanupCommand ?? null,
-    input.teardownCommand ?? null,
-  ]
-    .map((value) => asString(value, "").trim())
-    .filter(Boolean);
 
-  for (const command of cleanupCommands) {
-    try {
-      await recordWorkspaceCommandOperation(input.recorder, {
-        phase: "workspace_teardown",
-        command,
-        cwd: workspacePath ?? input.projectWorkspace?.cwd ?? process.cwd(),
-        env: cleanupEnv,
-        label: `Execution workspace cleanup command "${command}"`,
-        metadata: {
-          workspaceId: input.workspace.id,
-          workspacePath,
-          branchName: input.workspace.branchName,
-          providerType: input.workspace.providerType,
-        },
-        successMessage: `Completed cleanup command "${command}"\n`,
-      });
-    } catch (err) {
-      warnings.push(err instanceof Error ? err.message : String(err));
-    }
-  }
+  const doCleanup = async () => {
+    const warnings: string[] = [];
+    const cleanupEnv = buildExecutionWorkspaceCleanupEnv({
+      workspace: input.workspace,
+      projectWorkspaceCwd: input.projectWorkspace?.cwd ?? null,
+    });
+    const createdByRuntime = input.workspace.metadata?.createdByRuntime === true;
+    const cleanupCommands = [
+      input.projectWorkspace?.cleanupCommand ?? null,
+      input.teardownCommand ?? null,
+    ]
+      .map((value) => asString(value, "").trim())
+      .filter(Boolean);
 
-  if (input.workspace.providerType === "git_worktree" && workspacePath) {
-    const repoRoot = await resolveGitRepoRootForWorkspaceCleanup(
-      workspacePath,
-      input.projectWorkspace?.cwd ?? null,
-    );
-    const worktreeExists = await directoryExists(workspacePath);
-    if (worktreeExists) {
-      if (!repoRoot) {
-        warnings.push(`Could not resolve git repo root for "${workspacePath}".`);
-      } else {
-        try {
-          await recordGitOperation(input.recorder, {
-            phase: "worktree_cleanup",
-            args: ["worktree", "remove", "--force", workspacePath],
-            cwd: repoRoot,
-            metadata: {
-              workspaceId: input.workspace.id,
-              workspacePath,
-              branchName: input.workspace.branchName,
-              cleanupAction: "worktree_remove",
-            },
-            successMessage: `Removed git worktree ${workspacePath}\n`,
-            failureLabel: `git worktree remove ${workspacePath}`,
-          });
-        } catch (err) {
-          warnings.push(err instanceof Error ? err.message : String(err));
-        }
-      }
-    }
-    if (createdByRuntime && input.workspace.branchName) {
-      if (!repoRoot) {
-        warnings.push(`Could not resolve git repo root to delete branch "${input.workspace.branchName}".`);
-      } else {
-        try {
-          await recordGitOperation(input.recorder, {
-            phase: "worktree_cleanup",
-            args: ["branch", "-d", input.workspace.branchName],
-            cwd: repoRoot,
-            metadata: {
-              workspaceId: input.workspace.id,
-              workspacePath,
-              branchName: input.workspace.branchName,
-              cleanupAction: "branch_delete",
-            },
-            successMessage: `Deleted branch ${input.workspace.branchName}\n`,
-            failureLabel: `git branch -d ${input.workspace.branchName}`,
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          warnings.push(`Skipped deleting branch "${input.workspace.branchName}": ${message}`);
-        }
-      }
-    }
-  } else if (input.workspace.providerType === "local_fs" && createdByRuntime && workspacePath) {
-    const projectWorkspaceCwd = input.projectWorkspace?.cwd ? path.resolve(input.projectWorkspace.cwd) : null;
-    const resolvedWorkspacePath = path.resolve(workspacePath);
-    const containsProjectWorkspace = projectWorkspaceCwd
-      ? (
-          resolvedWorkspacePath === projectWorkspaceCwd ||
-          projectWorkspaceCwd.startsWith(`${resolvedWorkspacePath}${path.sep}`)
-        )
-      : false;
-    if (containsProjectWorkspace) {
-      warnings.push(`Refusing to remove path "${workspacePath}" because it contains the project workspace.`);
-    } else {
-      await fs.rm(resolvedWorkspacePath, { recursive: true, force: true });
-      if (input.recorder) {
-        await input.recorder.recordOperation({
+    for (const command of cleanupCommands) {
+      try {
+        await recordWorkspaceCommandOperation(input.recorder, {
           phase: "workspace_teardown",
-          cwd: projectWorkspaceCwd ?? process.cwd(),
+          command,
+          cwd: workspacePath ?? input.projectWorkspace?.cwd ?? process.cwd(),
+          env: cleanupEnv,
+          label: `Execution workspace cleanup command "${command}"`,
           metadata: {
             workspaceId: input.workspace.id,
-            workspacePath: resolvedWorkspacePath,
-            cleanupAction: "remove_local_fs",
+            workspacePath,
+            branchName: input.workspace.branchName,
+            providerType: input.workspace.providerType,
           },
-          run: async () => ({
-            status: "succeeded",
-            exitCode: 0,
-            system: `Removed local workspace directory ${resolvedWorkspacePath}\n`,
-          }),
+          successMessage: `Completed cleanup command "${command}"\n`,
         });
+      } catch (err) {
+        warnings.push(err instanceof Error ? err.message : String(err));
       }
     }
-  }
 
-  const cleaned =
-    !workspacePath ||
-    !(await directoryExists(workspacePath));
+    if (input.workspace.providerType === "git_worktree" && workspacePath) {
+      const repoRoot = await resolveGitRepoRootForWorkspaceCleanup(
+        workspacePath,
+        input.projectWorkspace?.cwd ?? null,
+      );
+      const worktreeExists = await directoryExists(workspacePath);
+      if (worktreeExists) {
+        if (!repoRoot) {
+          warnings.push(`Could not resolve git repo root for "${workspacePath}".`);
+        } else {
+          try {
+            await recordGitOperation(input.recorder, {
+              phase: "worktree_cleanup",
+              args: ["worktree", "remove", "--force", workspacePath],
+              cwd: repoRoot,
+              metadata: {
+                workspaceId: input.workspace.id,
+                workspacePath,
+                branchName: input.workspace.branchName,
+                cleanupAction: "worktree_remove",
+              },
+              successMessage: `Removed git worktree ${workspacePath}\n`,
+              failureLabel: `git worktree remove ${workspacePath}`,
+            });
+          } catch (err) {
+            warnings.push(err instanceof Error ? err.message : String(err));
+          }
+        }
+      }
+      if (createdByRuntime && input.workspace.branchName) {
+        if (!repoRoot) {
+          warnings.push(`Could not resolve git repo root to delete branch "${input.workspace.branchName}".`);
+        } else {
+          try {
+            await recordGitOperation(input.recorder, {
+              phase: "worktree_cleanup",
+              args: ["branch", "-d", input.workspace.branchName],
+              cwd: repoRoot,
+              metadata: {
+                workspaceId: input.workspace.id,
+                workspacePath,
+                branchName: input.workspace.branchName,
+                cleanupAction: "branch_delete",
+              },
+              successMessage: `Deleted branch ${input.workspace.branchName}\n`,
+              failureLabel: `git branch -d ${input.workspace.branchName}`,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            warnings.push(`Skipped deleting branch "${input.workspace.branchName}": ${message}`);
+          }
+        }
+      }
+    } else if (input.workspace.providerType === "local_fs" && createdByRuntime && workspacePath) {
+      const projectWorkspaceCwd = input.projectWorkspace?.cwd ? path.resolve(input.projectWorkspace.cwd) : null;
+      const resolvedWorkspacePath = path.resolve(workspacePath);
+      const containsProjectWorkspace = projectWorkspaceCwd
+        ? (
+            resolvedWorkspacePath === projectWorkspaceCwd ||
+            projectWorkspaceCwd.startsWith(`${resolvedWorkspacePath}${path.sep}`)
+          )
+        : false;
+      if (containsProjectWorkspace) {
+        warnings.push(`Refusing to remove path "${workspacePath}" because it contains the project workspace.`);
+      } else {
+        await fs.rm(resolvedWorkspacePath, { recursive: true, force: true });
+        if (input.recorder) {
+          await input.recorder.recordOperation({
+            phase: "workspace_teardown",
+            cwd: projectWorkspaceCwd ?? process.cwd(),
+            metadata: {
+              workspaceId: input.workspace.id,
+              workspacePath: resolvedWorkspacePath,
+              cleanupAction: "remove_local_fs",
+            },
+            run: async () => ({
+              status: "succeeded",
+              exitCode: 0,
+              system: `Removed local workspace directory ${resolvedWorkspacePath}\n`,
+            }),
+          });
+        }
+      }
+    }
 
-  return {
-    cleanedPath: workspacePath,
-    cleaned,
-    warnings,
+    const cleaned =
+      !workspacePath ||
+      !(await directoryExists(workspacePath));
+
+    return {
+      cleanedPath: workspacePath,
+      cleaned,
+      warnings,
+    };
   };
+
+  try {
+    return await withTimeout(doCleanup(), 30_000, "workspace cleanup");
+  } catch (err) {
+    logger.warn({ err }, "Workspace cleanup timed out or failed — continuing");
+    return {
+      cleanedPath: workspacePath,
+      cleaned: false,
+      warnings: [err instanceof Error ? err.message : String(err)],
+    };
+  }
 }
 
 async function allocatePort(): Promise<number> {

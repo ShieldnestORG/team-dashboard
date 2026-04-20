@@ -7,6 +7,7 @@ import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
+import { globalRateLimit } from "./middleware/global-rate-limit.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
@@ -82,6 +83,7 @@ import { autoReplyRoutes } from "./routes/auto-reply.js";
 import { moltbookRoutes } from "./routes/moltbook.js";
 import { partnerRoutes, partnerDirectoryRoutes } from "./routes/partner.js";
 import { affiliateRoutes, affiliateAdminRoutes } from "./routes/affiliates.js";
+import { auditRoutes } from "./routes/audit.js";
 import { partnerGoRoutes } from "./routes/partner-go.js";
 import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
 import { agentOpsRoutes } from "./routes/agent-ops.js";
@@ -158,6 +160,7 @@ export async function createApp(
     },
   }));
   app.use(httpLogger);
+  app.use(globalRateLimit);
   const privateHostnameGateEnabled =
     opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private";
   const privateHostnameAllowSet = resolvePrivateHostnameAllowSet({
@@ -342,6 +345,8 @@ export async function createApp(
   app.use("/api/partner-directory", partnerDirectoryRoutes(db));
   // Public + JWT-auth affiliate routes — register, login, prospects
   app.use("/api/affiliates", affiliateRoutes(db));
+  // Public AEO audit — no auth required
+  app.use("/api/public", auditRoutes());
   // Sitemap + robots — unauthenticated, for search engine crawlers
   app.use("/", sitemapRoutes(db));
 

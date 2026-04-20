@@ -22,8 +22,36 @@ const CONCURRENCY = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 // ---------------------------------------------------------------------------
+// Circuit breaker — module-level state
+// ---------------------------------------------------------------------------
+
+let consecutiveFailures = 0;
+let circuitOpenUntil: Date | null = null;
+
+const CIRCUIT_OPEN_THRESHOLD = 5;
+const CIRCUIT_OPEN_DURATION_MS = 30 * 60 * 1_000; // 30 minutes
+
+export function getFirecrawlCircuitState(): {
+  consecutiveFailures: number;
+  circuitOpenUntil: Date | null;
+} {
+  return { consecutiveFailures, circuitOpenUntil };
+}
+
+// ---------------------------------------------------------------------------
 // Firecrawl scrape (single URL → markdown)
 // ---------------------------------------------------------------------------
+
+function recordFetchFailure(): void {
+  consecutiveFailures++;
+  if (consecutiveFailures >= CIRCUIT_OPEN_THRESHOLD && circuitOpenUntil === null) {
+    circuitOpenUntil = new Date(Date.now() + CIRCUIT_OPEN_DURATION_MS);
+    logger.warn(
+      { consecutiveFailures, circuitOpenUntil },
+      "Firecrawl sync: circuit opened — too many consecutive failures",
+    );
+  }
+}
 
 async function firecrawlScrape(url: string): Promise<string | null> {
   try {
@@ -43,6 +71,7 @@ async function firecrawlScrape(url: string): Promise<string | null> {
 
     if (!res.ok) {
       logger.warn({ url, status: res.status }, "Firecrawl sync scrape failed (non-ok)");
+      recordFetchFailure();
       return null;
     }
 
@@ -56,6 +85,7 @@ async function firecrawlScrape(url: string): Promise<string | null> {
     return data.data.markdown.slice(0, 50_000);
   } catch (err) {
     logger.warn({ err, url }, "Firecrawl sync scrape threw");
+    recordFetchFailure();
     return null;
   }
 }
@@ -194,6 +224,23 @@ export async function syncTopIntelCompanies(
   opts?: { limit?: number },
 ): Promise<FirecrawlSyncResult> {
   const limit = opts?.limit ?? DEFAULT_LIMIT;
+
+  // Circuit breaker: bail out early if Firecrawl is known-bad.
+  if (circuitOpenUntil !== null && new Date() < circuitOpenUntil) {
+    logger.warn(
+      { circuitOpenUntil, consecutiveFailures },
+      "Firecrawl sync: circuit is open — skipping run",
+    );
+    return { processed: 0, succeeded: 0, failed: 0 };
+  }
+
+  // If the cooldown period has elapsed, reset and try again.
+  if (circuitOpenUntil !== null && new Date() >= circuitOpenUntil) {
+    logger.info("Firecrawl sync: circuit cooldown elapsed — resetting");
+    circuitOpenUntil = null;
+    consecutiveFailures = 0;
+  }
+
   logger.info({ limit }, "Firecrawl sync: starting");
 
   const companies = await pickTopCompanies(db, limit);
@@ -221,6 +268,18 @@ export async function syncTopIntelCompanies(
     succeeded,
     failed,
   };
+
+  // Reset circuit on a fully successful batch (no failures at all).
+  if (failed === 0 && succeeded > 0) {
+    if (consecutiveFailures > 0) {
+      logger.info(
+        { previousConsecutiveFailures: consecutiveFailures },
+        "Firecrawl sync: batch succeeded — resetting circuit breaker",
+      );
+    }
+    consecutiveFailures = 0;
+    circuitOpenUntil = null;
+  }
 
   logger.info(result, "Firecrawl sync: complete");
   return result;

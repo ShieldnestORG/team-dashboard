@@ -55,6 +55,9 @@ const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1_000;
 /** Maximum number of concurrent job executions across all plugins. */
 const DEFAULT_MAX_CONCURRENT_JOBS = 10;
 
+/** Maximum number of concurrent job executions for a single plugin. */
+const MAX_JOBS_PER_PLUGIN = 3;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -227,6 +230,9 @@ export function createPluginJobScheduler(
   /** Set of job IDs currently being executed (for overlap prevention). */
   const activeJobs = new Set<string>();
 
+  /** Active job count per plugin (for per-plugin concurrency cap). */
+  const activeJobsByPlugin = new Map<string, number>();
+
   /** Total number of ticks since start. */
   let tickCount = 0;
 
@@ -289,6 +295,16 @@ export function createPluginJobScheduler(
           break;
         }
 
+        // Per-plugin concurrency cap
+        const activeForPlugin = activeJobsByPlugin.get(job.pluginId) ?? 0;
+        if (activeForPlugin >= MAX_JOBS_PER_PLUGIN) {
+          log.debug(
+            { pluginId: job.pluginId, activeForPlugin, MAX_JOBS_PER_PLUGIN },
+            "skipping job — per-plugin concurrency cap reached",
+          );
+          continue;
+        }
+
         // Overlap prevention: skip if this job is already running
         if (activeJobs.has(job.id)) {
           log.debug(
@@ -346,8 +362,9 @@ export function createPluginJobScheduler(
     const { id: jobId, pluginId, jobKey, schedule } = job;
     const jobLog = log.child({ jobId, pluginId, jobKey });
 
-    // Mark as active (overlap prevention)
+    // Mark as active (overlap prevention + per-plugin cap)
     activeJobs.add(jobId);
+    activeJobsByPlugin.set(pluginId, (activeJobsByPlugin.get(pluginId) ?? 0) + 1);
 
     let runId: string | undefined;
     const startedAt = Date.now();
@@ -417,8 +434,14 @@ export function createPluginJobScheduler(
         }
       }
     } finally {
-      // Remove from active set
+      // Remove from active set and decrement per-plugin count
       activeJobs.delete(jobId);
+      const remaining = (activeJobsByPlugin.get(pluginId) ?? 1) - 1;
+      if (remaining <= 0) {
+        activeJobsByPlugin.delete(pluginId);
+      } else {
+        activeJobsByPlugin.set(pluginId, remaining);
+      }
 
       // 5. Always advance the schedule pointer (even on failure)
       try {
@@ -507,6 +530,7 @@ export function createPluginJobScheduler(
     const jobLog = log.child({ jobId, pluginId, jobKey, runId, trigger });
 
     activeJobs.add(jobId);
+    activeJobsByPlugin.set(pluginId, (activeJobsByPlugin.get(pluginId) ?? 0) + 1);
     const startedAt = Date.now();
 
     try {
@@ -554,6 +578,12 @@ export function createPluginJobScheduler(
       }
     } finally {
       activeJobs.delete(jobId);
+      const remaining = (activeJobsByPlugin.get(pluginId) ?? 1) - 1;
+      if (remaining <= 0) {
+        activeJobsByPlugin.delete(pluginId);
+      } else {
+        activeJobsByPlugin.set(pluginId, remaining);
+      }
     }
   }
 
@@ -682,6 +712,7 @@ export function createPluginJobScheduler(
     for (const job of jobs) {
       activeJobs.delete(job.id);
     }
+    activeJobsByPlugin.delete(pluginId);
   }
 
   // -----------------------------------------------------------------------
