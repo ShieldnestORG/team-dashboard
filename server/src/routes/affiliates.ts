@@ -7,7 +7,16 @@ import { eq, and, ilike, count, sql, isNull, gt, desc, inArray, gte, lte } from 
 import { randomBytes, createHash } from "node:crypto";
 import { scryptSync, timingSafeEqual } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { affiliates, partnerCompanies, referralAttribution, commissions, payouts } from "@paperclipai/db";
+import {
+  affiliates,
+  partnerCompanies,
+  referralAttribution,
+  commissions,
+  payouts,
+  crmActivities,
+  attributionOverrides,
+  authUsers,
+} from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { requireAffiliate } from "../middleware/affiliate-auth.js";
 import { createAffiliateJwt } from "../affiliate-auth-jwt.js";
@@ -80,6 +89,45 @@ function slugify(name: string): string {
 function randomSuffix(): string {
   return randomBytes(2).toString("hex"); // 4 hex chars
 }
+
+// ── Lead-status case conversion ───────────────────────────────────────────────
+// DB stores lowercase snake_case ("demo_scheduled"). UI uses TitleCase
+// ("DemoScheduled"). Convert at the admin API boundary.
+
+function toUiStatus(snake: string | null | undefined): string {
+  if (!snake) return "";
+  return snake.split("_").map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join("");
+}
+
+function toDbStatus(titleCase: string): string {
+  return titleCase.replace(/([A-Z])/g, (_, c: string, i: number) =>
+    i === 0 ? c.toLowerCase() : "_" + c.toLowerCase(),
+  );
+}
+
+// Allowed forward transitions per CRM spec. DuplicateReview, Nurture, Expired
+// act as sinks or rejoin points; Won/Lost are terminals (reopenable only via
+// explicit admin override which bypasses this map).
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["submitted", "rejected"],
+  submitted: ["enriched", "duplicate_review", "qualified", "rejected", "expired"],
+  enriched: ["duplicate_review", "qualified", "rejected"],
+  duplicate_review: ["qualified", "rejected", "locked"],
+  qualified: ["locked", "assigned", "rejected"],
+  rejected: ["nurture"],
+  locked: ["assigned", "expired"],
+  assigned: ["contacted", "nurture"],
+  contacted: ["awaiting_response", "interested", "nurture", "lost"],
+  awaiting_response: ["interested", "contacted", "nurture", "lost"],
+  interested: ["demo_scheduled", "proposal_sent", "nurture", "lost"],
+  demo_scheduled: ["proposal_sent", "negotiation", "nurture", "lost"],
+  proposal_sent: ["negotiation", "won", "lost", "nurture"],
+  negotiation: ["won", "lost", "nurture"],
+  won: [],
+  lost: ["nurture"],
+  nurture: ["contacted", "expired"],
+  expired: [],
+};
 
 // ── Public + JWT-auth routes ─────────────────────────────────────────────────
 
@@ -373,16 +421,22 @@ export function affiliateRoutes(db: Db): Router {
 
       const body = req.body as {
         website?: string;
-        firstTouch?: {
-          logged?: boolean;
-          type?: string;
-          date?: string;
-          notes?: string;
-          warmth?: string;
-        };
-        closePath?: string;
+        firstTouchStatus?: boolean;
+        firstTouchType?: string;
+        firstTouchDate?: string;
+        firstTouchNotes?: string;
+        relationshipWarmth?: string;
+        closePreference?: string;
       };
-      const { website, firstTouch, closePath } = body;
+      const {
+        website,
+        firstTouchStatus,
+        firstTouchType,
+        firstTouchDate,
+        firstTouchNotes,
+        relationshipWarmth,
+        closePreference,
+      } = body;
 
       if (!website) {
         res.status(400).json({ error: "website is required" });
@@ -394,49 +448,36 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
-      // Validate firstTouch if provided
-      const VALID_TOUCH_TYPES = ["in-person", "call", "text", "email", "social-dm"];
+      const VALID_TOUCH_TYPES = ["in_person", "call", "text", "email", "social_dm"];
       const VALID_WARMTH = ["strong", "medium", "weak"];
-      const VALID_CLOSE_PATHS = ["cd", "shared", "affiliate"];
+      const VALID_CLOSE_PREFERENCES = ["cd_closes", "affiliate_assists", "affiliate_attempts_first"];
 
-      if (firstTouch !== undefined) {
-        if (typeof firstTouch !== "object" || firstTouch === null) {
-          res.status(400).json({ error: "firstTouch must be an object" });
-          return;
-        }
-        if (firstTouch.logged !== undefined && typeof firstTouch.logged !== "boolean") {
-          res.status(400).json({ error: "firstTouch.logged must be a boolean" });
-          return;
-        }
-        if (firstTouch.type !== undefined && !VALID_TOUCH_TYPES.includes(firstTouch.type)) {
-          res.status(400).json({ error: `firstTouch.type must be one of: ${VALID_TOUCH_TYPES.join(", ")}` });
-          return;
-        }
-        if (firstTouch.warmth !== undefined && !VALID_WARMTH.includes(firstTouch.warmth)) {
-          res.status(400).json({ error: `firstTouch.warmth must be one of: ${VALID_WARMTH.join(", ")}` });
-          return;
-        }
-        if (firstTouch.date !== undefined && typeof firstTouch.date !== "string") {
-          res.status(400).json({ error: "firstTouch.date must be an ISO string" });
-          return;
-        }
-        if (firstTouch.notes !== undefined && typeof firstTouch.notes !== "string") {
-          res.status(400).json({ error: "firstTouch.notes must be a string" });
-          return;
-        }
+      if (firstTouchStatus !== undefined && typeof firstTouchStatus !== "boolean") {
+        res.status(400).json({ error: "firstTouchStatus must be a boolean" });
+        return;
       }
-
-      if (closePath !== undefined && !VALID_CLOSE_PATHS.includes(closePath)) {
-        res.status(400).json({ error: `closePath must be one of: ${VALID_CLOSE_PATHS.join(", ")}` });
+      if (firstTouchType !== undefined && !VALID_TOUCH_TYPES.includes(firstTouchType)) {
+        res.status(400).json({ error: `firstTouchType must be one of: ${VALID_TOUCH_TYPES.join(", ")}` });
+        return;
+      }
+      if (relationshipWarmth !== undefined && !VALID_WARMTH.includes(relationshipWarmth)) {
+        res.status(400).json({ error: `relationshipWarmth must be one of: ${VALID_WARMTH.join(", ")}` });
+        return;
+      }
+      if (firstTouchNotes !== undefined && typeof firstTouchNotes !== "string") {
+        res.status(400).json({ error: "firstTouchNotes must be a string" });
+        return;
+      }
+      if (closePreference !== undefined && !VALID_CLOSE_PREFERENCES.includes(closePreference)) {
+        res.status(400).json({ error: `closePreference must be one of: ${VALID_CLOSE_PREFERENCES.join(", ")}` });
         return;
       }
 
-      // Parse firstTouch.date into Date, rejecting invalid ISO
       let firstTouchDateParsed: Date | null = null;
-      if (firstTouch?.date) {
-        const d = new Date(firstTouch.date);
+      if (firstTouchDate) {
+        const d = new Date(firstTouchDate);
         if (isNaN(d.getTime())) {
-          res.status(400).json({ error: "firstTouch.date must be a valid ISO date string" });
+          res.status(400).json({ error: "firstTouchDate must be a valid ISO date string" });
           return;
         }
         firstTouchDateParsed = d;
@@ -551,13 +592,35 @@ export function affiliateRoutes(db: Db): Router {
           attributionType: "affiliate_referred_cd_closed",
           lockStartAt: now,
           lockExpiresAt,
-          firstTouchLogged: firstTouch?.logged ?? false,
-          firstTouchType: firstTouch?.type ?? null,
+          firstTouchLogged: firstTouchStatus ?? false,
+          firstTouchType: firstTouchType ?? null,
           firstTouchDate: firstTouchDateParsed,
-          firstTouchNotes: firstTouch?.notes ?? null,
-          relationshipWarmth: firstTouch?.warmth ?? null,
-          affiliateClosePreference: closePath ?? null,
+          firstTouchNotes: firstTouchNotes ?? null,
+          relationshipWarmth: relationshipWarmth ?? null,
+          affiliateClosePreference: closePreference ?? null,
         });
+
+        await db
+          .update(partnerCompanies)
+          .set({ leadStatus: "submitted", pipelineEnteredAt: now, lastActivityAt: now, updatedAt: now })
+          .where(eq(partnerCompanies.id, dup.id));
+
+        await db.insert(crmActivities).values({
+          leadId: dup.id,
+          actorType: "affiliate",
+          actorId: affiliateId,
+          activityType: "status_change",
+          toStatus: "submitted",
+          note: "Lead resubmitted",
+          visibleToAffiliate: true,
+        });
+
+        if (closePreference === "affiliate_attempts_first") {
+          logger.warn(
+            { leadId: dup.id, slug: dup.slug, affiliateId },
+            "affiliate-prospect: affiliate_attempts_first close preference — admin review needed",
+          );
+        }
 
         res.status(201).json({
           prospect: {
@@ -619,13 +682,40 @@ export function affiliateRoutes(db: Db): Router {
         attributionType: "affiliate_referred_cd_closed",
         lockStartAt: attributionNow,
         lockExpiresAt: attributionExpiresAt,
-        firstTouchLogged: firstTouch?.logged ?? false,
-        firstTouchType: firstTouch?.type ?? null,
+        firstTouchLogged: firstTouchStatus ?? false,
+        firstTouchType: firstTouchType ?? null,
         firstTouchDate: firstTouchDateParsed,
-        firstTouchNotes: firstTouch?.notes ?? null,
-        relationshipWarmth: firstTouch?.warmth ?? null,
-        affiliateClosePreference: closePath ?? null,
+        firstTouchNotes: firstTouchNotes ?? null,
+        relationshipWarmth: relationshipWarmth ?? null,
+        affiliateClosePreference: closePreference ?? null,
       });
+
+      await db
+        .update(partnerCompanies)
+        .set({
+          leadStatus: "submitted",
+          pipelineEnteredAt: attributionNow,
+          lastActivityAt: attributionNow,
+          updatedAt: attributionNow,
+        })
+        .where(eq(partnerCompanies.id, partner.id));
+
+      await db.insert(crmActivities).values({
+        leadId: partner.id,
+        actorType: "affiliate",
+        actorId: affiliateId,
+        activityType: "status_change",
+        toStatus: "submitted",
+        note: "Lead submitted",
+        visibleToAffiliate: true,
+      });
+
+      if (closePreference === "affiliate_attempts_first") {
+        logger.warn(
+          { leadId: partner.id, slug: partner.slug, affiliateId },
+          "affiliate-prospect: affiliate_attempts_first close preference — admin review needed",
+        );
+      }
 
       // Fire-and-forget onboarding
       runPartnerOnboarding(db, partner.slug).catch((err) =>
@@ -988,6 +1078,147 @@ export function affiliateRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to update prospect");
       res.status(500).json({ error: "Failed to update prospect" });
+    }
+  });
+
+  // ── GET /leads/:id — Affiliate-facing lead detail ────────────────────────
+  router.get("/leads/:id", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const affiliateId = req.affiliateClaims!.sub;
+
+      const [row] = await db
+        .select({
+          id: partnerCompanies.id,
+          name: partnerCompanies.name,
+          slug: partnerCompanies.slug,
+          website: partnerCompanies.website,
+          industry: partnerCompanies.industry,
+          location: partnerCompanies.location,
+          leadStatus: partnerCompanies.leadStatus,
+          lastActivityAt: partnerCompanies.lastActivityAt,
+          createdAt: partnerCompanies.createdAt,
+          attributionAffiliateId: referralAttribution.affiliateId,
+          lockReleasedAt: referralAttribution.lockReleasedAt,
+        })
+        .from(partnerCompanies)
+        .leftJoin(
+          referralAttribution,
+          and(
+            eq(referralAttribution.leadId, partnerCompanies.id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
+        .where(eq(partnerCompanies.id, id))
+        .limit(1);
+
+      if (!row || row.attributionAffiliateId !== affiliateId) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      res.json({
+        lead: {
+          id: row.id,
+          name: row.name,
+          slug: row.slug,
+          website: row.website,
+          industry: row.industry,
+          location: row.location,
+          pipelineStage: row.leadStatus,
+          lastActivityAt: row.lastActivityAt ? row.lastActivityAt.toISOString() : null,
+          createdAt: row.createdAt.toISOString(),
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to fetch affiliate lead");
+      res.status(500).json({ error: "Failed to fetch lead" });
+    }
+  });
+
+  // ── GET /leads/:id/timeline — Affiliate-visible activity feed ────────────
+  router.get("/leads/:id/timeline", authMiddleware, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      const affiliateId = req.affiliateClaims!.sub;
+
+      const [owner] = await db
+        .select({ affiliateId: referralAttribution.affiliateId })
+        .from(referralAttribution)
+        .where(
+          and(
+            eq(referralAttribution.leadId, id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
+        .limit(1);
+
+      if (!owner || owner.affiliateId !== affiliateId) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      const [leadRow] = await db
+        .select({
+          id: partnerCompanies.id,
+          name: partnerCompanies.name,
+          slug: partnerCompanies.slug,
+          website: partnerCompanies.website,
+          industry: partnerCompanies.industry,
+          location: partnerCompanies.location,
+          leadStatus: partnerCompanies.leadStatus,
+          lastActivityAt: partnerCompanies.lastActivityAt,
+          createdAt: partnerCompanies.createdAt,
+        })
+        .from(partnerCompanies)
+        .where(eq(partnerCompanies.id, id))
+        .limit(1);
+
+      if (!leadRow) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      const acts = await db
+        .select({
+          id: crmActivities.id,
+          actorType: crmActivities.actorType,
+          activityType: crmActivities.activityType,
+          note: crmActivities.note,
+          createdAt: crmActivities.createdAt,
+        })
+        .from(crmActivities)
+        .where(
+          and(
+            eq(crmActivities.leadId, id),
+            eq(crmActivities.visibleToAffiliate, true),
+          ),
+        )
+        .orderBy(desc(crmActivities.createdAt));
+
+      res.json({
+        lead: {
+          id: leadRow.id,
+          name: leadRow.name,
+          slug: leadRow.slug,
+          website: leadRow.website,
+          industry: leadRow.industry,
+          location: leadRow.location,
+          pipelineStage: leadRow.leadStatus,
+          lastActivityAt: leadRow.lastActivityAt ? leadRow.lastActivityAt.toISOString() : null,
+          createdAt: leadRow.createdAt.toISOString(),
+        },
+        activities: acts.map((a) => ({
+          id: a.id,
+          actorType: a.actorType,
+          activityType: a.activityType,
+          note: a.note,
+          timestamp: a.createdAt.toISOString(),
+        })),
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to fetch lead timeline");
+      res.status(500).json({ error: "Failed to fetch timeline" });
     }
   });
 
@@ -1506,6 +1737,628 @@ export function affiliateAdminRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to mark payout paid");
       res.status(500).json({ error: "Failed to mark payout paid" });
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Phase 3 — CRM pipeline + attribution console
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // GET /leads — list with filters
+  router.get("/leads", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const rawLimit = Number(req.query.limit);
+      const rawOffset = Number(req.query.offset);
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.max(Math.floor(rawLimit), 1), 200) : 50;
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+
+      const statusFilter = req.query.status as string | undefined;
+      const repFilter = req.query.assignedRepId as string | undefined;
+      const affiliateFilter = req.query.affiliateId as string | undefined;
+      const attrFilter = req.query.attributionType as string | undefined;
+
+      const conds: ReturnType<typeof eq>[] = [eq(partnerCompanies.companyId, COMPANY_ID)];
+      if (statusFilter) conds.push(eq(partnerCompanies.leadStatus, toDbStatus(statusFilter)));
+      if (repFilter) conds.push(eq(partnerCompanies.assignedRepId, repFilter));
+      if (affiliateFilter) conds.push(eq(partnerCompanies.affiliateId, affiliateFilter));
+      if (attrFilter) conds.push(eq(referralAttribution.attributionType, attrFilter));
+
+      const rows = await db
+        .select({
+          id: partnerCompanies.id,
+          leadName: partnerCompanies.name,
+          leadStatus: partnerCompanies.leadStatus,
+          assignedRepId: partnerCompanies.assignedRepId,
+          pipelineEnteredAt: partnerCompanies.pipelineEnteredAt,
+          lastActivityAt: partnerCompanies.lastActivityAt,
+          createdAt: partnerCompanies.createdAt,
+          affiliateId: referralAttribution.affiliateId,
+          affiliateName: affiliates.name,
+          attributionType: referralAttribution.attributionType,
+        })
+        .from(partnerCompanies)
+        .leftJoin(
+          referralAttribution,
+          and(
+            eq(referralAttribution.leadId, partnerCompanies.id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
+        .leftJoin(affiliates, eq(affiliates.id, referralAttribution.affiliateId))
+        .where(and(...conds))
+        .orderBy(desc(partnerCompanies.lastActivityAt))
+        .limit(limit)
+        .offset(offset);
+
+      const [{ total } = { total: 0 }] = await db
+        .select({ total: count() })
+        .from(partnerCompanies)
+        .leftJoin(
+          referralAttribution,
+          and(
+            eq(referralAttribution.leadId, partnerCompanies.id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
+        .where(and(...conds));
+
+      const reps = new Map<string, string>();
+      const repIds = rows.map((r) => r.assignedRepId).filter((x): x is string => !!x);
+      if (repIds.length > 0) {
+        const repRows = await db
+          .select({ id: authUsers.id, name: authUsers.name })
+          .from(authUsers)
+          .where(inArray(authUsers.id, repIds));
+        for (const r of repRows) reps.set(r.id, r.name);
+      }
+
+      res.json({
+        leads: rows.map((r) => ({
+          id: r.id,
+          affiliateId: r.affiliateId ?? "",
+          affiliateName: r.affiliateName ?? "",
+          leadName: r.leadName,
+          status: toUiStatus(r.leadStatus),
+          attributionType: r.attributionType ?? "",
+          assignedRepId: r.assignedRepId,
+          assignedRepName: r.assignedRepId ? reps.get(r.assignedRepId) ?? null : null,
+          pipelineEnteredAt: (r.pipelineEnteredAt ?? r.createdAt).toISOString(),
+          lastActivityAt: r.lastActivityAt ? r.lastActivityAt.toISOString() : null,
+          createdAt: r.createdAt.toISOString(),
+          isDuplicate: r.leadStatus === "duplicate_review",
+          duplicateOfLeadId: null,
+        })),
+        total: Number(total),
+        limit,
+        offset,
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to list leads");
+      res.status(500).json({ error: "Failed to list leads" });
+    }
+  });
+
+  // GET /leads/:id — full detail
+  router.get("/leads/:id", async (req, res) => {
+    try {
+      assertBoard(req);
+      const id = req.params.id as string;
+
+      const [row] = await db
+        .select({
+          id: partnerCompanies.id,
+          leadName: partnerCompanies.name,
+          website: partnerCompanies.website,
+          industry: partnerCompanies.industry,
+          location: partnerCompanies.location,
+          description: partnerCompanies.description,
+          affiliateNotes: partnerCompanies.affiliateNotes,
+          storeNotes: partnerCompanies.storeNotes,
+          leadStatus: partnerCompanies.leadStatus,
+          assignedRepId: partnerCompanies.assignedRepId,
+          pipelineEnteredAt: partnerCompanies.pipelineEnteredAt,
+          lastActivityAt: partnerCompanies.lastActivityAt,
+          createdAt: partnerCompanies.createdAt,
+          affiliateId: referralAttribution.affiliateId,
+          attributionType: referralAttribution.attributionType,
+          firstTouchType: referralAttribution.firstTouchType,
+          firstTouchDate: referralAttribution.firstTouchDate,
+          firstTouchNotes: referralAttribution.firstTouchNotes,
+          relationshipWarmth: referralAttribution.relationshipWarmth,
+          affiliateClosePreference: referralAttribution.affiliateClosePreference,
+          affiliateName: affiliates.name,
+        })
+        .from(partnerCompanies)
+        .leftJoin(
+          referralAttribution,
+          and(
+            eq(referralAttribution.leadId, partnerCompanies.id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
+        .leftJoin(affiliates, eq(affiliates.id, referralAttribution.affiliateId))
+        .where(eq(partnerCompanies.id, id))
+        .limit(1);
+
+      if (!row) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      const acts = await db
+        .select()
+        .from(crmActivities)
+        .where(eq(crmActivities.leadId, id))
+        .orderBy(desc(crmActivities.createdAt));
+
+      const overrides = await db
+        .select()
+        .from(attributionOverrides)
+        .where(eq(attributionOverrides.leadId, id))
+        .orderBy(desc(attributionOverrides.createdAt));
+
+      const repName = row.assignedRepId
+        ? (
+            await db
+              .select({ name: authUsers.name })
+              .from(authUsers)
+              .where(eq(authUsers.id, row.assignedRepId))
+              .limit(1)
+          )[0]?.name ?? null
+        : null;
+
+      res.json({
+        lead: {
+          id: row.id,
+          affiliateId: row.affiliateId ?? "",
+          affiliateName: row.affiliateName ?? "",
+          leadName: row.leadName,
+          website: row.website,
+          industry: row.industry,
+          location: row.location,
+          description: row.description,
+          affiliateNotes: row.affiliateNotes,
+          storeNotes: row.storeNotes,
+          status: toUiStatus(row.leadStatus),
+          attributionType: row.attributionType ?? "",
+          assignedRepId: row.assignedRepId,
+          assignedRepName: repName,
+          pipelineEnteredAt: (row.pipelineEnteredAt ?? row.createdAt).toISOString(),
+          lastActivityAt: row.lastActivityAt ? row.lastActivityAt.toISOString() : null,
+          createdAt: row.createdAt.toISOString(),
+          isDuplicate: row.leadStatus === "duplicate_review",
+          duplicateOfLeadId: null,
+          firstTouch: {
+            type: row.firstTouchType,
+            date: row.firstTouchDate ? row.firstTouchDate.toISOString() : null,
+            notes: row.firstTouchNotes,
+            warmth: row.relationshipWarmth,
+            closePath: row.affiliateClosePreference,
+          },
+          activities: acts.map((a) => ({
+            id: a.id,
+            leadId: a.leadId,
+            type: a.activityType,
+            actorType: a.actorType,
+            actorName: null,
+            note: a.note,
+            metadata: a.fromStatus || a.toStatus ? { fromStatus: a.fromStatus, toStatus: a.toStatus } : null,
+            visibleToAffiliate: a.visibleToAffiliate,
+            createdAt: a.createdAt.toISOString(),
+          })),
+          attributionHistory: overrides.map((o) => ({
+            id: o.id,
+            leadId: o.leadId,
+            previousType: "",
+            newType: o.overrideType,
+            previousAffiliateId: o.previousAffiliateId,
+            newAffiliateId: o.newAffiliateId,
+            reason: o.reason,
+            adminName: null,
+            createdAt: o.createdAt.toISOString(),
+          })),
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to fetch lead detail");
+      res.status(500).json({ error: "Failed to fetch lead" });
+    }
+  });
+
+  // PUT /leads/:id/status — transition with validation + activity log
+  router.put("/leads/:id/status", async (req, res) => {
+    try {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const { toStatus, note } = req.body as { toStatus?: string; note?: string };
+
+      if (!toStatus) {
+        res.status(400).json({ error: "toStatus is required" });
+        return;
+      }
+      const toDb = toDbStatus(toStatus);
+
+      const [cur] = await db
+        .select({ leadStatus: partnerCompanies.leadStatus })
+        .from(partnerCompanies)
+        .where(eq(partnerCompanies.id, id))
+        .limit(1);
+      if (!cur) {
+        res.status(404).json({ error: "Lead not found" });
+        return;
+      }
+
+      const from = cur.leadStatus;
+      const allowed = STATUS_TRANSITIONS[from] ?? [];
+      if (from !== toDb && !allowed.includes(toDb)) {
+        res.status(409).json({
+          error: `Invalid transition ${toUiStatus(from)} -> ${toStatus}`,
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        await tx
+          .update(partnerCompanies)
+          .set({
+            leadStatus: toDb,
+            pipelineEnteredAt: from === toDb ? partnerCompanies.pipelineEnteredAt : now,
+            lastActivityAt: now,
+            updatedAt: now,
+          })
+          .where(eq(partnerCompanies.id, id));
+
+        await tx.insert(crmActivities).values({
+          leadId: id,
+          actorType: "admin",
+          actorId: null,
+          activityType: "status_change",
+          fromStatus: from,
+          toStatus: toDb,
+          note: note ?? null,
+          visibleToAffiliate: true,
+        });
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "Failed to transition lead status");
+      res.status(500).json({ error: "Failed to transition status" });
+    }
+  });
+
+  // PUT /leads/:id/assign — assign rep
+  router.put("/leads/:id/assign", async (req, res) => {
+    try {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const { repId } = req.body as { repId?: string | null };
+
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        await tx
+          .update(partnerCompanies)
+          .set({ assignedRepId: repId ?? null, lastActivityAt: now, updatedAt: now })
+          .where(eq(partnerCompanies.id, id));
+        await tx.insert(crmActivities).values({
+          leadId: id,
+          actorType: "admin",
+          activityType: "assignment",
+          note: repId ? `Assigned rep ${repId}` : "Unassigned",
+          visibleToAffiliate: false,
+        });
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "Failed to assign rep");
+      res.status(500).json({ error: "Failed to assign rep" });
+    }
+  });
+
+  // POST /leads/:id/notes — add a note activity
+  router.post("/leads/:id/notes", async (req, res) => {
+    try {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const { note, visibleToAffiliate } = req.body as { note?: string; visibleToAffiliate?: boolean };
+
+      if (!note || typeof note !== "string") {
+        res.status(400).json({ error: "note is required" });
+        return;
+      }
+
+      const now = new Date();
+      const [act] = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(crmActivities)
+          .values({
+            leadId: id,
+            actorType: "admin",
+            activityType: "note",
+            note,
+            visibleToAffiliate: visibleToAffiliate ?? false,
+          })
+          .returning();
+        await tx
+          .update(partnerCompanies)
+          .set({ lastActivityAt: now, updatedAt: now })
+          .where(eq(partnerCompanies.id, id));
+        return inserted;
+      });
+
+      res.json({
+        ok: true,
+        activity: {
+          id: act.id,
+          leadId: act.leadId,
+          type: act.activityType,
+          actorType: act.actorType,
+          actorName: null,
+          note: act.note,
+          metadata: null,
+          visibleToAffiliate: act.visibleToAffiliate,
+          createdAt: act.createdAt.toISOString(),
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to add note");
+      res.status(500).json({ error: "Failed to add note" });
+    }
+  });
+
+  // PUT /leads/:id/attribution — override attribution type
+  // Existing commissions are NOT re-rated — only future commissions inherit
+  // the new type (webhook looks up attributionType at insert time).
+  router.put("/leads/:id/attribution", async (req, res) => {
+    try {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const { attributionType, reason } = req.body as { attributionType?: string; reason?: string };
+
+      const VALID = [
+        "affiliate_referred_cd_closed",
+        "affiliate_assisted_cd_closed",
+        "affiliate_led_cd_finalized",
+        "cd_direct",
+        "admin_override",
+      ];
+      if (!attributionType || !VALID.includes(attributionType)) {
+        res.status(400).json({ error: `attributionType must be one of: ${VALID.join(", ")}` });
+        return;
+      }
+      if (!reason) {
+        res.status(400).json({ error: "reason is required" });
+        return;
+      }
+
+      const [current] = await db
+        .select({ id: referralAttribution.id, affiliateId: referralAttribution.affiliateId })
+        .from(referralAttribution)
+        .where(
+          and(
+            eq(referralAttribution.leadId, id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
+        .limit(1);
+      if (!current) {
+        res.status(404).json({ error: "No active attribution for lead" });
+        return;
+      }
+
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        await tx
+          .update(referralAttribution)
+          .set({ attributionType, adminOverride: true, overrideReason: reason, updatedAt: now })
+          .where(eq(referralAttribution.id, current.id));
+
+        await tx.insert(attributionOverrides).values({
+          leadId: id,
+          previousAttributionId: current.id,
+          newAttributionId: current.id,
+          previousAffiliateId: current.affiliateId,
+          newAffiliateId: current.affiliateId,
+          overrideType: "type_change",
+          reason,
+          overriddenByUserId: (req as unknown as { user?: { id?: string } }).user?.id ?? "board",
+        });
+
+        await tx.insert(crmActivities).values({
+          leadId: id,
+          actorType: "admin",
+          activityType: "attribution_change",
+          note: `Attribution changed to ${attributionType}: ${reason}`,
+          visibleToAffiliate: false,
+        });
+
+        await tx
+          .update(partnerCompanies)
+          .set({ lastActivityAt: now, updatedAt: now })
+          .where(eq(partnerCompanies.id, id));
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "Failed to override attribution");
+      res.status(500).json({ error: "Failed to override attribution" });
+    }
+  });
+
+  // POST /leads/:id/transfer — move ownership to a different affiliate
+  router.post("/leads/:id/transfer", async (req, res) => {
+    try {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const { newAffiliateId, reason } = req.body as { newAffiliateId?: string; reason?: string };
+
+      if (!newAffiliateId || !reason) {
+        res.status(400).json({ error: "newAffiliateId and reason are required" });
+        return;
+      }
+
+      const [oldAtt] = await db
+        .select({ id: referralAttribution.id, affiliateId: referralAttribution.affiliateId })
+        .from(referralAttribution)
+        .where(
+          and(
+            eq(referralAttribution.leadId, id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
+        .limit(1);
+
+      const now = new Date();
+      const lockExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      await db.transaction(async (tx) => {
+        if (oldAtt) {
+          await tx
+            .update(referralAttribution)
+            .set({ lockReleasedAt: now, adminOverride: true, overrideReason: reason, updatedAt: now })
+            .where(eq(referralAttribution.id, oldAtt.id));
+        }
+
+        const [newAtt] = await tx
+          .insert(referralAttribution)
+          .values({
+            leadId: id,
+            affiliateId: newAffiliateId,
+            attributionType: "admin_override",
+            lockStartAt: now,
+            lockExpiresAt,
+            adminOverride: true,
+            overrideReason: reason,
+          })
+          .returning({ id: referralAttribution.id });
+
+        await tx.insert(attributionOverrides).values({
+          leadId: id,
+          previousAttributionId: oldAtt?.id ?? null,
+          newAttributionId: newAtt.id,
+          previousAffiliateId: oldAtt?.affiliateId ?? null,
+          newAffiliateId,
+          overrideType: "transfer",
+          reason,
+          overriddenByUserId: (req as unknown as { user?: { id?: string } }).user?.id ?? "board",
+        });
+
+        await tx
+          .update(partnerCompanies)
+          .set({ affiliateId: newAffiliateId, lastActivityAt: now, updatedAt: now })
+          .where(eq(partnerCompanies.id, id));
+
+        await tx.insert(crmActivities).values({
+          leadId: id,
+          actorType: "admin",
+          activityType: "transfer",
+          note: `Transferred from ${oldAtt?.affiliateId ?? "(none)"} to ${newAffiliateId}: ${reason}`,
+          visibleToAffiliate: false,
+        });
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "Failed to transfer lead");
+      res.status(500).json({ error: "Failed to transfer lead" });
+    }
+  });
+
+  // POST /leads/:id/duplicate-resolve — resolve duplicate_review
+  router.post("/leads/:id/duplicate-resolve", async (req, res) => {
+    try {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const { winnerAffiliateId, reason } = req.body as { winnerAffiliateId?: string; reason?: string };
+
+      if (!winnerAffiliateId || !reason) {
+        res.status(400).json({ error: "winnerAffiliateId and reason are required" });
+        return;
+      }
+
+      const activeAtts = await db
+        .select({ id: referralAttribution.id, affiliateId: referralAttribution.affiliateId })
+        .from(referralAttribution)
+        .where(
+          and(
+            eq(referralAttribution.leadId, id),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        );
+
+      const winner = activeAtts.find((a) => a.affiliateId === winnerAffiliateId);
+      const losers = activeAtts.filter((a) => a.affiliateId !== winnerAffiliateId);
+
+      if (!winner && activeAtts.length === 0) {
+        res.status(404).json({ error: "No active attribution to resolve" });
+        return;
+      }
+
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        for (const loser of losers) {
+          await tx
+            .update(referralAttribution)
+            .set({ lockReleasedAt: now, adminOverride: true, overrideReason: reason, updatedAt: now })
+            .where(eq(referralAttribution.id, loser.id));
+
+          await tx.insert(attributionOverrides).values({
+            leadId: id,
+            previousAttributionId: loser.id,
+            newAttributionId: winner?.id ?? null,
+            previousAffiliateId: loser.affiliateId,
+            newAffiliateId: winnerAffiliateId,
+            overrideType: "duplicate_resolution",
+            reason,
+            overriddenByUserId: (req as unknown as { user?: { id?: string } }).user?.id ?? "board",
+          });
+        }
+
+        await tx
+          .update(partnerCompanies)
+          .set({
+            affiliateId: winnerAffiliateId,
+            leadStatus: "qualified",
+            pipelineEnteredAt: now,
+            lastActivityAt: now,
+            updatedAt: now,
+          })
+          .where(eq(partnerCompanies.id, id));
+
+        await tx.insert(crmActivities).values({
+          leadId: id,
+          actorType: "admin",
+          activityType: "status_change",
+          fromStatus: "duplicate_review",
+          toStatus: "qualified",
+          note: `Duplicate resolved in favor of affiliate ${winnerAffiliateId}: ${reason}`,
+          visibleToAffiliate: true,
+        });
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "Failed to resolve duplicate");
+      res.status(500).json({ error: "Failed to resolve duplicate" });
+    }
+  });
+
+  // GET /reps — minimal rep directory for the assign dropdown
+  router.get("/reps", async (req, res) => {
+    try {
+      assertBoard(req);
+      const rows = await db
+        .select({ id: authUsers.id, name: authUsers.name, email: authUsers.email })
+        .from(authUsers);
+      res.json({ reps: rows });
+    } catch (err) {
+      logger.error({ err }, "Failed to list reps");
+      res.status(500).json({ error: "Failed to list reps" });
     }
   });
 
