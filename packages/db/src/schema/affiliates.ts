@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, text, timestamp, numeric, index, uniqueIndex,
+  pgTable, uuid, text, timestamp, numeric, integer, index, uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const affiliates = pgTable(
@@ -13,6 +13,9 @@ export const affiliates = pgTable(
     commissionRate: numeric("commission_rate", { precision: 5, scale: 4 }).notNull().default("0.10"),
     totalEarned: numeric("total_earned", { precision: 12, scale: 2 }).notNull().default("0"),
     policyAcceptedAt: timestamp("policy_accepted_at", { withTimezone: true }),
+    payoutMethod: text("payout_method"),
+    payoutAccount: text("payout_account"),
+    minimumPayoutCents: integer("minimum_payout_cents").notNull().default(5000),
     resetToken: text("reset_token"),
     resetTokenExpiresAt: timestamp("reset_token_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

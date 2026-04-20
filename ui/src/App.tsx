@@ -66,8 +66,12 @@ import { PartnerDashboard } from "./pages/PartnerDashboard";
 import { PartnersLanding } from "./pages/PartnersLanding";
 import { AffiliateLanding } from "./pages/AffiliateLanding";
 import { AffiliateDashboard } from "./pages/AffiliateDashboard";
+import { AffiliateEarnings } from "./pages/AffiliateEarnings";
+import { AffiliatePayouts } from "./pages/AffiliatePayouts";
 import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
 import { AffiliateResetPassword } from "./pages/AffiliateResetPassword";
+import { AffiliateAdminCommissions } from "./pages/AffiliateAdminCommissions";
+import { AffiliateAdminPayouts } from "./pages/AffiliateAdminPayouts";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -211,6 +215,8 @@ function boardRoutes() {
       <Route path="structure" element={<Structure />} />
       <Route path="marketing-pushes" element={<MarketingPushes />} />
       <Route path="affiliates" element={<AffiliatesAdmin />} />
+      <Route path="affiliates/commissions" element={<AffiliateAdminCommissions />} />
+      <Route path="affiliates/payouts" element={<AffiliateAdminPayouts />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
@@ -365,6 +371,8 @@ function AffiliateSite() {
       <Routes>
         <Route index element={<AffiliateLanding />} />
         <Route path="dashboard" element={<AffiliateDashboard />} />
+        <Route path="earnings" element={<AffiliateEarnings />} />
+        <Route path="payouts" element={<AffiliatePayouts />} />
         <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
         <Route path="reset-password" element={<AffiliateResetPassword />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -429,6 +437,9 @@ export function App() {
           <Route path="partners" element={<UnprefixedBoardRedirect />} />
           <Route path="partners/:slug" element={<UnprefixedBoardRedirect />} />
           <Route path="partners/:slug/:tab" element={<UnprefixedBoardRedirect />} />
+          <Route path="affiliates" element={<UnprefixedBoardRedirect />} />
+          <Route path="affiliates/commissions" element={<UnprefixedBoardRedirect />} />
+          <Route path="affiliates/payouts" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>
