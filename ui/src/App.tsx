@@ -68,6 +68,7 @@ import { AffiliateLanding } from "./pages/AffiliateLanding";
 import { AffiliateDashboard } from "./pages/AffiliateDashboard";
 import { AffiliateEarnings } from "./pages/AffiliateEarnings";
 import { AffiliatePayouts } from "./pages/AffiliatePayouts";
+import { AffiliateLeadDetail } from "./pages/AffiliateLeadDetail";
 import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
 import { AffiliateResetPassword } from "./pages/AffiliateResetPassword";
 import { AffiliateAdminCommissions } from "./pages/AffiliateAdminCommissions";
@@ -374,6 +375,7 @@ function AffiliateSite() {
         <Route path="earnings" element={<AffiliateEarnings />} />
         <Route path="payouts" element={<AffiliatePayouts />} />
         <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
+        <Route path="affiliate/leads/:id" element={<AffiliateLeadDetail />} />
         <Route path="reset-password" element={<AffiliateResetPassword />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -398,6 +400,7 @@ export function App() {
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
         <Route path="partner-dashboard/:slug" element={<PartnerDashboard />} />
+        <Route path="affiliate/leads/:id" element={<AffiliateLeadDetail />} />
         <Route path="intel/pricing" element={<IntelPricing />} />
         <Route path="directory-pricing" element={<DirectoryPricing />} />
         <Route path="billing/success" element={<IntelBillingSuccess />} />
