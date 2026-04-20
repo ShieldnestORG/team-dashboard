@@ -48,7 +48,9 @@ export type EmailTemplate =
   | "affiliate-commission-created"
   | "affiliate-commission-approved"
   | "affiliate-payout-sent"
-  | "affiliate-payout-held";
+  | "affiliate-payout-held"
+  | "affiliate-lock-expired"
+  | "affiliate-lead-status-change";
 
 export interface EmailVars {
   // Common
@@ -89,6 +91,11 @@ export interface EmailVars {
   method?: string;
   externalId?: string;
   reason?: string;
+  // Lead status / lock expiry (Phase 3)
+  fromStatus?: string;
+  toStatus?: string;
+  statusLabel?: string;
+  leadUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -547,6 +554,74 @@ export function buildAffiliatePayoutHeld(
   return { subject, html: htmlShell(subject, body), text };
 }
 
+export function buildAffiliateLockExpired(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl =
+    vars.dashboardUrl ??
+    vars.affiliateDashboardUrl ??
+    "https://affiliates.coherencedaddy.com/leads";
+  const lead = vars.leadName ?? "a lead";
+
+  const subject = `Lock expired on ${lead}`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Heads up, ${name}</h2>
+    <p style="margin:0 0 16px;">
+      The 30-day attribution lock on <strong>${lead}</strong> has expired without
+      the lead converting past qualification, and the record is now open for
+      re-assignment.
+    </p>
+    <p style="margin:0 0 16px;">
+      If you&rsquo;re still actively working this one, reach out to us right away
+      so we can review the status together — otherwise no action is needed.
+    </p>
+    ${ctaButton(dashUrl, "View Your Leads →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Heads up, ${name}.\n\nThe 30-day attribution lock on ${lead} has expired without the lead converting past qualification, and the record is now open for re-assignment.\n\nIf you're still actively working this one, reach out to us right away — otherwise no action is needed.\n\nView your leads: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliateLeadStatusChange(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl =
+    vars.leadUrl ??
+    vars.dashboardUrl ??
+    vars.affiliateDashboardUrl ??
+    "https://affiliates.coherencedaddy.com/leads";
+  const lead = vars.leadName ?? "your lead";
+  const statusLabel = vars.statusLabel ?? vars.toStatus ?? "Updated";
+
+  const subject = `${lead}: ${statusLabel}`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Status update, ${name}</h2>
+    <p style="margin:0 0 16px;">
+      <strong>${lead}</strong> moved to <strong>${statusLabel}</strong>.
+    </p>
+    ${ctaButton(dashUrl, "View Lead →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Status update, ${name}.\n\n${lead} moved to ${statusLabel}.\n\nView lead: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
 function buildAffiliatePendingDigest(vars: EmailVars): { subject: string; html: string } {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
@@ -635,6 +710,12 @@ export async function sendTransactional(
       break;
     case "affiliate-payout-held":
       ({ subject, html } = buildAffiliatePayoutHeld(vars));
+      break;
+    case "affiliate-lock-expired":
+      ({ subject, html } = buildAffiliateLockExpired(vars));
+      break;
+    case "affiliate-lead-status-change":
+      ({ subject, html } = buildAffiliateLeadStatusChange(vars));
       break;
     default: {
       const _exhaustive: never = template;

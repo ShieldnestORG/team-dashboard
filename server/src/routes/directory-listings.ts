@@ -26,6 +26,28 @@ import { verifyStripeSignature, stripeRequest } from "../services/stripe-client.
 import { logger } from "../middleware/logger.js";
 import { sendTransactional } from "../services/email-templates.js";
 
+// Phase 3 — attribution-type-aware commission rate.
+// led_cd_finalized pays a 25% bonus over the default rate; cd_direct pays 0
+// (the rep was the acquirer). referred / assisted / admin_override all pay
+// the affiliate's default commissionRate.
+function rateForAttribution(
+  attributionType: string | null | undefined,
+  defaultRate: string | null | undefined,
+): string {
+  const base = defaultRate ?? "0.10";
+  switch (attributionType) {
+    case "affiliate_led_cd_finalized":
+      return String(Number(base) * 1.25);
+    case "cd_direct":
+      return "0";
+    case "affiliate_referred_cd_closed":
+    case "affiliate_assisted_cd_closed":
+    case "admin_override":
+    default:
+      return base;
+  }
+}
+
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.actor?.type !== "board") {
     res.status(401).json({ error: "Admin only" });
@@ -395,6 +417,7 @@ async function handlePartnerStripeEvent(
             affiliateId: referralAttribution.affiliateId,
             leadId: referralAttribution.leadId,
             rate: affiliates.commissionRate,
+            attributionType: referralAttribution.attributionType,
           })
           .from(referralAttribution)
           .innerJoin(partnerCompanies, eq(partnerCompanies.id, referralAttribution.leadId))
@@ -408,41 +431,50 @@ async function handlePartnerStripeEvent(
           .limit(1);
 
         if (attribution) {
-          const basisCents = session.amount_total ?? 0;
-          const rateNum = Number(attribution.rate ?? "0.10");
-          const amountCents = Math.round(basisCents * rateNum);
-          const now = new Date();
-          const periodEnd = currentPeriodEnd ?? now;
-          const holdExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+          const effectiveRate = rateForAttribution(attribution.attributionType, attribution.rate);
+          if (effectiveRate === "0") {
+            logger.info(
+              { partnerSlug, attributionType: attribution.attributionType },
+              "partner-network: skipping commission insert (rate=0 for attribution type)",
+            );
+          } else {
+            const basisCents = session.amount_total ?? 0;
+            const rateNum = Number(effectiveRate);
+            const amountCents = Math.round(basisCents * rateNum);
+            const now = new Date();
+            const periodEnd = currentPeriodEnd ?? now;
+            const holdExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-          await db
-            .insert(commissions)
-            .values({
-              affiliateId: attribution.affiliateId,
-              leadId: attribution.leadId,
-              attributionId: attribution.attributionId,
-              type: "initial",
-              rate: attribution.rate,
-              amountCents,
-              basisCents,
-              periodStart: now,
-              periodEnd,
-              status: "pending_activation",
-              stripeInvoiceId: session.invoice ?? session.id,
-              holdExpiresAt,
-            })
-            .onConflictDoNothing();
+            await db
+              .insert(commissions)
+              .values({
+                affiliateId: attribution.affiliateId,
+                leadId: attribution.leadId,
+                attributionId: attribution.attributionId,
+                type: "initial",
+                rate: effectiveRate,
+                amountCents,
+                basisCents,
+                periodStart: now,
+                periodEnd,
+                status: "pending_activation",
+                stripeInvoiceId: session.invoice ?? session.id,
+                holdExpiresAt,
+              })
+              .onConflictDoNothing();
 
-          logger.info(
-            {
-              partnerSlug,
-              affiliateId: attribution.affiliateId,
-              amountCents,
-              basisCents,
-              stripeInvoiceId: session.invoice ?? session.id,
-            },
-            "partner-network: initial commission created",
-          );
+            logger.info(
+              {
+                partnerSlug,
+                affiliateId: attribution.affiliateId,
+                amountCents,
+                basisCents,
+                attributionType: attribution.attributionType,
+                stripeInvoiceId: session.invoice ?? session.id,
+              },
+              "partner-network: initial commission created",
+            );
+          }
         }
       } catch (err) {
         logger.error(
@@ -501,6 +533,7 @@ async function handlePartnerStripeEvent(
             attributionId: referralAttribution.id,
             affiliateId: referralAttribution.affiliateId,
             rate: affiliates.commissionRate,
+            attributionType: referralAttribution.attributionType,
           })
           .from(partnerCompanies)
           .innerJoin(
@@ -516,8 +549,17 @@ async function handlePartnerStripeEvent(
 
         if (!row) break;
 
+        const effectiveRate = rateForAttribution(row.attributionType, row.rate);
+        if (effectiveRate === "0") {
+          logger.info(
+            { invoiceId: inv.id, attributionType: row.attributionType },
+            "partner-network: skipping recurring commission insert (rate=0 for attribution type)",
+          );
+          break;
+        }
+
         const basisCents = inv.amount_paid ?? 0;
-        const rateNum = Number(row.rate ?? "0.10");
+        const rateNum = Number(effectiveRate);
         const amountCents = Math.round(basisCents * rateNum);
         const now = new Date();
         const periodStart = inv.period_start ? new Date(inv.period_start * 1000) : now;
@@ -531,7 +573,7 @@ async function handlePartnerStripeEvent(
             leadId: row.leadId,
             attributionId: row.attributionId,
             type: "recurring",
-            rate: row.rate,
+            rate: effectiveRate,
             amountCents,
             basisCents,
             periodStart,

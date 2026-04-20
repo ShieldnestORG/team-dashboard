@@ -6,9 +6,10 @@ import {
   AffiliateApiError,
   type Affiliate,
   type AffiliateProspect,
-  type ProspectClosePath,
-  type ProspectFirstTouchType,
-  type ProspectFirstTouchWarmth,
+  type ClosePreference,
+  type FirstTouchStatus,
+  type FirstTouchType,
+  type RelationshipWarmth,
   type SubmitProspectOptions,
 } from "@/api/affiliates";
 import {
@@ -36,25 +37,30 @@ function OnboardingBadge({ status }: { status: string }) {
   );
 }
 
-const TOUCH_TYPE_OPTIONS: { value: ProspectFirstTouchType; label: string }[] = [
-  { value: "in-person", label: "In-person visit" },
+const TOUCH_TYPE_OPTIONS: { value: FirstTouchType; label: string }[] = [
+  { value: "in_person", label: "In-person visit" },
   { value: "call", label: "Phone call" },
   { value: "text", label: "Text" },
   { value: "email", label: "Email" },
-  { value: "social-dm", label: "Social DM" },
+  { value: "social_dm", label: "Social DM" },
 ];
 
-const WARMTH_OPTIONS: { value: ProspectFirstTouchWarmth; label: string; hint: string }[] = [
+const WARMTH_OPTIONS: { value: RelationshipWarmth; label: string; hint: string }[] = [
   { value: "strong", label: "Strong", hint: "I know them well" },
   { value: "medium", label: "Medium", hint: "We've connected before" },
   { value: "weak", label: "Weak", hint: "Just a brief intro" },
 ];
 
-const CLOSE_PATH_OPTIONS: { value: ProspectClosePath; label: string; helper?: string }[] = [
-  { value: "cd", label: "Let Coherence Daddy close it." },
-  { value: "shared", label: "We'll close it together." },
+const CLOSE_PATH_OPTIONS: { value: ClosePreference; label: string; helper?: string; recommended?: boolean }[] = [
   {
-    value: "affiliate",
+    value: "cd_closes",
+    label: "Let Coherence Daddy close it.",
+    helper: "Recommended — CD's sales process converts most leads best.",
+    recommended: true,
+  },
+  { value: "affiliate_assists", label: "We'll close it together." },
+  {
+    value: "affiliate_attempts_first",
     label: "I'll attempt first, then hand off.",
     helper: "Heads up: cold leads tend to do best when CD takes the first swing.",
   },
@@ -116,12 +122,12 @@ export function AffiliateDashboard() {
 
   // Optional "lead context" fields
   const [showLeadContext, setShowLeadContext] = useState(false);
-  const [hasSpoken, setHasSpoken] = useState(false);
-  const [warmth, setWarmth] = useState<ProspectFirstTouchWarmth | "">("");
-  const [touchType, setTouchType] = useState<ProspectFirstTouchType | "">("");
+  const [firstTouchStatus, setFirstTouchStatus] = useState<FirstTouchStatus | "">("");
+  const [warmth, setWarmth] = useState<RelationshipWarmth | "">("");
+  const [touchType, setTouchType] = useState<FirstTouchType | "">("");
   const [touchDate, setTouchDate] = useState("");
   const [touchNotes, setTouchNotes] = useState("");
-  const [closePath, setClosePath] = useState<ProspectClosePath>("cd");
+  const [closePref, setClosePref] = useState<ClosePreference>("cd_closes");
 
   // Policy acceptance
   const [showPolicyModal, setShowPolicyModal] = useState(false);
@@ -165,12 +171,12 @@ export function AffiliateDashboard() {
   function resetProspectForm() {
     setProspectUrl("");
     setShowLeadContext(false);
-    setHasSpoken(false);
+    setFirstTouchStatus("");
     setWarmth("");
     setTouchType("");
     setTouchDate("");
     setTouchNotes("");
-    setClosePath("cd");
+    setClosePref("cd_closes");
     setSubmitError(null);
   }
 
@@ -225,18 +231,19 @@ export function AffiliateDashboard() {
     setSubmitLoading(true);
     setSubmitError(null);
     try {
-      // Build optional payload. If nothing optional is set, send only { url }.
+      // Build optional payload. If nothing optional is set, send only { website }.
       const options: SubmitProspectOptions = {};
-      if (showLeadContext && hasSpoken) {
-        const firstTouch: SubmitProspectOptions["firstTouch"] = { logged: true };
-        if (warmth) firstTouch.warmth = warmth;
-        if (touchType) firstTouch.type = touchType;
-        if (touchDate) firstTouch.date = new Date(touchDate).toISOString();
-        if (touchNotes.trim()) firstTouch.notes = touchNotes.trim().slice(0, 500);
-        options.firstTouch = firstTouch;
+      if (showLeadContext && firstTouchStatus) {
+        options.firstTouchStatus = firstTouchStatus;
+        if (firstTouchStatus === "yes") {
+          if (warmth) options.relationshipWarmth = warmth;
+          if (touchType) options.firstTouchType = touchType;
+          if (touchDate) options.firstTouchDate = new Date(touchDate).toISOString();
+          if (touchNotes.trim()) options.firstTouchNotes = touchNotes.trim().slice(0, 500);
+        }
       }
-      if (showLeadContext && closePath && closePath !== "cd") {
-        options.closePath = closePath;
+      if (showLeadContext && closePref && closePref !== "cd_closes") {
+        options.closePreference = closePref;
       }
       const res = await affiliatesApi.submitProspect(
         trimmed,
@@ -545,19 +552,37 @@ export function AffiliateDashboard() {
               </button>
               {showLeadContext && (
                 <div className="px-3 pb-3 pt-1 space-y-4 border-t border-border">
-                  {/* Already spoken */}
-                  <label className="flex items-start gap-2 text-xs text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={hasSpoken}
-                      onChange={(e) => setHasSpoken(e.target.checked)}
-                      disabled={submitLoading}
-                      className="mt-0.5 h-3.5 w-3.5 rounded border-border text-[#ff876d] focus:ring-[#ff876d]"
-                    />
-                    <span>I've already spoken with the owner</span>
-                  </label>
+                  {/* Already spoken with owner? */}
+                  <div>
+                    <p className="text-[11px] font-medium text-muted-foreground mb-1.5">
+                      Have you already spoken with the owner?
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(["yes", "no"] as const).map((opt) => (
+                        <label
+                          key={opt}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs cursor-pointer transition-colors ${
+                            firstTouchStatus === opt
+                              ? "bg-[#ff876d]/10 text-[#ff876d] border-[#ff876d]/40"
+                              : "bg-card text-foreground border-border hover:border-border"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="firstTouchStatus"
+                            value={opt}
+                            checked={firstTouchStatus === opt}
+                            onChange={() => setFirstTouchStatus(opt)}
+                            disabled={submitLoading}
+                            className="sr-only"
+                          />
+                          <span className="font-medium capitalize">{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
 
-                  {hasSpoken && (
+                  {firstTouchStatus === "yes" && (
                     <div className="space-y-3 pl-5 border-l-2 border-border">
                       {/* Warmth */}
                       <div>
@@ -594,7 +619,7 @@ export function AffiliateDashboard() {
                           <label className="block text-[11px] font-medium text-muted-foreground mb-1">How you touched base</label>
                           <select
                             value={touchType}
-                            onChange={(e) => setTouchType(e.target.value as ProspectFirstTouchType | "")}
+                            onChange={(e) => setTouchType(e.target.value as FirstTouchType | "")}
                             disabled={submitLoading}
                             className="w-full rounded-md border border-border px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
                           >
@@ -634,7 +659,7 @@ export function AffiliateDashboard() {
                     </div>
                   )}
 
-                  {/* Close path */}
+                  {/* Close preference */}
                   <div>
                     <p className="text-[11px] font-medium text-muted-foreground mb-1.5">Who closes?</p>
                     <div className="space-y-1.5">
@@ -642,22 +667,29 @@ export function AffiliateDashboard() {
                         <label
                           key={opt.value}
                           className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs cursor-pointer transition-colors ${
-                            closePath === opt.value
+                            closePref === opt.value
                               ? "bg-[#ff876d]/10 text-[#ff876d] border-[#ff876d]/40"
                               : "bg-card text-foreground border-border hover:border-border"
                           }`}
                         >
                           <input
                             type="radio"
-                            name="closePath"
+                            name="closePreference"
                             value={opt.value}
-                            checked={closePath === opt.value}
-                            onChange={() => setClosePath(opt.value)}
+                            checked={closePref === opt.value}
+                            onChange={() => setClosePref(opt.value)}
                             disabled={submitLoading}
                             className="mt-0.5 h-3.5 w-3.5 border-border text-[#ff876d] focus:ring-[#ff876d]"
                           />
                           <span className="flex-1">
-                            <span className="block">{opt.label}</span>
+                            <span className="flex items-center gap-1.5">
+                              <span>{opt.label}</span>
+                              {opt.recommended && (
+                                <span className="inline-flex items-center px-1.5 py-0 rounded-full text-[9px] font-semibold uppercase tracking-wide bg-[#ff876d]/20 text-[#ff876d] border border-[#ff876d]/40">
+                                  Recommended
+                                </span>
+                              )}
+                            </span>
                             {opt.helper && (
                               <span className="block text-[10px] text-[#ff876d] mt-0.5">{opt.helper}</span>
                             )}

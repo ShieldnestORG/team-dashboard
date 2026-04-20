@@ -14,21 +14,19 @@ export interface Affiliate {
   createdAt: string;
 }
 
-export type ProspectFirstTouchType = "in-person" | "call" | "text" | "email" | "social-dm";
-export type ProspectFirstTouchWarmth = "strong" | "medium" | "weak";
-export type ProspectClosePath = "cd" | "shared" | "affiliate";
-
-export interface ProspectFirstTouchInput {
-  logged: boolean;
-  type?: ProspectFirstTouchType;
-  date?: string;
-  notes?: string;
-  warmth?: ProspectFirstTouchWarmth;
-}
+// Phase 3 flat payload field names (sent to server).
+export type FirstTouchStatus = "yes" | "no";
+export type FirstTouchType = "in_person" | "call" | "text" | "email" | "social_dm";
+export type RelationshipWarmth = "strong" | "medium" | "weak";
+export type ClosePreference = "cd_closes" | "affiliate_assists" | "affiliate_attempts_first";
 
 export interface SubmitProspectOptions {
-  firstTouch?: ProspectFirstTouchInput;
-  closePath?: ProspectClosePath;
+  firstTouchStatus?: FirstTouchStatus;
+  firstTouchType?: FirstTouchType;
+  firstTouchDate?: string; // ISO
+  firstTouchNotes?: string;
+  relationshipWarmth?: RelationshipWarmth;
+  closePreference?: ClosePreference;
 }
 
 export class AffiliateApiError extends Error {
@@ -96,7 +94,6 @@ export interface AffiliateMeResponse {
   affiliate: Affiliate;
   prospectCount: number;
   convertedCount: number;
-  estimatedEarned: number;
   pendingCents: number;
   approvedCents: number;
   scheduledCents: number;
@@ -135,6 +132,34 @@ export interface AffiliateProspect {
   affiliateNotes: string | null;
   storeNotes: string | null;
   createdAt: string;
+}
+
+// Phase 3 — affiliate-facing lead detail + timeline.
+export interface AffiliateLead {
+  id: string;
+  name: string;
+  slug: string | null;
+  website: string | null;
+  industry: string | null;
+  location: string | null;
+  pipelineStage: string;
+  lastActivityAt: string | null;
+  createdAt: string;
+}
+
+export type TimelineActorType = "affiliate" | "admin" | "cd" | "system";
+
+export interface TimelineActivity {
+  id: string;
+  actorType: TimelineActorType | string;
+  activityType: string;
+  note: string | null;
+  timestamp: string;
+}
+
+export interface LeadTimelineResponse {
+  lead: AffiliateLead;
+  activities: TimelineActivity[];
 }
 
 async function affiliateRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -205,11 +230,19 @@ export const affiliatesApi = {
   submitProspect: (website: string, options?: SubmitProspectOptions) => {
     const payload: {
       website: string;
-      firstTouch?: ProspectFirstTouchInput;
-      closePath?: ProspectClosePath;
+      firstTouchStatus?: FirstTouchStatus;
+      firstTouchType?: FirstTouchType;
+      firstTouchDate?: string;
+      firstTouchNotes?: string;
+      relationshipWarmth?: RelationshipWarmth;
+      closePreference?: ClosePreference;
     } = { website };
-    if (options?.firstTouch) payload.firstTouch = options.firstTouch;
-    if (options?.closePath) payload.closePath = options.closePath;
+    if (options?.firstTouchStatus) payload.firstTouchStatus = options.firstTouchStatus;
+    if (options?.firstTouchType) payload.firstTouchType = options.firstTouchType;
+    if (options?.firstTouchDate) payload.firstTouchDate = options.firstTouchDate;
+    if (options?.firstTouchNotes) payload.firstTouchNotes = options.firstTouchNotes;
+    if (options?.relationshipWarmth) payload.relationshipWarmth = options.relationshipWarmth;
+    if (options?.closePreference) payload.closePreference = options.closePreference;
     return affiliateRequest<{ prospect: { slug: string; name: string; onboardingStatus: string } }>(
       "/prospects",
       { method: "POST", body: JSON.stringify(payload) },
@@ -242,4 +275,10 @@ export const affiliatesApi = {
       method: "POST",
       body: JSON.stringify({ token, password }),
     }),
+
+  getLead: (id: string) =>
+    affiliateRequest<{ lead: AffiliateLead }>(`/leads/${id}`),
+
+  getLeadTimeline: (id: string) =>
+    affiliateRequest<LeadTimelineResponse>(`/leads/${id}/timeline`),
 };
