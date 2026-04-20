@@ -20,11 +20,11 @@ import {
 } from "@/components/ui/dialog";
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  none: { label: "Queued", className: "bg-gray-100 text-gray-600 border-gray-200" },
-  scraping: { label: "Scanning", className: "bg-blue-100 text-blue-700 border-blue-200" },
-  analyzing: { label: "Analyzing", className: "bg-yellow-100 text-yellow-700 border-yellow-200" },
-  complete: { label: "Ready", className: "bg-green-100 text-green-700 border-green-200" },
-  failed: { label: "Failed", className: "bg-red-100 text-red-700 border-red-200" },
+  none: { label: "Queued", className: "bg-muted text-muted-foreground border-border" },
+  scraping: { label: "Scanning", className: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
+  analyzing: { label: "Analyzing", className: "bg-[#ff876d]/15 text-[#ff876d] border-[#ff876d]/30" },
+  complete: { label: "Ready", className: "bg-green-500/15 text-green-500 border-green-500/30" },
+  failed: { label: "Failed", className: "bg-destructive/15 text-destructive border-destructive/30" },
 };
 
 function OnboardingBadge({ status }: { status: string }) {
@@ -57,6 +57,29 @@ const CLOSE_PATH_OPTIONS: { value: ProspectClosePath; label: string; helper?: st
     value: "affiliate",
     label: "I'll attempt first, then hand off.",
     helper: "Heads up: cold leads tend to do best when CD takes the first swing.",
+  },
+];
+
+const POLICY_STEPS: { title: string; body: string }[] = [
+  {
+    title: "Lead Ownership",
+    body: "When you submit a valid new business lead, that lead is reserved under your account for a limited ownership period. If the business signs during that period and your referral stays valid, you receive credit per program rules.",
+  },
+  {
+    title: "Warm Introductions",
+    body: "If you already know the owner or have spoken with them, log that in the lead form. Warm referrals often move faster and help us coordinate the best outreach plan.",
+  },
+  {
+    title: "Closing Support",
+    body: "You can introduce, follow up, or help support a deal — but you cannot promise pricing, discounts, guarantees, or custom terms unless Coherence Daddy approves it.",
+  },
+  {
+    title: "Shared Credit",
+    body: "Many deals close through a mix of your relationship and our sales process. If your referral is valid and tracked correctly, your credit stays protected.",
+  },
+  {
+    title: "Duplicate Leads",
+    body: "The first valid qualified submission usually wins ownership. Duplicates and edge cases are reviewed by admin.",
   },
 ];
 
@@ -93,6 +116,8 @@ export function AffiliateDashboard() {
 
   // Policy acceptance
   const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyStep, setPolicyStep] = useState(0);
+  const [policyProgress, setPolicyProgress] = useState(0);
   const [policyLoading, setPolicyLoading] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
 
@@ -143,6 +168,28 @@ export function AffiliateDashboard() {
     }
     setShowModal(true);
   }
+
+  useEffect(() => {
+    if (showPolicyModal) {
+      setPolicyStep(0);
+      setPolicyError(null);
+    }
+  }, [showPolicyModal]);
+
+  // 10-second read timer that re-starts on every step transition
+  useEffect(() => {
+    if (!showPolicyModal) return;
+    const STEP_DURATION_MS = 10_000;
+    setPolicyProgress(0);
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const p = Math.min(1, elapsed / STEP_DURATION_MS);
+      setPolicyProgress(p);
+      if (p >= 1) clearInterval(interval);
+    }, 50);
+    return () => clearInterval(interval);
+  }, [policyStep, showPolicyModal]);
 
   async function handleAcceptPolicy() {
     setPolicyLoading(true);
@@ -200,18 +247,18 @@ export function AffiliateDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <p className="text-gray-500">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <p className="text-red-500 mb-4">{error}</p>
-          <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-gray-600">
+          <p className="text-destructive mb-4">{error}</p>
+          <button onClick={handleLogout} className="text-sm text-muted-foreground hover:text-muted-foreground">
             Log out
           </button>
         </div>
@@ -226,14 +273,14 @@ export function AffiliateDashboard() {
       year: "numeric", month: "long", day: "numeric",
     });
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-screen bg-background flex flex-col">
         {/* Minimal header */}
-        <header className="bg-white border-b border-gray-200">
+        <header className="bg-card border-b border-border">
           <div className="max-w-lg mx-auto px-6 py-4 flex items-center justify-between">
-            <span className="font-bold text-gray-900">Coherence Daddy</span>
+            <span className="font-bold text-foreground">Coherence Daddy</span>
             <button
               onClick={handleLogout}
-              className="text-sm text-gray-400 hover:text-gray-600"
+              className="text-sm text-muted-foreground hover:text-muted-foreground"
             >
               Log out
             </button>
@@ -242,21 +289,21 @@ export function AffiliateDashboard() {
         {/* Holding content */}
         <div className="flex-1 flex items-center justify-center px-6">
           <div className="text-center max-w-md">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-50 border border-amber-200 mb-6">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#ff876d]/10 border border-[#ff876d]/30 mb-6">
               <span className="text-2xl">⏳</span>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-3">Application Under Review</h1>
-            <p className="text-gray-500 mb-2">
+            <h1 className="text-2xl font-bold text-foreground mb-3">Application Under Review</h1>
+            <p className="text-muted-foreground mb-2">
               Your application is being reviewed by our team. We typically respond within 1–2 business days.
             </p>
-            <p className="text-xs text-gray-400 mb-8">Applied on {appliedDate}</p>
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-muted-foreground mb-8">Applied on {appliedDate}</p>
+            <p className="text-sm text-muted-foreground">
               Questions?{" "}
               <a
-                href="mailto:affiliates@coherencedaddy.com"
-                className="text-amber-600 hover:text-amber-700 font-medium"
+                href="mailto:info@coherencedaddy.com"
+                className="text-[#ff876d] hover:text-[#ff876d] font-medium"
               >
-                affiliates@coherencedaddy.com
+                info@coherencedaddy.com
               </a>
             </p>
           </div>
@@ -266,22 +313,22 @@ export function AffiliateDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs text-gray-400">Affiliate Dashboard</p>
-            <h1 className="text-lg font-bold text-gray-900">Welcome, {affiliate.name}</h1>
+            <p className="text-xs text-muted-foreground">Affiliate Dashboard</p>
+            <h1 className="text-lg font-bold text-foreground">Welcome, {affiliate.name}</h1>
           </div>
           <div className="hidden sm:flex items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-[#ff876d]/20 text-[#ff876d] border border-[#ff876d]/30">
               {(parseFloat(affiliate.commissionRate) * 100).toFixed(0)}% commission
             </span>
           </div>
           <button
             onClick={handleLogout}
-            className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             Log Out
           </button>
@@ -293,56 +340,56 @@ export function AffiliateDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
             onClick={() => document.getElementById("prospects")?.scrollIntoView({ behavior: "smooth" })}
-            className="rounded-xl border border-gray-200 bg-white p-6 text-left hover:border-amber-300 hover:shadow-sm transition-all"
+            className="rounded-xl border border-border bg-card p-6 text-left hover:border-[#ff876d]/40 hover:shadow-sm transition-all"
           >
-            <p className="text-lg font-bold text-gray-900">Go to Dashboard</p>
-            <p className="text-sm text-gray-500 mt-1">View your submitted prospects and their status.</p>
+            <p className="text-lg font-bold text-foreground">Go to Dashboard</p>
+            <p className="text-sm text-muted-foreground mt-1">View your submitted prospects and their status.</p>
           </button>
           <button
             onClick={handleOpenNewClient}
-            className="rounded-xl border border-amber-400 bg-amber-50 p-6 text-left hover:bg-amber-100 hover:shadow-sm transition-all"
+            className="rounded-xl border border-[#ff876d]/60 bg-[#ff876d]/10 p-6 text-left hover:bg-[#ff876d]/20 hover:shadow-sm transition-all"
           >
-            <p className="text-lg font-bold text-amber-700">New Client</p>
-            <p className="text-sm text-amber-600 mt-1">Submit a new business lead to earn commission.</p>
+            <p className="text-lg font-bold text-[#ff876d]">New Client</p>
+            <p className="text-sm text-[#ff876d] mt-1">Submit a new business lead to earn commission.</p>
           </button>
         </div>
 
         {/* Stats */}
         <div className="flex flex-wrap gap-6 text-sm">
           <div>
-            <span className="font-bold text-2xl text-gray-900">{prospectCount}</span>
-            <span className="text-gray-500 ml-2">Prospects</span>
+            <span className="font-bold text-2xl text-foreground">{prospectCount}</span>
+            <span className="text-muted-foreground ml-2">Prospects</span>
           </div>
           <div>
             <span className="font-bold text-2xl text-green-600">{convertedCount}</span>
-            <span className="text-gray-500 ml-2">Converted</span>
+            <span className="text-muted-foreground ml-2">Converted</span>
           </div>
           <div>
-            <span className="font-bold text-2xl text-gray-900">
+            <span className="font-bold text-2xl text-foreground">
               ${estimatedEarned.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <span className="text-gray-500 ml-2">Est. Earnings</span>
+            <span className="text-muted-foreground ml-2">Est. Earnings</span>
           </div>
         </div>
 
         {/* Prospects List */}
         <section id="prospects" className="space-y-3">
-          <h2 className="text-base font-semibold text-gray-900">Your Prospects</h2>
+          <h2 className="text-base font-semibold text-foreground">Your Prospects</h2>
           {prospects.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-              <p className="text-gray-400 text-sm">No prospects yet.</p>
+            <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center">
+              <p className="text-muted-foreground text-sm">No prospects yet.</p>
               <button
                 onClick={handleOpenNewClient}
-                className="mt-3 text-sm text-amber-600 hover:text-amber-700 font-medium"
+                className="mt-3 text-sm text-[#ff876d] hover:text-[#ff876d] font-medium"
               >
                 Submit your first client
               </button>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl border border-border overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-xs text-gray-400">
+                  <tr className="border-b text-left text-xs text-muted-foreground">
                     <th className="px-4 py-3 font-medium">Business</th>
                     <th className="px-4 py-3 font-medium hidden sm:table-cell">Status</th>
                     <th className="px-4 py-3 font-medium hidden md:table-cell">Submitted</th>
@@ -351,22 +398,22 @@ export function AffiliateDashboard() {
                 </thead>
                 <tbody>
                   {prospects.map((p) => (
-                    <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                    <tr key={p.id} className="border-b last:border-0 hover:bg-background transition-colors">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{p.name}</p>
-                        <p className="text-xs text-gray-400">{p.industry}</p>
+                        <p className="font-medium text-foreground">{p.name}</p>
+                        <p className="text-xs text-muted-foreground">{p.industry}</p>
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <OnboardingBadge status={p.onboardingStatus} />
                           {p.isPaying && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border bg-green-100 text-green-700 border-green-200">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border bg-green-500/15 text-green-500 border-green-500/30">
                               Converted
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">
+                      <td className="px-4 py-3 text-xs text-muted-foreground hidden md:table-cell">
                         {new Date(p.createdAt).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
@@ -376,7 +423,7 @@ export function AffiliateDashboard() {
                       <td className="px-4 py-3 text-right">
                         <a
                           href={`/prospects/${p.slug}`}
-                          className="text-xs font-medium text-amber-600 hover:text-amber-700"
+                          className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]"
                         >
                           View
                         </a>
@@ -399,13 +446,13 @@ export function AffiliateDashboard() {
           if (!open) resetProspectForm();
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Client</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmitProspect} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Business Website</label>
+              <label className="block text-xs font-medium text-foreground mb-1">Business Website</label>
               <input
                 type="url"
                 required
@@ -413,59 +460,59 @@ export function AffiliateDashboard() {
                 onChange={(e) => setProspectUrl(e.target.value)}
                 placeholder="https://clientwebsite.com"
                 disabled={submitLoading}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60"
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
               />
               {submitLoading && (
-                <p className="text-xs text-gray-400 mt-1.5">
+                <p className="text-xs text-muted-foreground mt-1.5">
                   Analyzing website... this can take 30–60 seconds.
                 </p>
               )}
               {submitError && (
-                <p className="text-xs text-red-500 mt-1.5">{submitError}</p>
+                <p className="text-xs text-destructive mt-1.5">{submitError}</p>
               )}
             </div>
 
             {/* Optional: lead context */}
-            <div className="rounded-lg border border-gray-100">
+            <div className="rounded-lg border border-border">
               <button
                 type="button"
                 onClick={() => setShowLeadContext((v) => !v)}
                 disabled={submitLoading}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-60"
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
                 aria-expanded={showLeadContext}
               >
                 <span>Tell us about this lead (optional)</span>
-                <span className="text-gray-400" aria-hidden="true">
+                <span className="text-muted-foreground" aria-hidden="true">
                   {showLeadContext ? "−" : "+"}
                 </span>
               </button>
               {showLeadContext && (
-                <div className="px-3 pb-3 pt-1 space-y-4 border-t border-gray-100">
+                <div className="px-3 pb-3 pt-1 space-y-4 border-t border-border">
                   {/* Already spoken */}
-                  <label className="flex items-start gap-2 text-xs text-gray-700">
+                  <label className="flex items-start gap-2 text-xs text-foreground">
                     <input
                       type="checkbox"
                       checked={hasSpoken}
                       onChange={(e) => setHasSpoken(e.target.checked)}
                       disabled={submitLoading}
-                      className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-border text-[#ff876d] focus:ring-[#ff876d]"
                     />
                     <span>I've already spoken with the owner</span>
                   </label>
 
                   {hasSpoken && (
-                    <div className="space-y-3 pl-5 border-l-2 border-gray-100">
+                    <div className="space-y-3 pl-5 border-l-2 border-border">
                       {/* Warmth */}
                       <div>
-                        <p className="text-[11px] font-medium text-gray-600 mb-1.5">Relationship</p>
+                        <p className="text-[11px] font-medium text-muted-foreground mb-1.5">Relationship</p>
                         <div className="flex flex-wrap gap-2">
                           {WARMTH_OPTIONS.map((opt) => (
                             <label
                               key={opt.value}
                               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] cursor-pointer transition-colors ${
                                 warmth === opt.value
-                                  ? "bg-amber-50 text-amber-700 border-amber-300"
-                                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                                  ? "bg-[#ff876d]/10 text-[#ff876d] border-[#ff876d]/40"
+                                  : "bg-card text-muted-foreground border-border hover:border-border"
                               }`}
                             >
                               <input
@@ -478,7 +525,7 @@ export function AffiliateDashboard() {
                                 className="sr-only"
                               />
                               <span className="font-medium">{opt.label}</span>
-                              <span className="text-gray-400">· {opt.hint}</span>
+                              <span className="text-muted-foreground">· {opt.hint}</span>
                             </label>
                           ))}
                         </div>
@@ -487,12 +534,12 @@ export function AffiliateDashboard() {
                       {/* Touch type + date */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-1">How you touched base</label>
+                          <label className="block text-[11px] font-medium text-muted-foreground mb-1">How you touched base</label>
                           <select
                             value={touchType}
                             onChange={(e) => setTouchType(e.target.value as ProspectFirstTouchType | "")}
                             disabled={submitLoading}
-                            className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60"
+                            className="w-full rounded-md border border-border px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
                           >
                             <option value="">Select…</option>
                             {TOUCH_TYPE_OPTIONS.map((opt) => (
@@ -501,21 +548,21 @@ export function AffiliateDashboard() {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-1">When</label>
+                          <label className="block text-[11px] font-medium text-muted-foreground mb-1">When</label>
                           <input
                             type="date"
                             max={todayIsoDate()}
                             value={touchDate}
                             onChange={(e) => setTouchDate(e.target.value)}
                             disabled={submitLoading}
-                            className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60"
+                            className="w-full rounded-md border border-border px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
                           />
                         </div>
                       </div>
 
                       {/* Notes */}
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">Short note (optional)</label>
+                        <label className="block text-[11px] font-medium text-muted-foreground mb-1">Short note (optional)</label>
                         <textarea
                           value={touchNotes}
                           onChange={(e) => setTouchNotes(e.target.value.slice(0, 500))}
@@ -523,24 +570,24 @@ export function AffiliateDashboard() {
                           rows={2}
                           maxLength={500}
                           placeholder="Anything useful about the conversation…"
-                          className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60 resize-none"
+                          className="w-full rounded-md border border-border px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60 resize-none"
                         />
-                        <p className="text-[10px] text-gray-400 mt-0.5 text-right">{touchNotes.length}/500</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 text-right">{touchNotes.length}/500</p>
                       </div>
                     </div>
                   )}
 
                   {/* Close path */}
                   <div>
-                    <p className="text-[11px] font-medium text-gray-600 mb-1.5">Who closes?</p>
+                    <p className="text-[11px] font-medium text-muted-foreground mb-1.5">Who closes?</p>
                     <div className="space-y-1.5">
                       {CLOSE_PATH_OPTIONS.map((opt) => (
                         <label
                           key={opt.value}
                           className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs cursor-pointer transition-colors ${
                             closePath === opt.value
-                              ? "bg-amber-50 text-amber-800 border-amber-300"
-                              : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
+                              ? "bg-[#ff876d]/10 text-[#ff876d] border-[#ff876d]/40"
+                              : "bg-card text-foreground border-border hover:border-border"
                           }`}
                         >
                           <input
@@ -550,12 +597,12 @@ export function AffiliateDashboard() {
                             checked={closePath === opt.value}
                             onChange={() => setClosePath(opt.value)}
                             disabled={submitLoading}
-                            className="mt-0.5 h-3.5 w-3.5 border-gray-300 text-amber-500 focus:ring-amber-400"
+                            className="mt-0.5 h-3.5 w-3.5 border-border text-[#ff876d] focus:ring-[#ff876d]"
                           />
                           <span className="flex-1">
                             <span className="block">{opt.label}</span>
                             {opt.helper && (
-                              <span className="block text-[10px] text-amber-600 mt-0.5">{opt.helper}</span>
+                              <span className="block text-[10px] text-[#ff876d] mt-0.5">{opt.helper}</span>
                             )}
                           </span>
                         </label>
@@ -571,14 +618,14 @@ export function AffiliateDashboard() {
                 type="button"
                 onClick={() => { setShowModal(false); resetProspectForm(); }}
                 disabled={submitLoading}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-60"
+                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-60"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitLoading || !prospectUrl.trim()}
-                className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+                className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
               >
                 {submitLoading ? "Analyzing website..." : "Lock it In"}
               </button>
@@ -594,69 +641,108 @@ export function AffiliateDashboard() {
           onEscapeKeyDown={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
-          className="sm:max-w-lg"
+          className="sm:max-w-lg max-h-[85vh] overflow-y-auto"
         >
           <DialogHeader>
             <DialogTitle>One quick thing before you submit leads</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 text-sm text-gray-700">
-            <p>
-              <span className="font-semibold text-gray-900">Lead Ownership.</span>{" "}
-              When you submit a valid new business lead, that lead is reserved under your account
-              for a limited ownership period. If the business signs during that period and your
-              referral stays valid, you receive credit per program rules.
+
+          {/* Progress bars — current step fills over 10 seconds */}
+          <div className="flex items-center gap-1.5 mt-1">
+            {POLICY_STEPS.map((_, i) => {
+              const fill = i < policyStep ? 1 : i === policyStep ? policyProgress : 0;
+              return (
+                <span
+                  key={i}
+                  className="h-1 flex-1 rounded-full bg-muted overflow-hidden"
+                >
+                  <span
+                    className="block h-full bg-[#ff876d] origin-left"
+                    style={{ transform: `scaleX(${fill})` }}
+                  />
+                </span>
+              );
+            })}
+          </div>
+
+          <div className="min-h-[160px] space-y-3 text-sm text-foreground">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Rule {policyStep + 1} of {POLICY_STEPS.length}
             </p>
-            <p>
-              <span className="font-semibold text-gray-900">Warm Introductions.</span>{" "}
-              If you already know the owner or have spoken with them, log that in the lead form.
-              Warm referrals often move faster and help us coordinate the best outreach plan.
+            <h3 className="text-lg font-semibold text-foreground">
+              {POLICY_STEPS[policyStep].title}
+            </h3>
+            <p className="leading-relaxed text-muted-foreground">
+              {POLICY_STEPS[policyStep].body}
             </p>
-            <p>
-              <span className="font-semibold text-gray-900">Closing Support.</span>{" "}
-              You can introduce, follow up, or help support a deal — but you cannot promise
-              pricing, discounts, guarantees, or custom terms unless Coherence Daddy approves it.
-            </p>
-            <p>
-              <span className="font-semibold text-gray-900">Shared Credit.</span>{" "}
-              Many deals close through a mix of your relationship and our sales process.
-              If your referral is valid and tracked correctly, your credit stays protected.
-            </p>
-            <p>
-              <span className="font-semibold text-gray-900">Duplicate Leads.</span>{" "}
-              The first valid qualified submission usually wins ownership. Duplicates and edge
-              cases are reviewed by admin.
-            </p>
-            <p className="pt-1">
-              <a
-                href="/affiliate-program-rules"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-amber-600 hover:text-amber-700 font-medium"
-              >
-                Read full program rules →
-              </a>
-            </p>
+
+            {policyStep === POLICY_STEPS.length - 1 && (
+              <p className="pt-2">
+                <a
+                  href="/affiliate-program-rules"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[#ff876d] hover:text-[#ff876d]/90 font-medium"
+                >
+                  Read full program rules →
+                </a>
+              </p>
+            )}
+
             {policyError && (
-              <p className="text-xs text-red-500">{policyError}</p>
+              <p className="text-xs text-destructive">{policyError}</p>
             )}
           </div>
+
           <DialogFooter className="sm:justify-between items-center">
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={policyLoading}
-              className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-60"
-            >
-              Log out
-            </button>
-            <button
-              type="button"
-              onClick={handleAcceptPolicy}
-              disabled={policyLoading}
-              className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
-            >
-              {policyLoading ? "Saving..." : "I understand and agree"}
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={policyLoading}
+                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                Log out
+              </button>
+              {policyStep > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPolicyStep((s) => Math.max(0, s - 1))}
+                  disabled={policyLoading}
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                >
+                  ← Back
+                </button>
+              )}
+            </div>
+            {(() => {
+              const canProceed = policyProgress >= 1;
+              const secondsLeft = Math.ceil((1 - policyProgress) * 10);
+              const isFinal = policyStep === POLICY_STEPS.length - 1;
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!canProceed) return;
+                    if (isFinal) {
+                      handleAcceptPolicy();
+                    } else {
+                      setPolicyStep((s) => Math.min(POLICY_STEPS.length - 1, s + 1));
+                    }
+                  }}
+                  disabled={policyLoading || !canProceed}
+                  className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors min-w-[10rem]"
+                >
+                  {!canProceed
+                    ? `Keep reading… ${secondsLeft}s`
+                    : isFinal
+                    ? policyLoading
+                      ? "Saving..."
+                      : "I understand and agree"
+                    : "Next →"}
+                </button>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>

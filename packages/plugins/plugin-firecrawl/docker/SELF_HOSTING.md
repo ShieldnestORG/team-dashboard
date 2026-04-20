@@ -16,7 +16,7 @@ Firecrawl is deployed on VPS `168.231.127.180` (srv1060975).
 
 | Detail | Value |
 |--------|-------|
-| **Endpoint** | `http://168.231.127.180` |
+| **Endpoint** | `https://firecrawl.coherencedaddy.com` |
 | **API Version** | v1 (`/v1/scrape`, `/v1/crawl`, etc.) |
 | **OS** | Ubuntu 24.04.3 LTS |
 | **CPU** | 2 vCPU |
@@ -94,7 +94,7 @@ docker stats --no-stream
 
 ### Test Scrape
 ```bash
-curl -X POST http://168.231.127.180/v1/scrape \
+curl -X POST https://firecrawl.coherencedaddy.com/v1/scrape \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer self-hosted" \
   -d '{"url": "https://example.com"}'
@@ -135,15 +135,15 @@ curl -X POST http://168.231.127.180/v1/scrape \
 The Firecrawl plugin is configured via Paperclip Settings or API:
 
 **Current config:**
-- Plugin ID: `77a47f04-bd01-481a-87da-4c22bc6ea2b1`
-- Self-Hosted URL: `http://168.231.127.180`
+- Plugin ID: `c0a67b48-f612-45ba-ad42-dfb773a95ee2`
+- Self-Hosted URL: `https://firecrawl.coherencedaddy.com`
 - API Key: `self-hosted` (placeholder -- no real key needed)
 
 **To change via API:**
 ```bash
-curl -X POST http://localhost:3100/api/plugins/77a47f04-bd01-481a-87da-4c22bc6ea2b1/config \
+curl -X POST http://localhost:3100/api/plugins/c0a67b48-f612-45ba-ad42-dfb773a95ee2/config \
   -H "Content-Type: application/json" \
-  -d '{"configJson": {"apiUrl": "http://168.231.127.180", "apiKey": "self-hosted"}}'
+  -d '{"configJson": {"apiUrl": "https://firecrawl.coherencedaddy.com", "apiKey": "self-hosted"}}'
 ```
 
 **To switch to cloud API:**

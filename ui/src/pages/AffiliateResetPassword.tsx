@@ -61,11 +61,11 @@ export function AffiliateResetPassword() {
     // Set new password flow
     if (resetDone) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="min-h-screen flex items-center justify-center bg-background">
           <div className="text-center max-w-md px-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-3">Password Updated</h1>
-            <p className="text-gray-500 mb-6">Your password has been reset. You can now log in.</p>
-            <a href="/" className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors">
+            <h1 className="text-2xl font-bold text-foreground mb-3">Password Updated</h1>
+            <p className="text-muted-foreground mb-6">Your password has been reset. You can now log in.</p>
+            <a href="/" className="inline-flex items-center gap-2 bg-[#ff876d] hover:bg-[#ff876d]/90 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors">
               Back to Login
             </a>
           </div>
@@ -73,25 +73,25 @@ export function AffiliateResetPassword() {
       );
     }
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 w-full max-w-md">
-          <h1 className="text-xl font-bold text-gray-900 mb-1">Set a New Password</h1>
-          <p className="text-sm text-gray-500 mb-6">Choose a strong password for your affiliate account.</p>
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="bg-card rounded-xl border border-border shadow-sm p-8 w-full max-w-md">
+          <h1 className="text-xl font-bold text-foreground mb-1">Set a New Password</h1>
+          <p className="text-sm text-muted-foreground mb-6">Choose a strong password for your affiliate account.</p>
           <form onSubmit={handleReset} className="space-y-4">
             <input
               type="password" placeholder="New password (min 8 chars)"
               value={password} onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d]"
             />
             <input
               type="password" placeholder="Confirm new password"
               value={confirm} onChange={(e) => setConfirm(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d]"
             />
-            {resetError && <p className="text-sm text-red-500">{resetError}</p>}
+            {resetError && <p className="text-sm text-destructive">{resetError}</p>}
             <button
               type="submit" disabled={resetLoading}
-              className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+              className="w-full bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
             >
               {resetLoading ? "Updating..." : "Update Password"}
             </button>
@@ -104,32 +104,32 @@ export function AffiliateResetPassword() {
   // Forgot password flow
   if (forgotSent) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center max-w-md px-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-3">Check Your Email</h1>
-          <p className="text-gray-500 mb-6">If an account exists for that address, we've sent a password reset link. Check your inbox.</p>
-          <a href="/" className="text-sm text-amber-600 hover:text-amber-700">Back to login</a>
+          <h1 className="text-2xl font-bold text-foreground mb-3">Check Your Email</h1>
+          <p className="text-muted-foreground mb-6">If an account exists for that address, we've sent a password reset link. Check your inbox.</p>
+          <a href="/" className="text-sm text-[#ff876d] hover:text-[#ff876d]">Back to login</a>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 w-full max-w-md">
-        <a href="/" className="text-sm text-gray-400 hover:text-gray-600 mb-6 block">← Back to login</a>
-        <h1 className="text-xl font-bold text-gray-900 mb-1">Forgot Password</h1>
-        <p className="text-sm text-gray-500 mb-6">Enter your affiliate email and we'll send a reset link.</p>
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-8 w-full max-w-md">
+        <a href="/" className="text-sm text-muted-foreground hover:text-muted-foreground mb-6 block">← Back to login</a>
+        <h1 className="text-xl font-bold text-foreground mb-1">Forgot Password</h1>
+        <p className="text-sm text-muted-foreground mb-6">Enter your affiliate email and we'll send a reset link.</p>
         <form onSubmit={handleForgot} className="space-y-4">
           <input
             type="email" placeholder="your@email.com"
             value={email} onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d]"
           />
-          {forgotError && <p className="text-sm text-red-500">{forgotError}</p>}
+          {forgotError && <p className="text-sm text-destructive">{forgotError}</p>}
           <button
             type="submit" disabled={forgotLoading}
-            className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+            className="w-full bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
           >
             {forgotLoading ? "Sending..." : "Send Reset Link"}
           </button>

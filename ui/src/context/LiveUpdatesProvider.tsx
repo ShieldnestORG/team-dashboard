@@ -712,6 +712,13 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!selectedCompanyId) return;
+    // Skip on public subdomains (affiliate / partner portals) — they don't
+    // have board auth and the WS endpoint requires it.
+    if (typeof window !== "undefined" &&
+        (window.location.hostname.startsWith("affiliates.") ||
+         window.location.hostname.startsWith("partners."))) {
+      return;
+    }
 
     let closed = false;
     let reconnectAttempt = 0;

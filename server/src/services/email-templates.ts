@@ -366,7 +366,7 @@ function buildAffiliateResetPassword(vars: EmailVars): { subject: string; html: 
 
 function buildAffiliatePendingDigest(vars: EmailVars): { subject: string; html: string } {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
-  const support = vars.supportEmail ?? "affiliates@coherencedaddy.com";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
 
   const subject = "Your Coherence Daddy affiliate application — still under review";
 

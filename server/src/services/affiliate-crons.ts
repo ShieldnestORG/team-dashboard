@@ -23,7 +23,7 @@ export function startAffiliateCrons(db: Db): void {
       if (pending.length === 0) return { sent: 0 };
 
       const supportEmail =
-        process.env.AFFILIATE_SUPPORT_EMAIL ?? process.env.SMTP_USER ?? "affiliates@coherencedaddy.com";
+        process.env.AFFILIATE_SUPPORT_EMAIL ?? process.env.SMTP_USER ?? "info@coherencedaddy.com";
 
       for (const affiliate of pending) {
         await sendTransactional("affiliate-pending-digest", affiliate.email, {

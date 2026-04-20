@@ -45,7 +45,7 @@ const manifest: PaperclipPluginManifestV1 = {
         type: "string",
         title: "Directory API URL",
         description:
-          "URL of the Coherence Daddy Directory API for syncing scraped data (e.g. http://168.231.127.180:4000).",
+          "URL of the Coherence Daddy Directory API for syncing scraped data (e.g. http://localhost:4000).",
         default: "",
       },
       directoryApiSecret: {

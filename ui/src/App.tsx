@@ -361,13 +361,15 @@ const IS_AFFILIATES_SUBDOMAIN =
 
 function AffiliateSite() {
   return (
-    <Routes>
-      <Route index element={<AffiliateLanding />} />
-      <Route path="dashboard" element={<AffiliateDashboard />} />
-      <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
-      <Route path="reset-password" element={<AffiliateResetPassword />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <div className="h-screen overflow-y-auto">
+      <Routes>
+        <Route index element={<AffiliateLanding />} />
+        <Route path="dashboard" element={<AffiliateDashboard />} />
+        <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
+        <Route path="reset-password" element={<AffiliateResetPassword />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </div>
   );
 }
 
