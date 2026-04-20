@@ -246,23 +246,16 @@ export function affiliateRoutes(db: Db): Router {
         eq(partnerCompanies.companyId, COMPANY_ID),
       );
 
-      const [[prospectResult], [convertedResult], [feeResult]] = await Promise.all([
+      const [[prospectResult], [convertedResult]] = await Promise.all([
         db.select({ count: count() }).from(partnerCompanies).where(affiliateWhere),
         db
           .select({ count: count() })
-          .from(partnerCompanies)
-          .where(and(eq(partnerCompanies.affiliateId, id), eq(partnerCompanies.companyId, COMPANY_ID), eq(partnerCompanies.isPaying, true))),
-        db
-          .select({ totalFee: sql<number>`coalesce(sum(monthly_fee), 0)` })
           .from(partnerCompanies)
           .where(and(eq(partnerCompanies.affiliateId, id), eq(partnerCompanies.companyId, COMPANY_ID), eq(partnerCompanies.isPaying, true))),
       ]);
 
       const prospectCount = Number(prospectResult?.count ?? 0);
       const convertedCount = Number(convertedResult?.count ?? 0);
-      const totalMonthlyFees = Number(feeResult?.totalFee ?? 0);
-      const estimatedEarned =
-        parseFloat(affiliate.commissionRate ?? "0.10") * totalMonthlyFees;
 
       // Commission bucket aggregates — one grouped query for all statuses.
       const bucketRows = await db
@@ -303,7 +296,6 @@ export function affiliateRoutes(db: Db): Router {
         affiliate,
         prospectCount,
         convertedCount,
-        estimatedEarned,
         pendingCents,
         approvedCents,
         scheduledCents,

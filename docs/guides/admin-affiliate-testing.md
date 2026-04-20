@@ -218,7 +218,7 @@ ssh root@31.220.61.12 'curl -s -X POST http://localhost:3200/api/crons/run \
 |--------|------|------|---------|
 | `POST` | `/api/affiliates/register` | Public | Register new affiliate |
 | `POST` | `/api/affiliates/login` | Public | Login, get JWT |
-| `GET` | `/api/affiliates/me` | JWT | Profile + stats (prospectCount, convertedCount, estimatedEarned) |
+| `GET` | `/api/affiliates/me` | JWT | Profile + stats (prospectCount, convertedCount, pendingCents, approvedCents, scheduledCents, paidCents, lifetimeCents) |
 | `GET` | `/api/affiliates/prospects` | JWT | List my prospects (with isPaying) |
 | `POST` | `/api/affiliates/prospects` | JWT | Submit new prospect URL |
 | `GET` | `/api/affiliates/prospects/:slug` | JWT | Get prospect detail |
