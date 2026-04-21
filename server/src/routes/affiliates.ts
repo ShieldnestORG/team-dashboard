@@ -448,6 +448,25 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
+      // Phase 4 — hard-block suspended affiliates. JWT middleware gates the
+      // session-level suspendedAt check; re-check here for defense in depth
+      // in case the column was updated between JWT issue and this request.
+      const [suspensionCheck] = await db
+        .select({
+          suspendedAt: affiliates.suspendedAt,
+          suspensionReason: affiliates.suspensionReason,
+        })
+        .from(affiliates)
+        .where(eq(affiliates.id, affiliateId))
+        .limit(1);
+      if (suspensionCheck?.suspendedAt) {
+        res.status(403).json({
+          error: "Account suspended",
+          reason: suspensionCheck.suspensionReason ?? null,
+        });
+        return;
+      }
+
       const VALID_TOUCH_TYPES = ["in_person", "call", "text", "email", "social_dm"];
       const VALID_WARMTH = ["strong", "medium", "weak"];
       const VALID_CLOSE_PREFERENCES = ["cd_closes", "affiliate_assists", "affiliate_attempts_first"];
@@ -622,6 +641,12 @@ export function affiliateRoutes(db: Db): Router {
           );
         }
 
+        // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
+        await db
+          .update(affiliates)
+          .set({ lastLeadSubmittedAt: now, updatedAt: now })
+          .where(eq(affiliates.id, affiliateId));
+
         res.status(201).json({
           prospect: {
             slug: dup.slug,
@@ -721,6 +746,12 @@ export function affiliateRoutes(db: Db): Router {
       runPartnerOnboarding(db, partner.slug).catch((err) =>
         logger.error({ err, slug: partner!.slug }, "Affiliate prospect onboarding failed"),
       );
+
+      // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
+      await db
+        .update(affiliates)
+        .set({ lastLeadSubmittedAt: attributionNow, updatedAt: attributionNow })
+        .where(eq(affiliates.id, affiliateId));
 
       res.status(201).json({
         prospect: {
