@@ -129,47 +129,40 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
 
-  const invalidate = () =>
+  // Patch every cached list query so the UI updates instantly without
+  // waiting on an HTTP refetch (proxy/CDN GET caching was causing stale
+  // reads after successful mutations). Each list is keyed by its filter,
+  // so when status changes we remove the row from lists it no longer
+  // matches and add it to lists it now matches. Then invalidate so stats
+  // and any inactive lists reconcile from the server.
+  const applyUpdatedSuggestion = (updated: RepoUpdateSuggestion) => {
+    const entries = queryClient.getQueriesData<{
+      suggestions: RepoUpdateSuggestion[];
+    }>({ queryKey: ["repo-updates", "list"] });
+    for (const [key, old] of entries) {
+      if (!old) continue;
+      const filter = key[2] as string | undefined;
+      const matches = filter === "all" || filter === updated.status;
+      const existed = old.suggestions.some((x) => x.id === updated.id);
+      let next = old.suggestions;
+      if (matches && existed) {
+        next = old.suggestions.map((x) => (x.id === updated.id ? updated : x));
+      } else if (matches && !existed) {
+        next = [updated, ...old.suggestions];
+      } else if (!matches && existed) {
+        next = old.suggestions.filter((x) => x.id !== updated.id);
+      } else {
+        continue;
+      }
+      queryClient.setQueryData(key, { ...old, suggestions: next });
+    }
     queryClient.invalidateQueries({ queryKey: ["repo-updates"] });
+  };
 
-  const approve = useMutation({
-    mutationFn: () => repoUpdatesApi.approve(s.id),
-    onSuccess: invalidate,
-    onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to approve: ${msg}`);
-      }
-    },
-  });
-  const reject = useMutation({
-    mutationFn: () => repoUpdatesApi.reject(s.id, "Rejected from dashboard"),
-    onSuccess: invalidate,
-    onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to reject: ${msg}`);
-      }
-    },
-  });
-  const reply = useMutation({
-    mutationFn: (msg: string) => repoUpdatesApi.reply(s.id, msg),
-    onSuccess: () => {
-      setReplyOpen(false);
-      setReplyText("");
-      invalidate();
-    },
-    onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to post reply: ${msg}`);
-      }
-    },
-  });
   const draftPr = useMutation({
     mutationFn: () => repoUpdatesApi.draftPr(s.id),
     onSuccess: (data) => {
-      invalidate();
+      applyUpdatedSuggestion(data.suggestion);
       if (typeof window !== "undefined") {
         window.open(data.pr.url, "_blank", "noopener");
         window.alert(
@@ -181,6 +174,46 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
       if (typeof window !== "undefined") {
         const msg = err instanceof Error ? err.message : "Unknown error";
         window.alert(`Failed to draft PR: ${msg}`);
+      }
+    },
+  });
+  const approve = useMutation({
+    mutationFn: () => repoUpdatesApi.approve(s.id),
+    onSuccess: (data) => {
+      applyUpdatedSuggestion(data.suggestion);
+      // Auto-chain: immediately draft the PR so one click is enough. If
+      // the draft fails, the item stays in `approved` and the Draft PR
+      // button on the approved view remains as a retry affordance.
+      draftPr.mutate();
+    },
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to approve: ${msg}`);
+      }
+    },
+  });
+  const reject = useMutation({
+    mutationFn: () => repoUpdatesApi.reject(s.id, "Rejected from dashboard"),
+    onSuccess: (data) => applyUpdatedSuggestion(data.suggestion),
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to reject: ${msg}`);
+      }
+    },
+  });
+  const reply = useMutation({
+    mutationFn: (msg: string) => repoUpdatesApi.reply(s.id, msg),
+    onSuccess: (data) => {
+      setReplyOpen(false);
+      setReplyText("");
+      applyUpdatedSuggestion(data.suggestion);
+    },
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to post reply: ${msg}`);
       }
     },
   });

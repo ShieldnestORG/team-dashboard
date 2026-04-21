@@ -195,11 +195,18 @@ export function repoUpdateRoutes(db: Db) {
         res.status(400).json({ error: msg });
         return;
       }
-      // Sanitize anything else — never leak GitHub response bodies or tokens.
-      const safe = msg.startsWith("GitHub ")
-        ? "GitHub API call failed — check server logs"
-        : "Failed to draft PR";
-      res.status(500).json({ error: safe });
+      // For admin-facing errors, surface GitHub's status + message (path is
+      // stripped) so the operator can debug without server log access. The
+      // github-client never includes the token or full response body in the
+      // error message — only METHOD/PATH/STATUS/MESSAGE.
+      if (msg.startsWith("GitHub ")) {
+        const afterFailed = msg.split(" failed: ")[1];
+        res.status(500).json({
+          error: afterFailed ? `GitHub API: ${afterFailed}` : "GitHub API call failed",
+        });
+        return;
+      }
+      res.status(500).json({ error: "Failed to draft PR" });
     }
   });
 
