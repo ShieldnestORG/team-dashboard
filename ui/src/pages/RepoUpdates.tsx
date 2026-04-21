@@ -135,10 +135,22 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
   const approve = useMutation({
     mutationFn: () => repoUpdatesApi.approve(s.id),
     onSuccess: invalidate,
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to approve: ${msg}`);
+      }
+    },
   });
   const reject = useMutation({
     mutationFn: () => repoUpdatesApi.reject(s.id, "Rejected from dashboard"),
     onSuccess: invalidate,
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to reject: ${msg}`);
+      }
+    },
   });
   const reply = useMutation({
     mutationFn: (msg: string) => repoUpdatesApi.reply(s.id, msg),
@@ -146,6 +158,12 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
       setReplyOpen(false);
       setReplyText("");
       invalidate();
+    },
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to post reply: ${msg}`);
+      }
     },
   });
   const draftPr = useMutation({
