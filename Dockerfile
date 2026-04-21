@@ -16,6 +16,8 @@ COPY server/package.json server/
 COPY ui/package.json ui/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
+COPY packages/brand-guide/package.json packages/brand-guide/
+COPY packages/mcp-server/package.json packages/mcp-server/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
 COPY packages/adapters/claude-local/package.json packages/adapters/claude-local/
 COPY packages/adapters/codex-local/package.json packages/adapters/codex-local/
@@ -28,6 +30,7 @@ COPY packages/plugins/sdk/package.json packages/plugins/sdk/
 COPY packages/plugins/plugin-firecrawl/package.json packages/plugins/plugin-firecrawl/
 COPY packages/plugins/plugin-twitter/package.json packages/plugins/plugin-twitter/
 COPY packages/plugins/plugin-discord/package.json packages/plugins/plugin-discord/
+COPY packages/plugins/plugin-moltbook/package.json packages/plugins/plugin-moltbook/
 COPY patches/ patches/
 
 RUN pnpm install --frozen-lockfile
