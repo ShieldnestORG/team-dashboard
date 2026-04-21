@@ -79,6 +79,11 @@ import { AffiliateAdminCommissions } from "./pages/AffiliateAdminCommissions";
 import { AffiliateAdminPayouts } from "./pages/AffiliateAdminPayouts";
 import { AffiliateAdminLeads } from "./pages/AffiliateAdminLeads";
 import { AffiliateAdminLeadDetail } from "./pages/AffiliateAdminLeadDetail";
+import { AffiliateAdminCompliance } from "./pages/AffiliateAdminCompliance";
+import { AffiliateAdminEngagement } from "./pages/AffiliateAdminEngagement";
+import { AffiliateAdminTiers } from "./pages/AffiliateAdminTiers";
+import { AffiliateAdminCampaigns } from "./pages/AffiliateAdminCampaigns";
+import { AffiliateAdminMerch } from "./pages/AffiliateAdminMerch";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -227,6 +232,11 @@ function boardRoutes() {
       <Route path="affiliates/attribution" element={<AffiliateAdminLeads />} />
       <Route path="affiliates/commissions" element={<AffiliateAdminCommissions />} />
       <Route path="affiliates/payouts" element={<AffiliateAdminPayouts />} />
+      <Route path="affiliates/compliance" element={<AffiliateAdminCompliance />} />
+      <Route path="affiliates/engagement" element={<AffiliateAdminEngagement />} />
+      <Route path="affiliates/tiers" element={<AffiliateAdminTiers />} />
+      <Route path="affiliates/campaigns" element={<AffiliateAdminCampaigns />} />
+      <Route path="affiliates/merch" element={<AffiliateAdminMerch />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
