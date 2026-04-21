@@ -50,7 +50,13 @@ export type EmailTemplate =
   | "affiliate-payout-sent"
   | "affiliate-payout-held"
   | "affiliate-lock-expired"
-  | "affiliate-lead-status-change";
+  | "affiliate-lead-status-change"
+  | "affiliate-tier-upgraded"
+  | "affiliate-violation-warning"
+  | "affiliate-suspended"
+  | "affiliate-giveaway-winner"
+  | "affiliate-reengagement"
+  | "affiliate-merch-shipped";
 
 export interface EmailVars {
   // Common
@@ -96,6 +102,21 @@ export interface EmailVars {
   toStatus?: string;
   statusLabel?: string;
   leadUrl?: string;
+  // Phase 4 — tiers, compliance, merch, engagement
+  fromTier?: string;
+  toTier?: string;
+  newRate?: string;
+  nextTier?: string;
+  lifetimeCents?: number;
+  ruleCode?: string;
+  severity?: string;
+  evidenceExcerpt?: string;
+  campaignName?: string;
+  prize?: string;
+  trackingNumber?: string;
+  merchItem?: string;
+  daysInactive?: number;
+  suspensionReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +643,199 @@ export function buildAffiliateLeadStatusChange(
   return { subject, html: htmlShell(subject, body), text };
 }
 
+export function buildAffiliateTierUpgraded(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl =
+    vars.affiliateDashboardUrl ?? vars.dashboardUrl ?? "https://affiliates.coherencedaddy.com/dashboard";
+  const toTier = (vars.toTier ?? "Silver").replace(/^./, (c) => c.toUpperCase());
+  const fromTier = vars.fromTier ? vars.fromTier.replace(/^./, (c) => c.toUpperCase()) : null;
+  const rate = vars.newRate ?? "—";
+
+  const subject = `You&rsquo;re now a ${toTier} affiliate`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Congrats, ${name}! 🎉</h2>
+    <p style="margin:0 0 16px;">
+      You&rsquo;ve been promoted to <strong>${toTier}</strong>${fromTier ? ` from ${fromTier}` : ""}.
+      Your commission rate is now <strong>${rate}</strong> on all future qualifying referrals.
+    </p>
+    <p style="margin:0 0 16px;">
+      This kicks in automatically on your next approved commission — no action needed.
+    </p>
+    ${ctaButton(dashUrl, "View Your Dashboard →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Congrats, ${name}!\n\nYou've been promoted to ${toTier}${fromTier ? ` from ${fromTier}` : ""}. Your commission rate is now ${rate} on all future qualifying referrals.\n\nThis kicks in automatically on your next approved commission — no action needed.\n\nView your dashboard: ${dashUrl}\n\nQuestions? ${support}`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliateViolationWarning(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.recipientName ?? "Team";
+  const affiliate = vars.affiliateName ?? "an affiliate";
+  const rule = vars.ruleCode ?? "policy_violation";
+  const severity = vars.severity ?? "warning";
+  const excerpt = vars.evidenceExcerpt ?? "(no excerpt available)";
+  const adminUrl = vars.adminAffiliatesUrl ?? "https://dashboard.coherencedaddy.com/affiliates/compliance";
+
+  const subject = `[${severity.toUpperCase()}] Affiliate violation detected — ${affiliate}`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Compliance alert for ${name}</h2>
+    <p style="margin:0 0 16px;">
+      A potential violation was detected for <strong>${affiliate}</strong>.
+    </p>
+    <p style="margin:0 0 8px;"><strong>Rule:</strong> ${rule}</p>
+    <p style="margin:0 0 8px;"><strong>Severity:</strong> ${severity}</p>
+    ${monoBox(excerpt.replace(/</g, "&lt;").replace(/>/g, "&gt;"))}
+    <p style="margin:16px 0 0;">
+      Review in the compliance queue to acknowledge, overturn, or enforce.
+    </p>
+    ${ctaButton(adminUrl, "Open Compliance Queue →")}
+  `;
+
+  const text = `Compliance alert.\n\nA potential violation was detected for ${affiliate}.\nRule: ${rule}\nSeverity: ${severity}\nExcerpt: ${excerpt}\n\nReview: ${adminUrl}`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliateSuspended(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const reason = vars.reason ?? vars.suspensionReason ?? "a policy violation";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+
+  const subject = "Your affiliate account has been suspended";
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Important notice, ${name}</h2>
+    <p style="margin:0 0 16px;">
+      Your Coherence Daddy affiliate account has been <strong>suspended</strong>.
+    </p>
+    <p style="margin:0 0 8px;"><strong>Reason:</strong> ${reason}</p>
+    <p style="margin:16px 0 0;">
+      During suspension, you can still view your dashboard but cannot submit new
+      leads, request merch, or earn new commissions. Existing pending commissions
+      may be reviewed for clawback.
+    </p>
+    <p style="margin:16px 0 0;">
+      If you believe this is in error, reply to this email or reach us at
+      <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Important notice, ${name}.\n\nYour Coherence Daddy affiliate account has been suspended.\n\nReason: ${reason}\n\nDuring suspension, you can still view your dashboard but cannot submit new leads, request merch, or earn new commissions. Existing pending commissions may be reviewed for clawback.\n\nIf you believe this is in error, reply or reach us at ${support}.`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliateGiveawayWinner(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const campaign = vars.campaignName ?? "our latest campaign";
+  const prize = vars.prize ?? "a giveaway prize";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl = vars.affiliateDashboardUrl ?? "https://affiliates.coherencedaddy.com/promo";
+
+  const subject = `🎁 You won the ${campaign} giveaway!`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Congrats, ${name}! 🎉</h2>
+    <p style="margin:0 0 16px;">
+      You&rsquo;re a winner in the <strong>${campaign}</strong> giveaway.
+      Your prize: <strong>${prize}</strong>.
+    </p>
+    <p style="margin:0 0 16px;">
+      Reply to this email within 7 days to claim your prize with your shipping
+      details (if applicable).
+    </p>
+    ${ctaButton(dashUrl, "View Promotions →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Congrats, ${name}!\n\nYou're a winner in the ${campaign} giveaway. Prize: ${prize}.\n\nReply within 7 days to claim with shipping details.\n\nView: ${dashUrl}\n\nQuestions? ${support}`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliateReengagement(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+  const dashUrl = vars.affiliateDashboardUrl ?? "https://affiliates.coherencedaddy.com/dashboard";
+  const days = vars.daysInactive ?? 45;
+
+  const subject = "We&rsquo;ve missed you — easy lead wins waiting";
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Still here, ${name}?</h2>
+    <p style="margin:0 0 16px;">
+      It&rsquo;s been about <strong>${days} days</strong> since you last submitted
+      a lead. Your account is still in good standing and your commission rate
+      is intact — we just wanted to nudge you in case life got busy.
+    </p>
+    <p style="margin:0 0 16px;">
+      Got a warm intro you&rsquo;ve been sitting on? A single well-qualified
+      lead can push you toward the next tier.
+    </p>
+    ${ctaButton(dashUrl, "Submit a Lead →")}
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions or need support? <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Still here, ${name}?\n\nIt's been about ${days} days since your last lead submission. Your account is still in good standing and your commission rate is intact.\n\nGot a warm intro? A single qualified lead can push you toward the next tier.\n\nSubmit a lead: ${dashUrl}\n\nQuestions? ${support}`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
+export function buildAffiliateMerchShipped(
+  vars: EmailVars,
+): { subject: string; html: string; text: string } {
+  const name = vars.affiliateName ?? vars.recipientName ?? "there";
+  const item = vars.merchItem ?? "Your merch";
+  const tracking = vars.trackingNumber ?? null;
+  const support = vars.supportEmail ?? "info@coherencedaddy.com";
+
+  const subject = `${item} is on the way! 📦`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Shipped, ${name}!</h2>
+    <p style="margin:0 0 16px;">
+      <strong>${item}</strong> just left the warehouse and is headed to you.
+    </p>
+    ${tracking ? `<p style="margin:0 0 8px;"><strong>Tracking number:</strong></p>${monoBox(tracking)}` : ""}
+    <p style="margin:16px 0 0;">
+      Tag <strong>@coherencedaddy</strong> when you post it — we love seeing
+      our community rep the brand.
+    </p>
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0;font-size:13px;color:#777777;">
+      Questions? <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
+    </p>
+  `;
+
+  const text = `Shipped, ${name}!\n\n${item} just left the warehouse and is headed to you.${tracking ? `\n\nTracking: ${tracking}` : ""}\n\nTag @coherencedaddy when you post it.\n\nQuestions? ${support}`;
+
+  return { subject, html: htmlShell(subject, body), text };
+}
+
 function buildAffiliatePendingDigest(vars: EmailVars): { subject: string; html: string } {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
@@ -716,6 +930,24 @@ export async function sendTransactional(
       break;
     case "affiliate-lead-status-change":
       ({ subject, html } = buildAffiliateLeadStatusChange(vars));
+      break;
+    case "affiliate-tier-upgraded":
+      ({ subject, html } = buildAffiliateTierUpgraded(vars));
+      break;
+    case "affiliate-violation-warning":
+      ({ subject, html } = buildAffiliateViolationWarning(vars));
+      break;
+    case "affiliate-suspended":
+      ({ subject, html } = buildAffiliateSuspended(vars));
+      break;
+    case "affiliate-giveaway-winner":
+      ({ subject, html } = buildAffiliateGiveawayWinner(vars));
+      break;
+    case "affiliate-reengagement":
+      ({ subject, html } = buildAffiliateReengagement(vars));
+      break;
+    case "affiliate-merch-shipped":
+      ({ subject, html } = buildAffiliateMerchShipped(vars));
       break;
     default: {
       const _exhaustive: never = template;
