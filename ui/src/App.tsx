@@ -68,6 +68,10 @@ import { AffiliateLanding } from "./pages/AffiliateLanding";
 import { AffiliateDashboard } from "./pages/AffiliateDashboard";
 import { AffiliateEarnings } from "./pages/AffiliateEarnings";
 import { AffiliatePayouts } from "./pages/AffiliatePayouts";
+import { AffiliateTiers } from "./pages/AffiliateTiers";
+import { AffiliateLeaderboard } from "./pages/AffiliateLeaderboard";
+import { AffiliatePromo } from "./pages/AffiliatePromo";
+import { AffiliateMerch } from "./pages/AffiliateMerch";
 import { AffiliateLeadDetail } from "./pages/AffiliateLeadDetail";
 import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
 import { AffiliateResetPassword } from "./pages/AffiliateResetPassword";
@@ -75,6 +79,11 @@ import { AffiliateAdminCommissions } from "./pages/AffiliateAdminCommissions";
 import { AffiliateAdminPayouts } from "./pages/AffiliateAdminPayouts";
 import { AffiliateAdminLeads } from "./pages/AffiliateAdminLeads";
 import { AffiliateAdminLeadDetail } from "./pages/AffiliateAdminLeadDetail";
+import { AffiliateAdminCompliance } from "./pages/AffiliateAdminCompliance";
+import { AffiliateAdminEngagement } from "./pages/AffiliateAdminEngagement";
+import { AffiliateAdminTiers } from "./pages/AffiliateAdminTiers";
+import { AffiliateAdminCampaigns } from "./pages/AffiliateAdminCampaigns";
+import { AffiliateAdminMerch } from "./pages/AffiliateAdminMerch";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -223,6 +232,11 @@ function boardRoutes() {
       <Route path="affiliates/attribution" element={<AffiliateAdminLeads />} />
       <Route path="affiliates/commissions" element={<AffiliateAdminCommissions />} />
       <Route path="affiliates/payouts" element={<AffiliateAdminPayouts />} />
+      <Route path="affiliates/compliance" element={<AffiliateAdminCompliance />} />
+      <Route path="affiliates/engagement" element={<AffiliateAdminEngagement />} />
+      <Route path="affiliates/tiers" element={<AffiliateAdminTiers />} />
+      <Route path="affiliates/campaigns" element={<AffiliateAdminCampaigns />} />
+      <Route path="affiliates/merch" element={<AffiliateAdminMerch />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
@@ -379,6 +393,10 @@ function AffiliateSite() {
         <Route path="dashboard" element={<AffiliateDashboard />} />
         <Route path="earnings" element={<AffiliateEarnings />} />
         <Route path="payouts" element={<AffiliatePayouts />} />
+        <Route path="tiers" element={<AffiliateTiers />} />
+        <Route path="leaderboard" element={<AffiliateLeaderboard />} />
+        <Route path="promo" element={<AffiliatePromo />} />
+        <Route path="merch" element={<AffiliateMerch />} />
         <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
         <Route path="affiliate/leads/:id" element={<AffiliateLeadDetail />} />
         <Route path="reset-password" element={<AffiliateResetPassword />} />

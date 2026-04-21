@@ -79,6 +79,14 @@ export { payouts } from "./payouts.js";
 export { commissions } from "./commissions.js";
 export { crmActivities } from "./crm_activities.js";
 export { attributionOverrides } from "./attribution_overrides.js";
+export { affiliateTiers } from "./affiliate_tiers.js";
+export { promoCampaigns } from "./promo_campaigns.js";
+export { affiliateEngagement } from "./affiliate_engagement.js";
+export { affiliateViolations } from "./affiliate_violations.js";
+export type { AffiliateViolationEvidence } from "./affiliate_violations.js";
+export { merchRequests } from "./merch_requests.js";
+export type { MerchShippingAddress } from "./merch_requests.js";
+export { leaderboardSnapshots } from "./leaderboard_snapshots.js";
 export { moltbookFeed, moltbookPosts, moltbookStats } from "./moltbook.js";
 export { contentQualitySignals } from "./content_quality_signals.js";
 export {

@@ -162,6 +162,103 @@ export interface LeadTimelineResponse {
   activities: TimelineActivity[];
 }
 
+// Phase 4 — Tiers, leaderboard, promo, merch.
+
+export interface TierInfo {
+  name: string;
+  displayOrder: number;
+  commissionRate: number;
+  perks: string[];
+}
+
+export interface NextTierInfo {
+  name: string;
+  minLifetimeCents: number;
+  minActivePartners: number;
+}
+
+export interface TierProgress {
+  lifetimeCents: number;
+  activePartners: number;
+}
+
+export interface TierResponse {
+  current: TierInfo;
+  next: NextTierInfo | null;
+  progress: TierProgress;
+}
+
+export type LeaderboardPeriod = "month" | "all_time";
+
+export interface LeaderboardRow {
+  rank: number;
+  affiliateId: string;
+  name: string;
+  score: number;
+}
+
+export interface LeaderboardResponse {
+  top: LeaderboardRow[];
+  me: { rank: number; score: number } | null;
+}
+
+export type PromoCampaignStatus = "draft" | "live" | "ended" | string;
+
+export interface PromoCampaign {
+  id: string;
+  name: string;
+  hashtag: string;
+  startAt: string;
+  endAt: string;
+  giveawayPrize: string | null;
+  status: PromoCampaignStatus;
+  giveawayEligible?: boolean;
+}
+
+export interface PromoPostSubmission {
+  id: string;
+  campaignId: string;
+  campaignName?: string;
+  postUrl: string;
+  hashtagUsed: string;
+  status?: string;
+  createdAt: string;
+}
+
+export type MerchItemType = "starter_shirt" | "hat" | "sticker_pack";
+export type MerchRequestStatus =
+  | "pending"
+  | "approved"
+  | "shipped"
+  | "delivered"
+  | "rejected"
+  | string;
+
+export interface MerchShippingAddress {
+  name: string;
+  street1: string;
+  street2?: string;
+  city: string;
+  region: string;
+  postalCode: string;
+  country: string;
+}
+
+export interface MerchRequest {
+  id: string;
+  itemType: MerchItemType | string;
+  sizeOrVariant: string | null;
+  status: MerchRequestStatus;
+  trackingNumber: string | null;
+  createdAt: string;
+}
+
+export interface SubmitMerchRequestBody {
+  itemType: MerchItemType;
+  sizeOrVariant?: string;
+  shippingAddress: MerchShippingAddress;
+}
+
 async function affiliateRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAffiliateToken();
   const headers = new Headers(init?.headers);
@@ -281,4 +378,36 @@ export const affiliatesApi = {
 
   getLeadTimeline: (id: string) =>
     affiliateRequest<LeadTimelineResponse>(`/leads/${id}/timeline`),
+
+  // Phase 4 — tiers
+  getTier: () => affiliateRequest<TierResponse>("/me/tier"),
+
+  // Phase 4 — leaderboard
+  getLeaderboard: (period: LeaderboardPeriod = "month") => {
+    const params = new URLSearchParams({ period });
+    return affiliateRequest<LeaderboardResponse>(`/leaderboard?${params.toString()}`);
+  },
+
+  // Phase 4 — promo campaigns
+  listPromoCampaigns: () =>
+    affiliateRequest<PromoCampaign[]>("/promo/campaigns"),
+
+  listPromoPosts: () =>
+    affiliateRequest<PromoPostSubmission[]>("/promo/posts"),
+
+  submitPromoPost: (body: { campaignId: string; postUrl: string; hashtagUsed: string }) =>
+    affiliateRequest<{ id: string }>("/promo/posts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // Phase 4 — merch
+  listMerchRequests: () =>
+    affiliateRequest<MerchRequest[]>("/merch-requests"),
+
+  submitMerchRequest: (body: SubmitMerchRequestBody) =>
+    affiliateRequest<{ id: string }>("/merch-requests", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
