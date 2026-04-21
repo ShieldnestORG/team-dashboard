@@ -410,6 +410,11 @@ async function handlePartnerStripeEvent(
 
       // Create the initial commission row if this lead has an active attribution.
       // Wrapped in try/catch so a commission failure never breaks activation.
+      //
+      // Rate source of truth: `affiliates.commissionRate` is JOINed on every
+      // invocation — the Phase 4 `affiliate:tier-recompute` cron writes this
+      // column when an affiliate's tier is promoted, so the very next webhook
+      // event picks up the new rate with no cache to invalidate.
       try {
         const [attribution] = await db
           .select({
@@ -524,6 +529,10 @@ async function handlePartnerStripeEvent(
 
       // Create a recurring commission row if an active attribution exists for the
       // subscribed partner. Wrapped in try/catch so it can never break billing.
+      //
+      // Rate source of truth: same as checkout.session.completed above — the
+      // JOIN on `affiliates.commissionRate` always returns the current value,
+      // which is maintained by the Phase 4 `affiliate:tier-recompute` cron.
       try {
         if (!inv.id) break;
 
