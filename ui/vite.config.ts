@@ -11,6 +11,14 @@ export default defineConfig({
       lexical: path.resolve(__dirname, "./node_modules/lexical/Lexical.mjs"),
     },
   },
+  build: {
+    target: "es2022",
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: "es2022",
+    },
+  },
   server: {
     port: 5173,
     proxy: {
