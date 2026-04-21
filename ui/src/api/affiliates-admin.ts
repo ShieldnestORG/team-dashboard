@@ -11,6 +11,127 @@ export interface AdminAffiliate {
   createdAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4 — Compliance / Engagement / Tiers / Campaigns / Merch
+// ---------------------------------------------------------------------------
+
+export type ViolationSeverity = "low" | "medium" | "high" | "critical";
+export type ViolationStatus = "open" | "acknowledged" | "overturned" | "enforced";
+export type CommissionAction = "none" | "clawback";
+
+export interface ViolationEvidence {
+  source: string;
+  excerpt: string;
+  matchedPattern?: string;
+}
+
+export interface AdminViolation {
+  id: string;
+  affiliateId: string;
+  affiliateName: string;
+  affiliateEmail: string;
+  leadId?: string | null;
+  leadName?: string | null;
+  ruleCode: string;
+  severity: ViolationSeverity | string;
+  detectionType: string;
+  evidence: ViolationEvidence;
+  status: ViolationStatus | string;
+  commissionsClawedBack: number;
+  createdAt: string;
+}
+
+export interface ListViolationsFilters {
+  affiliateId?: string;
+  status?: string;
+  severity?: string;
+}
+
+export interface CreateViolationPayload {
+  affiliateId: string;
+  leadId?: string;
+  ruleCode: string;
+  severity: ViolationSeverity | string;
+  evidence: { source: string; excerpt: string };
+}
+
+export interface AdminEngagementPost {
+  id: string;
+  affiliateId: string;
+  affiliateName: string;
+  campaignId?: string | null;
+  campaignName?: string | null;
+  postUrl: string;
+  hashtagUsed: string;
+  score: number;
+  giveawayEligible: boolean;
+  occurredAt: string;
+}
+
+export interface AdminTier {
+  id: string;
+  name: string;
+  displayOrder: number;
+  commissionRate: string;       // e.g. "0.10"
+  minLifetimeCents: number;
+  minActivePartners: number;
+  perks: string[];
+}
+
+export interface UpdateTierPayload {
+  commissionRate?: string;
+  minLifetimeCents?: number;
+  minActivePartners?: number;
+  perks?: string[];
+}
+
+export type CampaignStatus = "draft" | "live" | "ended";
+
+export interface AdminCampaign {
+  id: string;
+  name: string;
+  hashtag: string;
+  startAt: string;
+  endAt: string;
+  giveawayPrize: string;
+  status: CampaignStatus | string;
+}
+
+export interface CampaignPayload {
+  name: string;
+  hashtag: string;
+  startAt: string;
+  endAt: string;
+  giveawayPrize: string;
+  status: CampaignStatus | string;
+}
+
+export type MerchRequestStatus =
+  | "requested"
+  | "approved"
+  | "shipped"
+  | "delivered"
+  | "cancelled";
+
+export interface AdminMerchRequest {
+  id: string;
+  affiliateId: string;
+  affiliateName: string;
+  itemType: string;
+  sizeOrVariant: string;
+  shippingAddress: string;
+  status: MerchRequestStatus | string;
+  trackingNumber: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface UpdateMerchPayload {
+  status: MerchRequestStatus | string;
+  trackingNumber?: string;
+  notes?: string;
+}
+
 export interface AdminCommission extends Commission {
   affiliateId: string;
   affiliateName: string;
@@ -120,5 +241,89 @@ export const affiliatesAdminApi = {
   markPayoutPaid: (id: string) =>
     adminRequest<{ ok: boolean; payout?: AdminPayout }>(`/payouts/${id}/mark-paid`, {
       method: "PUT",
+    }),
+
+  // --- Compliance / Violations ---
+  listViolations: (filters: ListViolationsFilters = {}) =>
+    adminRequest<AdminViolation[]>(
+      `/compliance/violations${buildQuery({
+        affiliateId: filters.affiliateId,
+        status: filters.status,
+        severity: filters.severity,
+      })}`,
+    ),
+
+  createViolation: (payload: CreateViolationPayload) =>
+    adminRequest<AdminViolation>("/compliance/violations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateViolationStatus: (
+    id: string,
+    toStatus: "acknowledged" | "overturned" | "enforced",
+    commissionAction?: CommissionAction,
+  ) =>
+    adminRequest<{ ok: boolean }>(`/compliance/violations/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify(
+        commissionAction ? { toStatus, commissionAction } : { toStatus },
+      ),
+    }),
+
+  suspendAffiliate: (id: string, reason: string) =>
+    adminRequest<{ ok: boolean }>(`/affiliates/${id}/suspend`, {
+      method: "PUT",
+      body: JSON.stringify({ reason }),
+    }),
+
+  // --- Engagement ---
+  listEngagementPosts: (status?: string) =>
+    adminRequest<AdminEngagementPost[]>(
+      `/engagement/posts${buildQuery({ status })}`,
+    ),
+
+  scoreEngagementPost: (id: string, score: number, giveawayEligible: boolean) =>
+    adminRequest<{ ok: boolean }>(`/engagement/posts/${id}/score`, {
+      method: "PUT",
+      body: JSON.stringify({ score, giveawayEligible }),
+    }),
+
+  // --- Tiers ---
+  listTiers: () =>
+    adminRequest<AdminTier[]>("/tiers"),
+
+  updateTier: (id: string, payload: UpdateTierPayload) =>
+    adminRequest<{ ok: boolean }>(`/tiers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  // --- Promo Campaigns ---
+  listCampaigns: () =>
+    adminRequest<AdminCampaign[]>("/promo/campaigns"),
+
+  createCampaign: (payload: CampaignPayload) =>
+    adminRequest<AdminCampaign>("/promo/campaigns", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateCampaign: (id: string, payload: Partial<CampaignPayload>) =>
+    adminRequest<{ ok: boolean }>(`/promo/campaigns/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  // --- Merch ---
+  listMerchRequests: (status?: string) =>
+    adminRequest<AdminMerchRequest[]>(
+      `/merch-requests${buildQuery({ status })}`,
+    ),
+
+  updateMerchRequest: (id: string, payload: UpdateMerchPayload) =>
+    adminRequest<{ ok: boolean }>(`/merch-requests/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
     }),
 };
