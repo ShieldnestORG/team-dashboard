@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-14 (AEO marketing push — stripe-checkout, email-templates, brand-personas, aeo-cta, campaigns route, directory public enroll, expire-listings cron, DirectoryPricing + MarketingPushes pages)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-20 (Affiliate Phase 4 — tier ladder, leaderboard, compliance scanner, merch + promo, new crons: tier-recompute, leaderboard-snapshot, inactive-reengagement, giveaway-eligibility, engagement-scan)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -363,6 +363,31 @@ const DEFAULT_DIAGRAM = `graph TB
         PartnerSiteContent[("partner_site_content")]
         PartnerDirectory(["Trusted Companies API — /partner-directory"])
         MarketingPushesPage(["/marketing-pushes — admin campaign dashboard"])
+      end
+
+      subgraph AffiliateSystem["Affiliate Marketer System"]
+        direction TB
+        AffiliateAuth(["Affiliate Auth — JWT + password reset"])
+        AffiliateRoutes(["/api/affiliates — 40+ endpoints"])
+        AffiliateAdminRoutes(["/affiliates/admin — board-auth CRM + attribution + compliance"])
+        AffiliateCRM(["CRM Pipeline — 18 lead statuses"])
+        AffiliateAttribution(["Attribution Engine — 30d lock + overrides"])
+        AffiliateCommissionEngine(["Commission Engine — stateful (pending→approved→paid→clawed_back)"])
+        AffiliatePayoutBatcher(["Payout Batcher — monthly"])
+        AffiliateTierEngine(["Tier Engine — bronze/silver/gold/platinum (10→20%)"])
+        AffiliateLeaderboard(["Leaderboard — monthly snapshot + live ranks"])
+        AffiliateComplianceSvc(["Compliance Scanner — regex + Claude Haiku second-opinion"])
+        AffiliateEngagementSvc(["Engagement Engine — posts, campaigns, giveaways"])
+        AffiliateMerchSvc(["Merch Fulfillment — 90d throttle"])
+        AffiliatesDB[("affiliates + referral_attribution + commissions + payouts")]
+        AffiliateCRMDB[("crm_activities + attribution_overrides")]
+        AffiliateTiersDB[("affiliate_tiers + leaderboard_snapshots")]
+        AffiliateEngagementDB[("affiliate_engagement + promo_campaigns")]
+        AffiliateComplianceDB[("affiliate_violations")]
+        AffiliateMerchDB[("merch_requests")]
+        AffiliateCrons{{"Affiliate Crons — 11 jobs (pending-digest, lock-expiry, lead-expiration, lock-expiration, commission-maturation, payout-batcher, tier-recompute, leaderboard-snapshot, inactive-reengagement, giveaway-eligibility, engagement-scan)"}}
+        AffiliateDashboardUI(["affiliates.coherencedaddy.com — Dashboard / Tiers / Leaderboard / Promo / Merch"])
+        AffiliateAdminUI(["/affiliates/* — admin tabs: Leads, Attribution, Commissions, Payouts, Compliance, Engagement, Tiers, Campaigns, Merch"])
       end
 
       subgraph MoltbookEngine["Moltbook Social Engine"]
@@ -666,6 +691,32 @@ const DEFAULT_DIAGRAM = `graph TB
   PartnerMicrosite --> PartnerSiteContent
   PartnerReports --> Alerting
 
+  %% Affiliate flows
+  AffiliateRoutes --> AffiliateAuth
+  AffiliateRoutes --> AffiliatesDB
+  AffiliateAdminRoutes --> AffiliatesDB
+  AffiliateCRM --> AffiliateCRMDB
+  AffiliateCRM --> PartnerDB
+  AffiliateAttribution --> AffiliatesDB
+  AffiliateAttribution --> AffiliateCRMDB
+  AffiliateCommissionEngine --> AffiliatesDB
+  AffiliateCommissionEngine --> StripeAPI
+  AffiliatePayoutBatcher --> AffiliatesDB
+  AffiliateTierEngine --> AffiliateTiersDB
+  AffiliateTierEngine --> AffiliatesDB
+  AffiliateLeaderboard --> AffiliateTiersDB
+  AffiliateComplianceSvc --> AffiliateComplianceDB
+  AffiliateComplianceSvc --> AnthropicAPI
+  AffiliateEngagementSvc --> AffiliateEngagementDB
+  AffiliateMerchSvc --> AffiliateMerchDB
+  AffiliateCrons --> AffiliateTierEngine
+  AffiliateCrons --> AffiliateLeaderboard
+  AffiliateCrons --> AffiliateComplianceSvc
+  AffiliateCrons --> AffiliateCommissionEngine
+  AffiliateCrons --> AffiliatePayoutBatcher
+  AffiliateDashboardUI --> AffiliateRoutes
+  AffiliateAdminUI --> AffiliateAdminRoutes
+
   %% Media flows
   MediaDrop --> MediaDropDB
 
@@ -749,7 +800,7 @@ const DEFAULT_DIAGRAM = `graph TB
   classDef readyNode fill:#94a3b8,stroke:#64748b,stroke-width:2px,stroke-dasharray:5 5,color:#f8fafc,font-style:italic
 
   class ContentCrons,IntelCrons,TrendCrons,AlertCrons,EvalCrons,PluginJobScheduler,AutoReplyCron,MaintCrons,MoltbookCrons,DirExpireCron cronNode
-  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent,QualitySignalsDB,IntelBillingDB,DirListingsDB storeNode
+  class NeonDB,Embeddings,EvalStore,LogStore,ContentDB,VisualDB,FeedbackDB,AutoReplyDB,PartnerDB,MediaDropDB,XEngagementDB,XTweetDB,XOAuthDB,IntelDB,CronDB,PluginStateDB,MoltbookFeedDB,MoltbookPostsDB,MoltbookStatsDB,PartnerSiteContent,QualitySignalsDB,IntelBillingDB,DirListingsDB,AffiliatesDB,AffiliateCRMDB,AffiliateTiersDB,AffiliateEngagementDB,AffiliateComplianceDB,AffiliateMerchDB storeNode
 
   style Ecosystem fill:transparent,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5,color:#a5b4fc
   style PublicSites fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
@@ -763,6 +814,7 @@ const DEFAULT_DIAGRAM = `graph TB
   style XEcosystem fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
   style IntelEngine fill:#ffedd5,stroke:#f97316,stroke-width:2px,color:#5f3a1e
   style PartnerNet fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
+  style AffiliateSystem fill:#ffe4d6,stroke:#ff876d,stroke-width:2px,color:#7c2d12
   style PluginSys fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#3a1e5f
   style Monitor fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#5f1e1e
   style Finance fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#1e5f5f
