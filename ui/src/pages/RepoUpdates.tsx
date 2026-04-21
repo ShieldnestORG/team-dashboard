@@ -159,9 +159,33 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
     queryClient.invalidateQueries({ queryKey: ["repo-updates"] });
   };
 
+  const draftPr = useMutation({
+    mutationFn: () => repoUpdatesApi.draftPr(s.id),
+    onSuccess: (data) => {
+      applyUpdatedSuggestion(data.suggestion);
+      if (typeof window !== "undefined") {
+        window.open(data.pr.url, "_blank", "noopener");
+        window.alert(
+          `PR #${data.pr.number} drafted: ${data.pr.url}\n\nA human must review and merge manually.`,
+        );
+      }
+    },
+    onError: (err: unknown) => {
+      if (typeof window !== "undefined") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        window.alert(`Failed to draft PR: ${msg}`);
+      }
+    },
+  });
   const approve = useMutation({
     mutationFn: () => repoUpdatesApi.approve(s.id),
-    onSuccess: (data) => applyUpdatedSuggestion(data.suggestion),
+    onSuccess: (data) => {
+      applyUpdatedSuggestion(data.suggestion);
+      // Auto-chain: immediately draft the PR so one click is enough. If
+      // the draft fails, the item stays in `approved` and the Draft PR
+      // button on the approved view remains as a retry affordance.
+      draftPr.mutate();
+    },
     onError: (err: unknown) => {
       if (typeof window !== "undefined") {
         const msg = err instanceof Error ? err.message : "Unknown error";
@@ -190,24 +214,6 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
       if (typeof window !== "undefined") {
         const msg = err instanceof Error ? err.message : "Unknown error";
         window.alert(`Failed to post reply: ${msg}`);
-      }
-    },
-  });
-  const draftPr = useMutation({
-    mutationFn: () => repoUpdatesApi.draftPr(s.id),
-    onSuccess: (data) => {
-      applyUpdatedSuggestion(data.suggestion);
-      if (typeof window !== "undefined") {
-        window.open(data.pr.url, "_blank", "noopener");
-        window.alert(
-          `PR #${data.pr.number} drafted: ${data.pr.url}\n\nA human must review and merge manually.`,
-        );
-      }
-    },
-    onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to draft PR: ${msg}`);
       }
     },
   });
