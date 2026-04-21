@@ -9,9 +9,14 @@ import {
   type ClosePreference,
   type FirstTouchStatus,
   type FirstTouchType,
+  type LeaderboardResponse,
+  type PromoCampaign,
   type RelationshipWarmth,
   type SubmitProspectOptions,
+  type TierResponse,
 } from "@/api/affiliates";
+import { AffiliateNav } from "@/components/AffiliateNav";
+import { formatTierName, tierColorFor } from "@/lib/affiliateTiers";
 import {
   Dialog,
   DialogContent,
@@ -136,6 +141,11 @@ export function AffiliateDashboard() {
   const [policyLoading, setPolicyLoading] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
 
+  // Phase 4 widgets
+  const [tier, setTier] = useState<TierResponse | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
+  const [promoCampaigns, setPromoCampaigns] = useState<PromoCampaign[]>([]);
+
   useEffect(() => {
     if (!getAffiliateToken()) {
       window.location.href = "/";
@@ -161,6 +171,18 @@ export function AffiliateDashboard() {
         setError(err instanceof Error ? err.message : "Failed to load dashboard");
       })
       .finally(() => setLoading(false));
+
+    // Phase 4 widgets — load in parallel, failures are silent (endpoints may
+    // not yet be deployed at the moment we're built by Agent C).
+    affiliatesApi.getTier().then(setTier).catch(() => undefined);
+    affiliatesApi
+      .getLeaderboard("month")
+      .then(setLeaderboard)
+      .catch(() => undefined);
+    affiliatesApi
+      .listPromoCampaigns()
+      .then(setPromoCampaigns)
+      .catch(() => undefined);
   }, []);
 
   function handleLogout() {
@@ -332,30 +354,228 @@ export function AffiliateDashboard() {
     );
   }
 
+  const liveCampaign = promoCampaigns.find((c) => c.status === "live") ?? null;
+  const tierColor = tierColorFor(tier?.current.name);
+  const leaderboardTop5 = (leaderboard?.top ?? []).slice(0, 5);
+  const meInTop5 = leaderboard?.me
+    ? leaderboardTop5.some((r) => r.rank === leaderboard.me?.rank)
+    : false;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Affiliate Dashboard</p>
-            <h1 className="text-lg font-bold text-foreground">Welcome, {affiliate.name}</h1>
-          </div>
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-[#ff876d]/20 text-[#ff876d] border border-[#ff876d]/30">
-              {(parseFloat(affiliate.commissionRate) * 100).toFixed(0)}% commission
-            </span>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Log Out
-          </button>
-        </div>
-      </header>
+      <AffiliateNav
+        active="/dashboard"
+        subtitle="Affiliate Dashboard"
+        title={`Welcome, ${affiliate.name}`}
+        trailing={
+          <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-[#ff876d]/20 text-[#ff876d] border border-[#ff876d]/30">
+            {(parseFloat(affiliate.commissionRate) * 100).toFixed(0)}% commission
+          </span>
+        }
+      />
 
       <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+        {/* Promo banner — only shown when a campaign is live */}
+        {liveCampaign && (
+          <a
+            href="/promo"
+            className="block rounded-xl border border-[#ff876d]/40 bg-[#ff876d]/10 p-4 hover:bg-[#ff876d]/15 transition-colors"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-[#ff876d] font-semibold">
+                  Live campaign
+                </p>
+                <p className="text-base font-bold text-foreground">
+                  {liveCampaign.name}
+                  <span className="ml-2 text-sm text-[#ff876d] font-mono">
+                    #{liveCampaign.hashtag.replace(/^#/, "")}
+                  </span>
+                </p>
+                {liveCampaign.giveawayPrize && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Giveaway: {liveCampaign.giveawayPrize}
+                  </p>
+                )}
+              </div>
+              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-[#ff876d] text-white">
+                Submit post →
+              </span>
+            </div>
+          </a>
+        )}
+
+        {/* Phase 4 top widgets — tier + leaderboard preview */}
+        {(tier || leaderboardTop5.length > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Tier card */}
+            {tier && (
+              <section
+                className={`rounded-xl border p-5 space-y-3 ${tierColor.border} ${tierColor.bg}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${tierColor.badge}`}
+                    >
+                      {formatTierName(tier.current.name)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {(tier.current.commissionRate * 100).toFixed(0)}% commission
+                    </span>
+                  </div>
+                  <a
+                    href="/tiers"
+                    className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]/90"
+                  >
+                    View ladder →
+                  </a>
+                </div>
+
+                {tier.next ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Progress to {formatTierName(tier.next.name)}
+                    </p>
+                    <div className="space-y-2">
+                      {(() => {
+                        const lifetimePct = Math.min(
+                          1,
+                          tier.progress.lifetimeCents /
+                            Math.max(1, tier.next.minLifetimeCents),
+                        );
+                        return (
+                          <div>
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                              <span>Lifetime</span>
+                              <span>
+                                ${(tier.progress.lifetimeCents / 100).toLocaleString("en-US")}
+                                {" / "}
+                                ${(tier.next.minLifetimeCents / 100).toLocaleString("en-US")}
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full bg-[#ff876d]"
+                                style={{ width: `${(lifetimePct * 100).toFixed(1)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      {(() => {
+                        const partnersPct = Math.min(
+                          1,
+                          tier.progress.activePartners /
+                            Math.max(1, tier.next.minActivePartners),
+                        );
+                        return (
+                          <div>
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                              <span>Active partners</span>
+                              <span>
+                                {tier.progress.activePartners} /{" "}
+                                {tier.next.minActivePartners}
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full bg-[#ff876d]"
+                                style={{ width: `${(partnersPct * 100).toFixed(1)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    You're at the top tier. Nice.
+                  </p>
+                )}
+
+                {tier.current.perks.length > 0 && (
+                  <ul className="space-y-1 text-xs text-foreground pt-1">
+                    {tier.current.perks.slice(0, 3).map((perk) => (
+                      <li key={perk} className="flex items-start gap-2">
+                        <span
+                          className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-[#ff876d]"
+                          aria-hidden="true"
+                        />
+                        <span>{perk}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {/* Leaderboard preview */}
+            {leaderboardTop5.length > 0 && (
+              <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    This month's top 5
+                  </h3>
+                  <a
+                    href="/leaderboard"
+                    className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]/90"
+                  >
+                    Full board →
+                  </a>
+                </div>
+                <ol className="space-y-1.5">
+                  {leaderboardTop5.map((row) => {
+                    const isMe = leaderboard?.me?.rank === row.rank;
+                    return (
+                      <li
+                        key={`${row.rank}-${row.affiliateId}`}
+                        className={`flex items-center justify-between gap-2 text-sm px-2 py-1 rounded-md ${
+                          isMe ? "bg-[#ff876d]/10" : ""
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="text-xs font-semibold text-muted-foreground w-6">
+                            #{row.rank}
+                          </span>
+                          <span
+                            className={`truncate ${
+                              isMe ? "text-[#ff876d] font-semibold" : "text-foreground"
+                            }`}
+                          >
+                            {row.name}
+                            {isMe && (
+                              <span className="ml-2 text-[10px] uppercase tracking-wide">
+                                You
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                        <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
+                          ${(row.score / 100).toLocaleString("en-US", {
+                            maximumFractionDigits: 0,
+                          })}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+                {leaderboard?.me && !meInTop5 && (
+                  <p className="text-xs text-muted-foreground pt-1 border-t border-border">
+                    You're ranked{" "}
+                    <span className="font-semibold text-[#ff876d]">
+                      #{leaderboard.me.rank}
+                    </span>
+                    .
+                  </p>
+                )}
+              </section>
+            )}
+          </div>
+        )}
+
         {/* Action Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
