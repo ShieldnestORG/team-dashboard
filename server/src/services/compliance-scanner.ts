@@ -3,9 +3,11 @@
 //
 // Scans text an affiliate can write (affiliate_notes, CRM note entries, etc.)
 // for policy violations (§6 misrepresentation). Two-pass detection: regex
-// first, then Claude Haiku 4.5 as a second opinion to reduce false positives.
-// On confirmed match, inserts an `affiliate_violations` row (severity-graded)
-// and emails the admin.
+// first, then LLM as a second opinion to reduce false positives.
+//
+// LLM strategy (same as seo-engine): Ollama Cloud first (free, VPS-hosted,
+// gemma4:31b by default), fall back to Claude Haiku only when Ollama fails.
+// If neither is available, insert on regex hit alone with a warning log.
 //
 // Exports:
 //   - scanAffiliateText(db, { affiliateId, leadId?, source, text })
@@ -30,6 +32,7 @@ import {
   type EmailVars,
 } from "./email-templates.js";
 import { registerCronJob } from "./cron-registry.js";
+import { callOllamaChat } from "./ollama-client.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -99,18 +102,43 @@ export interface ScanResult {
 }
 
 // ---------------------------------------------------------------------------
-// LLM second opinion — direct fetch, same pattern as seo-engine.ts
+// LLM second opinion — Ollama first, Claude fallback
 // ---------------------------------------------------------------------------
 
-async function askClaude(rule: ComplianceRule, excerpt: string): Promise<boolean | null> {
-  if (!ANTHROPIC_API_KEY) return null;
-
-  const prompt = `Does this affiliate outreach text violate policy rule ${rule.rule} (${rule.description})? Answer YES or NO and one sentence.
+function buildPrompt(rule: ComplianceRule, excerpt: string): string {
+  return `Does this affiliate outreach text violate policy rule ${rule.rule} (${rule.description})? Answer YES or NO and one sentence.
 
 Text:
 """
 ${excerpt}
 """`;
+}
+
+function parseVerdict(text: string): boolean | null {
+  const trimmed = text.trim().toUpperCase();
+  if (trimmed.startsWith("YES")) return true;
+  if (trimmed.startsWith("NO")) return false;
+  return null;
+}
+
+async function askOllama(rule: ComplianceRule, excerpt: string): Promise<boolean | null> {
+  try {
+    const result = await callOllamaChat(
+      [{ role: "user", content: buildPrompt(rule, excerpt) }],
+      { temperature: 0, maxTokens: 128, timeoutMs: 30_000 },
+    );
+    return parseVerdict(result.content);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), rule: rule.rule },
+      "compliance-scanner: Ollama classification failed — trying Claude fallback",
+    );
+    return null;
+  }
+}
+
+async function askClaude(rule: ComplianceRule, excerpt: string): Promise<boolean | null> {
+  if (!ANTHROPIC_API_KEY) return null;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -123,7 +151,7 @@ ${excerpt}
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
         max_tokens: 128,
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: buildPrompt(rule, excerpt) }],
       }),
     });
 
@@ -139,17 +167,24 @@ ${excerpt}
     const data = (await res.json()) as {
       content?: Array<{ type: string; text?: string }>;
     };
-    const text = data.content?.[0]?.text ?? "";
-    // Accept YES at the start of the response (case-insensitive)
-    const trimmed = text.trim().toUpperCase();
-    if (trimmed.startsWith("YES")) return true;
-    if (trimmed.startsWith("NO")) return false;
-    // Ambiguous — be conservative: defer to regex result (null = no LLM signal)
-    return null;
+    return parseVerdict(data.content?.[0]?.text ?? "");
   } catch (err) {
     logger.warn({ err, rule: rule.rule }, "compliance-scanner: Claude fetch failed");
     return null;
   }
+}
+
+async function classifyViolation(
+  rule: ComplianceRule,
+  excerpt: string,
+): Promise<{ verdict: boolean | null; backend: "ollama" | "claude" | "none" }> {
+  const ollama = await askOllama(rule, excerpt);
+  if (ollama !== null) return { verdict: ollama, backend: "ollama" };
+
+  const claude = await askClaude(rule, excerpt);
+  if (claude !== null) return { verdict: claude, backend: "claude" };
+
+  return { verdict: null, backend: "none" };
 }
 
 // ---------------------------------------------------------------------------
@@ -171,24 +206,17 @@ export async function scanAffiliateText(
 
     const excerpt = text.slice(0, 280);
 
-    // Ask Claude for a second opinion. If the API key is unset, skip the
-    // LLM and still insert on the regex hit (log a warning for visibility).
-    let confirmed: boolean;
-    if (!ANTHROPIC_API_KEY) {
+    // LLM second opinion — Ollama first, Claude fallback.
+    // If both are unavailable (backend="none"), insert on regex hit alone
+    // with a warning log so the ops team knows classifier coverage dropped.
+    const { verdict, backend } = await classifyViolation(rule, excerpt);
+    if (verdict === false) continue; // LLM rejected — drop the regex false positive
+    if (backend === "none") {
       logger.warn(
         { rule: rule.rule, affiliateId, source },
-        "compliance-scanner: ANTHROPIC_API_KEY not set — inserting regex-only violation",
+        "compliance-scanner: no LLM available — inserting regex-only violation",
       );
-      confirmed = true;
-    } else {
-      const llm = await askClaude(rule, excerpt);
-      // If Claude is ambiguous (null), fall back to regex-only positive.
-      // If Claude explicitly says NO, skip.
-      if (llm === false) continue;
-      confirmed = true;
     }
-
-    if (!confirmed) continue;
 
     const evidence: AffiliateViolationEvidence = {
       source,
