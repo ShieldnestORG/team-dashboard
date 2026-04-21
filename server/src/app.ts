@@ -83,6 +83,12 @@ import { autoReplyRoutes } from "./routes/auto-reply.js";
 import { moltbookRoutes } from "./routes/moltbook.js";
 import { partnerRoutes, partnerDirectoryRoutes } from "./routes/partner.js";
 import { affiliateRoutes, affiliateAdminRoutes } from "./routes/affiliates.js";
+import { affiliateComplianceRoutes } from "./routes/affiliate-compliance.js";
+import {
+  affiliateEngagementRoutes,
+  affiliateEngagementAdminRoutes,
+} from "./routes/affiliate-engagement.js";
+import { startComplianceScanCron } from "./services/compliance-scanner.js";
 import { auditRoutes } from "./routes/audit.js";
 import { partnerGoRoutes } from "./routes/partner-go.js";
 import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
@@ -278,6 +284,10 @@ export async function createApp(
   api.use("/firecrawl/admin", firecrawlAdminRoutes(db));
   api.use("/campaigns", campaignRoutes(db));
   api.use("/affiliates/admin", affiliateAdminRoutes(db));
+  // Phase 4 — compliance (admin) + engagement (affiliate + admin) routes
+  api.use("/affiliates/admin", affiliateComplianceRoutes(db));
+  api.use("/affiliates/admin", affiliateEngagementAdminRoutes(db));
+  api.use("/affiliates", affiliateEngagementRoutes(db));
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -420,6 +430,7 @@ export async function createApp(
   startMaintenanceCrons(db);
   startMoltbookCrons(db);
   startAffiliateCrons(db);
+  startComplianceScanCron(db);
   startYouTubeCrons(db);
   startKnowledgeGraphCrons(db);
   startSeoAuditCron(db);
