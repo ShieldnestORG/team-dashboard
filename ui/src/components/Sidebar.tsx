@@ -33,6 +33,7 @@ import {
   CheckSquare,
   LineChart,
   Gauge,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -146,6 +147,7 @@ export function Sidebar() {
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
           <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={Database} />
           <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
+          <SidebarNavItem to="/house-ads" label="House Ads" icon={ImageIcon} />
           <SidebarNavItem to="/marketing-pushes" label="Marketing Pushes" icon={Megaphone} />
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />

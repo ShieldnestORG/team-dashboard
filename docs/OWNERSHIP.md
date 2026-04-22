@@ -42,6 +42,7 @@ This doc is the canonical cross-repo boundary. When in doubt, defer here — do 
 | Intel API (search, company, stats) | team-dashboard (VPS) | Proxied via `vercel.json` rewrite in storefront |
 | Partner / directory / bundle state | team-dashboard | Existing pattern, untouched |
 | **Owned utility-site registry** (domains we own for ad-revenue arbitrage) | **team-dashboard** (`owned_sites`, `owned_site_metrics` tables) | Sites themselves are static HTML on VPS3 nginx; team-dashboard aggregates GA4/AdSense metrics and exposes the portfolio at `/owned-sites`. Strategy doc: `docs/products/utility-network/README.md`. |
+| **House ads** (in-house creatives served to `*.coherencedaddy.com` ad slots while AdSense approval is pending) | **team-dashboard** (`house_ads` table) | Admin CRUD at `/house-ads`; public fetch at `/api/house-ads/active?slot=X`. Storefront owns the `<AdSlot>` component. Spec: `docs/products/house-ads.md`. |
 
 ---
 
@@ -57,6 +58,9 @@ New team-dashboard routes the storefront calls:
 | `/api/creditscore/audit/store` | POST | Persists a free-audit result originated in the browser |
 | `/api/creditscore/report/:id` | GET | Fetch a stored report (public, token-authenticated) |
 | `/api/creditscore/webhook` | POST | Stripe webhook for CreditScore products |
+| `/api/house-ads/active?slot=X` | GET | Returns the currently-serving in-house ad for a named slot (or 204 if pool empty). Consumed by the storefront `<AdSlot>` component. |
+| `/api/house-ads/:id/image` | GET | Streams ad creative bytes. Public. |
+| `/api/house-ads/:id/click` | GET | 302 redirects to the ad's click URL; records a click. |
 
 All three public-facing routes are reachable from the storefront via `vercel.json` rewrites following the existing `/api/intel/*`, `/api/trends/*`, `/api/content/*`, `/api/partner-directory/*` pattern.
 

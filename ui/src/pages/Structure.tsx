@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22 (PRD 1 CreditScore full agent fleet: scan 6h (auditor), fix-priority-digest monthly (sage), content-drafts monthly (cipher), schema-impls monthly (core), competitor-scans monthly (forge), sage-weekly Mondays (sage). Content tables: creditscore_content_drafts, creditscore_schema_impls, creditscore_competitor_scans, creditscore_strategy_docs — all Ollama-backed review queues. Bundles + Owned Utility-Site Network substrate intact. + 2026-04-22: House Ads service added — /api/house-ads + /house-ads admin UI (pre-AdSense filler, also reusable post-approval fallback).)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves.
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
