@@ -113,6 +113,9 @@ import { startPluginLogRetention } from "./services/plugin-log-retention.js";
 import { startFirecrawlCrons } from "./services/firecrawl-crons.js";
 import { startDirectoryCrons } from "./services/directory-crons.js";
 import { startPartnerFulfillmentCrons } from "./services/partner-fulfillment-crons.js";
+import { startCreditscoreCrons } from "./services/creditscore-crons.js";
+import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
+import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
@@ -267,6 +270,7 @@ export async function createApp(
   api.use("/directory-listings", directoryListingsRoutes(db));
   api.use("/bundles", bundleRoutes(db));
   api.use("/creditscore", creditscoreRoutes(db));
+  api.use("/owned-sites", ownedSitesRoutes(db));
   api.use("/stripe", directoryListingsWebhookRoutes(db));
   api.use("/content", contentRoutes(db));
   api.use(trendRoutes(db));
@@ -445,6 +449,8 @@ export async function createApp(
   startFirecrawlCrons(db);
   startDirectoryCrons(db);
   startPartnerFulfillmentCrons(db);
+  startCreditscoreCrons(db);
+  startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);

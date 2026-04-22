@@ -29,7 +29,9 @@ The system relies on a vast array of scheduled jobs to power the intel engine, c
 - **Directory Expire (1 job)**: Expire past_due listings overdue 30+ days — 3 AM daily (`directory:expire-listings`).
 - **Partner Mentions (1 job)**: Monthly content batch for all active partner tiers — Cipher/Blaze/Spark, 1st of month at 10 AM (`partner:mentions:generate`).
 - **Partner Strategy Docs (1 job)**: Biweekly Sage strategy document for Premium partners — 1st and 15th at 8 AM (`partner:strategy-doc:premium`).
-- **CreditScore Scans (1 job)**: Rescans active Starter/Pro subscriptions when nextScanAt has passed — every 6 hours (`creditscore:scan`).
+- **CreditScore Scans (1 job)**: Rescans active Starter/Growth (monthly cadence) and Pro (weekly cadence) subscriptions when the last complete report is older than the tier cadence. Sends `monthly_report` or `score_drop_alert` email via storefront callback. Owner: `auditor`. Every 6 hours (`creditscore:scan`).
+- **Owned Sites Metrics Sync (1 job)**: Pulls GA4 + AdSense daily rows into `owned_site_metrics` for sites in `live` / `adsense_pending` / `monetized` status. Owner: `metrics-agent`. Every 6 hours (`owned-sites:sync-metrics`).
+- **Owned Sites Content Refresh (1 job)**: Monthly trigger for Ollama-driven article refresh on VPS2 (pipeline wiring follow-up). Owner: `content-agent`. Monthly, 1st at 9 AM (`owned-sites:content-refresh`).
 
 ## Other Operational Crons
 - **Trends Scan (1 job)**: CoinGecko, HackerNews, Google Trends, Bing News every 6h.

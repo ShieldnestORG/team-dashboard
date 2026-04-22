@@ -8,6 +8,7 @@ import {
 import { stripeRequest, verifyStripeSignature } from "./stripe-client.js";
 import { logger } from "../middleware/logger.js";
 import { runAudit, type AuditResult } from "../routes/audit.js";
+import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
 
 // ---------------------------------------------------------------------------
 // CreditScore product service.
@@ -169,8 +170,9 @@ export function creditscoreService(db: Db) {
         ),
       );
 
-    // Kick off the initial audit for the purchased domain. Fire-and-forget —
-    // errors are logged but do not fail the webhook.
+    // Kick off the initial audit for the purchased domain and send the
+    // tier-appropriate welcome email. Fire-and-forget — errors are logged
+    // but do not fail the webhook.
     const row = await db
       .select()
       .from(creditscoreSubscriptions)
@@ -181,9 +183,31 @@ export function creditscoreService(db: Db) {
       void generateReport(meta.url, {
         subscriptionId: sub.id,
         email: sub.email ?? undefined,
-      }).catch((err) => {
-        logger.error({ err, subId: sub.id }, "creditscore: initial audit after checkout failed");
-      });
+      })
+        .then(({ result }) => {
+          if (!sub.email || !result) return;
+          const kind =
+            sub.tier === "report"
+              ? "one_time_report"
+              : sub.tier === "pro"
+                ? "welcome_pro"
+                : sub.tier === "growth"
+                  ? "welcome_growth"
+                  : "welcome_starter";
+          void sendCreditscoreEmail({
+            kind,
+            to: sub.email,
+            data: {
+              domain: sub.domain,
+              tier: sub.tier,
+              score: result.score,
+              report: result,
+            },
+          });
+        })
+        .catch((err) => {
+          logger.error({ err, subId: sub.id }, "creditscore: initial audit after checkout failed");
+        });
     }
   }
 
@@ -374,10 +398,11 @@ export function creditscoreService(db: Db) {
     return { reportId: row!.id };
   }
 
-  async function scheduleScans(): Promise<{ enqueued: number; skipped: number }> {
-    // Real cron wiring happens in a follow-up (Phase 3 cron enablement).
-    // The scheduler will call this method; for now we expose the contract.
-    return { enqueued: 0, skipped: 0 };
+  async function scheduleScans(): Promise<void> {
+    // Real implementation lives in creditscore-crons.ts to avoid a circular
+    // import (crons depends on this service). Call the helper directly.
+    const { runScheduledScans } = await import("./creditscore-crons.js");
+    await runScheduledScans(db);
   }
 
   return {

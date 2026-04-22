@@ -41,6 +41,7 @@ import Tokns from "./pages/Tokns";
 import { SystemHealth } from "./pages/SystemHealth";
 import { ContentReview } from "./pages/ContentReview";
 import { ContentAnalytics } from "./pages/ContentAnalytics";
+import { OwnedSites } from "./pages/OwnedSites";
 import { Structure } from "./pages/Structure";
 import { Intel } from "./pages/Intel";
 import { KnowledgeGraph } from "./pages/KnowledgeGraph";
@@ -225,6 +226,7 @@ function boardRoutes() {
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
       <Route path="content-analytics" element={<ContentAnalytics />} />
+      <Route path="owned-sites" element={<OwnedSites />} />
       <Route path="structure" element={<Structure />} />
       <Route path="marketing-pushes" element={<MarketingPushes />} />
       <Route path="affiliates" element={<AffiliatesAdmin />} />

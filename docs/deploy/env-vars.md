@@ -90,6 +90,16 @@ These variables are required for the project to function. **VPS** requires all v
 | `STRIPE_WEBHOOK_SECRET_DIRECTORY` | Optional | VPS | Dedicated signing secret for Directory Listings webhook |
 | `DIRECTORY_CHECKOUT_SUCCESS_URL` | Optional | VPS | Post-checkout redirect |
 | `DIRECTORY_CHECKOUT_CANCEL_URL` | Optional | VPS | Abandon-checkout redirect |
+| `STRIPE_PRICE_CREDITSCORE_REPORT` | Optional | VPS | Stripe price ID for CreditScore One-Time Report ($19) |
+| `STRIPE_PRICE_CREDITSCORE_STARTER` | Optional | VPS | Stripe price ID for CreditScore Starter ($49/mo) |
+| `STRIPE_PRICE_CREDITSCORE_GROWTH_MONTHLY` | Optional | VPS | Stripe price ID for CreditScore Growth monthly ($199/mo) |
+| `STRIPE_PRICE_CREDITSCORE_GROWTH_ANNUAL` | Optional | VPS | Stripe price ID for CreditScore Growth annual ($1,188/yr) |
+| `STRIPE_PRICE_CREDITSCORE_PRO` | Optional | VPS | Stripe price ID for CreditScore Pro ($499/mo) |
+| `STRIPE_WEBHOOK_SECRET_CREDITSCORE` | Optional | VPS | Dedicated signing secret for CreditScore Stripe webhook |
+| `CREDITSCORE_SUCCESS_URL` | Optional | VPS | Post-checkout redirect (fallback: `freetools.coherencedaddy.com/creditscore-home?checkout=success`) |
+| `CREDITSCORE_CANCEL_URL` | Optional | VPS | Abandon-checkout redirect (fallback: `freetools.coherencedaddy.com/creditscore-home?checkout=canceled`) |
+| `CREDITSCORE_CALLBACK_KEY` | Optional | VPS + coherencedaddy | HMAC shared secret for email callback from team-dashboard → storefront. If unset, emails are skipped. |
+| `CREDITSCORE_EMAIL_CALLBACK_URL` | Optional | VPS | Storefront endpoint that renders + sends via Resend (default: `https://freetools.coherencedaddy.com/api/email/creditscore`) |
 | `INTEL_BILLING_SUCCESS_URL` | Optional | VPS | Checkout success redirect |
 | `INTEL_BILLING_CANCEL_URL` | Optional | VPS | Checkout cancel redirect |
 | `ENTERPRISE_BOOKING_URL` | Optional | VPS | Cal.com or Calendly booking URL for enterprise calls |

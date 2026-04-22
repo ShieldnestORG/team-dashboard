@@ -17,6 +17,9 @@ Use feature branches or worktrees for parallel work. See: [Branch & Session Safe
 ### Feature Branch Requirements
 Any new backend service, route, or DB migration must be done on a feature branch.
 
+**Permitted exceptions:**
+- **2026-04-22 — commit `676f29d2`** (PRD 1 CreditScore cutover): pushed directly to `master` with explicit user authorization. Typechecks clean on both server and UI before push. Two migrations applied to prod Neon, Stripe webhook endpoint created, VPS1 redeployed same session. Noted here so the rule stays in force for future PRs — re-request explicit authorization before bypassing again.
+
 ### Verify Before Merge
 Always run these commands and confirm zero errors before merging or pushing to master:
 ```bash

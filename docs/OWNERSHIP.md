@@ -28,6 +28,7 @@ This doc is the canonical boundary. When in doubt, defer here — do not re-fork
 | **Entitlement resolution** (`getEntitlementsForCompany`) | **team-dashboard** | Resolves bundles + standalone subs to tier |
 | Intel API (search, company, stats) | team-dashboard (VPS) | Proxied via `vercel.json` rewrite in storefront |
 | Partner / directory / bundle state | team-dashboard | Existing pattern, untouched |
+| **Owned utility-site registry** (domains we own for ad-revenue arbitrage) | **team-dashboard** (`owned_sites`, `owned_site_metrics` tables) | Sites themselves are static HTML on VPS3 nginx; team-dashboard aggregates GA4/AdSense metrics and exposes the portfolio at `/owned-sites`. Strategy doc: `docs/products/utility-network/README.md`. |
 
 ---
 
