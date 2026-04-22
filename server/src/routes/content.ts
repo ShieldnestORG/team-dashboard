@@ -277,7 +277,16 @@ export function contentRoutes(db: Db) {
       const { success, error, result } = await republishTarget(post, target);
 
       const targetKey = target === "tokns-app" ? "toknsApp" : target;
-      const nextResults = { ...(item.publishResults ?? {}), [targetKey]: result };
+      const existingResults = item.publishResults ?? {};
+      const priorLeg = existingResults[targetKey];
+
+      // Preserve a previously-successful leg when the retry itself fails. A
+      // post that was live yesterday and returns 409 ("unique constraint")
+      // today still IS live — the 409 means it's already there. Recording the
+      // retry failure would mask that. We keep the old success state and
+      // surface the retry error separately to the caller only.
+      const mergedLeg = !success && priorLeg?.success ? priorLeg : result;
+      const nextResults = { ...existingResults, [targetKey]: mergedLeg };
 
       // If this was the first successful leg for a draft item, flip status.
       const wasDraft = item.status !== "published";
