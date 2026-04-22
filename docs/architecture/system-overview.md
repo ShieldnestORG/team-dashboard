@@ -6,14 +6,36 @@ The internal admin control plane for the Coherence Daddy / 508(c)(1)(A) ecosyste
 The public-facing brand site and tools live in a separate repo: [ShieldnestORG/coherencedaddy](https://github.com/ShieldnestORG/coherencedaddy).
 
 ## Ecosystem
-- **Team Dashboard** (this repo) — internal admin, agent management, data pipelines
-- **Coherence Daddy** (coherencedaddy.com) — public mission hub: faith-driven technology for a more coherent world. Landing page features the mission, YourArchi spotlight, donation support (Stripe + crypto), venture overview, and FAQ
-- **Free Tools** (freetools.coherencedaddy.com) — 523+ public tools, subdomain routed (lives in coherencedaddy repo)
-- **Project Directory** (directory.coherencedaddy.com) — public directory of 532+ projects across Crypto, AI/ML, DeFi, DevTools with real-time intelligence, powered by Intel API (lives in coherencedaddy repo)
+
+### coherencedaddy.com (ShieldnestORG/coherencedaddy repo)
+One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` subdomain routing, deployed on Vercel. Proxies `/api/intel/*`, `/api/trends/*`, and `/api/content/*` to the team-dashboard backend via Vercel rewrites.
+
+| Subdomain | Purpose |
+|---|---|
+| `coherencedaddy.com` | Mission hub — faith-driven tech, YourArchi spotlight, donations (Stripe + crypto), FAQ |
+| `freetools.coherencedaddy.com` | 501+ public tools with SSR content; hosts all LLM/agent discovery files |
+| `directory.coherencedaddy.com` | 532+ projects across Crypto, AI/ML, DeFi, DevTools — powered by Intel API |
+| `token.coherencedaddy.com` | Crypto / NFT / staking dashboard |
+| `partners.coherencedaddy.com` | AEO partner network — local business partner directory |
+| `creditscore.coherencedaddy.com` | Credit score tools subdomain |
+| `shop.coherencedaddy.com` | Shop / merchandise subdomain |
+| `law.coherencedaddy.com` | Legal / law tools subdomain |
+| `optimize-me.coherencedaddy.com` | Self-optimization tools subdomain |
+
+### SEO & LLM Discovery (as of April 2026)
+- **Sitemap**: `app/sitemap.ts` — single master sitemap covering all 9 subdomains (pages, tools, directory companies, partner slugs)
+- **robots.ts**: All 9 subdomain sitemaps listed; LLM crawlers explicitly allowed: GPTBot, ChatGPT-User, ClaudeBot, PerplexityBot, Applebot-Extended, GoogleOther
+- **llms.txt** / **llms-full.txt** — served from `freetools.*`, lists all 9 subdomains + 501 tools by category
+- **ai-plugin.json** / **mcp.json** / **openapi.json** — agent/MCP discovery at `freetools.*/.well-known/`
+- **AdSense**: `ca-pub-1882924299982046` — auto ads in `app/layout.tsx`, manual units in tool pages, sidebar, and blog posts; `ads.txt` in public/; CookieYes CMP + Consent Mode v2
+
+### Other Ecosystem Properties
 - **YourArchi** (yourarchi.com) — flagship self-help product: smart note-taking and personal development app with full privacy (no data leaves the device)
 - **tokns.fi / app.tokns.fi** — crypto platform and dashboard (NFTs, swaps, staking, wallet tracking)
 - **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator; goal: #1 validator via tokns.fi
 - **ShieldNest** (shieldnest.io) — privacy-first dev company that builds all ecosystem infrastructure
+- **Trustee DAO** (dao.nestd.xyz) — DAO governance platform on VPS4 (31.220.61.14)
+- **rollwithsolo.com / runatthebullets.com** — ShieldNest properties on VPS3 (147.79.78.251)
 
 ## Core Systems In This Repo
 
