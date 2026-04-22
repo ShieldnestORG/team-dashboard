@@ -470,29 +470,69 @@ export async function buildPartnerFooter(db: Db, _category: string): Promise<str
 // Takes raw HTML content + topic, formats, publishes to target(s), pings IndexNow
 // ---------------------------------------------------------------------------
 
+// Canonical live-render URL patterns for each target. Used both for IndexNow
+// pings and for persisting `publishResults[target].url` so the admin UI can
+// click through to the live post.
+export function liveUrlFor(target: "cd" | "sn" | "toknsApp", slug: string): string {
+  switch (target) {
+    case "cd": return `https://www.coherencedaddy.com/blog/${slug}`;
+    case "sn": return `https://shieldnest.org/blog/${slug}`;
+    case "toknsApp": return `https://app.tokns.fi/articles/${slug}`;
+  }
+}
+
+interface PublishTargetResult {
+  success: boolean;
+  error?: string;
+  publishedAt?: string;
+  url?: string;
+}
+
+type PublishResultsPayload = {
+  cd?: PublishTargetResult;
+  sn?: PublishTargetResult;
+  toknsApp?: PublishTargetResult;
+};
+
+function toPublishResults(raw: MultiTargetResult, slug: string): PublishResultsPayload {
+  const now = new Date().toISOString();
+  const out: PublishResultsPayload = {};
+  if (raw.cd) out.cd = { success: raw.cd.success, error: raw.cd.error, publishedAt: raw.cd.success ? now : undefined, url: raw.cd.success ? liveUrlFor("cd", slug) : undefined };
+  if (raw.sn) out.sn = { success: raw.sn.success, error: raw.sn.error, publishedAt: raw.sn.success ? now : undefined, url: raw.sn.success ? liveUrlFor("sn", slug) : undefined };
+  if (raw.toknsApp) out.toknsApp = { success: raw.toknsApp.success, error: raw.toknsApp.error, publishedAt: raw.toknsApp.success ? now : undefined, url: raw.toknsApp.success ? liveUrlFor("toknsApp", slug) : undefined };
+  return out;
+}
+
 export async function publishBlogFromContent(
   htmlContent: string,
   topic: string,
   category: BlogPost["category"] = "ecosystem",
   target: PublishTarget = "cd",
   contentFormat?: "text" | "slideshow",
-): Promise<{ success: boolean; slug?: string; title?: string; error?: string }> {
+): Promise<{
+  success: boolean;
+  slug?: string;
+  title?: string;
+  error?: string;
+  publishResults?: PublishResultsPayload;
+}> {
   const post = buildBlogPostFromContent(htmlContent, topic, category);
   if (contentFormat) post.content_format = contentFormat;
   const results = await publishToTargets(post, target);
+  const publishResults = toPublishResults(results, post.slug);
 
   const anySuccess = results.cd?.success || results.sn?.success || results.toknsApp?.success;
 
   if (anySuccess) {
     // Ping IndexNow for published targets
     if (results.cd?.success) {
-      await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
+      await pingIndexNow([liveUrlFor("cd", post.slug)]);
     }
     if (results.sn?.success) {
-      await pingIndexNow([`https://shieldnest.org/blog/${post.slug}`]);
+      await pingIndexNow([liveUrlFor("sn", post.slug)]);
     }
     if (results.toknsApp?.success) {
-      await pingIndexNow([`https://app.tokns.fi/articles/${post.slug}`]);
+      await pingIndexNow([liveUrlFor("toknsApp", post.slug)]);
     }
 
     const errors: string[] = [];
@@ -511,6 +551,7 @@ export async function publishBlogFromContent(
       slug: post.slug,
       title: post.title,
       error: errors.length > 0 ? `Partial: ${errors.join(", ")}` : undefined,
+      publishResults,
     };
   }
 
@@ -520,5 +561,34 @@ export async function publishBlogFromContent(
     results.toknsApp?.error && `tokns-app: ${results.toknsApp.error}`,
   ].filter(Boolean).join(", ");
 
-  return { success: false, error: allErrors || "All targets failed" };
+  return { success: false, error: allErrors || "All targets failed", publishResults };
+}
+
+// Republish a single target leg for an existing BlogPost. Used by the admin
+// retry button in the content-review UI. Returns the same shape as publishToX
+// plus the post slug for cache invalidation.
+export async function republishTarget(
+  post: BlogPost,
+  target: "cd" | "sn" | "tokns-app",
+): Promise<{ success: boolean; error?: string; result: PublishTargetResult }> {
+  let raw: { success: boolean; error?: string };
+  if (target === "cd") raw = await publishPost(post);
+  else if (target === "sn") raw = await publishToShieldNest(post);
+  else raw = await publishToToknsApp(post);
+
+  const targetKey = target === "tokns-app" ? "toknsApp" : target;
+  const now = new Date().toISOString();
+  const result: PublishTargetResult = {
+    success: raw.success,
+    error: raw.error,
+    publishedAt: raw.success ? now : undefined,
+    url: raw.success ? liveUrlFor(targetKey, post.slug) : undefined,
+  };
+
+  // Fire-and-forget IndexNow on success
+  if (raw.success) {
+    await pingIndexNow([liveUrlFor(targetKey, post.slug)]);
+  }
+
+  return { success: raw.success, error: raw.error, result };
 }

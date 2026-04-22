@@ -1,15 +1,34 @@
 import { api } from "./client";
 
+export interface PublishTargetResult {
+  success: boolean;
+  error?: string;
+  publishedAt?: string;
+  url?: string;
+}
+
+export interface PublishResults {
+  cd?: PublishTargetResult;
+  sn?: PublishTargetResult;
+  toknsApp?: PublishTargetResult;
+}
+
+export type PublishTargetSlug = "cd" | "sn" | "tokns-app";
+
 export interface ContentQueueItem {
   id: string;
   platform: string;
   personality: string;
+  contentType?: string;
   content: string;
   status: string;
   reviewStatus: string | null;
   reviewComment: string | null;
   createdAt: string;
   publishedAt: string | null;
+  // blog-post specific
+  slug?: string | null;
+  publishResults?: PublishResults;
 }
 
 export interface ContentQueueStats {
@@ -112,6 +131,14 @@ export const contentApi = {
       reviewStatus,
       ...(reviewComment ? { reviewComment } : {}),
     }),
+  republishTarget: (id: string, target: PublishTargetSlug) =>
+    api.post<{
+      success: boolean;
+      error?: string;
+      target: PublishTargetSlug;
+      slug: string;
+      publishResults: PublishResults;
+    }>(`/content/queue/${encodeURIComponent(id)}/republish/${target}`, {}),
   stats: () => api.get<ContentQueueStats>("/content/queue/stats"),
   preview: (params: { personalityId: string; contentType: string; topic: string; contextQuery?: string }) =>
     api.post<ContentPreviewResult>("/content/preview", params),

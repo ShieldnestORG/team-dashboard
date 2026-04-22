@@ -6,6 +6,11 @@ import { contentItems, contentClicks } from "@paperclipai/db";
 import { contentService } from "../services/content.js";
 import { contentFeedbackService } from "../services/content-feedback.js";
 import { recordNegativeFeedback, recordPositiveFeedback } from "../services/intel-quality.js";
+import {
+  buildBlogPostFromContent,
+  republishTarget,
+  type BlogPost,
+} from "../services/blog-publisher.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -231,6 +236,68 @@ export function contentRoutes(db: Db) {
       const message = err instanceof Error ? err.message : String(err);
       const status = message.includes("not found") ? 404 : 400;
       res.status(status).json({ error: message });
+    }
+  });
+
+  // ---- POST /api/content/queue/:id/republish/:target ----
+  // Admin-only retry for a single publish-target leg (cd | sn | tokns-app).
+  // Used by the content-review UI when a target failed. Rebuilds the BlogPost
+  // from the stored content + topic + slug, calls the single-target publisher,
+  // updates content_items.publish_results. Never overwrites a successful leg.
+
+  router.post("/queue/:id/republish/:target", requireContentKey, async (req, res) => {
+    const id = req.params.id as string;
+    const target = req.params.target as "cd" | "sn" | "tokns-app";
+    if (target !== "cd" && target !== "sn" && target !== "tokns-app") {
+      res.status(400).json({ error: "target must be cd | sn | tokns-app" });
+      return;
+    }
+
+    try {
+      const rows = await db
+        .select()
+        .from(contentItems)
+        .where(eq(contentItems.id, id))
+        .limit(1);
+      const item = rows[0];
+      if (!item) {
+        res.status(404).json({ error: "content item not found" });
+        return;
+      }
+      if (item.contentType !== "blog_post" && item.contentType !== "slideshow_blog") {
+        res.status(400).json({ error: "only blog_post / slideshow_blog items can be republished" });
+        return;
+      }
+
+      // Rebuild BlogPost using the stored slug when present so we hit the same URL.
+      const category = "ecosystem" as BlogPost["category"];
+      const post = buildBlogPostFromContent(item.content, item.topic, category);
+      if (item.slug) post.slug = item.slug;
+
+      const { success, error, result } = await republishTarget(post, target);
+
+      const targetKey = target === "tokns-app" ? "toknsApp" : target;
+      const nextResults = { ...(item.publishResults ?? {}), [targetKey]: result };
+
+      // If this was the first successful leg for a draft item, flip status.
+      const wasDraft = item.status !== "published";
+      const nowPublished = success && wasDraft;
+
+      await db
+        .update(contentItems)
+        .set({
+          publishResults: nextResults,
+          slug: post.slug,
+          updatedAt: new Date(),
+          ...(nowPublished ? { status: "published", publishedAt: new Date() } : {}),
+        })
+        .where(eq(contentItems.id, id));
+
+      logger.info({ id, target, success, error, slug: post.slug }, "republish leg complete");
+      res.json({ success, error, target, slug: post.slug, publishResults: nextResults });
+    } catch (err) {
+      logger.error({ err, id, target }, "republish leg error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 

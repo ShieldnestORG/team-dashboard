@@ -706,10 +706,16 @@ export function startContentCrons(db: Db) {
               if (publishResult.success) {
                 await db
                   .update(contentItems)
-                  .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
+                  .set({
+                    status: "published",
+                    publishedAt: new Date(),
+                    updatedAt: new Date(),
+                    slug: publishResult.slug ?? null,
+                    publishResults: publishResult.publishResults ?? {},
+                  })
                   .where(eq(contentItems.id, result.contentId));
                 logger.info(
-                  { job: def.name, slug: publishResult.slug, title: publishResult.title, target },
+                  { job: def.name, slug: publishResult.slug, title: publishResult.title, target, publishResults: publishResult.publishResults },
                   "Blog post published",
                 );
                 // Embed published content back into intel for future context enrichment
@@ -721,8 +727,19 @@ export function startContentCrons(db: Db) {
                   personalityId: def.personality,
                 });
               } else {
+                // Record per-target failure results even when the row stays draft —
+                // admins need to see WHICH target failed to diagnose.
+                if (publishResult.publishResults) {
+                  await db
+                    .update(contentItems)
+                    .set({
+                      publishResults: publishResult.publishResults,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(contentItems.id, result.contentId));
+                }
                 logger.warn(
-                  { job: def.name, error: publishResult.error, target },
+                  { job: def.name, error: publishResult.error, target, publishResults: publishResult.publishResults },
                   "Blog publish failed — content stays as draft",
                 );
               }

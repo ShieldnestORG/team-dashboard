@@ -19,6 +19,19 @@ import { getAeoCta } from "./aeo-cta.js";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface PublishTargetResult {
+  success: boolean;
+  error?: string;
+  publishedAt?: string;
+  url?: string;
+}
+
+export interface PublishResults {
+  cd?: PublishTargetResult;
+  sn?: PublishTargetResult;
+  toknsApp?: PublishTargetResult;
+}
+
 export interface ContentItem {
   id: string;
   companyId: string;
@@ -39,6 +52,9 @@ export interface ContentItem {
   reviewStatus: "pending" | "approved" | "flagged";
   reviewComment?: string;
   publishedAt?: string | null;
+  // blog-post specific: slug on the target blog surfaces, and per-target publish status
+  slug?: string | null;
+  publishResults?: PublishResults;
 }
 
 export interface GeneratedContent {
@@ -159,6 +175,8 @@ function rowToContentItem(row: typeof contentItems.$inferSelect): ContentItem {
     reviewStatus: row.reviewStatus as ContentItem["reviewStatus"],
     reviewComment: row.reviewComment ?? undefined,
     publishedAt: row.publishedAt?.toISOString() ?? null,
+    slug: row.slug ?? null,
+    publishResults: (row.publishResults ?? {}) as PublishResults,
   };
 }
 
