@@ -21,6 +21,11 @@ import {
   creditscoreSubscriptions,
 } from "@paperclipai/db";
 import { callOllamaChat, OLLAMA_MODEL } from "./ollama-client.js";
+import {
+  formatRulesForPrompt,
+  getRulesByCategory,
+  selfCheckContent,
+} from "./aeo-seo-playbook.js";
 import { logger } from "../middleware/logger.js";
 
 const DRAFTS_PER_TIER: Record<string, number> = {
@@ -128,6 +133,7 @@ function buildPrompt(args: {
   const priorList = args.priorTitles.length
     ? `Previously drafted titles (do NOT duplicate):\n${args.priorTitles.map((t) => `- ${t}`).join("\n")}\n\n`
     : "";
+  const playbook = formatRulesForPrompt(getRulesByCategory("AEO", "CONTENT", "SEO", "SCHEMA"));
   return `You are Cipher, a technical writer specializing in AEO (AI Engine Optimization). You draft pages that help websites rank in ChatGPT, Perplexity, Claude, and other AI answer engines.
 
 Your task: draft ONE AEO-optimized web page for ${args.domain} that directly addresses their weakest audit signal.
@@ -135,14 +141,18 @@ Your task: draft ONE AEO-optimized web page for ${args.domain} that directly add
 Target signal: ${args.targetSignal} (${args.gapDetail})
 Specific gaps: ${args.issues.join("; ") || "general improvement"}
 
-${priorList}Requirements:
-- Length: 600-900 words in the page body.
-- Include FAQPage JSON-LD with 4-6 Q&A pairs embedded in a <script type="application/ld+json"> tag.
-- Use H1, multiple H2s, at least one H3. Clear heading hierarchy.
-- Write in a direct, factual tone that AI engines will extract verbatim.
-- Include a brief intro paragraph that directly answers the page's central question.
+${priorList}Follow the AEO/SEO playbook. Every rule has an ID; you MUST NOT violate any DON'T rule, and you MUST satisfy every DO rule marked (must).
+
+${playbook}
+
+Output requirements:
+- Length: 600-900 words in the page body (satisfies CONTENT-103).
+- Exactly one <h1> (SEO-003). Multiple H2s, at least one H3. Clear heading hierarchy.
+- Opening sentence directly answers the page's central question in a standalone sentence (AEO-001, CONTENT-001).
+- Include an FAQPage JSON-LD block with 4-6 Q&A pairs, embedded in a <script type="application/ld+json"> tag (SCHEMA-001, SCHEMA-005).
+- Include a TL;DR block above the fold (AEO-007).
+- Use entity-rich phrasing, never pronoun-only references for fact-bearing claims (AEO-002, AEO-102).
 - End with a short, non-pushy CTA.
-- Do NOT use marketing hype or first-person plural ("we believe", "imagine if"). Write for an AI to cite.
 
 Return ONLY a fenced JSON object, no prose before or after, with this exact shape:
 \`\`\`json
@@ -251,6 +261,13 @@ export function creditscoreContentAgent(db: Db) {
         continue;
       }
 
+      const check = selfCheckContent({
+        html: draft.html,
+        markdown: draft.markdown,
+        title: draft.title,
+      });
+      const status = check.must.length > 0 ? "needs_revision" : "pending_review";
+
       await db.insert(creditscoreContentDrafts).values({
         subscriptionId: sub.id,
         domain: sub.domain,
@@ -266,8 +283,14 @@ export function creditscoreContentAgent(db: Db) {
           signal: signal.name,
           gap: signal.gap,
           baseScore: latestReport.score,
+          ruleViolations: check.all,
+          ruleViolationsBySeverity: {
+            must: check.must,
+            should: check.should,
+            avoid: check.avoid,
+          },
         },
-        status: "pending_review",
+        status,
       });
 
       priorTitles.push(draft.title);

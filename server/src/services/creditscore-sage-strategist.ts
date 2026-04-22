@@ -22,6 +22,7 @@ import {
 } from "@paperclipai/db";
 import { callOllamaChat, OLLAMA_MODEL } from "./ollama-client.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import { getAllRules } from "./aeo-seo-playbook.js";
 import { logger } from "../middleware/logger.js";
 
 // Exported for unit testing.
@@ -142,6 +143,10 @@ function buildPrompt(args: {
     .map((s) => `- ${s.schemaType} [${s.status}]`)
     .join("\n") || "- (no recent schema implementations)";
 
+  const ruleCatalog = getAllRules()
+    .map((r) => `[${r.id}] (${r.severity}) ${r.rule}`)
+    .join("\n");
+
   return `You are Sage, a CMO/strategist producing a weekly AEO action plan for ${args.domain}. Week: ${args.weekTag}.
 
 Current state:
@@ -156,9 +161,12 @@ ${draftLines}
 Recent schema implementations (from Core):
 ${schemaLines}
 
+AEO/SEO playbook rule catalog (every recommendation MUST cite one or more of these rule IDs):
+${ruleCatalog}
+
 Produce a concise, executive-level one-pager:
 1. "This week's verdict" — 2-3 sentences: where you stand, biggest risk or win right now.
-2. "Top 3 moves for next 7 days" — numbered, specific, actionable, each with a 1-line why.
+2. "Top 3 moves for next 7 days" — numbered, specific, actionable, each with a 1-line why AND the rule IDs it addresses in brackets, e.g. "[AEO-001, SCHEMA-005]".
 3. "What to watch" — 1-2 indicators the customer should monitor this week.
 
 Rules:
@@ -166,6 +174,7 @@ Rules:
 - Length: 250-400 words total.
 - Reference the customer as "your" and use active voice.
 - Do not invent data. If a section is empty, say so plainly and recommend collecting it.
+- Every move in section 2 MUST include rule ID citations in brackets.
 
 Return a fenced JSON object:
 \`\`\`json
