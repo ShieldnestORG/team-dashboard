@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { contentApi } from "../api/content";
-import type { ContentQueueItem, ContentPreviewResult } from "../api/content";
+import type { ContentQueueItem, ContentPreviewResult, PublishTargetResult, PublishTargetSlug } from "../api/content";
 import { visualContentApi } from "../api/visual-content";
 import type { VisualContentItem } from "../api/visual-content";
 import { contentFeedbackApi } from "../api/content-feedback";
@@ -45,6 +45,8 @@ import {
   Play,
   Camera,
   MonitorPlay,
+  ExternalLink,
+  RotateCw,
 } from "lucide-react";
 import { HowToGuide } from "../components/HowToGuide";
 
@@ -425,6 +427,100 @@ function FeedbackButtons({ itemId, contentType }: { itemId: string; contentType:
   );
 }
 
+// ── Publish target chips — blog pipeline visibility ────────────────────────
+// Shows one chip per target (cd / sn / tokns-app). Chip state:
+//   success  → green, open link, re-publish button hidden unless hovered
+//   failure  → red with error tooltip, "retry" button armed
+//   missing  → gray (target not attempted in the original publish fan-out)
+
+const TARGETS: { slug: PublishTargetSlug; key: "cd" | "sn" | "toknsApp"; label: string }[] = [
+  { slug: "cd", key: "cd", label: "CD" },
+  { slug: "sn", key: "sn", label: "SN" },
+  { slug: "tokns-app", key: "toknsApp", label: "tokns" },
+];
+
+function PublishTargetChips({ item }: { item: ContentQueueItem }) {
+  const queryClient = useQueryClient();
+  const [retrying, setRetrying] = useState<PublishTargetSlug | null>(null);
+
+  const republishMutation = useMutation({
+    mutationFn: (target: PublishTargetSlug) => contentApi.republishTarget(item.id, target),
+    onSettled: () => {
+      setRetrying(null);
+      queryClient.invalidateQueries({ queryKey: ["content", "queue"] });
+      queryClient.invalidateQueries({ queryKey: ["content", "stats"] });
+    },
+  });
+
+  function doRetry(target: PublishTargetSlug) {
+    setRetrying(target);
+    republishMutation.mutate(target);
+  }
+
+  const results = item.publishResults ?? {};
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-xs text-muted-foreground">Published to:</span>
+      {TARGETS.map((t) => {
+        const r: PublishTargetResult | undefined = results[t.key];
+        const status: "success" | "failure" | "missing" =
+          r?.success ? "success" : r ? "failure" : "missing";
+
+        const baseClass = "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium";
+        const stateClass =
+          status === "success"
+            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+            : status === "failure"
+              ? "bg-red-500/10 border-red-500/30 text-red-400"
+              : "bg-muted/30 border-border text-muted-foreground";
+
+        const isRetrying = retrying === t.slug;
+
+        return (
+          <span key={t.slug} className={`${baseClass} ${stateClass}`} title={r?.error ?? undefined}>
+            {status === "success" && <CheckCircle2 className="h-3 w-3" />}
+            {status === "failure" && <XCircle className="h-3 w-3" />}
+            <span>{t.label}</span>
+            {status === "success" && r?.url && (
+              <a
+                href={r.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-0.5 hover:opacity-80"
+                aria-label={`Open ${t.label} live post`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            {status === "failure" && (
+              <button
+                onClick={() => doRetry(t.slug)}
+                disabled={isRetrying}
+                className="ml-0.5 hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label={`Retry ${t.label} publish`}
+              >
+                {isRetrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+              </button>
+            )}
+            {status === "missing" && (
+              <button
+                onClick={() => doRetry(t.slug)}
+                disabled={isRetrying}
+                className="ml-0.5 hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label={`Publish to ${t.label}`}
+              >
+                {isRetrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function ContentCard({
   item,
   onReview,
@@ -464,6 +560,11 @@ function ContentCard({
             {formatRelativeTime(item.createdAt)}
           </span>
         </div>
+
+        {/* Blog publish targets — CD / SN / tokns-app chips (blog_post only) */}
+        {(item.contentType === "blog_post" || item.contentType === "slideshow_blog") && (
+          <PublishTargetChips item={item} />
+        )}
 
         {/* Platform-specific preview */}
         <div

@@ -1,5 +1,20 @@
-import { pgTable, uuid, text, integer, numeric, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, numeric, timestamp, index, jsonb } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
+
+// Per-target outcome of one blog-publisher leg. Populated by blog-publisher.ts.
+// url is the canonical live-render URL for the target (not the POST endpoint).
+export interface PublishTargetResult {
+  success: boolean;
+  error?: string;
+  publishedAt?: string;
+  url?: string;
+}
+
+export interface PublishResults {
+  cd?: PublishTargetResult;
+  sn?: PublishTargetResult;
+  toknsApp?: PublishTargetResult;
+}
 
 export const contentItems = pgTable(
   "content_items",
@@ -26,6 +41,9 @@ export const contentItems = pgTable(
     brand: text("brand").notNull().default("cd"),
     // campaign_id links this item to a campaign (nullable)
     campaignId: text("campaign_id"),
+    // Blog-post publish tracking (nullable for non-blog rows).
+    slug: text("slug"),
+    publishResults: jsonb("publish_results").$type<PublishResults>().notNull().default({} as PublishResults),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -37,5 +55,6 @@ export const contentItems = pgTable(
       table.personalityId,
       table.platform,
     ),
+    slugIdx: index("content_items_slug_idx").on(table.slug),
   }),
 );
