@@ -188,7 +188,10 @@ jobs:
           cat > ~/.paperclip/instances/default/config.json << 'CONF'
           {
             "$meta": { "version": 1, "updatedAt": "2026-01-01T00:00:00.000Z", "source": "onboard" },
-            "database": { "mode": "postgres" },
+            "database": {
+              "mode": "postgres",
+              "connectionString": "postgres://paperclip:paperclip@127.0.0.1:5432/paperclip"
+            },
             "logging": { "mode": "file" },
             "server": { "deploymentMode": "local_trusted", "host": "127.0.0.1", "port": 3100 },
             "auth": { "baseUrlMode": "auto" },
@@ -196,6 +199,10 @@ jobs:
             "secrets": { "provider": "local_encrypted", "strictMode": false }
           }
           CONF
+          # Pre-seed the agent JWT secret so doctor doesn't have to auto-repair
+          # (its auto-repair path doesn't run cleanly under postgres mode).
+          printf 'PAPERCLIP_AGENT_JWT_SECRET=%s\n' "$(openssl rand -hex 32)" \
+            > ~/.paperclip/instances/default/.env
 
       - name: Run e2e tests
         env:
