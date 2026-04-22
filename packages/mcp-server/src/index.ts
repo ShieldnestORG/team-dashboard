@@ -80,8 +80,8 @@ async function main() {
     async ({ agentId, ...params }) => {
       const result = await client.listIssues({
         assigneeId: agentId,
-        orderBy: params.orderBy ?? "priority",
         ...params,
+        orderBy: params.orderBy ?? "priority",
       });
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     },

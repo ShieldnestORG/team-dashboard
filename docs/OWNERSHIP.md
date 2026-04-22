@@ -1,11 +1,24 @@
-# Ownership Matrix — team-dashboard ↔ coherencedaddy-landing
+# Ownership Matrix — team-dashboard ↔ sibling repos
 
-This repo is the **engine room** for Coherence Daddy. The public storefront (`coherencedaddy-landing`) is the front door.
+This repo is the **engine room** for the Coherence Daddy + ShieldnestORG ecosystem. The public-facing properties live in sibling repos, each deployed to its own Vercel project under the `shieldnestorg` account.
 
-- **`team-dashboard`** — Admin API, Postgres schema, Stripe pipeline, entitlement resolver, cron scheduler, all product fulfillment agents.
-- **`coherencedaddy-landing`** — Public-facing Next.js site, SEO/AEO surface, pricing pages, checkout buttons, report viewers, free audit SSE stream, email delivery via Resend.
+| Repo | Local path | GitHub | Vercel project | Public domain(s) |
+|---|---|---|---|---|
+| **team-dashboard** (this repo) | `/Users/exe/Downloads/Claude/team-dashboard` | `ShieldnestORG/team-dashboard` | n/a (VPS-deployed) | admin only |
+| **coherencedaddy-landing** | `/Users/exe/Downloads/Claude/coherencedaddy-landing` | `ShieldnestORG/coherencedaddy` | `shieldnestorg/coherencedaddy` | coherencedaddy.com (+ 8 subdomains) |
+| **shieldnest_landing_page** | `/Users/exe/Downloads/shieldnest_landing_page` | `ShieldNEST/shieldnest_landing_page` | `shieldnestorg/shieldnest_landing_page` | shieldnest.org |
+| **tokns.fi_landing_page** | `/Users/exe/Downloads/Cursor/tokns_landing_page` | `ShieldNEST/tokns.fi_landing_page` | `shieldnestorg/tokns.fi_landing_page` | tokns.fi |
+| **tokns** | `/Users/exe/Downloads/Claude/_blog-network/tokns` | `ShieldnestORG/tokns` | `shieldnestorg/tokns` | app.tokns.fi |
 
-This doc is the canonical boundary. When in doubt, defer here — do not re-fork pricing, subscription state, or webhook logic in the storefront.
+Responsibilities:
+
+- **`team-dashboard`** — Admin API, Postgres schema, Stripe pipeline, entitlement resolver, cron scheduler, all product fulfillment agents, blog generation + multi-target publishing.
+- **`coherencedaddy-landing`** — Public CD storefront, SEO/AEO surface, pricing pages, checkout buttons, report viewers, free audit SSE stream, email delivery via Resend, `/blog` read + write endpoints.
+- **`shieldnest_landing_page`** — ShieldNest company root site. `/blog` read + write endpoints (mirrors CD pattern, Neon-backed).
+- **`tokns.fi_landing_page`** — tokns.fi marketing site. Static HTML. `/lab` renders blog posts client-side by fetching `app.tokns.fi/api/articles`.
+- **`tokns`** — app.tokns.fi crypto dashboard. Supabase-backed. Owns the `articles` table + `/api/articles` endpoints (POST auth, GET public); surfaces posts in `/dashboard` "News & Insights" section.
+
+This doc is the canonical cross-repo boundary. When in doubt, defer here — do not re-fork pricing, subscription state, or webhook logic across repos.
 
 ---
 

@@ -1007,7 +1007,7 @@ No external charting libraries. All visualizations (bar charts, sparklines, rada
 - **Features:** 8 interactive node cards, connection map, 3 user journeys (Builder, Investor, Learner), stats bar, all-tools grid
 - **Data Model:** Inline ecosystem data with connection pairs
 - **Funnel Strategy:** Understand ecosystem → Pick entry point (tokns.fi, tx.org, learn to earn)
-- **Backlinks:** ALL ecosystem properties (tokns.fi, app.tokns.fi, tx.org, shieldnest.io, yourarchi.com)
+- **Backlinks:** ALL ecosystem properties (tokns.fi, app.tokns.fi, tx.org, shieldnest.org, yourarchi.com)
 - **Update Schedule:** Quarterly (ecosystem changes, new properties)
 
 ---
@@ -1145,7 +1145,7 @@ Every tool page has 8-12 backlink touchpoints:
 - **EcosystemCTA component:** External partner link on all crypto tools (→ tokns.fi)
 - **Sidebar Partners section:** 5 permanent external links
 - **Footer:** 5 permanent ecosystem + built-by links
-- **Ecosystem tools:** Deep links to tx.org, tokns.fi, app.tokns.fi, shieldnest.io, yourarchi.com
+- **Ecosystem tools:** Deep links to tx.org, tokns.fi, app.tokns.fi, shieldnest.org, yourarchi.com
 
 ### Cross-Link Matrix
 | Source Category | Internal Links | External Links |
@@ -1154,7 +1154,7 @@ Every tool page has 8-12 backlink touchpoints:
 | Crypto Tools (5) | 3 related tools + EcosystemCTA | tokns.fi |
 | Ecosystem Tools (5) | 3 related tools + EcosystemCTA | tx.org, tokns.fi, app.tokns.fi |
 | Utility Tools (2) | 1-2 related tools | — |
-| All pages | Sidebar Partners (5 links) | tokns.fi, app.tokns.fi, tx.org, shieldnest.io, yourarchi.com |
+| All pages | Sidebar Partners (5 links) | tokns.fi, app.tokns.fi, tx.org, shieldnest.org, yourarchi.com |
 
 ---
 

@@ -31,7 +31,7 @@ export const BRAND_PERSONAS: Record<string, BrandPersona> = {
     name: 'ShieldNest',
     tagline: 'Privacy-first infrastructure for builders',
     voiceGuidelines: 'Technical, precise, security-focused. Speak to developers and operators. Reference privacy risks, infrastructure costs, validator performance.',
-    ctaUrl: 'https://shieldnest.io',
+    ctaUrl: 'https://shieldnest.org',
     ctaText: 'Build on privacy-first infrastructure',
   },
   tx: {

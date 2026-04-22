@@ -142,7 +142,7 @@ SCOUT → raw CSV → VALIDATOR → clean CSV → ENRICHER → rich data → ARC
 | tokns.fi | https://tokns.fi | All crypto tools (EcosystemCTA), sidebar, footer |
 | app.tokns.fi | https://app.tokns.fi | NFT Explorer, Learn to Earn, sidebar, footer |
 | TX Blockchain | https://tx.org | TX Blockchain Guide, Validators, sidebar, footer |
-| ShieldNest | https://shieldnest.io | Ecosystem Map, sidebar, footer |
+| ShieldNest | https://shieldnest.org | Ecosystem Map, sidebar, footer |
 | YourArchi | https://yourarchi.com | Ecosystem Map, sidebar, footer |
 
 ### Cross-Link Components

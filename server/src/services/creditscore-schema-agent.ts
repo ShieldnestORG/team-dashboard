@@ -18,6 +18,11 @@ import {
   creditscoreSubscriptions,
 } from "@paperclipai/db";
 import { callOllamaChat, OLLAMA_MODEL } from "./ollama-client.js";
+import {
+  formatRulesForPrompt,
+  getRulesByCategory,
+  selfCheckJsonLd,
+} from "./aeo-seo-playbook.js";
 import { logger } from "../middleware/logger.js";
 
 const IMPLS_PER_TIER: Record<string, number> = {
@@ -66,7 +71,13 @@ export function pickSchemaType(
 }
 
 function buildPrompt(args: { domain: string; schemaType: string; brandContext: string }): string {
+  const playbook = formatRulesForPrompt(getRulesByCategory("SCHEMA"));
   return `You are Core, a backend developer generating schema.org JSON-LD for AEO optimization.
+
+Follow the Structured Data playbook. Rule IDs are in brackets; never violate a DON'T.
+
+${playbook}
+
 
 Generate a production-ready ${args.schemaType} JSON-LD block for ${args.domain}.
 
@@ -205,6 +216,9 @@ export function creditscoreSchemaAgent(db: Db) {
         htmlSnippet: wrapInScript(jsonLd),
       };
 
+      const check = selfCheckJsonLd(payload.jsonLd);
+      const status = check.must.length > 0 ? "needs_revision" : "pending_review";
+
       await db.insert(creditscoreSchemaImpls).values({
         subscriptionId: sub.id,
         domain: sub.domain,
@@ -213,8 +227,17 @@ export function creditscoreSchemaAgent(db: Db) {
         schemaType: payload.schemaType,
         jsonLd: payload.jsonLd,
         htmlSnippet: payload.htmlSnippet,
-        promptMeta: { model: OLLAMA_MODEL, schemaType },
-        status: "pending_review",
+        promptMeta: {
+          model: OLLAMA_MODEL,
+          schemaType,
+          ruleViolations: check.all,
+          ruleViolationsBySeverity: {
+            must: check.must,
+            should: check.should,
+            avoid: check.avoid,
+          },
+        },
+        status,
       });
 
       priorTypes.push(schemaType);

@@ -32,6 +32,7 @@ import {
   Megaphone,
   CheckSquare,
   LineChart,
+  Gauge,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -138,6 +139,7 @@ export function Sidebar() {
           <SidebarNavItem to="/cities" label="City Collector" icon={MapPin} />
           <SidebarNavItem to="/content-review" label="Content" icon={Newspaper} />
           <SidebarNavItem to="/content-analytics" label="Content Analytics" icon={LineChart} />
+          <SidebarNavItem to="/creditscore-review" label="CreditScore Review" icon={Gauge} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
           <SidebarNavItem to="/discord" label="Discord" icon={MessageSquare} />

@@ -5,8 +5,24 @@ import { logger } from "../middleware/logger.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 
 // ---------------------------------------------------------------------------
-// Blog Publisher — multi-target publishing to coherencedaddy.com + shieldnest.io
-// Used by seo-engine.ts (signal-based) and content-crons.ts (Ollama content queue)
+// Blog Publisher — multi-target publishing for the CD ecosystem.
+//
+// Target surfaces (as of 2026-04-22):
+//   cd         → coherencedaddy.com/blog      — POST /api/blog/posts  (LIVE, Neon)
+//   sn         → shieldnest.org/blog          — POST /api/articles    (Neon; ships
+//                                                with the shieldnest_landing_page
+//                                                feat/blog-pipeline branch)
+//   tokns-app  → app.tokns.fi/articles        — POST /api/articles    (LIVE,
+//                                                Supabase — already renders in the
+//                                                dashboard's "News & Insights"
+//                                                section at the bottom of /dashboard)
+//
+// tokns.fi/lab ("the Lab") is a read-only surface: the static marketing site
+// fetches articles from app.tokns.fi/api/articles client-side at /lab, so no
+// publish target is needed — publishing to tokns-app automatically surfaces
+// content on tokns.fi/lab too.
+//
+// Used by seo-engine.ts (signal-based) and content-crons.ts (Ollama content queue).
 // ---------------------------------------------------------------------------
 
 import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
@@ -15,11 +31,18 @@ import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
 // edge proxies have a nasty history of dropping bodies mid-redirect. Skip the hop.
 const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://www.coherencedaddy.com/api/blog/posts";
 const BLOG_API_KEY = process.env.CD_BLOG_API_KEY || "";
-const SN_BLOG_API_URL = process.env.SN_BLOG_API_URL || "";
+const SN_BLOG_API_URL = process.env.SN_BLOG_API_URL || "https://shieldnest.org/api/articles";
 const SN_BLOG_API_KEY = process.env.SN_BLOG_API_KEY || "";
+// tokns-app target (app.tokns.fi) posts to the existing /api/articles route
+// which is Supabase-backed and already renders under the dashboard's
+// "News & Insights" section. Auth header is Bearer ${TOKNS_APP_BLOG_API_KEY}
+// (matches SN_ARTICLE_API_KEY on the app.tokns.fi side — named differently
+// here to avoid confusion with the shieldnest.org target above).
+const TOKNS_APP_BLOG_API_URL = process.env.TOKNS_APP_BLOG_API_URL || "https://app.tokns.fi/api/articles";
+const TOKNS_APP_BLOG_API_KEY = process.env.TOKNS_APP_BLOG_API_KEY || "";
 const INDEXNOW_KEY = process.env.INDEXNOW_KEY || "";
 
-export type PublishTarget = "cd" | "sn" | "all";
+export type PublishTarget = "cd" | "sn" | "tokns-app" | "all";
 
 // Tool slugs grouped by category for internal linking
 const TOOL_LINKS: Record<string, Array<{ name: string; slug: string }>> = {
@@ -294,12 +317,59 @@ export async function publishToShieldNest(post: BlogPost): Promise<{ success: bo
 }
 
 // ---------------------------------------------------------------------------
+// Publish BlogPost to app.tokns.fi /api/articles (Supabase-backed).
+// Contract verified against tokns/app/api/articles/route.ts:49-108:
+//   - Auth: Authorization: Bearer ${SN_ARTICLE_API_KEY} (that repo's env var)
+//   - Body: { slug, title, description, category, keywords[], content, reading_time }
+//   - Upserts on slug conflict (onConflict: 'slug') — no 409 from this target
+// ---------------------------------------------------------------------------
+
+export async function publishToToknsApp(post: BlogPost): Promise<{ success: boolean; error?: string }> {
+  if (!TOKNS_APP_BLOG_API_KEY) {
+    return { success: false, error: "TOKNS_APP_BLOG_API_KEY not set" };
+  }
+
+  try {
+    const res = await fetch(TOKNS_APP_BLOG_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${TOKNS_APP_BLOG_API_KEY}`,
+      },
+      body: JSON.stringify({
+        slug: post.slug,
+        title: post.title,
+        description: post.description,
+        category: post.category,
+        keywords: post.keywords,
+        content: post.content,
+        reading_time: post.reading_time,
+      }),
+    });
+
+    if (res.ok) {
+      logger.info({ slug: post.slug, target: "tokns-app" }, "Blog published to app.tokns.fi");
+      return { success: true };
+    }
+
+    const err = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error?: string };
+    logger.warn({ slug: post.slug, status: res.status, error: err.error }, "tokns-app publish failed");
+    return { success: false, error: err.error || `HTTP ${res.status}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ slug: post.slug, url: TOKNS_APP_BLOG_API_URL, err: msg }, "tokns-app publish threw — network error");
+    return { success: false, error: `network error: ${msg}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Publish to multiple targets in parallel
 // ---------------------------------------------------------------------------
 
 interface MultiTargetResult {
   cd?: { success: boolean; error?: string };
   sn?: { success: boolean; error?: string };
+  toknsApp?: { success: boolean; error?: string };
 }
 
 export async function publishToTargets(
@@ -319,6 +389,12 @@ export async function publishToTargets(
   if (target === "sn" || target === "all") {
     promises.push(
       publishToShieldNest(post).then((r) => { results.sn = r; }),
+    );
+  }
+
+  if (target === "tokns-app" || target === "all") {
+    promises.push(
+      publishToToknsApp(post).then((r) => { results.toknsApp = r; }),
     );
   }
 
@@ -405,7 +481,7 @@ export async function publishBlogFromContent(
   if (contentFormat) post.content_format = contentFormat;
   const results = await publishToTargets(post, target);
 
-  const anySuccess = results.cd?.success || results.sn?.success;
+  const anySuccess = results.cd?.success || results.sn?.success || results.toknsApp?.success;
 
   if (anySuccess) {
     // Ping IndexNow for published targets
@@ -413,7 +489,10 @@ export async function publishBlogFromContent(
       await pingIndexNow([`https://coherencedaddy.com/blog/${post.slug}`]);
     }
     if (results.sn?.success) {
-      await pingIndexNow([`https://app.tokns.fi/chain-updates/${post.slug}`]);
+      await pingIndexNow([`https://shieldnest.org/blog/${post.slug}`]);
+    }
+    if (results.toknsApp?.success) {
+      await pingIndexNow([`https://app.tokns.fi/articles/${post.slug}`]);
     }
 
     const errors: string[] = [];
@@ -422,6 +501,9 @@ export async function publishBlogFromContent(
     }
     if (results.sn && !results.sn.success && (target === "sn" || target === "all")) {
       errors.push(`sn: ${results.sn.error}`);
+    }
+    if (results.toknsApp && !results.toknsApp.success && (target === "tokns-app" || target === "all")) {
+      errors.push(`tokns-app: ${results.toknsApp.error}`);
     }
 
     return {
@@ -435,6 +517,7 @@ export async function publishBlogFromContent(
   const allErrors = [
     results.cd?.error && `cd: ${results.cd.error}`,
     results.sn?.error && `sn: ${results.sn.error}`,
+    results.toknsApp?.error && `tokns-app: ${results.toknsApp.error}`,
   ].filter(Boolean).join(", ");
 
   return { success: false, error: allErrors || "All targets failed" };

@@ -144,6 +144,12 @@ export const queryKeys = {
     log: (page?: number) => ["auto-reply", "log", page] as const,
     stats: ["auto-reply", "stats"] as const,
   },
+  creditscoreReview: {
+    contentDrafts: ["creditscore-review", "content-drafts"] as const,
+    schemaImpls: ["creditscore-review", "schema-impls"] as const,
+    competitorScans: ["creditscore-review", "competitor-scans"] as const,
+    strategyDocs: ["creditscore-review", "strategy-docs"] as const,
+  },
   apiRoutes: ["api-routes"] as const,
   plugins: {
     all: ["plugins"] as const,

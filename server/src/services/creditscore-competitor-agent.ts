@@ -226,9 +226,18 @@ export function creditscoreCompetitorAgent(db: Db) {
       .orderBy(desc(creditscoreCompetitorScans.createdAt));
   }
 
+  async function listRecent(limit = 50) {
+    return db
+      .select()
+      .from(creditscoreCompetitorScans)
+      .orderBy(desc(creditscoreCompetitorScans.createdAt))
+      .limit(limit);
+  }
+
   return {
     scanForSubscription,
     runMonthlyCompetitorCycle,
     listForSubscription,
+    listRecent,
   };
 }

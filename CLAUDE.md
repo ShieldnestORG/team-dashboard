@@ -92,3 +92,4 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Production Guide](docs/deploy/production.md) — VPS and Docker cleanup.
 - [Environment Variables](docs/deploy/env-vars.md) — Full variable reference.
 - [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md) — Mermaid maintenance.
+- [Blog Distribution](docs/products/blog-distribution.md) — Target surfaces, cron → target map, current wiring status.
