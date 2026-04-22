@@ -63,7 +63,10 @@ jobs:
         run: pnpm build
 
   publish_canary:
-    if: github.event_name == 'push'
+    # Gated on NPM_PUBLISH_ENABLED repo variable so master pushes stay
+    # green until an NPM_TOKEN is configured. Flip with
+    # `gh variable set NPM_PUBLISH_ENABLED --body true` after secrets land.
+    if: github.event_name == 'push' && vars.NPM_PUBLISH_ENABLED == 'true'
     needs: verify_canary
     runs-on: ubuntu-latest
     timeout-minutes: 45
