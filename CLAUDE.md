@@ -28,6 +28,29 @@ cd ui && npx tsc --noEmit
 - Stage specific files only. Do not use `git add -A`.
 - Cast `req.params.*` as `string` in Express routes.
 
+## Ownership Matrix
+
+This repo is the engine room for a two-repo system. The public storefront
+(`coherencedaddy-landing`) is the front door. Canonical boundary:
+[docs/OWNERSHIP.md](docs/OWNERSHIP.md).
+
+**Owned here (team-dashboard):**
+- Product pricing + plan definitions (`*_plans` tables)
+- Subscription state (`*_subscriptions` tables)
+- Stripe checkout session creation + Stripe webhooks (all products)
+- Entitlement resolution (`bundle-entitlements.ts`)
+- Product fulfillment crons (rescans, agent runs, report mailing)
+
+**Owned in coherencedaddy-landing:**
+- Public storefront UI (pricing pages, CTAs, report viewer)
+- Free audit SSE stream (browser-side)
+- Resend email templates (team-dashboard invokes via callback; do not duplicate)
+
+When adding a new product: add tables + service + routes here, then expose a
+`/plans` + `/checkout` + `/webhook` + `/entitlement` surface for the storefront
+to call via its `vercel.json` rewrites. Never re-fork pricing or webhook logic
+in the storefront.
+
 ## Documentation Rules
 Documentation must be updated whenever code structure or behavior changes.
 - Update relevant docs in `docs/`

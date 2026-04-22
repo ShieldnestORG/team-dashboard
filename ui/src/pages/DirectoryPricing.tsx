@@ -268,6 +268,19 @@ export function DirectoryPricing() {
             </a>
           </CardContent>
         </Card>
+
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="pt-5">
+            <p className="text-sm font-medium">Bundle and save up to 41%</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Pair your directory listing with CreditScore monitoring and Partner Network
+              content mentions in one subscription.
+            </p>
+            <a href="/bundles" className="mt-3 inline-block text-sm underline">
+              View bundle packages &rarr;
+            </a>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Enterprise card — inline Calendly */}

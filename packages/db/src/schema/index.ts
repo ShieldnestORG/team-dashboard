@@ -108,6 +108,12 @@ export {
   intelUsageMeter,
 } from "./intel_billing.js";
 export { directoryListings, directoryListingEvents } from "./directory_listings.js";
+export { bundlePlans, bundleSubscriptions } from "./bundle_entitlements.js";
+export {
+  creditscorePlans,
+  creditscoreSubscriptions,
+  creditscoreReports,
+} from "./creditscore.js";
 export { campaigns } from "./campaigns.js";
 export type { Campaign, NewCampaign } from "./campaigns.js";
 export { cityBusinessLeads } from "./city_business_leads.js";

@@ -152,6 +152,16 @@ export function IntelPricing() {
         />
       </div>
 
+      <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-4 text-center">
+        <p className="text-sm font-medium">Intel API included in AEO Scale and All-Inclusive bundles</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Get Intel API Pro + Directory Boosted + Partner Premium in one subscription and save up to 41%.
+        </p>
+        <a href="/bundles" className="mt-2 inline-block text-sm underline">
+          View bundle packages &rarr;
+        </a>
+      </div>
+
       <footer className="mt-8 text-center text-sm text-muted-foreground">
         <p>
           All plans include access to <code>/api/intel/*</code> — companies, search,

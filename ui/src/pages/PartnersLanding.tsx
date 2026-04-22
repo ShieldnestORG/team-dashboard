@@ -162,6 +162,26 @@ export function PartnersLanding() {
         </div>
       </section>
 
+      {/* Bundle upsell */}
+      <section className="bg-gray-50 py-10 border-t border-gray-200">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <p className="text-sm font-semibold text-violet-700 uppercase tracking-wide mb-2">Save up to 41%</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">
+            Pair with a Directory Listing &amp; CreditScore
+          </h2>
+          <p className="text-gray-500 text-sm mb-5">
+            Bundle your Partner Network subscription with a Directory listing and CreditScore monitoring
+            in one invoice — AEO Starter from $199/mo, AEO Growth from $499/mo.
+          </p>
+          <a
+            href="/bundles"
+            className="inline-block bg-violet-600 text-white text-sm font-medium px-6 py-2.5 rounded-lg hover:bg-violet-700 transition-colors"
+          >
+            View bundle packages &rarr;
+          </a>
+        </div>
+      </section>
+
       {/* CTA strip */}
       <section className="bg-violet-600 py-14">
         <div className="max-w-3xl mx-auto px-6 text-center">

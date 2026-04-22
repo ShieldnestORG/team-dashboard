@@ -37,6 +37,8 @@ import {
   directoryListingsRoutes,
   directoryListingsWebhookRoutes,
 } from "./routes/directory-listings.js";
+import { bundleRoutes, bundleWebhookRouter } from "./routes/bundles.js";
+import { creditscoreRoutes, creditscoreWebhookRouter } from "./routes/creditscore.js";
 import { contentRoutes } from "./routes/content.js";
 import { visualContentRoutes } from "./routes/visual-content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
@@ -110,6 +112,7 @@ import { startSeoAuditCron } from "./services/seo-audit-cron.js";
 import { startPluginLogRetention } from "./services/plugin-log-retention.js";
 import { startFirecrawlCrons } from "./services/firecrawl-crons.js";
 import { startDirectoryCrons } from "./services/directory-crons.js";
+import { startPartnerFulfillmentCrons } from "./services/partner-fulfillment-crons.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
@@ -153,8 +156,10 @@ export async function createApp(
     ],
     credentials: true,
   }));
-  // Stripe webhook needs raw body for signature verification — mount before JSON parser.
+  // Stripe webhooks need raw body for signature verification — mount before JSON parser.
   app.use("/api/intel-billing", intelBillingWebhookRouter(db));
+  app.use("/api/bundles", bundleWebhookRouter(db));
+  app.use("/api/creditscore", creditscoreWebhookRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
@@ -260,6 +265,8 @@ export async function createApp(
   api.use("/intel", intelRoutes(db));
   api.use("/intel-billing", intelBillingRoutes(db));
   api.use("/directory-listings", directoryListingsRoutes(db));
+  api.use("/bundles", bundleRoutes(db));
+  api.use("/creditscore", creditscoreRoutes(db));
   api.use("/stripe", directoryListingsWebhookRoutes(db));
   api.use("/content", contentRoutes(db));
   api.use(trendRoutes(db));
@@ -437,6 +444,7 @@ export async function createApp(
   startPluginLogRetention(db);
   startFirecrawlCrons(db);
   startDirectoryCrons(db);
+  startPartnerFulfillmentCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);

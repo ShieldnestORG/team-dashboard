@@ -24,6 +24,13 @@ The system relies on a vast array of scheduled jobs to power the intel engine, c
 - **AEO Comparison/Forge (3 jobs)**: Competitive analysis reports.
 - **Slideshow Blog (2 jobs)**: Interactive HTML slideshow generation.
 
+## Product Fulfillment Crons
+- **Directory Mentions (1 job)**: Monthly batch content generation for active Featured/Verified/Boosted listings — Blaze + Prism agents, 1st of month at 9 AM (`directory:mentions:generate`).
+- **Directory Expire (1 job)**: Expire past_due listings overdue 30+ days — 3 AM daily (`directory:expire-listings`).
+- **Partner Mentions (1 job)**: Monthly content batch for all active partner tiers — Cipher/Blaze/Spark, 1st of month at 10 AM (`partner:mentions:generate`).
+- **Partner Strategy Docs (1 job)**: Biweekly Sage strategy document for Premium partners — 1st and 15th at 8 AM (`partner:strategy-doc:premium`).
+- **CreditScore Scans (1 job)**: Rescans active Starter/Pro subscriptions when nextScanAt has passed — every 6 hours (`creditscore:scan`).
+
 ## Other Operational Crons
 - **Trends Scan (1 job)**: CoinGecko, HackerNews, Google Trends, Bing News every 6h.
 - **Maintenance (2 jobs)**: Stale content cleanup and general health checks.

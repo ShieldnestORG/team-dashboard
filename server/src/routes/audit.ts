@@ -52,12 +52,12 @@ setInterval(() => {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SSEEvent =
+export type SSEEvent =
   | { type: "step"; label: string; detail?: string }
   | { type: "complete"; result: AuditResult }
   | { type: "error"; message: string };
 
-type AuditResult = {
+export type AuditResult = {
   url: string;
   score: number;
   breakdown: {
@@ -181,7 +181,7 @@ async function fcSearch(
 
 // ── Audit pipeline ────────────────────────────────────────────────────────────
 
-async function runAudit(
+export async function runAudit(
   url: string,
   emit: (event: SSEEvent) => void,
   isCancelled: () => boolean,

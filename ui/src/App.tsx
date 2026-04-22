@@ -51,6 +51,7 @@ import { IntelPricing } from "./pages/IntelPricing";
 import { IntelBillingSuccess } from "./pages/IntelBillingSuccess";
 import { IntelBilling } from "./pages/IntelBilling";
 import { DirectoryPricing } from "./pages/DirectoryPricing";
+import { Bundles } from "./pages/Bundles";
 import { Discord } from "./pages/Discord";
 import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
@@ -426,6 +427,7 @@ export function App() {
         <Route path="affiliate/leads/:id" element={<AffiliateLeadDetail />} />
         <Route path="intel/pricing" element={<IntelPricing />} />
         <Route path="directory-pricing" element={<DirectoryPricing />} />
+        <Route path="bundles" element={<Bundles />} />
         <Route path="billing/success" element={<IntelBillingSuccess />} />
 
         <Route element={<CloudAccessGate />}>
