@@ -42,7 +42,8 @@ interface SchemaPayload {
   htmlSnippet: string;
 }
 
-function pickSchemaType(
+// Exported for unit testing.
+export function pickSchemaType(
   resultJson: unknown,
   priorTypes: string[],
 ): (typeof SCHEMA_CANDIDATES)[number] {
@@ -90,7 +91,8 @@ Return ONLY a fenced JSON object, no prose before or after:
 \`\`\``;
 }
 
-function wrapInScript(jsonLd: Record<string, unknown>): string {
+// Exported for unit testing.
+export function wrapInScript(jsonLd: Record<string, unknown>): string {
   return `<script type="application/ld+json">\n${JSON.stringify(jsonLd, null, 2)}\n</script>`;
 }
 

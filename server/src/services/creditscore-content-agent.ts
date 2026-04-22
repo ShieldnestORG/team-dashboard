@@ -36,7 +36,8 @@ interface AuditBreakdown {
   technical?: { score: number; max: number; issues?: string[] };
 }
 
-function slugify(s: string): string {
+// Exported for unit testing.
+export function slugify(s: string): string {
   return s
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, "")
@@ -45,7 +46,8 @@ function slugify(s: string): string {
     .slice(0, 60);
 }
 
-function weakestSignals(resultJson: unknown): Array<{ name: string; gap: number; issues: string[] }> {
+// Exported for unit testing.
+export function weakestSignals(resultJson: unknown): Array<{ name: string; gap: number; issues: string[] }> {
   if (!resultJson || typeof resultJson !== "object") return [];
   const breakdown = (resultJson as { breakdown?: AuditBreakdown }).breakdown;
   if (!breakdown) return [];
@@ -95,7 +97,8 @@ async function askOllama(prompt: string): Promise<string | null> {
   }
 }
 
-function parseDraftJson(raw: string, fallbackSignal: string): DraftPayload | null {
+// Exported for unit testing.
+export function parseDraftJson(raw: string, fallbackSignal: string): DraftPayload | null {
   // Expected format from the prompt: a fenced JSON object with keys
   // { title, slug, targetSignal, html, markdown }.
   const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);

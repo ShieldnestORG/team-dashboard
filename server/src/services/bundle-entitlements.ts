@@ -17,7 +17,8 @@ const CREDITSCORE_TIER_RANK: Record<CreditscoreTier, number> = {
   pro: 4,
 };
 
-function higherCreditscoreTier(
+// Exported for unit testing.
+export function higherCreditscoreTier(
   a: { tier: CreditscoreTier; domains: number } | null,
   b: { tier: CreditscoreTier; domains: number } | null,
 ): { tier: CreditscoreTier; domains: number } | null {

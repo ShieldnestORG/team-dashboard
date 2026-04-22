@@ -36,6 +36,11 @@ export interface SendArgs {
   messageId?: string;
 }
 
+// Exported for unit testing.
+export function signBody(body: string, secret: string): string {
+  return `v1=${createHmac("sha256", secret).update(body).digest("hex")}`;
+}
+
 function callbackEndpoint(): string | null {
   const url = process.env.CREDITSCORE_EMAIL_CALLBACK_URL?.trim();
   if (url) return url;
@@ -44,10 +49,6 @@ function callbackEndpoint(): string | null {
   return process.env.CREDITSCORE_EMAIL_CALLBACK_URL_FALLBACK_ENABLED === "false"
     ? null
     : fallback;
-}
-
-function signBody(body: string, secret: string): string {
-  return `v1=${createHmac("sha256", secret).update(body).digest("hex")}`;
 }
 
 export async function sendCreditscoreEmail(args: SendArgs): Promise<void> {

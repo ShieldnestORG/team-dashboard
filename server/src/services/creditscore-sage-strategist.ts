@@ -24,7 +24,8 @@ import { callOllamaChat, OLLAMA_MODEL } from "./ollama-client.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
 import { logger } from "../middleware/logger.js";
 
-function isoWeekTag(d: Date): string {
+// Exported for unit testing.
+export function isoWeekTag(d: Date): string {
   // e.g. "2026-W17" — uses ISO 8601 week numbering, Monday as first day.
   const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const dayNum = dt.getUTCDay() || 7;
@@ -34,7 +35,8 @@ function isoWeekTag(d: Date): string {
   return `${dt.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
-function startOfMondayUtc(d: Date): Date {
+// Exported for unit testing.
+export function startOfMondayUtc(d: Date): Date {
   const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const day = dt.getUTCDay() || 7;
   if (day !== 1) dt.setUTCDate(dt.getUTCDate() - (day - 1));

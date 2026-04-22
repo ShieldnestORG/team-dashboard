@@ -28,7 +28,8 @@ interface CompetitorHint {
   domain: string;
 }
 
-function extractCompetitorDomains(resultJson: unknown): string[] {
+// Exported for unit testing.
+export function extractCompetitorDomains(resultJson: unknown): string[] {
   if (!resultJson || typeof resultJson !== "object") return [];
   const competitors = (resultJson as { competitors?: CompetitorHint[] }).competitors;
   if (!Array.isArray(competitors)) return [];
@@ -62,7 +63,8 @@ async function auditOnce(url: string): Promise<AuditResult | null> {
   return result;
 }
 
-function summarizeGap(customerScore: number, competitor: AuditResult): string {
+// Exported for unit testing.
+export function summarizeGap(customerScore: number, competitor: AuditResult): string {
   const delta = competitor.score - customerScore;
   const sign = delta > 0 ? "ahead" : delta < 0 ? "behind" : "tied";
   const topCompetitorStrength = Object.entries(competitor.breakdown)

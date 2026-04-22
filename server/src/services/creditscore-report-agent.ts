@@ -24,7 +24,8 @@ interface RecommendationShape {
   impact: string;
 }
 
-function extractTopRecommendation(resultJson: unknown): RecommendationShape | null {
+// Exported for unit testing.
+export function extractTopRecommendation(resultJson: unknown): RecommendationShape | null {
   if (!resultJson || typeof resultJson !== "object") return null;
   const recs = (resultJson as { recommendations?: unknown }).recommendations;
   if (!Array.isArray(recs) || recs.length === 0) return null;
