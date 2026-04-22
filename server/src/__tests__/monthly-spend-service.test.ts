@@ -8,7 +8,11 @@ function createSelectSequenceDb(results: unknown[]) {
     from: vi.fn(() => chain),
     where: vi.fn(() => chain),
     leftJoin: vi.fn(() => chain),
+    innerJoin: vi.fn(() => chain),
     groupBy: vi.fn(() => chain),
+    orderBy: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    offset: vi.fn(() => chain),
     then: vi.fn((resolve: (value: unknown[]) => unknown) => Promise.resolve(resolve(pending.shift() ?? []))),
   };
 

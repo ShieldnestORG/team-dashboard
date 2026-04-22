@@ -2,6 +2,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import postgres from "postgres";
 import { applyPendingMigrations, ensurePostgresDatabase } from "./client.js";
 
 type EmbeddedPostgresInstance = {
@@ -82,6 +83,25 @@ async function probeEmbeddedPostgresSupport(): Promise<EmbeddedPostgresTestSuppo
   try {
     await instance.initialise();
     await instance.start();
+
+    // The migration chain depends on the pgvector extension (vector(1024)
+    // columns in 0060 / 0064). embedded-postgres does not bundle pgvector,
+    // so probe for it here and mark the environment unsupported if missing
+    // — dependent tests will skip cleanly instead of failing loudly during
+    // applyPendingMigrations.
+    const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
+    const sql = postgres(adminConnectionString, { max: 1, onnotice: () => {} });
+    try {
+      await sql.unsafe("CREATE EXTENSION IF NOT EXISTS vector");
+    } catch (error) {
+      return {
+        supported: false,
+        reason: `pgvector extension unavailable in embedded Postgres: ${formatEmbeddedPostgresError(error)}`,
+      };
+    } finally {
+      await sql.end({ timeout: 5 }).catch(() => {});
+    }
+
     return { supported: true };
   } catch (error) {
     return {
