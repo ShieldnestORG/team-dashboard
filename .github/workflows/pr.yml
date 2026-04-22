@@ -131,6 +131,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # External postgres with pgvector preinstalled. Embedded-postgres
+    # doesn't ship pgvector, and three migrations (0046, 0060, 0064)
+    # declare vector(1024) columns — running against pgvector/pgvector
+    # lets CI exercise the real migration flow instead of failing on
+    # `type "vector" does not exist`.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: paperclip
+          POSTGRES_PASSWORD: paperclip
+          POSTGRES_DB: paperclip
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U paperclip"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -155,13 +175,21 @@ jobs:
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
 
+      - name: Enable pgvector extension
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client
+          PGPASSWORD=paperclip psql -h 127.0.0.1 -U paperclip -d paperclip -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
       - name: Generate Paperclip config
         run: |
           mkdir -p ~/.paperclip/instances/default
           cat > ~/.paperclip/instances/default/config.json << 'CONF'
           {
             "$meta": { "version": 1, "updatedAt": "2026-01-01T00:00:00.000Z", "source": "onboard" },
-            "database": { "mode": "embedded-postgres" },
+            "database": {
+              "mode": "postgres",
+              "connectionString": "postgres://paperclip:paperclip@127.0.0.1:5432/paperclip"
+            },
             "logging": { "mode": "file" },
             "server": { "deploymentMode": "local_trusted", "host": "127.0.0.1", "port": 3100 },
             "auth": { "baseUrlMode": "auto" },
@@ -169,6 +197,11 @@ jobs:
             "secrets": { "provider": "local_encrypted", "strictMode": false }
           }
           CONF
+          # Pre-seed the agent JWT secret so the doctor check doesn't
+          # have to auto-repair (its repair path misfires in postgres
+          # mode).
+          printf 'PAPERCLIP_AGENT_JWT_SECRET=%s\n' "$(openssl rand -hex 32)" \
+            > ~/.paperclip/instances/default/.env
 
       - name: Run e2e tests
         env:
