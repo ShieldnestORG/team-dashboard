@@ -4,6 +4,46 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-22] — Cross-repo blog distribution + per-target visibility
+
+### New Features
+
+**Three-surface blog publisher (all live)**
+- `PublishTarget` extended to `cd | sn | tokns-app | all`. Fan-out publishes in parallel via `Promise.allSettled`; item marked `published` when any leg succeeds.
+- `cd` → `www.coherencedaddy.com/blog` (Neon, was live)
+- `sn` → `shieldnest.org/blog` — new Next.js 16 + shadcn blog built in `shieldnest_landing_page` (Neon, shared team-dashboard DB)
+- `tokns-app` → `app.tokns.fi/articles` + dashboard "News & Insights" section (Supabase, was live, now wired)
+- `tokns.fi/lab` — static marketing site rewritten to fetch from `app.tokns.fi/api/articles` client-side; CORS allowlist added on the tokns app side
+
+**Admin visibility (migration 0092)**
+- `content_items.slug` + `content_items.publish_results` (JSONB) — per-target success/error/url/publishedAt persisted on every fan-out, including partial failures
+- `/content-review` UI: `PublishTargetChips` on blog_post + slideshow_blog cards — green (open-link ↗), red (retry with error tooltip), gray (publish-now)
+- `POST /api/content/queue/:id/republish/:target` — admin-only single-leg retry. Rebuilds BlogPost from stored content/topic/slug; preserves prior success when retry returns 409 (post already live)
+
+**Repo rename**
+- `shieldnest.io` (dead domain, never ours) → `shieldnest.org` sitewide across coherencedaddy-landing (42 files), team-dashboard agents/templates/docs, and all brand/CTA configs
+
+### Infrastructure
+- VPS1 `.env.production` reconfigured: `SN_BLOG_API_URL` → `https://www.shieldnest.org/api/articles` (www form skips 307 hop); legacy `SN_BLOG_API_KEY` value migrated to new `TOKNS_APP_BLOG_API_KEY` (still matches tokns app's `SN_ARTICLE_API_KEY`); new `SN_BLOG_API_KEY` generated and set on both sides
+- Neon: ran shieldnest blog migration (`blog_posts` table) + team-dashboard migration `0092_content_items_publish_results.sql`
+- Vercel (`shieldnest_landing_page`): set `DATABASE_URL`, `BLOG_API_KEY`, `INDEXNOW_KEY`; added IndexNow verification file at `public/<key>.txt`
+- CORS allowlist on `app.tokns.fi/api/articles` GET for `tokns.fi`, `www.tokns.fi`, localhost dev ports
+- Stale `.vercel/project.json` rebinding on shieldnest_landing_page (was pointing to a dead v0 project ID)
+
+### Docs
+- `docs/products/blog-distribution.md` rewritten as canonical cross-repo matrix + visibility section + health queries
+- `docs/OWNERSHIP.md` rewritten as 4-repo table (path + GitHub + Vercel project + domain)
+- `docs/architecture/system-overview.md`, `docs/operations/cron-inventory.md`, `docs/operations/key-files.md`, `docs/deploy/env-vars.md` updated
+- `Structure.tsx` diagram: blog publisher now shows all three targets, retry route, and tokns.fi ← app.tokns.fi read edge
+
+### Cross-repo PRs merged
+- [coherencedaddy#2](https://github.com/ShieldnestORG/coherencedaddy/pull/2) — shieldnest.io → .org rename (42 files)
+- [shieldnest_landing_page#1](https://github.com/ShieldNEST/shieldnest_landing_page/pull/1) — new /blog + /api/articles
+- [tokns.fi_landing_page#1](https://github.com/ShieldNEST/tokns.fi_landing_page/pull/1) — dynamic /lab + sitemap /lab entry
+- [tokns#45](https://github.com/ShieldnestORG/tokns/pull/45) — CORS allowlist on /api/articles
+- [tokns#46](https://github.com/ShieldnestORG/tokns/pull/46) — `tsc --noEmit` 83 → 0 errors (zero escape hatches)
+- [team-dashboard#9](https://github.com/ShieldnestORG/team-dashboard/pull/9) — per-target visibility + retry
+
 ## [2026-04-14m] — AEO Marketing Push + Monetization Tighten-Up
 
 ### New Features

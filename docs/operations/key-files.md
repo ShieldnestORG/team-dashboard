@@ -3,7 +3,7 @@
 This document provides a mapping of critical files to their purpose within the system.
 
 ## API & Routes
-- `server/src/routes/content.ts`: Text content generation and queue API.
+- `server/src/routes/content.ts`: Text content generation + queue API. Includes `POST /queue/:id/republish/:target` admin endpoint for retrying a single blog publish leg (cd | sn | tokns-app).
 - `server/src/routes/visual-content.ts`: Visual content generation, queue, and asset serving API.
 - `server/src/routes/trends.ts`: Trend signals and SEO engine API (`/api/trends/*`).
 - `server/src/routes/auto-reply.ts`: Auto-reply REST API (settings, config, logs, stats).
@@ -18,6 +18,8 @@ This document provides a mapping of critical files to their purpose within the s
 ## Core Services
 - `server/src/services/trend-scanner.ts`: CoinGecko, HackerNews, Google Trends, Bing News trend scanner.
 - `server/src/services/seo-engine.ts`: Trend-based blog generation with intel vector context and publish.
+- `server/src/services/blog-publisher.ts`: Cross-repo blog fan-out (cd | sn | tokns-app | all). Exports `publishBlogFromContent`, `publishToTargets`, `republishTarget`, `liveUrlFor`. Persists per-target results to `content_items.publish_results`.
+- `server/src/services/content-crons.ts`: Scheduled content generation jobs. Blog-type jobs (`content:blog`, `content:xrp:blog`, `content:tx-chain-daily`, etc.) call `publishBlogFromContent` and store slug + publish_results on the content item.
 - `server/src/services/content-embedder.ts`: Embeds published content back into intel reports with BGE-M3.
 - `server/src/services/intel-quality.ts`: Quality scoring, dedup, and feedback penalties.
 - `server/src/services/auto-reply.ts`: X auto-reply engine.
@@ -36,6 +38,8 @@ This document provides a mapping of critical files to their purpose within the s
 - `server/src/services/youtube/tts.ts`: Grok TTS (xAI API, Rex voice).
 
 ## Database & Schema
+- `packages/db/src/schema/content_items.ts`: Content items table — `slug` + `publish_results` JSONB for per-target blog publish tracking.
+- `packages/db/src/migrations/0092_content_items_publish_results.sql`: Migration adding `slug`, `publish_results`, and `content_items_slug_idx`.
 - `packages/db/src/schema/content_quality_signals.ts`: Persistent feedback penalty table.
 - `packages/db/src/schema/auto_reply.ts`: Auto-reply configuration and logs.
 - `packages/db/src/schema/partners.ts`: Partner network tables.

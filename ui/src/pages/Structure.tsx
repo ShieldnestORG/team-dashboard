@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22 (PRD 1 CreditScore full agent fleet: scan 6h (auditor), fix-priority-digest monthly (sage), content-drafts monthly (cipher), schema-impls monthly (core), competitor-scans monthly (forge), sage-weekly Mondays (sage). Content tables: creditscore_content_drafts, creditscore_schema_impls, creditscore_competitor_scans, creditscore_strategy_docs — all Ollama-backed review queues. Bundles + Owned Utility-Site Network substrate intact.)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22 (PRD 1 CreditScore full agent fleet: scan 6h (auditor), fix-priority-digest monthly (sage), content-drafts monthly (cipher), schema-impls monthly (core), competitor-scans monthly (forge), sage-weekly Mondays (sage). Content tables: creditscore_content_drafts, creditscore_schema_impls, creditscore_competitor_scans, creditscore_strategy_docs — all Ollama-backed review queues. Bundles + Owned Utility-Site Network substrate intact. + 2026-04-22: House Ads service added — /api/house-ads + /house-ads admin UI (pre-AdSense filler, also reusable post-approval fallback).)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -101,10 +101,10 @@ const DEFAULT_DIAGRAM = `graph TB
 
     subgraph OtherProps["Ecosystem Properties"]
       direction TB
-      Tokns(["tokns.fi — 'the Lab' blog (planned)"]):::siteNode
-      ToknsApp(["app.tokns.fi/dashboard — News & Insights (planned)"])
+      Tokns(["tokns.fi — 'the Lab' blog (live, reads app.tokns.fi via CORS)"]):::siteNode
+      ToknsApp(["app.tokns.fi/dashboard — News & Insights (live)"])
       TXChain(["TX Blockchain — Cosmos SDK"]):::siteNode
-      ShieldNest(["shieldnest.org — /blog (planned)"]):::siteNode
+      ShieldNest(["shieldnest.org — /blog (live, Neon)"]):::siteNode
       YourArchi(["yourarchi.com"]):::siteNode
     end
 
@@ -192,7 +192,8 @@ const DEFAULT_DIAGRAM = `graph TB
         Templates(["6 Personality Templates"])
         VideoAssembler(["Video Assembler — FFmpeg"])
         SEOEngine(["SEO Engine — Claude-powered"])
-        BlogPublisher(["Blog Publisher — CD live + SN planned (shieldnest.org)"])
+        BlogPublisher(["Blog Publisher — cd + sn + tokns-app (all LIVE) · per-target publish_results"])
+        BlogRetryRoute(["POST /api/content/queue/:id/republish/:target"])
         SlideshowGen(["Slideshow Blog Generator"])
         PubYT(["YouTube Shorts — active"])
         PubTikTok(["TikTok — active"])
@@ -411,6 +412,14 @@ const DEFAULT_DIAGRAM = `graph TB
         OwnedSitesTemplate(["coherence-utility-template — external repo, VPS3 deploy"]):::readyNode
       end
 
+      subgraph HouseAdsNet["House Ads — Pre-AdSense Filler"]
+        direction TB
+        HouseAdsSvc(["House Ads Service — pickForSlot weighted random + impression/click tracking"])
+        HouseAdsRoutes(["/api/house-ads — active?slot=X (public), :id/image (stream), :id/click (302), CRUD (board)"])
+        HouseAdsPage(["/house-ads — admin CRUD UI"])
+        HouseAdsDB[("house_ads — creative+slot+weight+window+counters")]
+      end
+
       subgraph AffiliateSystem["Affiliate Marketer System"]
         direction TB
         AffiliateAuth(["Affiliate Auth — JWT + password reset"])
@@ -544,6 +553,11 @@ const DEFAULT_DIAGRAM = `graph TB
   SEOEngine -->|"fallback"| AnthropicAPI
   BlogPublisher --> OllamaSvc
   BlogPublisher -->|"IndexNow"| IndexNowAPI
+  BlogPublisher -->|"POST /api/articles"| ShieldNest
+  BlogPublisher -->|"POST /api/articles"| ToknsApp
+  BlogPublisher -->|"publish_results JSONB"| ContentDB
+  ToknsApp -.->|"GET /api/articles (CORS)"| Tokns
+  BlogRetryRoute -->|"single-leg retry"| BlogPublisher
   Embeddings --> EmbedSvc
   TrendScanner --> CoinGecko
   TrendScanner --> HackerNews

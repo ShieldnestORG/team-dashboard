@@ -47,9 +47,11 @@ Generate → publish wiring owned by this repo (see [docs/products/blog-distribu
 | Target slug | Destination | Status | Env vars |
 |---|---|---|---|
 | `cd`        | `https://www.coherencedaddy.com/blog/<slug>` | **LIVE** — ~2–3 posts/day | `CD_BLOG_API_URL`, `CD_BLOG_API_KEY` |
-| `sn`        | `https://shieldnest.org/blog/<slug>` | **SHIPPING** — endpoint built in `shieldnest_landing_page#feat/blog-pipeline` | `SN_BLOG_API_URL`, `SN_BLOG_API_KEY` |
-| `tokns-app` | `https://app.tokns.fi/articles/<slug>` + dashboard "News & Insights" feed | **LIVE** — endpoint + render already existed on the tokns project | `TOKNS_APP_BLOG_API_URL`, `TOKNS_APP_BLOG_API_KEY` |
-| _(read-only)_ | `https://tokns.fi/lab` ("the Lab") — fetches from `app.tokns.fi/api/articles` client-side | **SHIPPING** — /lab rewritten in `tokns.fi_landing_page#feat/lab-dynamic` | _(no publisher env; reads tokns-app)_ |
+| `sn`        | `https://shieldnest.org/blog/<slug>` | **LIVE** | `SN_BLOG_API_URL`, `SN_BLOG_API_KEY` |
+| `tokns-app` | `https://app.tokns.fi/articles/<slug>` + dashboard "News & Insights" feed | **LIVE** | `TOKNS_APP_BLOG_API_URL`, `TOKNS_APP_BLOG_API_KEY` |
+| _(read-only)_ | `https://tokns.fi/lab` ("the Lab") — fetches from `app.tokns.fi/api/articles` client-side (CORS-allowlisted) | **LIVE** | _(no publisher env; reads tokns-app)_ |
+
+Per-target publish results (`content_items.publish_results` JSONB, migration 0092) are surfaced in the admin UI at `/content-review` via `PublishTargetChips` — green chips with open-link, red chips with retry, gray chips with publish-now. The retry endpoint is `POST /api/content/queue/:id/republish/:target`.
 
 ## Core Systems In This Repo
 
