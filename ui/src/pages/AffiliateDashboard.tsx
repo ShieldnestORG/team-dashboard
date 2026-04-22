@@ -181,7 +181,7 @@ export function AffiliateDashboard() {
       .catch(() => undefined);
     affiliatesApi
       .listPromoCampaigns()
-      .then(setPromoCampaigns)
+      .then((r) => setPromoCampaigns(r.campaigns))
       .catch(() => undefined);
   }, []);
 

@@ -58,7 +58,7 @@ export function AffiliatePromo() {
         affiliatesApi.listPromoCampaigns(),
         affiliatesApi.listPromoPosts().catch(() => [] as PromoPostSubmission[]),
       ]);
-      setCampaigns(c);
+      setCampaigns(c.campaigns);
       setPosts(p);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load promo campaigns");

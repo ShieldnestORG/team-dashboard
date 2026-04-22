@@ -390,7 +390,7 @@ export const affiliatesApi = {
 
   // Phase 4 — promo campaigns
   listPromoCampaigns: () =>
-    affiliateRequest<PromoCampaign[]>("/promo/campaigns"),
+    affiliateRequest<{ campaigns: PromoCampaign[] }>("/promo/campaigns"),
 
   listPromoPosts: () =>
     affiliateRequest<PromoPostSubmission[]>("/promo/posts"),

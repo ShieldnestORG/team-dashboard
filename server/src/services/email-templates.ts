@@ -138,7 +138,7 @@ function htmlShell(title: string, body: string): string {
         <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;max-width:600px;width:100%;">
           <!-- Header -->
           <tr>
-            <td style="background:#FF6B6B;padding:24px 32px;">
+            <td style="background:#FF876D;padding:24px 32px;">
               <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
                 Coherence Daddy
               </span>
@@ -169,7 +169,7 @@ function htmlShell(title: string, body: string): string {
 
 function ctaButton(href: string, label: string): string {
   return `<p style="margin:24px 0 0;">
-    <a href="${href}" style="display:inline-block;background:#FF6B6B;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:6px;">
+    <a href="${href}" style="display:inline-block;background:#FF876D;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:6px;">
       ${label}
     </a>
   </p>`;
@@ -248,7 +248,7 @@ function buildPartnerWelcome(vars: EmailVars): { subject: string; html: string }
 
     <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
     <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reply to this email or reach us at <a href="mailto:hello@coherencedaddy.com" style="color:#4ECDC4;">hello@coherencedaddy.com</a>.
+      Questions? Reply to this email or reach us at <a href="mailto:info@coherencedaddy.com" style="color:#4ECDC4;">info@coherencedaddy.com</a>.
     </p>
   `;
 
@@ -379,7 +379,7 @@ function buildAffiliateApproved(vars: EmailVars): { subject: string; html: strin
     ${ctaButton(dashUrl, "Go to Your Dashboard →")}
     <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
     <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reply to this email or reach us at <a href="mailto:hello@coherencedaddy.com" style="color:#4ECDC4;">hello@coherencedaddy.com</a>.
+      Questions? Reply to this email or reach us at <a href="mailto:info@coherencedaddy.com" style="color:#4ECDC4;">info@coherencedaddy.com</a>.
     </p>
   `;
 
