@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-20 (Affiliate Phase 4 — tier ladder, leaderboard, compliance scanner, merch + promo, new crons: tier-recompute, leaderboard-snapshot, inactive-reengagement, giveaway-eligibility, engagement-scan)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22 (PRD 1 CreditScore cutover: creditscore_plans/subscriptions/reports tables, /api/creditscore/* routes + webhook, creditscore:scan cron 6h, HMAC-signed email callback to storefront. Bundles substrate: bundle_plans + bundle_subscriptions, /api/bundles/*, higher-of-tier entitlement resolver. Owned Utility-Site Network Phase 2 — owned_sites + owned_site_metrics tables, hostinger-crons sync-metrics/content-refresh jobs, /owned-sites portfolio UI; sites hosted on VPS3 nginx)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -363,6 +363,39 @@ const DEFAULT_DIAGRAM = `graph TB
         PartnerSiteContent[("partner_site_content")]
         PartnerDirectory(["Trusted Companies API — /partner-directory"])
         MarketingPushesPage(["/marketing-pushes — admin campaign dashboard"])
+      end
+
+      subgraph CreditScoreNet["CreditScore — SEO + AEO Audit"]
+        direction TB
+        CSPlansSvc(["CreditScore Service — listPlans/createCheckout/handleWebhook/generateReport/scheduleScans"])
+        CSRoutes(["/api/creditscore — plans, checkout, webhook, entitlement, report/:id, audit/store"])
+        CSAudit(["Auditor — runAudit pipeline (Firecrawl + heuristics)"])
+        CSEmailCallback(["Email Callback — HMAC-SHA256 signed POST to storefront Resend route"])
+        CSScanCron{{"creditscore:scan — every 6h (auditor); Starter/Growth monthly, Pro weekly"}}
+        CSPlansDB[("creditscore_plans — 5 tiers (report $19, starter $49, growth $199/mo, $1188/yr, pro $499)")]
+        CSSubsDB[("creditscore_subscriptions — per-customer state")]
+        CSReportsDB[("creditscore_reports — audit history + shareable slugs")]
+        CSStripeWebhook(["/api/creditscore/webhook — checkout.session.completed, invoice.paid, subscription.updated, subscription.deleted"])
+      end
+
+      subgraph BundleNet["Bundles — Multi-Product Packages"]
+        direction TB
+        BundleSvc(["Bundle Entitlements Service — resolves higher-of (bundle, standalone) per product"])
+        BundleRoutes(["/api/bundles — plans, checkout, subscription, entitlements"])
+        BundleStripeWebhook(["/api/bundles/webhook"])
+        BundlePlansDB[("bundle_plans — AEO Starter/Growth/Scale + All-Inclusive")]
+        BundleSubsDB[("bundle_subscriptions")]
+      end
+
+      subgraph OwnedSitesNet["Owned Utility-Site Network"]
+        direction TB
+        OwnedSitesSvc(["Owned Sites Service — GA4/AdSense sync"])
+        OwnedSitesRoutes(["/api/owned-sites — CRUD + sync"])
+        OwnedSitesPage(["/owned-sites — portfolio UI"])
+        OwnedSitesDB[("owned_sites + owned_site_metrics")]
+        OwnedSitesMetricsCron{{"owned-sites:sync-metrics — every 6h (metrics-agent)"}}
+        OwnedSitesContentCron{{"owned-sites:content-refresh — monthly (content-agent)"}}
+        OwnedSitesTemplate(["coherence-utility-template — external repo, VPS3 deploy"]):::readyNode
       end
 
       subgraph AffiliateSystem["Affiliate Marketer System"]
@@ -683,6 +716,27 @@ const DEFAULT_DIAGRAM = `graph TB
   AutoReplySvc --> RateLimiter
   AutoReplySvc --> OllamaSvc
   AutoReplySvc --> AutoReplyDB
+
+  %% CreditScore flows
+  CSRoutes --> CSPlansSvc
+  CSPlansSvc --> CSPlansDB
+  CSPlansSvc --> CSSubsDB
+  CSPlansSvc --> CSReportsDB
+  CSPlansSvc --> StripeAPI
+  CSStripeWebhook --> CSPlansSvc
+  CSPlansSvc --> CSAudit
+  CSAudit --> FirecrawlSvc
+  CSScanCron --> CSPlansSvc
+  CSPlansSvc --> CSEmailCallback
+  CSEmailCallback -->|"HMAC POST"| CD
+
+  %% Bundle flows
+  BundleRoutes --> BundleSvc
+  BundleSvc --> BundlePlansDB
+  BundleSvc --> BundleSubsDB
+  BundleSvc --> StripeAPI
+  BundleStripeWebhook --> BundleSvc
+  BundleSvc -->|"resolves creditscore tier"| CSSubsDB
 
   %% Partner flows
   PartnerSvc --> PartnerDB

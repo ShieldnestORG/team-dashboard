@@ -28,7 +28,7 @@ affiliates.coherencedaddy.com              VPS 147.79.78.251 (ShieldNest + Embed
 - **Frontend (public)**: Vercel — auto-deploys all 9 coherencedaddy.com subdomains on push to main via `middleware.ts` subdomain routing.
 - **Admin Dashboard**: VPS1 Docker (`SERVE_UI=true`) — team-dashboard admin UI served from Express alongside API.
 - **Backend API**: VPS1 Docker behind Caddy at `api.coherencedaddy.com` — Express.js API, agent runtime, WebSocket.
-- **Vercel rewrites to VPS1**: `/api/intel/*`, `/api/trends/*`, `/api/content/*` → `http://31.220.61.12:3100/...`
+- **Vercel rewrites to VPS1**: `/api/intel/*`, `/api/trends/*`, `/api/content/*`, `/api/partner-directory/*`, `/api/bundles/*`, `/api/creditscore/*` → `http://31.220.61.12:3100/...` (or `api.coherencedaddy.com/...`). See `docs/OWNERSHIP.md` for the full inter-repo contract.
 - **Database**: Neon PostgreSQL — managed by Vercel integration.
 - **Firecrawl**: VPS2 (`168.231.127.180`) — scraping, crawling, Puppeteer, Redis.
 - **Embeddings**: VPS3 (`147.79.78.251:8000`) — BGE-M3 vector embedding service (uvicorn).

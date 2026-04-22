@@ -17,7 +17,7 @@ One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` s
 | `directory.coherencedaddy.com` | 532+ projects across Crypto, AI/ML, DeFi, DevTools — powered by Intel API |
 | `token.coherencedaddy.com` | Crypto / NFT / staking dashboard |
 | `partners.coherencedaddy.com` | AEO partner network — local business partner directory |
-| `creditscore.coherencedaddy.com` | Credit score tools subdomain |
+| `creditscore.coherencedaddy.com` | Redirect → `freetools.coherencedaddy.com/creditscore-home` (actual tool). Plan catalog, checkout session creation, Stripe webhooks, rescan cron, and report persistence all live in this repo at `/api/creditscore/*`. |
 | `shop.coherencedaddy.com` | Shop / merchandise subdomain |
 | `law.coherencedaddy.com` | Legal / law tools subdomain |
 | `optimize-me.coherencedaddy.com` | Self-optimization tools subdomain |
@@ -62,6 +62,8 @@ Manages a diverse fleet of AI agents including:
 - **Intel API Paid Tier**: Stripe-backed subscription layers (Free, Starter, Pro, Enterprise) with usage metering.
 - **Directory Listings**: Monetized featured/verified placements for indexed companies.
 - **AEO Partner Network**: B2B lead-gen system weaving local business partners into content.
+- **CreditScore (SEO + AEO audit)**: 4-tier product ($19 one-time / $49 Starter / $199 Growth / $499 Pro, plus $1,188/yr Growth annual). Plans, subs, reports, Stripe pipeline, and rescan cron (`creditscore:scan`, every 6h; Starter/Growth monthly, Pro weekly cadence) all owned here. Email delivery is an HMAC-signed callback to `coherencedaddy-landing` (templates stay in the storefront). See `docs/products/creditscore-prd.md` and `docs/OWNERSHIP.md`.
+- **Bundles**: Multi-product packages (AEO Starter $199, AEO Growth $499, AEO Scale $1,299, All-Inclusive $2,499). `getEntitlementsForCompany` resolves the higher of bundle-granted or standalone-subscribed tier per product.
 - **Affiliate Program**: Public-facing recruiter network at `affiliates.coherencedaddy.com`. Affiliates register, submit local business prospects via URL, earn commission on conversions. Full pipeline: registration → admin approval → prospect submission → AI onboarding (Firecrawl + Ollama) → admin tracking in dashboard. JWT-auth, separate from admin session system.
 
 ### Communication & Integration
