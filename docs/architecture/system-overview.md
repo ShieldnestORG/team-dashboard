@@ -30,12 +30,26 @@ One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` s
 - **AdSense**: `ca-pub-1882924299982046` — auto ads in `app/layout.tsx`, manual units in tool pages, sidebar, and blog posts; `ads.txt` in public/; CookieYes CMP + Consent Mode v2
 
 ### Other Ecosystem Properties
+All properties below are owned by the **ShieldnestORG** Vercel organization unless noted. Each Vercel project name is listed so the control plane can trace which repo deploys which domain.
+
 - **YourArchi** (yourarchi.com) — flagship self-help product: smart note-taking and personal development app with full privacy (no data leaves the device)
-- **tokns.fi / app.tokns.fi** — crypto platform and dashboard (NFTs, swaps, staking, wallet tracking)
-- **TX Blockchain** (tx.org) — Cosmos SDK chain, ShieldNest runs a validator; goal: #1 validator via tokns.fi
-- **ShieldNest** (shieldnest.io) — privacy-first dev company that builds all ecosystem infrastructure
+- **ShieldNest** (shieldnest.org) — privacy-first dev company; root site. Vercel project: `shieldnestorg/shieldnest_landing_page`. A blog section is **planned** (no `/blog` route live yet).
+- **tokns.fi** — TX ecosystem marketing site. Vercel project: `shieldnestorg/tokns.fi_landing_page`. Blog section is called **"the Lab"** (`tokns.fi/lab`) — **planned**, not yet live.
+- **app.tokns.fi** — crypto dashboard (NFTs, swaps, staking, wallet tracking). Vercel project: `shieldnestorg/tokns`. Blog content surfaces as a **"News & Insights"** section at the bottom of `/dashboard` — **planned**, not yet live.
+- **TX Blockchain** (tx.org) — Cosmos SDK chain; ShieldNest runs a validator. Goal: #1 validator via tokns.fi delegation.
 - **Trustee DAO** (dao.nestd.xyz) — DAO governance platform on VPS4 (31.220.61.14)
 - **rollwithsolo.com / runatthebullets.com** — ShieldNest properties on VPS3 (147.79.78.251)
+
+### Blog Distribution
+
+Generate → publish wiring owned by this repo (see [docs/products/blog-distribution.md](../products/blog-distribution.md) for the canonical matrix and `server/src/services/blog-publisher.ts` for the code):
+
+| Target slug | Destination | Status | Env vars |
+|---|---|---|---|
+| `cd`        | `https://www.coherencedaddy.com/blog/<slug>` | **LIVE** — ~2–3 posts/day | `CD_BLOG_API_URL`, `CD_BLOG_API_KEY` |
+| `sn`        | `https://shieldnest.org/blog/<slug>` | **SHIPPING** — endpoint built in `shieldnest_landing_page#feat/blog-pipeline` | `SN_BLOG_API_URL`, `SN_BLOG_API_KEY` |
+| `tokns-app` | `https://app.tokns.fi/articles/<slug>` + dashboard "News & Insights" feed | **LIVE** — endpoint + render already existed on the tokns project | `TOKNS_APP_BLOG_API_URL`, `TOKNS_APP_BLOG_API_KEY` |
+| _(read-only)_ | `https://tokns.fi/lab` ("the Lab") — fetches from `app.tokns.fi/api/articles` client-side | **SHIPPING** — /lab rewritten in `tokns.fi_landing_page#feat/lab-dynamic` | _(no publisher env; reads tokns-app)_ |
 
 ## Core Systems In This Repo
 

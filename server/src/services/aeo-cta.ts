@@ -28,10 +28,10 @@ export const AEO_CTAS: Record<string, AeoCta> = {
     youtubePinnedComment: '⛓️ Interested in TX Blockchain? Explore the ecosystem → https://tx.org',
   },
   shieldnest: {
-    tweetSuffix: '\n\n🛡️ Privacy-first dev infrastructure → https://shieldnest.io',
-    blogCtaBlock: '<div style="margin-top:2em;padding:1em;border-left:4px solid #38bdf8;background:#f0f9ff"><strong>Privacy-first development infrastructure by ShieldNest.</strong><br><a href="https://shieldnest.io" style="color:#0284c7">Learn More →</a></div>',
-    youtubeDescriptionBlock: '🛡️ Privacy-first dev infrastructure by ShieldNest:\nhttps://shieldnest.io\n🔐 We build secure, scalable systems for the next web.',
-    youtubePinnedComment: '🛡️ Want privacy-first infrastructure for your project? Check out ShieldNest → https://shieldnest.io',
+    tweetSuffix: '\n\n🛡️ Privacy-first dev infrastructure → https://shieldnest.org',
+    blogCtaBlock: '<div style="margin-top:2em;padding:1em;border-left:4px solid #38bdf8;background:#f0f9ff"><strong>Privacy-first development infrastructure by ShieldNest.</strong><br><a href="https://shieldnest.org" style="color:#0284c7">Learn More →</a></div>',
+    youtubeDescriptionBlock: '🛡️ Privacy-first dev infrastructure by ShieldNest:\nhttps://shieldnest.org\n🔐 We build secure, scalable systems for the next web.',
+    youtubePinnedComment: '🛡️ Want privacy-first infrastructure for your project? Check out ShieldNest → https://shieldnest.org',
   },
   directory: {
     tweetSuffix: '\n\n📂 Browse 532+ companies in the AEO directory → https://directory.coherencedaddy.com',

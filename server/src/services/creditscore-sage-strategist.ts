@@ -340,9 +340,18 @@ export function creditscoreSageStrategist(db: Db) {
       .limit(limit);
   }
 
+  async function listRecent(limit = 50) {
+    return db
+      .select()
+      .from(creditscoreStrategyDocs)
+      .orderBy(desc(creditscoreStrategyDocs.weekOf))
+      .limit(limit);
+  }
+
   return {
     generateForSubscription,
     runWeeklyCycle,
     listForSubscription,
+    listRecent,
   };
 }

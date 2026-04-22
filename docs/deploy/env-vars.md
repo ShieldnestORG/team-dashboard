@@ -27,8 +27,12 @@ These variables are required for the project to function. **VPS** requires all v
 | `OLLAMA_API_KEY` | Yes | VPS | Ollama Cloud API bearer token |
 | **Visual Content** | | | |
 | `CONTENT_API_KEY` | Yes | VPS | Auth for content, visual content, and trend endpoints |
-| `CD_BLOG_API_URL` | Optional | VPS | Blog publish endpoint (default: `https://coherencedaddy.com/api/blog/posts`) |
-| `CD_BLOG_API_KEY` | Yes | VPS | Bearer token for coherencedaddy blog API |
+| `CD_BLOG_API_URL` | Optional | VPS | Blog publish endpoint for coherencedaddy.com (default: `https://www.coherencedaddy.com/api/blog/posts`). Posts land at `https://www.coherencedaddy.com/blog/<slug>`. |
+| `CD_BLOG_API_KEY` | Yes | VPS | Bearer token for coherencedaddy.com blog API |
+| `SN_BLOG_API_URL` | Optional | VPS | Blog publish endpoint for shieldnest.org (default: `https://shieldnest.org/api/articles`). Endpoint is provided by the `shieldnest_landing_page` Vercel project (`feat/blog-pipeline` branch). Posts land at `https://shieldnest.org/blog/<slug>`. |
+| `SN_BLOG_API_KEY` | Optional | VPS | Bearer token for the shieldnest.org blog API. Matches `BLOG_API_KEY` on the shieldnest_landing_page side. Leaving blank silently drops the SN leg for any cron with `publishTarget: "sn"` or `"all"`. |
+| `TOKNS_APP_BLOG_API_URL` | Optional | VPS | Blog publish endpoint for app.tokns.fi (default: `https://app.tokns.fi/api/articles`). Supabase-backed. Posts land in the dashboard "News & Insights" feed at `https://app.tokns.fi/articles/<slug>`. Also surfaced at `https://tokns.fi/lab` (reads from app.tokns.fi client-side). |
+| `TOKNS_APP_BLOG_API_KEY` | Optional | VPS | Bearer token for the app.tokns.fi articles API. Must match `SN_ARTICLE_API_KEY` on the `tokns` Vercel project side. Leaving blank silently drops the tokns-app leg. |
 | `INDEXNOW_KEY` | Optional | VPS | IndexNow verification key for search engine ping |
 | `GEMINI_API_KEY` | Optional | VPS | Enables Gemini visual backend (Imagen 3 + Veo 2) |
 | `GROK_API_KEY` | Optional | VPS | Enables Grok/xAI backend (grok-2-image + grok-imagine-video + TTS) |

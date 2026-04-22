@@ -101,10 +101,10 @@ const DEFAULT_DIAGRAM = `graph TB
 
     subgraph OtherProps["Ecosystem Properties"]
       direction TB
-      Tokns(["tokns.fi"]):::siteNode
-      ToknsApp(["app.tokns.fi"])
+      Tokns(["tokns.fi — 'the Lab' blog (planned)"]):::siteNode
+      ToknsApp(["app.tokns.fi/dashboard — News & Insights (planned)"])
       TXChain(["TX Blockchain — Cosmos SDK"]):::siteNode
-      ShieldNest(["shieldnest.org — builds CD infra"]):::siteNode
+      ShieldNest(["shieldnest.org — /blog (planned)"]):::siteNode
       YourArchi(["yourarchi.com"]):::siteNode
     end
 
@@ -192,7 +192,7 @@ const DEFAULT_DIAGRAM = `graph TB
         Templates(["6 Personality Templates"])
         VideoAssembler(["Video Assembler — FFmpeg"])
         SEOEngine(["SEO Engine — Claude-powered"])
-        BlogPublisher(["Blog Publisher — CD + ShieldNest"])
+        BlogPublisher(["Blog Publisher — CD live + SN planned (shieldnest.org)"])
         SlideshowGen(["Slideshow Blog Generator"])
         PubYT(["YouTube Shorts — active"])
         PubTikTok(["TikTok — active"])

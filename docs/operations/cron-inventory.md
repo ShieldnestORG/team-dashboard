@@ -19,10 +19,12 @@ The system relies on a vast array of scheduled jobs to power the intel engine, c
 - **Text Generation (7 jobs)**: Personality-driven content for various platforms.
 - **Video Scripts (3 jobs)**: Script generation for YouTube/Reels.
 - **Intel Alerts (2 jobs)**: Triggering content based on intel signals.
-- **TX Chain Daily (1 job)**: Daily blockchain-focused reports.
+- **TX Chain Daily (1 job)**: Daily blockchain-focused reports. Target `sn` → shieldnest.org/blog (SN endpoint not live; items stay draft until `SN_BLOG_API_URL` is set).
 - **XRP/Vanguard (4 jobs)**: Specialized Ripple/XRP reports.
 - **AEO Comparison/Forge (3 jobs)**: Competitive analysis reports.
-- **Slideshow Blog (2 jobs)**: Interactive HTML slideshow generation.
+- **Slideshow Blog (2 jobs)**: Interactive HTML slideshow generation. `:cd` → coherencedaddy.com/blog (LIVE); `:sn` → shieldnest.org/blog (pending endpoint).
+
+> **Blog publish targets.** Crons with `publishTarget: "all"` post to coherencedaddy.com and attempt shieldnest.org in parallel; the SN leg is silently skipped when `SN_BLOG_API_URL` is empty. See [docs/products/blog-distribution.md](../products/blog-distribution.md) for the full target matrix and current wiring status.
 
 ## Product Fulfillment Crons
 - **Directory Mentions (1 job)**: Monthly batch content generation for active Featured/Verified/Boosted listings — Blaze + Prism agents, 1st of month at 9 AM (`directory:mentions:generate`).

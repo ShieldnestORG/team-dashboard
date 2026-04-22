@@ -40,6 +40,7 @@ import { TxEcosystem } from "./pages/TxEcosystem";
 import Tokns from "./pages/Tokns";
 import { SystemHealth } from "./pages/SystemHealth";
 import { ContentReview } from "./pages/ContentReview";
+import { CreditScoreReview } from "./pages/CreditScoreReview";
 import { ContentAnalytics } from "./pages/ContentAnalytics";
 import { OwnedSites } from "./pages/OwnedSites";
 import { Structure } from "./pages/Structure";
@@ -225,6 +226,11 @@ function boardRoutes() {
       <Route path="agent-ops" element={<AgentOps />} />
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<ContentReview />} />
+      <Route path="creditscore-review" element={<Navigate to="/creditscore-review/drafts" replace />} />
+      <Route path="creditscore-review/drafts" element={<CreditScoreReview />} />
+      <Route path="creditscore-review/impls" element={<CreditScoreReview />} />
+      <Route path="creditscore-review/scans" element={<CreditScoreReview />} />
+      <Route path="creditscore-review/docs" element={<CreditScoreReview />} />
       <Route path="content-analytics" element={<ContentAnalytics />} />
       <Route path="owned-sites" element={<OwnedSites />} />
       <Route path="structure" element={<Structure />} />
@@ -473,6 +479,11 @@ export function App() {
           <Route path="affiliates/attribution" element={<UnprefixedBoardRedirect />} />
           <Route path="affiliates/commissions" element={<UnprefixedBoardRedirect />} />
           <Route path="affiliates/payouts" element={<UnprefixedBoardRedirect />} />
+          <Route path="creditscore-review" element={<UnprefixedBoardRedirect />} />
+          <Route path="creditscore-review/drafts" element={<UnprefixedBoardRedirect />} />
+          <Route path="creditscore-review/impls" element={<UnprefixedBoardRedirect />} />
+          <Route path="creditscore-review/scans" element={<UnprefixedBoardRedirect />} />
+          <Route path="creditscore-review/docs" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>
