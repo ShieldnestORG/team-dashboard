@@ -105,11 +105,11 @@ async function runScheduledScans(db: Db): Promise<void> {
             kind: "score_drop_alert",
             to: sub.email,
             data: {
-              domain: sub.domain,
+              url: result.url,
               previousScore,
               newScore: result.score,
-              delta: previousScore - result.score,
-              report: result,
+              delta: result.score - previousScore,
+              topIssues: result.recommendations.slice(0, 3).map((r) => r.title),
             },
           });
         } else {
@@ -117,11 +117,12 @@ async function runScheduledScans(db: Db): Promise<void> {
             kind: sub.tier === "pro" ? "weekly_report" : "monthly_report",
             to: sub.email,
             data: {
-              domain: sub.domain,
-              tier: sub.tier,
+              url: result.url,
               score: result.score,
+              breakdown: result.breakdown,
+              competitors: result.competitors,
+              recommendations: result.recommendations,
               previousScore,
-              report: result,
             },
           });
         }

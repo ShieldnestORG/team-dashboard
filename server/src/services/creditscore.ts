@@ -198,10 +198,12 @@ export function creditscoreService(db: Db) {
             kind,
             to: sub.email,
             data: {
-              domain: sub.domain,
-              tier: sub.tier,
+              url: result.url,
               score: result.score,
-              report: result,
+              breakdown: result.breakdown,
+              competitors: result.competitors,
+              recommendations: result.recommendations,
+              scanFrequency: sub.tier === "pro" ? "weekly" : "monthly",
             },
           });
         })
