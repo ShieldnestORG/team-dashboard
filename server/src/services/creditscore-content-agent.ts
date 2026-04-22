@@ -1,14 +1,16 @@
 // ---------------------------------------------------------------------------
-// CreditScore Content Agent (Cipher) — drafts AEO-optimized pages via Claude.
+// CreditScore Content Agent (Cipher) — drafts AEO-optimized pages via Ollama.
 //
-// Calls Anthropic's Claude Sonnet to generate N HTML page drafts per active
-// Growth+ subscription per month, targeting the signals the latest audit
-// identified as weakest. Drafts land in creditscore_content_drafts with
-// status=pending_review; a board admin approves/rejects via the routes at
-// /api/creditscore/content-drafts.
+// Calls Ollama Cloud (gemma4:31b by default on VPS2) to generate N HTML page
+// drafts per active Growth+ subscription per month, targeting the signals
+// the latest audit identified as weakest. Drafts land in
+// creditscore_content_drafts with status=pending_review; a board admin
+// approves/rejects via the routes at /api/creditscore/content-drafts.
 //
 // Quota per PRD: Growth = 2 pages/mo, Pro = 4 pages/mo.
 // Owner agent: cipher (Technical Writer).
+// LLM backend matches the rest of the content pipeline (SEO engine,
+// compliance second-opinion primary). No Claude dependency.
 // ---------------------------------------------------------------------------
 
 import { and, desc, eq, inArray, or } from "drizzle-orm";
@@ -18,10 +20,8 @@ import {
   creditscoreReports,
   creditscoreSubscriptions,
 } from "@paperclipai/db";
+import { callOllamaChat, OLLAMA_MODEL } from "./ollama-client.js";
 import { logger } from "../middleware/logger.js";
-
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
-const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 
 const DRAFTS_PER_TIER: Record<string, number> = {
   growth: 2,
@@ -72,43 +72,30 @@ interface DraftPayload {
   markdown: string;
 }
 
-async function askClaude(prompt: string): Promise<string | null> {
-  if (!ANTHROPIC_API_KEY) return null;
+async function askOllama(prompt: string): Promise<string | null> {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 4096,
-        messages: [{ role: "user", content: prompt }],
-      }),
-      signal: AbortSignal.timeout(90_000),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      logger.warn(
-        { status: res.status, body: text.slice(0, 300) },
-        "creditscore-content-agent: Claude API non-2xx",
-      );
-      return null;
-    }
-    const json = (await res.json()) as {
-      content?: Array<{ type: string; text?: string }>;
-    };
-    const block = json.content?.find((c) => c.type === "text");
-    return block?.text ?? null;
+    const result = await callOllamaChat(
+      [
+        {
+          role: "system",
+          content:
+            "You are Cipher, a technical writer specializing in AEO (AI Engine Optimization). Return ONLY a fenced JSON object, no prose before or after.",
+        },
+        { role: "user", content: prompt },
+      ],
+      { temperature: 0.7, maxTokens: 4096, timeoutMs: 180_000 },
+    );
+    return result.content || null;
   } catch (err) {
-    logger.error({ err }, "creditscore-content-agent: Claude fetch failed");
+    logger.error(
+      { err, model: OLLAMA_MODEL },
+      "creditscore-content-agent: Ollama call failed",
+    );
     return null;
   }
 }
 
-function parseClaudeDraft(raw: string, fallbackSignal: string): DraftPayload | null {
+function parseDraftJson(raw: string, fallbackSignal: string): DraftPayload | null {
   // Expected format from the prompt: a fenced JSON object with keys
   // { title, slug, targetSignal, html, markdown }.
   const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -246,16 +233,16 @@ export function creditscoreContentAgent(db: Db) {
         priorTitles,
       });
 
-      const raw = await askClaude(prompt);
+      const raw = await askOllama(prompt);
       if (!raw) {
         skipped += 1;
         continue;
       }
-      const draft = parseClaudeDraft(raw, signal.name);
+      const draft = parseDraftJson(raw, signal.name);
       if (!draft) {
         logger.warn(
           { subId: sub.id, cycleTag, cycleIndex: i },
-          "creditscore-content-agent: could not parse Claude response as draft JSON",
+          "creditscore-content-agent: could not parse Ollama response as draft JSON",
         );
         skipped += 1;
         continue;
@@ -272,7 +259,7 @@ export function creditscoreContentAgent(db: Db) {
         htmlDraft: draft.html,
         markdownDraft: draft.markdown,
         promptMeta: {
-          model: ANTHROPIC_MODEL,
+          model: OLLAMA_MODEL,
           signal: signal.name,
           gap: signal.gap,
           baseScore: latestReport.score,

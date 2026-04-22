@@ -100,7 +100,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `CREDITSCORE_CANCEL_URL` | Optional | VPS | Abandon-checkout redirect (fallback: `freetools.coherencedaddy.com/creditscore-home?checkout=canceled`) |
 | `CREDITSCORE_CALLBACK_KEY` | Optional | VPS + coherencedaddy | HMAC shared secret for email callback from team-dashboard → storefront. If unset, emails are skipped. |
 | `CREDITSCORE_EMAIL_CALLBACK_URL` | Optional | VPS | Storefront endpoint that renders + sends via Resend (default: `https://freetools.coherencedaddy.com/api/email/creditscore`) |
-| `ANTHROPIC_API_KEY` | Optional | VPS | Claude API key. Powers the Content Agent (Claude Sonnet 4.6 drafts AEO pages) and Affiliate Compliance second opinion. If unset, Content Agent skips the cycle with a warning. |
+| `OLLAMA_URL` / `OLLAMA_API_KEY` / `OLLAMA_MODEL` | Yes | VPS | Ollama Cloud endpoint (default VPS2, `gemma4:31b`). Powers the Content Agent (AEO page drafting), SEO Engine, and other content pipelines. |
 | `INTEL_BILLING_SUCCESS_URL` | Optional | VPS | Checkout success redirect |
 | `INTEL_BILLING_CANCEL_URL` | Optional | VPS | Checkout cancel redirect |
 | `ENTERPRISE_BOOKING_URL` | Optional | VPS | Cal.com or Calendly booking URL for enterprise calls |
