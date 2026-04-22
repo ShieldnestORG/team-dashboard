@@ -116,6 +116,7 @@ import { startPartnerFulfillmentCrons } from "./services/partner-fulfillment-cro
 import { startCreditscoreCrons } from "./services/creditscore-crons.js";
 import { startCreditscoreReportAgent } from "./services/creditscore-report-agent.js";
 import { startCreditscoreContentAgent } from "./services/creditscore-content-agent-cron.js";
+import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
@@ -454,6 +455,7 @@ export async function createApp(
   startCreditscoreCrons(db);
   startCreditscoreReportAgent(db);
   startCreditscoreContentAgent(db);
+  startCreditscoreFulfillmentCrons(db);
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted

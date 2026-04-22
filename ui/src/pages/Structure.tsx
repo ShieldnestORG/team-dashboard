@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22 (PRD 1 CreditScore cutover: creditscore_plans/subscriptions/reports tables, /api/creditscore/* routes + webhook, creditscore:scan cron 6h, HMAC-signed email callback to storefront. Bundles substrate: bundle_plans + bundle_subscriptions, /api/bundles/*, higher-of-tier entitlement resolver. Owned Utility-Site Network Phase 2 — owned_sites + owned_site_metrics tables, hostinger-crons sync-metrics/content-refresh jobs, /owned-sites portfolio UI; sites hosted on VPS3 nginx)
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22 (PRD 1 CreditScore full agent fleet: scan 6h (auditor), fix-priority-digest monthly (sage), content-drafts monthly (cipher), schema-impls monthly (core), competitor-scans monthly (forge), sage-weekly Mondays (sage). Content tables: creditscore_content_drafts, creditscore_schema_impls, creditscore_competitor_scans, creditscore_strategy_docs — all Ollama-backed review queues. Bundles + Owned Utility-Site Network substrate intact.)
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -368,10 +368,23 @@ const DEFAULT_DIAGRAM = `graph TB
       subgraph CreditScoreNet["CreditScore — SEO + AEO Audit"]
         direction TB
         CSPlansSvc(["CreditScore Service — listPlans/createCheckout/handleWebhook/generateReport/scheduleScans"])
-        CSRoutes(["/api/creditscore — plans, checkout, webhook, entitlement, report/:id, audit/store"])
+        CSRoutes(["/api/creditscore — plans, checkout, webhook, entitlement, report/:id, audit/store, content/schema review queues"])
         CSAudit(["Auditor — runAudit pipeline (Firecrawl + heuristics)"])
         CSEmailCallback(["Email Callback — HMAC-SHA256 signed POST to storefront Resend route"])
         CSScanCron{{"creditscore:scan — every 6h (auditor); Starter/Growth monthly, Pro weekly"}}
+        CSFixPriorityCron{{"creditscore:fix-priority-digest — 1st @ 9 UTC (sage)"}}
+        CSContentAgent(["Content Agent (Cipher) — Ollama AEO page drafts"])
+        CSContentCron{{"creditscore:content-drafts — 1st @ 10 UTC; Growth=2, Pro=4"}}
+        CSContentDraftsDB[("creditscore_content_drafts — review queue")]
+        CSSchemaAgent(["Schema Agent (Core) — Ollama JSON-LD generator"])
+        CSSchemaCron{{"creditscore:schema-impls — 1st @ 11 UTC; Growth=1, Pro=2"}}
+        CSSchemaImplsDB[("creditscore_schema_impls — review queue")]
+        CSCompetitorAgent(["Competitor Agent (Forge) — runAudit across competitor set"])
+        CSCompetitorCron{{"creditscore:competitor-scans — 1st @ 11:30 UTC; Growth=3, Pro=5"}}
+        CSCompetitorDB[("creditscore_competitor_scans")]
+        CSSageStrategist(["Sage Strategist — weekly 1-pager for Pro (Ollama synth)"])
+        CSSageCron{{"creditscore:sage-weekly — Mon @ 12 UTC"}}
+        CSStrategyDocsDB[("creditscore_strategy_docs")]
         CSPlansDB[("creditscore_plans — 5 tiers (report $19, starter $49, growth $199/mo, $1188/yr, pro $499)")]
         CSSubsDB[("creditscore_subscriptions — per-customer state")]
         CSReportsDB[("creditscore_reports — audit history + shareable slugs")]
@@ -729,6 +742,30 @@ const DEFAULT_DIAGRAM = `graph TB
   CSScanCron --> CSPlansSvc
   CSPlansSvc --> CSEmailCallback
   CSEmailCallback -->|"HMAC POST"| CD
+
+  %% Fulfillment agent flows
+  CSFixPriorityCron --> CSReportsDB
+  CSFixPriorityCron --> CSEmailCallback
+  CSContentCron --> CSContentAgent
+  CSContentAgent --> OllamaSvc
+  CSContentAgent --> CSReportsDB
+  CSContentAgent --> CSContentDraftsDB
+  CSSchemaCron --> CSSchemaAgent
+  CSSchemaAgent --> OllamaSvc
+  CSSchemaAgent --> CSReportsDB
+  CSSchemaAgent --> CSSchemaImplsDB
+  CSCompetitorCron --> CSCompetitorAgent
+  CSCompetitorAgent --> CSAudit
+  CSCompetitorAgent --> CSReportsDB
+  CSCompetitorAgent --> CSCompetitorDB
+  CSSageCron --> CSSageStrategist
+  CSSageStrategist --> OllamaSvc
+  CSSageStrategist --> CSReportsDB
+  CSSageStrategist --> CSCompetitorDB
+  CSSageStrategist --> CSContentDraftsDB
+  CSSageStrategist --> CSSchemaImplsDB
+  CSSageStrategist --> CSStrategyDocsDB
+  CSSageStrategist --> CSEmailCallback
 
   %% Bundle flows
   BundleRoutes --> BundleSvc

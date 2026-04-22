@@ -115,6 +115,11 @@ export {
   creditscoreReports,
 } from "./creditscore.js";
 export { creditscoreContentDrafts } from "./creditscore_content_drafts.js";
+export {
+  creditscoreSchemaImpls,
+  creditscoreCompetitorScans,
+  creditscoreStrategyDocs,
+} from "./creditscore_agent_outputs.js";
 export { campaigns } from "./campaigns.js";
 export type { Campaign, NewCampaign } from "./campaigns.js";
 export { ownedSites, ownedSiteMetrics } from "./owned_sites.js";

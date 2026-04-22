@@ -25,7 +25,8 @@ export type CreditscoreEmailKind =
   | "monthly_report"
   | "weekly_report"
   | "fix_priority_monthly"
-  | "score_drop_alert";
+  | "score_drop_alert"
+  | "sage_weekly_digest";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;
