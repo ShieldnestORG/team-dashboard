@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import type { Request, Response } from "express";
 import type { Db } from "@paperclipai/db";
 import { creditscoreService } from "../services/creditscore.js";
+import { creditscoreContentAgent } from "../services/creditscore-content-agent.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -12,6 +13,7 @@ import { logger } from "../middleware/logger.js";
 export function creditscoreRoutes(db: Db): Router {
   const router = Router();
   const svc = creditscoreService(db);
+  const contentAgent = creditscoreContentAgent(db);
 
   // GET /api/creditscore/plans — public; consumed by coherencedaddy-landing
   router.get("/plans", async (_req, res) => {
@@ -105,6 +107,105 @@ export function creditscoreRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err, id }, "creditscore: getReport failed");
       res.status(500).json({ error: "Failed to fetch report" });
+    }
+  });
+
+  // GET /api/creditscore/content-drafts — board admin review queue
+  router.get("/content-drafts", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    try {
+      const drafts = await contentAgent.listPendingDrafts();
+      res.json({ drafts });
+    } catch (err) {
+      logger.error({ err }, "creditscore: listPendingDrafts failed");
+      res.status(500).json({ error: "Failed to list drafts" });
+    }
+  });
+
+  // GET /api/creditscore/content-drafts/:id — single draft detail
+  router.get("/content-drafts/:id", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const id = req.params.id as string;
+    try {
+      const draft = await contentAgent.getDraft(id);
+      if (!draft) {
+        res.status(404).json({ error: "Draft not found" });
+        return;
+      }
+      res.json({ draft });
+    } catch (err) {
+      logger.error({ err, id }, "creditscore: getDraft failed");
+      res.status(500).json({ error: "Failed to fetch draft" });
+    }
+  });
+
+  // POST /api/creditscore/content-drafts/:id/approve
+  router.post("/content-drafts/:id/approve", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const id = req.params.id as string;
+    const reviewNotes =
+      typeof req.body?.reviewNotes === "string" ? req.body.reviewNotes : undefined;
+    try {
+      await contentAgent.approveDraft(id, {
+        userId: req.actor.userId ?? undefined,
+        reviewNotes,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err, id }, "creditscore: approveDraft failed");
+      res.status(500).json({ error: "Failed to approve draft" });
+    }
+  });
+
+  // POST /api/creditscore/content-drafts/:id/reject
+  router.post("/content-drafts/:id/reject", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const id = req.params.id as string;
+    const reviewNotes =
+      typeof req.body?.reviewNotes === "string" ? req.body.reviewNotes : undefined;
+    try {
+      await contentAgent.rejectDraft(id, {
+        userId: req.actor.userId ?? undefined,
+        reviewNotes,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err, id }, "creditscore: rejectDraft failed");
+      res.status(500).json({ error: "Failed to reject draft" });
+    }
+  });
+
+  // POST /api/creditscore/content-drafts/:id/published — mark as live on customer site
+  router.post("/content-drafts/:id/published", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const id = req.params.id as string;
+    const publishedUrl =
+      typeof req.body?.publishedUrl === "string" ? req.body.publishedUrl : "";
+    if (!publishedUrl) {
+      res.status(400).json({ error: "publishedUrl required" });
+      return;
+    }
+    try {
+      await contentAgent.markPublished(id, publishedUrl);
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err, id }, "creditscore: markPublished failed");
+      res.status(500).json({ error: "Failed to mark published" });
     }
   });
 

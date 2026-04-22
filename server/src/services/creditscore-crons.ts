@@ -114,7 +114,7 @@ async function runScheduledScans(db: Db): Promise<void> {
           });
         } else {
           void sendCreditscoreEmail({
-            kind: "monthly_report",
+            kind: sub.tier === "pro" ? "weekly_report" : "monthly_report",
             to: sub.email,
             data: {
               domain: sub.domain,

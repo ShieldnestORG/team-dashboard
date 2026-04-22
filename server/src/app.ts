@@ -114,6 +114,8 @@ import { startFirecrawlCrons } from "./services/firecrawl-crons.js";
 import { startDirectoryCrons } from "./services/directory-crons.js";
 import { startPartnerFulfillmentCrons } from "./services/partner-fulfillment-crons.js";
 import { startCreditscoreCrons } from "./services/creditscore-crons.js";
+import { startCreditscoreReportAgent } from "./services/creditscore-report-agent.js";
+import { startCreditscoreContentAgent } from "./services/creditscore-content-agent-cron.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
@@ -450,6 +452,8 @@ export async function createApp(
   startDirectoryCrons(db);
   startPartnerFulfillmentCrons(db);
   startCreditscoreCrons(db);
+  startCreditscoreReportAgent(db);
+  startCreditscoreContentAgent(db);
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted

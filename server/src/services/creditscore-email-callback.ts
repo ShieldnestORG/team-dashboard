@@ -23,6 +23,8 @@ export type CreditscoreEmailKind =
   | "welcome_pro"
   | "one_time_report"
   | "monthly_report"
+  | "weekly_report"
+  | "fix_priority_monthly"
   | "score_drop_alert";
 
 export interface SendArgs {
