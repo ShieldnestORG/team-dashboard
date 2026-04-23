@@ -32,6 +32,20 @@
       "runtimeExecutable": "/bin/zsh",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/exe/Downloads/Cursor/v1_shieldnest_org && /opt/homebrew/Cellar/node@22/22.22.0_1/bin/npx next dev -p 3008"],
       "port": 3008
+    },
+    {
+      "name": "utility-immigration",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/Users/exe/.local/share/fnm/node-versions/v22.22.0/installation/bin:$PATH && cd /Users/exe/Downloads/Claude/coherence-utility-immigration && node scripts/serve.mjs $PORT"],
+      "port": 4322,
+      "autoPort": true
+    },
+    {
+      "name": "utility-aitools",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/Users/exe/.local/share/fnm/node-versions/v22.22.0/installation/bin:$PATH && cd /Users/exe/Downloads/Claude/coherence-utility-aitools && node scripts/serve.mjs $PORT"],
+      "port": 4323,
+      "autoPort": true
     }
   ]
 }
