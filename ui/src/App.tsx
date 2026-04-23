@@ -88,6 +88,7 @@ import { AffiliateAdminTiers } from "./pages/AffiliateAdminTiers";
 import { AffiliateAdminCampaigns } from "./pages/AffiliateAdminCampaigns";
 import { AffiliateAdminMerch } from "./pages/AffiliateAdminMerch";
 import { HouseAdsAdmin } from "./pages/HouseAdsAdmin";
+import { ShopSharersAdmin } from "./pages/ShopSharersAdmin";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -248,6 +249,7 @@ function boardRoutes() {
       <Route path="affiliates/campaigns" element={<AffiliateAdminCampaigns />} />
       <Route path="affiliates/merch" element={<AffiliateAdminMerch />} />
       <Route path="house-ads" element={<HouseAdsAdmin />} />
+      <Route path="shop-sharers" element={<ShopSharersAdmin />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />

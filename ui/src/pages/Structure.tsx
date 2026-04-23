@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves.
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue.
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -418,6 +418,14 @@ const DEFAULT_DIAGRAM = `graph TB
         HouseAdsRoutes(["/api/house-ads — active?slot=X (public), :id/image (stream), :id/click (302), CRUD (board)"])
         HouseAdsPage(["/house-ads — admin CRUD UI"])
         HouseAdsDB[("house_ads — creative+slot+weight+window+counters")]
+      end
+
+      subgraph ShopSharersNet["Shop Sharers — Email Capture → Referral + QR"]
+        direction TB
+        ShopSharersSvc(["Shop Sharers Service — mint code + QR PNG + applyAffiliate/approve/reject"])
+        ShopSharersRoutes(["/api/shop — sharers upsert + by-code + qr.png + apply-affiliate + ref/hit (public); admin approve/reject (board)"])
+        ShopSharersPage(["/shop-sharers — admin approval queue"])
+        ShopSharersDB[("shop_sharers + shop_referral_events")]
       end
 
       subgraph AffiliateSystem["Affiliate Marketer System"]

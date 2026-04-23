@@ -43,6 +43,7 @@ This doc is the canonical cross-repo boundary. When in doubt, defer here — do 
 | Partner / directory / bundle state | team-dashboard | Existing pattern, untouched |
 | **Owned utility-site registry** (domains we own for ad-revenue arbitrage) | **team-dashboard** (`owned_sites`, `owned_site_metrics` tables) | Sites themselves are static HTML on VPS3 nginx; team-dashboard aggregates GA4/AdSense metrics and exposes the portfolio at `/owned-sites`. Strategy doc: `docs/products/utility-network/README.md`. |
 | **House ads** (in-house creatives served to `*.coherencedaddy.com` ad slots while AdSense approval is pending) | **team-dashboard** (`house_ads` table) | Admin CRUD at `/house-ads`; public fetch at `/api/house-ads/active?slot=X`. Storefront owns the `<AdSlot>` component. Spec: `docs/products/house-ads.md`. |
+| **Shop sharers** (email capture on `shop.coherencedaddy.com` → referral code + QR + share link; opt-in affiliate promotion queue) | **team-dashboard** (`shop_sharers`, `shop_referral_events` tables) | Public: `POST /api/shop/sharers`, `GET /api/shop/sharers/by-code/:code`, `GET /api/shop/sharers/:code/qr.png`, `POST /api/shop/sharers/:code/apply-affiliate`, `POST /api/shop/ref/hit`. Admin: `/shop-sharers` approval queue. Storefront owns the hero email field + `/shop/share` page. Spec: `docs/products/shop-sharers.md`. |
 
 ---
 
@@ -61,6 +62,11 @@ New team-dashboard routes the storefront calls:
 | `/api/house-ads/active?slot=X` | GET | Returns the currently-serving in-house ad for a named slot (or 204 if pool empty). Consumed by the storefront `<AdSlot>` component. |
 | `/api/house-ads/:id/image` | GET | Streams ad creative bytes. Public. |
 | `/api/house-ads/:id/click` | GET | 302 redirects to the ad's click URL; records a click. |
+| `/api/shop/sharers` | POST | Upsert a shop email signup; returns referral code + share URL + QR URL (masked email). |
+| `/api/shop/sharers/by-code/:code` | GET | Lookup a sharer by their referral code (public view, masked email). |
+| `/api/shop/sharers/:code/qr.png` | GET | Streams a 512px PNG QR encoding the share URL. |
+| `/api/shop/sharers/:code/apply-affiliate` | POST | Queues a sharer for manual affiliate approval. Idempotent. |
+| `/api/shop/ref/hit` | POST | Fire-and-forget beacon — records a visit from `?ref=<code>` for attribution. |
 
 All three public-facing routes are reachable from the storefront via `vercel.json` rewrites following the existing `/api/intel/*`, `/api/trends/*`, `/api/content/*`, `/api/partner-directory/*` pattern.
 

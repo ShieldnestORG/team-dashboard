@@ -124,5 +124,6 @@ export { campaigns } from "./campaigns.js";
 export type { Campaign, NewCampaign } from "./campaigns.js";
 export { ownedSites, ownedSiteMetrics } from "./owned_sites.js";
 export { houseAds } from "./house_ads.js";
+export { shopSharers, shopReferralEvents } from "./shop_sharers.js";
 export { cityBusinessLeads } from "./city_business_leads.js";
 export type { CityBusinessLead, NewCityBusinessLead } from "./city_business_leads.js";

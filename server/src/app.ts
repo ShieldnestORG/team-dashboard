@@ -40,6 +40,7 @@ import {
 import { bundleRoutes, bundleWebhookRouter } from "./routes/bundles.js";
 import { creditscoreRoutes, creditscoreWebhookRouter } from "./routes/creditscore.js";
 import { houseAdsRoutes } from "./routes/house-ads.js";
+import { shopSharersRoutes } from "./routes/shop-sharers.js";
 import { contentRoutes } from "./routes/content.js";
 import { visualContentRoutes } from "./routes/visual-content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
@@ -275,6 +276,7 @@ export async function createApp(
   api.use("/bundles", bundleRoutes(db));
   api.use("/creditscore", creditscoreRoutes(db));
   api.use("/house-ads", houseAdsRoutes(db, opts.storageService));
+  api.use("/shop", shopSharersRoutes(db));
   api.use("/owned-sites", ownedSitesRoutes(db));
   api.use("/stripe", directoryListingsWebhookRoutes(db));
   api.use("/content", contentRoutes(db));

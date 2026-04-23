@@ -93,3 +93,4 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Environment Variables](docs/deploy/env-vars.md) — Full variable reference.
 - [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md) — Mermaid maintenance.
 - [Blog Distribution](docs/products/blog-distribution.md) — Target surfaces, cron → target map, current wiring status.
+- [Shop Sharers](docs/products/shop-sharers.md) — Email capture on shop.coherencedaddy.com → referral code + QR + shareable link + opt-in affiliate approval queue.
