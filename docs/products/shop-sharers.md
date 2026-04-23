@@ -117,18 +117,32 @@ scheme in `server/src/routes/affiliates.ts`.
 - **Merch order fulfillment**: the existing `merch_requests` table is for
   affiliate swag and is independent of `shop_sharers`.
 
-## Landing-side wiring
+## Landing-side wiring — shipped
 
-The storefront side lives in `coherencedaddy-landing`:
+The storefront side lives in `coherencedaddy-landing`. Status as of
+2026-04-23 (commits `a9ae317`, `6698bd2`):
 
-- `app/shop-home/page.tsx` (or a hero subcomponent in `components/shop/`)
-  renders the email field and POSTs to `/api/shop/sharers`.
-- `app/shop/share/page.tsx` renders the QR via `<img src="/api/shop/sharers/:code/qr.png">`
-  and posts to `/api/shop/sharers/:code/apply-affiliate` on Apply.
-- `middleware.ts` (or a server route handler) fires the `/api/shop/ref/hit`
-  beacon when `?ref=<code>` is present on any shop URL.
-- `vercel.json` gains a `/api/shop/:path*` rewrite pointing at
-  `http://31.220.61.12:3200/api/shop/:path*` in prod.
+- **Email capture** — `components/shop/share-capture.tsx`. Rendered between
+  the hero `<section>` and `<FiltersBar />` by
+  `components/shop-preview/shop-preview-client.tsx`. POSTs
+  `{ email, source: "shop_hero" }` to `/api/shop/sharers` and
+  `router.push()`es to `/shop/share?code=<referralCode>` on success.
+- **Share page** — `app/shop/share/page.tsx`. Reads `?code=`, fetches
+  `/api/shop/sharers/by-code/:code`, renders the QR via
+  `<img src={shopApiUrl(sharer.qrUrl...)} />`, copy-link button, and
+  `POST /api/shop/sharers/:code/apply-affiliate` on the Apply CTA with
+  inline status handling for `null | pending | approved | rejected`.
+- **Ref beacon** — `components/shop/ref-beacon.tsx`, mounted inside
+  `<ShopPreviewClient />`, fires `POST /api/shop/ref/hit` on any shop
+  page load with `?ref=<code>`.
+- **API proxy** — `vercel.json` rewrites `/api/shop/:path*` to
+  `https://api.coherencedaddy.com/api/shop/:path*`. Shared helper
+  `lib/shop-api.ts → shopApiUrl()` reads
+  `NEXT_PUBLIC_DASHBOARD_API_BASE` for local dev and defaults to
+  origin-relative in prod.
+- **Hostname rewrite** — `middleware.ts` rewrites
+  `shop.coherencedaddy.com/` to `/shop-home`, which renders
+  `<ShopPreviewClient />`.
 
 ## Verification checklist
 

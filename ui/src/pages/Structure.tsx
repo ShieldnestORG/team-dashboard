@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-22. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue.
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-23. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue. 2026-04-23: Storefront email-capture wiring shipped (coherencedaddy-landing@a9ae317 — components/shop/share-capture.tsx → POST /api/shop/sharers → redirect /shop/share?code=<code>); blog article ad migrated to unified <AdSlot> component (landing@6698bd2) — house-ads becomes live no-fill fallback once blog-article slot's providers flip to ['adsense','house']. Diagram edges wired: CDShop → ShopSharersRoutes, CD → HouseAdsRoutes, ShopSharersSvc -.→ AffiliatesDB on approve.
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -868,6 +868,17 @@ const DEFAULT_DIAGRAM = `graph TB
   %% Shop / E-commerce
   CDShop -->|"payments"| StripeAPI
   CDShop -->|"fulfillment"| PrintifyAPI
+  CDShop -->|"email capture + ?ref beacon"| ShopSharersRoutes
+  ShopSharersRoutes --> ShopSharersSvc
+  ShopSharersSvc --> ShopSharersDB
+  ShopSharersPage -->|"board approve/reject"| ShopSharersSvc
+  ShopSharersSvc -.->|"approve → create affiliate row"| AffiliatesDB
+
+  %% House Ads — blog slot fallback + storefront AdSlot
+  CD -->|"AdSlot fallback on no-fill"| HouseAdsRoutes
+  HouseAdsRoutes --> HouseAdsSvc
+  HouseAdsSvc --> HouseAdsDB
+  HouseAdsPage -->|"board CRUD"| HouseAdsSvc
 
   %% Ecosystem cross-links
   Tokns -->|"validator"| TXChain
