@@ -10,6 +10,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/earnings", label: "Earnings" },
   { href: "/payouts", label: "Payouts" },
   { href: "/tiers", label: "Tiers" },
+  { href: "/learn", label: "Learn" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/promo", label: "Promo" },
   { href: "/merch", label: "Merch" },

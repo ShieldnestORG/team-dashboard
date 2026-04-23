@@ -72,6 +72,8 @@ import { AffiliateDashboard } from "./pages/AffiliateDashboard";
 import { AffiliateEarnings } from "./pages/AffiliateEarnings";
 import { AffiliatePayouts } from "./pages/AffiliatePayouts";
 import { AffiliateTiers } from "./pages/AffiliateTiers";
+import { AffiliateLearn } from "./pages/AffiliateLearn";
+import { AffiliateLearnGuide } from "./pages/AffiliateLearnGuide";
 import { AffiliateLeaderboard } from "./pages/AffiliateLeaderboard";
 import { AffiliatePromo } from "./pages/AffiliatePromo";
 import { AffiliateMerch } from "./pages/AffiliateMerch";
@@ -396,7 +398,9 @@ function PartnersSite() {
 
 const IS_AFFILIATES_SUBDOMAIN =
   typeof window !== "undefined" &&
-  window.location.hostname.startsWith("affiliates.");
+  (window.location.hostname.startsWith("affiliates.") ||
+    ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+      new URLSearchParams(window.location.search).get("affiliate") === "1"));
 
 function AffiliateSite() {
   return (
@@ -407,6 +411,8 @@ function AffiliateSite() {
         <Route path="earnings" element={<AffiliateEarnings />} />
         <Route path="payouts" element={<AffiliatePayouts />} />
         <Route path="tiers" element={<AffiliateTiers />} />
+        <Route path="learn" element={<AffiliateLearn />} />
+        <Route path="learn/:slug" element={<AffiliateLearnGuide />} />
         <Route path="leaderboard" element={<AffiliateLeaderboard />} />
         <Route path="promo" element={<AffiliatePromo />} />
         <Route path="merch" element={<AffiliateMerch />} />
