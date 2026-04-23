@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import { shopSharersService, shareUrlFor } from "../services/shop-sharers.js";
 import { logger } from "../middleware/logger.js";
-import { sendTransactional } from "../services/email-templates.js";
+import { sendTransactional, sendSharerWelcomeEmail } from "../services/email-templates.js";
 import { assertBoard } from "./authz.js";
 
 // ---------------------------------------------------------------------------
@@ -88,8 +88,31 @@ export function shopSharersRoutes(db: Db): Router {
       return;
     }
     try {
-      const row = await svc.upsertByEmail({ email, source });
+      const { row, created } = await svc.upsertByEmail({ email, source });
       res.status(201).json({ sharer: toPublicView(row) });
+      if (created) {
+        // Fire-and-forget welcome email with embedded 600×600 QR.
+        (async () => {
+          try {
+            const qrPng = await svc.renderQrPng(row.referralCode, 600);
+            // Default: shop subdomain + /share (middleware rewrites to
+            // /shop/share). Keeps the visible URL short and stays inside the
+            // shop context the user just signed up in.
+            const shareLandingBase =
+              process.env.SHOP_SHARE_LANDING_URL ??
+              "https://shop.coherencedaddy.com/share";
+            await sendSharerWelcomeEmail({
+              to: row.email,
+              shareUrl: shareUrlFor(row.referralCode),
+              referralCode: row.referralCode,
+              shareLandingUrl: `${shareLandingBase}?code=${encodeURIComponent(row.referralCode)}`,
+              qrPng,
+            });
+          } catch (err) {
+            logger.error({ err, code: row.referralCode }, "sharer-welcome-email: dispatch failed");
+          }
+        })();
+      }
     } catch (err) {
       logger.error({ err }, "shop-sharers: upsertByEmail failed");
       res.status(500).json({ error: "Failed to create sharer" });

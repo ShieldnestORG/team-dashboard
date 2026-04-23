@@ -82,10 +82,11 @@ export function shopSharersService(db: Db) {
   }
 
   // Idempotent: if the email already exists, return the existing row.
+  // Returns { row, created } so callers can trigger welcome-email only on new rows.
   async function upsertByEmail(input: { email: string; source?: string }) {
     const normalized = input.email.trim().toLowerCase();
     const existing = await getByEmail(normalized);
-    if (existing) return existing;
+    if (existing) return { row: existing, created: false };
 
     const referralCode = await mintUniqueCode();
     const [row] = await db
@@ -96,7 +97,7 @@ export function shopSharersService(db: Db) {
         source: input.source ?? "shop_hero",
       })
       .returning();
-    return row!;
+    return { row: row!, created: true };
   }
 
   async function applyAffiliate(code: string) {
@@ -218,12 +219,12 @@ export function shopSharersService(db: Db) {
     return row ?? null;
   }
 
-  async function renderQrPng(code: string): Promise<Buffer> {
+  async function renderQrPng(code: string, width = 512): Promise<Buffer> {
     return QRCode.toBuffer(shareUrlFor(code), {
       type: "png",
       errorCorrectionLevel: "M",
       margin: 2,
-      width: 512,
+      width,
       color: { dark: "#111111", light: "#ffffff" },
     });
   }

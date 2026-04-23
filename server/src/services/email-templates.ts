@@ -861,6 +861,93 @@ function buildAffiliatePendingDigest(vars: EmailVars): { subject: string; html: 
 }
 
 // ---------------------------------------------------------------------------
+// Shop sharer welcome — hype email with embedded QR (CID attachment)
+// ---------------------------------------------------------------------------
+
+interface SharerWelcomeInput {
+  to: string;
+  shareUrl: string;
+  referralCode: string;
+  shareLandingUrl: string; // e.g. https://coherencedaddy.com/shop/share?code=abc123
+  qrPng: Buffer; // 600×600 PNG
+}
+
+function buildSharerWelcome(input: Omit<SharerWelcomeInput, "to" | "qrPng">): {
+  subject: string;
+  html: string;
+} {
+  const { shareUrl, referralCode, shareLandingUrl } = input;
+  const subject = "You're in. Your share link is live.";
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:24px;color:#222222;line-height:1.2;">You&rsquo;re in. Now go make some noise.</h2>
+    <p style="margin:0 0 20px;font-size:15px;">
+      Every click on your link is tracked to you. Prize drops, discounts,
+      commissions — details TBA, but the leaderboard starts the second you
+      hit send.
+    </p>
+
+    <p style="margin:0 0 6px;font-weight:600;color:#222222;">Your share link</p>
+    ${monoBox(`<a href="${shareUrl}" style="color:#333333;text-decoration:none;">${shareUrl}</a>`)}
+
+    <p style="margin:20px 0 6px;font-weight:600;color:#222222;">Your code</p>
+    ${monoBox(referralCode)}
+
+    <p style="margin:28px 0 10px;font-weight:600;color:#222222;">Your QR (600×600 — screenshot, print, sticker, tattoo, whatever)</p>
+    <div style="text-align:center;margin:8px 0 0;">
+      <img src="cid:sharer-qr" alt="QR code for ${shareUrl}" width="300" height="300" style="display:inline-block;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#ffffff;" />
+    </div>
+
+    ${ctaButton(shareLandingUrl, "Open your share page →")}
+
+    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
+    <p style="margin:0 0 8px;font-weight:600;color:#222222;">What&rsquo;s next</p>
+    <ul style="margin:0 0 16px;padding-left:20px;color:#444444;">
+      <li style="margin-bottom:6px;">Drop the link in your stories, group chats, pinned posts.</li>
+      <li style="margin-bottom:6px;">Top sharers land in prize drops. Details TBA.</li>
+      <li style="margin-bottom:6px;">Want commissions? Apply for the affiliate program from your share page — we review manually.</li>
+    </ul>
+
+    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
+      No newsletters. We only email you for affiliate updates and prize drops.
+    </p>
+  `;
+  return { subject, html: htmlShell(subject, body) };
+}
+
+export async function sendSharerWelcomeEmail(input: SharerWelcomeInput): Promise<void> {
+  const transport = getTransporter();
+  if (!transport) {
+    logger.warn({ to: input.to }, "sharer-welcome: SMTP not configured — skipped");
+    return;
+  }
+  const from = process.env.ALERT_EMAIL_FROM ?? "noreply@coherencedaddy.com";
+  const { subject, html } = buildSharerWelcome({
+    shareUrl: input.shareUrl,
+    referralCode: input.referralCode,
+    shareLandingUrl: input.shareLandingUrl,
+  });
+  try {
+    await transport.sendMail({
+      from,
+      to: input.to,
+      subject,
+      html,
+      attachments: [
+        {
+          filename: `coherence-daddy-${input.referralCode}.png`,
+          content: input.qrPng,
+          contentType: "image/png",
+          cid: "sharer-qr",
+        },
+      ],
+    });
+    logger.info({ to: input.to, code: input.referralCode }, "sharer-welcome: sent");
+  } catch (err) {
+    logger.error({ err, to: input.to }, "sharer-welcome: send failed");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
