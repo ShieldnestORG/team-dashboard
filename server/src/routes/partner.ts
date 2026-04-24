@@ -27,6 +27,130 @@ function slugify(name: string): string {
 export function partnerRoutes(db: Db): Router {
   const router = Router();
 
+  // ── POST /public/enroll — Public self-serve partner signup ────────────────
+  // No auth. Body: { businessName, email, tier, contactName?, websiteUrl?, slug? }
+  // Creates a pending_payment partner row and a Stripe Checkout session.
+  // On successful payment, the shared partner webhook flips status to 'active'
+  // and emails the partner-welcome template with dashboard magic link.
+  router.post("/public/enroll", async (req, res) => {
+    try {
+      const businessName = typeof req.body?.businessName === "string"
+        ? req.body.businessName.trim()
+        : "";
+      const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+      const tierInput = typeof req.body?.tier === "string" ? req.body.tier.trim().toLowerCase() : "";
+      const contactName = typeof req.body?.contactName === "string"
+        ? req.body.contactName.trim()
+        : "";
+      const websiteUrl = typeof req.body?.websiteUrl === "string"
+        ? req.body.websiteUrl.trim()
+        : "";
+      const requestedSlug = typeof req.body?.slug === "string" ? req.body.slug.trim() : "";
+      const industry = typeof req.body?.industry === "string"
+        ? req.body.industry.trim()
+        : "Unknown";
+
+      if (!businessName) {
+        res.status(400).json({ error: "businessName is required" });
+        return;
+      }
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Valid email is required" });
+        return;
+      }
+      const tierPriceEnv: Record<string, string> = {
+        proof: "STRIPE_PRICE_PARTNER_PROOF",
+        performance: "STRIPE_PRICE_PARTNER_PERFORMANCE",
+        premium: "STRIPE_PRICE_PARTNER_PREMIUM",
+      };
+      if (!(tierInput in tierPriceEnv)) {
+        res.status(400).json({ error: "tier must be one of: proof, performance, premium" });
+        return;
+      }
+      if (!stripeConfigured()) {
+        res.status(503).json({ error: "STRIPE_SECRET_KEY not configured" });
+        return;
+      }
+      const priceIdEnv = tierPriceEnv[tierInput];
+      const priceId = process.env[priceIdEnv];
+      if (!priceId) {
+        res.status(400).json({
+          error: `No Stripe price configured for tier '${tierInput}' (env: ${priceIdEnv})`,
+        });
+        return;
+      }
+
+      // Generate a unique slug — prefer requested, fall back to slugified name,
+      // suffix with a short random segment if taken.
+      let slug = slugify(requestedSlug || businessName);
+      if (!slug) slug = `partner-${randomUUID().slice(0, 8)}`;
+      const [existing] = await db
+        .select({ id: partnerCompanies.id })
+        .from(partnerCompanies)
+        .where(
+          and(
+            eq(partnerCompanies.companyId, COMPANY_ID),
+            eq(partnerCompanies.slug, slug),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        slug = `${slug}-${randomUUID().slice(0, 6)}`;
+      }
+
+      const dashboardToken = randomUUID();
+      const [partner] = await db
+        .insert(partnerCompanies)
+        .values({
+          companyId: COMPANY_ID,
+          slug,
+          name: businessName,
+          industry,
+          website: websiteUrl || null,
+          contactName: contactName || null,
+          contactEmail: email,
+          tier: tierInput,
+          status: "pending_payment",
+          subscriptionStatus: "checkout_sent",
+          stripePriceId: priceId,
+          dashboardToken,
+          leadStatus: "self_serve_checkout",
+        })
+        .returning();
+
+      const dashBase = process.env.PAPERCLIP_PUBLIC_URL || "https://api.coherencedaddy.com";
+      const successUrl =
+        process.env.PARTNER_PUBLIC_CHECKOUT_SUCCESS_URL ||
+        `${dashBase}/partner-dashboard/${slug}?token=${dashboardToken}&checkout=success`;
+      const cancelUrl =
+        process.env.PARTNER_PUBLIC_CHECKOUT_CANCEL_URL ||
+        `https://coherencedaddy.com/partners-pricing?canceled=1`;
+
+      const checkoutResult = await createCheckoutSession({
+        email,
+        priceId,
+        successUrl,
+        cancelUrl,
+        metadata: {
+          source: "partner_network",
+          partner_slug: slug,
+          partner_id: partner.id,
+          tier: tierInput,
+        },
+      });
+
+      logger.info({ slug, tier: tierInput }, "partner-network: public enroll checkout created");
+      res.json({
+        checkoutUrl: checkoutResult.checkoutUrl,
+        sessionId: checkoutResult.sessionId,
+        slug,
+      });
+    } catch (err) {
+      logger.error({ err }, "partner-network: public enroll failed");
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // ── POST /prefill — Scrape a website and extract partner data (no save) ──
   router.post("/prefill", async (req, res) => {
     try {

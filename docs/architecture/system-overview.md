@@ -16,7 +16,7 @@ One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` s
 | `freetools.coherencedaddy.com` | 501+ public tools with SSR content; hosts all LLM/agent discovery files |
 | `directory.coherencedaddy.com` | 532+ projects across Crypto, AI/ML, DeFi, DevTools — powered by Intel API |
 | `token.coherencedaddy.com` | Crypto / NFT / staking dashboard |
-| `partners.coherencedaddy.com` | AEO partner network — local business partner directory |
+| `partners.coherencedaddy.com` | AEO partner network — featured-partner directory + how-it-works landing (served from **coherencedaddy-landing** via middleware rewrite to `/partners-home`). Self-serve signup funnel lives at `coherencedaddy.com/partners-pricing` and POSTs to team-dashboard `/api/partners/public/enroll`. |
 | `creditscore.coherencedaddy.com` | Redirect → `freetools.coherencedaddy.com/creditscore-home` (actual tool). Plan catalog, checkout session creation, Stripe webhooks, rescan cron, and report persistence all live in this repo at `/api/creditscore/*`. |
 | `shop.coherencedaddy.com` | Merch **preview** (Next.js). Authoritative cart/checkout is a Hostinger WordPress + WooCommerce store aggregating **Printful**, **Printify**, and first-party products — see [Org Structure › Shop Storefront Detail](./org-structure.md#shop-storefront-detail). |
 | `law.coherencedaddy.com` | Legal / law tools subdomain |
