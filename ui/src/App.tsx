@@ -73,6 +73,7 @@ import { AffiliatePayouts } from "./pages/AffiliatePayouts";
 import { AffiliateTiers } from "./pages/AffiliateTiers";
 import { AffiliateLearn } from "./pages/AffiliateLearn";
 import { AffiliateLearnGuide } from "./pages/AffiliateLearnGuide";
+import { AffiliateProgramRules } from "./pages/AffiliateProgramRules";
 import { AffiliateLeaderboard } from "./pages/AffiliateLeaderboard";
 import { AffiliatePromo } from "./pages/AffiliatePromo";
 import { AffiliateMerch } from "./pages/AffiliateMerch";
@@ -398,6 +399,8 @@ function AffiliateSite() {
         <Route path="tiers" element={<AffiliateTiers />} />
         <Route path="learn" element={<AffiliateLearn />} />
         <Route path="learn/:slug" element={<AffiliateLearnGuide />} />
+        <Route path="program-rules" element={<AffiliateProgramRules />} />
+        <Route path="affiliate-program-rules" element={<Navigate to="/program-rules" replace />} />
         <Route path="leaderboard" element={<AffiliateLeaderboard />} />
         <Route path="promo" element={<AffiliatePromo />} />
         <Route path="merch" element={<AffiliateMerch />} />
