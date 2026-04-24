@@ -49,8 +49,8 @@
 
 ### Stripe
 
-- [x] 5 Stripe products created in live mode, price IDs in seed migration.
-- [ ] Record price IDs in prod VPS `.env` (`STRIPE_PRICE_CREDITSCORE_*`). Documented in `docs/deploy/env-vars.md`; not verified on the live container env yet.
+- [x] 5 Stripe products recreated 2026-04-23 on `acct_1TJQyw` (Coherence Daddy) after old-account archive. IDs stored in local `.env` + coherencedaddy-landing `.env.local`.
+- [x] Record price IDs in prod VPS `.env` (`STRIPE_PRICE_CREDITSCORE_*`). Pushed 2026-04-23.
 - [x] `STRIPE_WEBHOOK_SECRET_CREDITSCORE` — documented (`docs/deploy/env-vars.md:102`), read in `creditscore.ts:217`. Verify endpoint registered in Stripe dashboard + secret present in VPS env.
 
 ### Env + callback

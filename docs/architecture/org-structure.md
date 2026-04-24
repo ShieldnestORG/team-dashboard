@@ -54,7 +54,7 @@ graph TB
 
     %% ── Authoritative shop (Hostinger) ──────────────────────────
     subgraph SHOP["shop.coherencedaddy.com — authoritative commerce"]
-        HOST["Hostinger WordPress\nsandybrown-pelican-970898.hostingersite.com"]
+        HOST["Hostinger WordPress\noutrizzd.shop"]
         WOO["WooCommerce core\n(cart · checkout · orders · WooPayments)"]
         PF["Printful plugin\n(apparel, hats, bags)"]
         PY["Printify plugin\n(mugs, stickers)"]

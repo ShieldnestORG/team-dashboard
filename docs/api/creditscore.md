@@ -21,7 +21,7 @@ Public. Returns all active tiers from `creditscore_plans`.
       "tier": "report",
       "billingInterval": "one_time",
       "priceCents": 1900,
-      "stripePriceId": "price_1TOumI...",
+      "stripePriceId": "price_1TPd1z...",
       "entitlements": { "oneTimeReport": true }
     },
     // starter_monthly, growth_monthly, growth_annual, pro_monthly ...
