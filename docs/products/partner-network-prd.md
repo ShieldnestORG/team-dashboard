@@ -6,6 +6,17 @@ AEO content marketing for SMBs and local businesses. Coherence Daddy's content a
 
 Every partner also gets a deployed microsite (`{slug}.coherencedaddy.com`) — a CD-hosted landing page that indexes quickly and contributes to their AEO citation graph.
 
+## Funnel (self-serve)
+
+1. Discovery — storefront entry points: nav link ("Partners"), footer link, Products Grid card on coherencedaddy.com.
+2. Pricing page — `coherencedaddy.com/partners-pricing` (lives in **coherencedaddy-landing**, modeled on `/directory-pricing`). Shows the three tiers + inline enrollment form.
+3. Enrollment — form POSTs to `/api/partners/public/enroll` (proxied via `vercel.json` to `api.coherencedaddy.com`). Backend creates a `partner_companies` row with `status='pending_payment'` and returns a Stripe Checkout URL.
+4. Stripe Checkout — partner completes payment.
+5. Activation — shared partner webhook (`handlePartnerStripeEvent` in [server/src/routes/directory-listings.ts](../../server/src/routes/directory-listings.ts)) flips `status='active'`, sends the `partner-welcome` email containing the dashboard magic link, and kicks off microsite deployment.
+6. Landing — partner is redirected to `/partner-dashboard/{slug}?token={dashboardToken}`.
+
+The marketing/directory landing at `partners.coherencedaddy.com` (featured partners grid, how-it-works) is served from **coherencedaddy-landing** via Next.js middleware rewrite to `/partners-home/*` — NOT from team-dashboard.
+
 ---
 
 ## Customer Promise

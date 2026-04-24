@@ -4,6 +4,32 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-24] — Partner Network self-serve funnel
+
+### New Features
+
+**Public enrollment endpoint (team-dashboard)**
+- `POST /api/partners/public/enroll` in `server/src/routes/partner.ts` — unauthenticated, creates `partner_companies` row with `status='pending_payment'` and returns Stripe Checkout URL. Mirrors the existing directory-listings `/public/enroll` pattern.
+- Stripe price resolved from `STRIPE_PRICE_PARTNER_{PROOF,PERFORMANCE,PREMIUM}` envs; metadata sets `source='partner_network'` + `partner_slug` so the shared webhook (`handlePartnerStripeEvent`) activates the partner and emails the `partner-welcome` dashboard magic link on `checkout.session.completed`.
+- Success URL → `/partner-dashboard/{slug}?token={dashboardToken}&checkout=success` (dashboard-side); cancel URL → `https://coherencedaddy.com/partners-pricing?canceled=1`.
+- Overrides: `PARTNER_PUBLIC_CHECKOUT_SUCCESS_URL`, `PARTNER_PUBLIC_CHECKOUT_CANCEL_URL`.
+
+**Storefront funnel (coherencedaddy-landing)**
+- New `/app/partners-pricing/page.tsx` — 3-tier grid (Proof $49 / Performance $149 / Premium $499) with inline enrollment form that POSTs to the proxied endpoint and redirects to Stripe Checkout.
+- Entry points added: header nav ("Partners" link), footer Links column, Products Grid card on homepage.
+- `/app/partners-home/page.tsx` CTAs rewired from `coherencedaddy.com#contact` → `coherencedaddy.com/partners-pricing`.
+- `vercel.json` rewrite + CORS headers for `/api/partners/public/:path*` → `api.coherencedaddy.com`.
+
+**Dead code removed**
+- `ui/src/pages/PartnersLanding.tsx` and the `IS_PARTNERS_SUBDOMAIN` branch in `ui/src/App.tsx` deleted. The `partners.coherencedaddy.com` subdomain was always served from coherencedaddy-landing via Next.js middleware rewrite to `/partners-home/*`, never from the VPS — the team-dashboard copy was unreachable.
+
+### Docs & diagrams
+- `docs/products/partner-network-prd.md` — added self-serve funnel section; clarified partners.coherencedaddy.com is landing-repo-served.
+- `docs/OWNERSHIP.md` — added enroll route to inter-repo contract table.
+- `docs/architecture/system-overview.md` — expanded partners subdomain row to describe the split between marketing landing and self-serve funnel.
+- `docs/architecture/org-structure.md` — annotated `S_PART` node with the self-serve entry.
+- `ui/src/pages/Structure.tsx` `DEFAULT_DIAGRAM` — added `PartnerPublicEnroll` node under AEO Partner Network subgraph (persisted structure push deferred until merge).
+
 ## [2026-04-22] — Cross-repo blog distribution + per-target visibility
 
 ### New Features

@@ -67,6 +67,7 @@ New team-dashboard routes the storefront calls:
 | `/api/shop/sharers/:code/qr.png` | GET | Streams a 512px PNG QR encoding the share URL. |
 | `/api/shop/sharers/:code/apply-affiliate` | POST | Queues a sharer for manual affiliate approval. Idempotent. |
 | `/api/shop/ref/hit` | POST | Fire-and-forget beacon — records a visit from `?ref=<code>` for attribution. |
+| `/api/partners/public/enroll` | POST | Public self-serve partner signup. Body: `{ businessName, email, tier, contactName?, websiteUrl?, slug?, industry? }`. Creates `partner_companies` row with `status='pending_payment'` and returns `{ checkoutUrl, sessionId, slug }`. On payment, shared partner webhook activates the partner + emails `partner-welcome` with dashboard magic link. |
 
 All three public-facing routes are reachable from the storefront via `vercel.json` rewrites following the existing `/api/intel/*`, `/api/trends/*`, `/api/content/*`, `/api/partner-directory/*` pattern.
 

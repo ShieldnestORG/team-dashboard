@@ -43,7 +43,7 @@ graph TB
         S_FREE["freetools — 500+ tools"]
         S_DIR["directory — intel"]
         S_TOK["token — Daddy token"]
-        S_PART["partners — AEO network"]
+        S_PART["partners — AEO network\n(self-serve funnel at /partners-pricing)"]
         S_CS["creditscore — SEO audit"]
         S_LAW["law — legal AI"]
         S_OPT["optimize-me — privacy notes"]

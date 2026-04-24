@@ -8,7 +8,7 @@ This document provides a mapping of critical files to their purpose within the s
 - `server/src/routes/trends.ts`: Trend signals and SEO engine API (`/api/trends/*`).
 - `server/src/routes/auto-reply.ts`: Auto-reply REST API (settings, config, logs, stats).
 - `server/src/routes/public-reels.ts`: Public reels API (no auth) for coherencedaddy.com.
-- `server/src/routes/partner.ts`: Partner CRUD and metrics API.
+- `server/src/routes/partner.ts`: Partner CRUD, metrics, and admin checkout API. Public self-serve enrollment at `POST /public/enroll` (no auth) creates the partner row + Stripe Checkout session for the `coherencedaddy.com/partners-pricing` funnel.
 - `server/src/routes/partner-go.ts`: Public redirect endpoint (`/api/go/:slug` — no auth).
 - `server/src/routes/knowledge-graph.ts`: Knowledge graph API.
 - `server/src/routes/agent-memory.ts`: Agent memory API.

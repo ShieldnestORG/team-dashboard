@@ -66,7 +66,6 @@ import { Partners } from "./pages/Partners";
 import { AffiliatesAdmin } from "./pages/AffiliatesAdmin";
 import { PartnerDetail } from "./pages/PartnerDetail";
 import { PartnerDashboard } from "./pages/PartnerDashboard";
-import { PartnersLanding } from "./pages/PartnersLanding";
 import { AffiliateLanding } from "./pages/AffiliateLanding";
 import { AffiliateDashboard } from "./pages/AffiliateDashboard";
 import { AffiliateEarnings } from "./pages/AffiliateEarnings";
@@ -382,20 +381,6 @@ function NoCompaniesStartPage() {
   );
 }
 
-const IS_PARTNERS_SUBDOMAIN =
-  typeof window !== "undefined" &&
-  window.location.hostname.startsWith("partners.");
-
-function PartnersSite() {
-  return (
-    <Routes>
-      <Route index element={<PartnersLanding />} />
-      <Route path="dashboard/:slug" element={<PartnerDashboard />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
-}
-
 const IS_AFFILIATES_SUBDOMAIN =
   typeof window !== "undefined" &&
   (window.location.hostname.startsWith("affiliates.") ||
@@ -428,10 +413,6 @@ function AffiliateSite() {
 export function App() {
   if (IS_AFFILIATES_SUBDOMAIN) {
     return <AffiliateSite />;
-  }
-
-  if (IS_PARTNERS_SUBDOMAIN) {
-    return <PartnersSite />;
   }
 
   return (

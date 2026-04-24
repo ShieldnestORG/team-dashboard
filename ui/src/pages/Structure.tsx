@@ -363,6 +363,7 @@ const DEFAULT_DIAGRAM = `graph TB
         PartnerReports(["Partner Reports — monthly"])
         PartnerSiteContent[("partner_site_content")]
         PartnerDirectory(["Trusted Companies API — /partner-directory"])
+        PartnerPublicEnroll(["Public self-serve — POST /api/partners/public/enroll → Stripe Checkout"])
         MarketingPushesPage(["/marketing-pushes — admin campaign dashboard"])
       end
 
