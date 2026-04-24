@@ -116,6 +116,7 @@ import { startFirecrawlCrons } from "./services/firecrawl-crons.js";
 import { startDirectoryCrons } from "./services/directory-crons.js";
 import { startPartnerFulfillmentCrons } from "./services/partner-fulfillment-crons.js";
 import { startCreditscoreCrons } from "./services/creditscore-crons.js";
+import { reconcileCreditscorePlans } from "./services/creditscore-stripe-reconcile.js";
 import { startCreditscoreReportAgent } from "./services/creditscore-report-agent.js";
 import { startCreditscoreContentAgent } from "./services/creditscore-content-agent-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
@@ -457,6 +458,9 @@ export async function createApp(
   startDirectoryCrons(db);
   startPartnerFulfillmentCrons(db);
   startCreditscoreCrons(db);
+  void reconcileCreditscorePlans(db).catch((err) => {
+    logger.error({ err }, "creditscore-stripe-reconcile failed");
+  });
   startCreditscoreReportAgent(db);
   startCreditscoreContentAgent(db);
   startCreditscoreFulfillmentCrons(db);

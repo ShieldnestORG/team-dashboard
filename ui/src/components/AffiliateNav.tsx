@@ -43,14 +43,25 @@ export function AffiliateNav({
   return (
     <header className="bg-card border-b border-border sticky top-0 z-10">
       <div className="max-w-5xl mx-auto px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          {subtitle && (
-            <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
-          )}
-          {title && (
-            <h1 className="text-lg font-bold text-foreground truncate">{title}</h1>
-          )}
-        </div>
+        <a
+          href="/dashboard"
+          className="flex items-center gap-3 min-w-0 group"
+          aria-label="Affiliate dashboard home"
+        >
+          <img
+            src="/apple-touch-icon.png"
+            alt="Coherence Daddy"
+            className="h-9 w-9 rounded-lg flex-shrink-0 transition-opacity group-hover:opacity-90"
+          />
+          <div className="min-w-0">
+            {subtitle && (
+              <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
+            )}
+            {title && (
+              <h1 className="text-lg font-bold text-foreground truncate">{title}</h1>
+            )}
+          </div>
+        </a>
         <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
           <nav className="flex items-center gap-1 text-xs font-medium">
             {NAV_ITEMS.map((item) => {

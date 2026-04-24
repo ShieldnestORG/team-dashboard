@@ -140,6 +140,15 @@ export function AffiliateDashboard() {
   const [policyProgress, setPolicyProgress] = useState(0);
   const [policyLoading, setPolicyLoading] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
+  const [policyReplay, setPolicyReplay] = useState(false);
+
+  function openPolicyReplay() {
+    setPolicyReplay(true);
+    setPolicyStep(0);
+    setPolicyProgress(0);
+    setPolicyError(null);
+    setShowPolicyModal(true);
+  }
 
   // Phase 4 widgets
   const [tier, setTier] = useState<TierResponse | null>(null);
@@ -233,6 +242,11 @@ export function AffiliateDashboard() {
   }, [policyStep, showPolicyModal]);
 
   async function handleAcceptPolicy() {
+    if (policyReplay) {
+      setShowPolicyModal(false);
+      setPolicyReplay(false);
+      return;
+    }
     setPolicyLoading(true);
     setPolicyError(null);
     try {
@@ -573,6 +587,22 @@ export function AffiliateDashboard() {
                 )}
               </section>
             )}
+          </div>
+        )}
+
+        {/* Program rules replay — visible once the affiliate has accepted */}
+        {affiliate.policyAcceptedAt && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card/50 px-4 py-2.5">
+            <p className="text-xs text-muted-foreground">
+              Program rules accepted {new Date(affiliate.policyAcceptedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
+            </p>
+            <button
+              type="button"
+              onClick={openPolicyReplay}
+              className="text-xs font-medium text-[#FF6B4A] hover:text-[#FF6B4A]/80 whitespace-nowrap"
+            >
+              Review program rules →
+            </button>
           </div>
         )}
 
@@ -943,17 +973,28 @@ export function AffiliateDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Policy Acceptance Modal (blocking) */}
-      <Dialog open={showPolicyModal} onOpenChange={() => { /* blocking: cannot dismiss */ }}>
+      {/* Policy Acceptance Modal — blocking on first view, dismissible on replay */}
+      <Dialog
+        open={showPolicyModal}
+        onOpenChange={(open) => {
+          if (!open && policyReplay) {
+            setShowPolicyModal(false);
+            setPolicyReplay(false);
+          }
+        }}
+      >
         <DialogContent
-          showCloseButton={false}
-          onEscapeKeyDown={(e) => e.preventDefault()}
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onInteractOutside={(e) => e.preventDefault()}
-          className="sm:max-w-lg max-h-[85vh] overflow-y-auto"
+          showCloseButton={policyReplay}
+          onEscapeKeyDown={(e) => { if (!policyReplay) e.preventDefault(); }}
+          onPointerDownOutside={(e) => { if (!policyReplay) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (!policyReplay) e.preventDefault(); }}
+          className="sm:max-w-2xl max-h-[85vh] overflow-y-auto p-8"
+          overlayClassName="bg-black/85 backdrop-blur-sm"
         >
           <DialogHeader>
-            <DialogTitle>One quick thing before you submit leads</DialogTitle>
+            <DialogTitle className="text-2xl">
+              {policyReplay ? "Program rules refresher" : "One quick thing before you submit leads"}
+            </DialogTitle>
           </DialogHeader>
 
           {/* Progress bars — current step fills over 10 seconds */}
@@ -966,7 +1007,7 @@ export function AffiliateDashboard() {
                   className="h-1 flex-1 rounded-full bg-muted overflow-hidden"
                 >
                   <span
-                    className="block h-full bg-[#ff876d] origin-left"
+                    className="block h-full bg-[#FF6B4A] origin-left"
                     style={{ transform: `scaleX(${fill})` }}
                   />
                 </span>
@@ -974,11 +1015,11 @@ export function AffiliateDashboard() {
             })}
           </div>
 
-          <div className="min-h-[160px] space-y-3 text-sm text-foreground">
+          <div className="min-h-[200px] space-y-4 text-base text-foreground">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
               Rule {policyStep + 1} of {POLICY_STEPS.length}
             </p>
-            <h3 className="text-lg font-semibold text-foreground">
+            <h3 className="text-xl font-semibold text-foreground">
               {POLICY_STEPS[policyStep].title}
             </h3>
             <p className="leading-relaxed text-muted-foreground">
@@ -988,10 +1029,10 @@ export function AffiliateDashboard() {
             {policyStep === POLICY_STEPS.length - 1 && (
               <p className="pt-2">
                 <a
-                  href="/affiliate-program-rules"
+                  href="/program-rules"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-[#ff876d] hover:text-[#ff876d]/90 font-medium"
+                  className="text-xs text-[#FF6B4A] hover:text-[#FF6B4A]/90 font-medium"
                 >
                   Read full program rules →
                 </a>
@@ -1005,14 +1046,16 @@ export function AffiliateDashboard() {
 
           <DialogFooter className="sm:justify-between items-center">
             <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={handleLogout}
-                disabled={policyLoading}
-                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
-              >
-                Log out
-              </button>
+              {!policyReplay && (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={policyLoading}
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                >
+                  Log out
+                </button>
+              )}
               {policyStep > 0 && (
                 <button
                   type="button"
@@ -1025,7 +1068,7 @@ export function AffiliateDashboard() {
               )}
             </div>
             {(() => {
-              const canProceed = policyProgress >= 1;
+              const canProceed = policyReplay || policyProgress >= 1;
               const secondsLeft = Math.ceil((1 - policyProgress) * 10);
               const isFinal = policyStep === POLICY_STEPS.length - 1;
               return (
@@ -1040,13 +1083,15 @@ export function AffiliateDashboard() {
                     }
                   }}
                   disabled={policyLoading || !canProceed}
-                  className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors min-w-[10rem]"
+                  className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors min-w-[10rem]"
                 >
                   {!canProceed
                     ? `Keep reading… ${secondsLeft}s`
                     : isFinal
                     ? policyLoading
                       ? "Saving..."
+                      : policyReplay
+                      ? "Done"
                       : "I understand and agree"
                     : "Next →"}
                 </button>

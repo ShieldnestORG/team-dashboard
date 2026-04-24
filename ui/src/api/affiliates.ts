@@ -403,7 +403,9 @@ export const affiliatesApi = {
 
   // Phase 4 — merch
   listMerchRequests: () =>
-    affiliateRequest<MerchRequest[]>("/merch-requests"),
+    affiliateRequest<{ merchRequests: MerchRequest[] }>("/merch-requests").then(
+      (res) => res.merchRequests,
+    ),
 
   submitMerchRequest: (body: SubmitMerchRequestBody) =>
     affiliateRequest<{ id: string }>("/merch-requests", {
