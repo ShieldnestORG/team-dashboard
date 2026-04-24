@@ -125,8 +125,8 @@ export function affiliateEngagementRoutes(db: Db): Router {
         );
 
       res.json({
-        currentTier: currentTier ?? null,
-        nextTier: nextTier ?? null,
+        current: currentTier ?? null,
+        next: nextTier ?? null,
         progress: {
           lifetimeCents: Number(lifetimeRow?.lifetimeCents ?? 0),
           activePartners: Number(activeRow?.activePartners ?? 0),
