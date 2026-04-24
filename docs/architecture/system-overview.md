@@ -18,7 +18,7 @@ One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` s
 | `token.coherencedaddy.com` | Crypto / NFT / staking dashboard |
 | `partners.coherencedaddy.com` | AEO partner network — local business partner directory |
 | `creditscore.coherencedaddy.com` | Redirect → `freetools.coherencedaddy.com/creditscore-home` (actual tool). Plan catalog, checkout session creation, Stripe webhooks, rescan cron, and report persistence all live in this repo at `/api/creditscore/*`. |
-| `shop.coherencedaddy.com` | Shop / merchandise subdomain |
+| `shop.coherencedaddy.com` | Merch **preview** (Next.js). Authoritative cart/checkout is a Hostinger WordPress + WooCommerce store aggregating **Printful**, **Printify**, and first-party products — see [Org Structure › Shop Storefront Detail](./org-structure.md#shop-storefront-detail). |
 | `law.coherencedaddy.com` | Legal / law tools subdomain |
 | `optimize-me.coherencedaddy.com` | Self-optimization tools subdomain |
 

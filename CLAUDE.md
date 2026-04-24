@@ -85,6 +85,7 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 
 ## Reference Docs
 - [System Overview](docs/architecture/system-overview.md) — Ecosystem and core systems.
+- [Org Structure](docs/architecture/org-structure.md) — 508(c)(1)(A) governance → ShieldNest → ventures → storefronts flow chart; Hostinger WooCommerce shop detail.
 - [Project Structure](docs/architecture/project-structure.md) — Directory map and key files.
 - [Cron Inventory](docs/operations/cron-inventory.md) — Scheduled jobs and ownership.
 - [Key Files Reference](docs/operations/key-files.md) — Critical file mapping.
