@@ -5,6 +5,18 @@ The internal admin control plane for the Coherence Daddy / 508(c)(1)(A) ecosyste
 
 The public-facing brand site and tools live in a separate repo: [ShieldnestORG/coherencedaddy](https://github.com/ShieldnestORG/coherencedaddy).
 
+### GitHub identities (as of 2026-04-25)
+
+The ecosystem operates across three GitHub identities. Pick the right one when creating a new repo:
+
+| Identity | Type | Used for | Examples |
+|---|---|---|---|
+| `ShieldNEST` | Personal (HEAD_DEV) | Active dev account; admin in both orgs below | — |
+| [`ShieldnestORG`](https://github.com/ShieldnestORG) | Org (mix) | Infrastructure: storefront, control plane, landing pages, validator | `coherencedaddy`, `team-dashboard`, `shieldnest_landing_page`, `tokns.fi_landing_page`, `tokns` |
+| [`Coherence-Daddy`](https://github.com/Coherence-Daddy) | Org (public) | Share-ready public content meant to be starred, forked, and submitted to awesome-lists | [`use-ollama-to-enhance-claude`](https://github.com/Coherence-Daddy/use-ollama-to-enhance-claude) |
+
+**Rule:** infrastructure → `ShieldnestORG`. Public hero asset (tutorial, demo, viral-content repo) → `Coherence-Daddy`.
+
 ## Ecosystem
 
 ### coherencedaddy.com (ShieldnestORG/coherencedaddy repo)
@@ -22,12 +34,23 @@ One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` s
 | `law.coherencedaddy.com` | Legal / law tools subdomain |
 | `optimize-me.coherencedaddy.com` | Self-optimization tools subdomain |
 
+### Tutorial library (added 2026-04-25)
+
+Path-based (NOT subdomain) — lives at `coherencedaddy.com/tutorials`. Self-contained static HTML presentations served via Next.js rewrite. Each tutorial pairs a visual deck with a copy-paste prompt that lets Claude do ~98% of the setup. Designed for sharing on Show HN / Reddit / X with the GitHub mirror as the canonical home.
+
+| URL | Status | Public mirror |
+|---|---|---|
+| `coherencedaddy.com/tutorials` | LIVE | — |
+| `coherencedaddy.com/tutorials/use-ollama-to-enhance-claude` | LIVE | [Coherence-Daddy/use-ollama-to-enhance-claude](https://github.com/Coherence-Daddy/use-ollama-to-enhance-claude) |
+
+Per-tutorial: full OG meta + Twitter cards, `HowTo` JSON-LD, AdSense banner that auto-skips cover/picker/closing slides, `<link rel="canonical">` so the GitHub mirror doesn't outrank the hosted version. Index page emits `CollectionPage` + `ItemList` JSON-LD. Sitemap + llms.txt updated.
+
 ### SEO & LLM Discovery (as of April 2026)
-- **Sitemap**: `app/sitemap.ts` — single master sitemap covering all 9 subdomains (pages, tools, directory companies, partner slugs)
+- **Sitemap**: `app/sitemap.ts` — single master sitemap covering all 9 subdomains + the `/tutorials` library (pages, tools, directory companies, partner slugs, tutorial slugs)
 - **robots.ts**: All 9 subdomain sitemaps listed; LLM crawlers explicitly allowed: GPTBot, ChatGPT-User, ClaudeBot, PerplexityBot, Applebot-Extended, GoogleOther
-- **llms.txt** / **llms-full.txt** — served from `freetools.*`, lists all 9 subdomains + 501 tools by category
+- **llms.txt** / **llms-full.txt** — served from `freetools.*` (and `coherencedaddy.com/llms.txt` lists tutorials with the GitHub mirror); covers all 9 subdomains + 501 tools by category + tutorial library
 - **ai-plugin.json** / **mcp.json** / **openapi.json** — agent/MCP discovery at `freetools.*/.well-known/`
-- **AdSense**: `ca-pub-1882924299982046` — auto ads in `app/layout.tsx`, manual units in tool pages, sidebar, and blog posts; `ads.txt` in public/; CookieYes CMP + Consent Mode v2
+- **AdSense**: `ca-pub-1882924299982046` — auto ads in `app/layout.tsx`, manual units in tool pages, sidebar, blog posts, AND the tutorial index + per-tutorial banner (lazy-fill on first ad-eligible slide); `ads.txt` in public/; CookieYes CMP + Consent Mode v2
 
 ### Other Ecosystem Properties
 All properties below are owned by the **ShieldnestORG** Vercel organization unless noted. Each Vercel project name is listed so the control plane can trace which repo deploys which domain.
