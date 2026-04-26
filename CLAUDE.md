@@ -31,6 +31,18 @@ cd ui && npx tsc --noEmit
 - Stage specific files only. Do not use `git add -A`.
 - Cast `req.params.*` as `string` in Express routes.
 
+## GitHub Identity Map
+
+Three GitHub accounts/orgs operate across this ecosystem. Be deliberate about which one a new repo belongs in:
+
+| Identity | Type | Used for |
+|---|---|---|
+| **`ShieldNEST`** (HEAD_DEV, `nestd@pm.me`) | Personal user | Active dev account; owns no repos directly — admin in both orgs below |
+| **`ShieldnestORG`** | Org (private + public mix) | All ecosystem **infrastructure** repos: `coherencedaddy` (storefront), `team-dashboard` (this repo), `shieldnest_landing_page`, `tokns.fi_landing_page`, `tokns` (app.tokns.fi), validator scripts |
+| **`Coherence-Daddy`** | Org (public) | Public-facing **share-ready content** repos meant to be discovered, starred, and forked: tutorials, copy-paste prompts, demo code. First repo: [`use-ollama-to-enhance-claude`](https://github.com/Coherence-Daddy/use-ollama-to-enhance-claude) (launched 2026-04-25). |
+
+**Decision rule for a new repo:** infrastructure / private / proprietary → `ShieldnestORG`. Tutorial / hero asset / something we *want* random builders on Twitter to fork → `Coherence-Daddy`.
+
 ## Ownership Matrix
 
 This repo is the engine room for a two-repo system. The public storefront
@@ -94,4 +106,5 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Environment Variables](docs/deploy/env-vars.md) — Full variable reference.
 - [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md) — Mermaid maintenance.
 - [Blog Distribution](docs/products/blog-distribution.md) — Target surfaces, cron → target map, current wiring status.
+- [Socials Hub](docs/products/socials-hub.md) — Unified `/socials` view: account registry + automation mirror + release calendar.
 - [Shop Sharers](docs/products/shop-sharers.md) — Email capture on shop.coherencedaddy.com → referral code + QR + shareable link + opt-in affiliate approval queue.

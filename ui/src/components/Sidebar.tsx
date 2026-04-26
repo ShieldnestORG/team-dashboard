@@ -34,6 +34,7 @@ import {
   LineChart,
   Gauge,
   Image as ImageIcon,
+  Share2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -155,6 +156,7 @@ export function Sidebar() {
           <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
+          <SidebarNavItem to="/socials" label="Socials" icon={Share2} />
           <SidebarNavItem to="/structure" label="Structure" icon={GitBranch} />
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
           <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />

@@ -37,9 +37,10 @@ graph TB
     SN --> DAO
     SN --> ROLL
 
-    %% ── coherencedaddy.com subdomains (storefront repo) ─────────
-    subgraph SUBDOMAINS["coherencedaddy.com subdomains\n(one Next.js app — ShieldnestORG/coherencedaddy repo)"]
+    %% ── coherencedaddy.com subdomains + tutorial library (storefront repo) ─
+    subgraph SUBDOMAINS["coherencedaddy.com surfaces\n(one Next.js app — ShieldnestORG/coherencedaddy repo)"]
         S_LAND["/ — landing / donate"]
+        S_TUT["/tutorials — visual walkthrough library\n(path, NOT subdomain)"]
         S_FREE["freetools — 500+ tools"]
         S_DIR["directory — intel"]
         S_TOK["token — Daddy token"]
@@ -51,6 +52,13 @@ graph TB
     end
 
     CD --> SUBDOMAINS
+
+    %% ── Public-facing GitHub org for share-ready content ────────
+    subgraph PUBREPOS["Coherence-Daddy GitHub org (public)\n— share-ready hero content for Show HN / Reddit / X"]
+        PR_OLLAMA["use-ollama-to-enhance-claude\n(mirror of /tutorials/use-ollama-to-enhance-claude)"]
+    end
+
+    S_TUT -.->|canonical-tagged mirror| PR_OLLAMA
 
     %% ── Authoritative shop (Hostinger) ──────────────────────────
     subgraph SHOP["shop.coherencedaddy.com — authoritative commerce"]
@@ -89,9 +97,10 @@ graph TB
 | **Flagship product** | YourArchi | yourarchi.com — private self-help / notes app |
 | **Crypto layer** | tokns.fi + TX Blockchain | Token, staking, NFT platform, Cosmos validator |
 | **Governance DAO** | Trustee DAO | On-chain ecosystem governance |
-| **Public storefront (marketing)** | `ShieldnestORG/coherencedaddy` Next.js app | 9 subdomains, blog, LLM discovery, donations |
+| **Public storefront (marketing)** | `ShieldnestORG/coherencedaddy` Next.js app | 9 subdomains, blog, tutorial library, LLM discovery, donations |
 | **Authoritative commerce** | Hostinger WordPress + WooCommerce | Cart, checkout, orders, fulfillment, payments |
 | **Control plane** | `ShieldnestORG/team-dashboard` (this repo) | Agents, intel, content publishing, pricing, Stripe, crons |
+| **Public hero content** | [`Coherence-Daddy`](https://github.com/Coherence-Daddy) GitHub org | Share-ready repos meant to be starred / forked / submitted to awesome-lists. First repo: [`use-ollama-to-enhance-claude`](https://github.com/Coherence-Daddy/use-ollama-to-enhance-claude) (canonical-tagged mirror of the hosted tutorial — drives traffic back to coherencedaddy.com without splitting search authority). |
 
 ---
 

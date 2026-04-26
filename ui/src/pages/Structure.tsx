@@ -186,6 +186,9 @@ const DEFAULT_DIAGRAM = `graph TB
         CityIntelligenceDB[("city_intelligence")]
         PluginLogRetention(["Plugin Log Retention — 7d prune (Nova)"])
         ContentDB[("content_items")]
+        SocialsHub(["Socials Hub — /socials (Accounts · Automation · Calendar)"])
+        SocialAccountsDB[("social_accounts")]
+        SocialAutomationsDB[("social_automations")]
         VisualContent(["Visual Content"])
         VisualDB[("visual_content_items + assets")]
         VisualJobs(["Visual Jobs — 15s polling"])

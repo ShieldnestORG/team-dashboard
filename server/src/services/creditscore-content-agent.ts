@@ -20,13 +20,16 @@ import {
   creditscoreReports,
   creditscoreSubscriptions,
 } from "@paperclipai/db";
-import { callOllamaChat, OLLAMA_MODEL } from "./ollama-client.js";
 import {
   formatRulesForPrompt,
   getRulesByCategory,
   selfCheckContent,
 } from "./aeo-seo-playbook.js";
 import { logger } from "../middleware/logger.js";
+
+// Claude API Configuration
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
 const DRAFTS_PER_TIER: Record<string, number> = {
   growth: 2,
@@ -79,24 +82,39 @@ interface DraftPayload {
   markdown: string;
 }
 
-async function askOllama(prompt: string): Promise<string | null> {
+async function askClaude(system: string, prompt: string): Promise<string | null> {
+  if (!ANTHROPIC_API_KEY) {
+    logger.error("creditscore-content-agent: ANTHROPIC_API_KEY not set");
+    return null;
+  }
+
   try {
-    const result = await callOllamaChat(
-      [
-        {
-          role: "system",
-          content:
-            "You are Cipher, a technical writer specializing in AEO (AI Engine Optimization). Return ONLY a fenced JSON object, no prose before or after.",
-        },
-        { role: "user", content: prompt },
-      ],
-      { temperature: 0.7, maxTokens: 4096, timeoutMs: 180_000 },
-    );
-    return result.content || null;
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 4096,
+        system,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text().catch(() => "Unknown");
+      throw new Error(`Claude API error (${res.status}): ${err}`);
+    }
+
+    const data = (await res.json()) as { content: Array<{ type: string; text: string }> };
+    return data.content[0]?.text || null;
   } catch (err) {
     logger.error(
-      { err, model: OLLAMA_MODEL },
-      "creditscore-content-agent: Ollama call failed",
+      { err, model: ANTHROPIC_MODEL },
+      "creditscore-content-agent: Claude call failed",
     );
     return null;
   }
@@ -246,7 +264,10 @@ export function creditscoreContentAgent(db: Db) {
         priorTitles,
       });
 
-      const raw = await askOllama(prompt);
+      const raw = await askClaude(
+        "You are Cipher, a technical writer specializing in AEO (AI Engine Optimization). Return ONLY a fenced JSON object, no prose before or after.",
+        prompt,
+      );
       if (!raw) {
         skipped += 1;
         continue;
@@ -255,7 +276,7 @@ export function creditscoreContentAgent(db: Db) {
       if (!draft) {
         logger.warn(
           { subId: sub.id, cycleTag, cycleIndex: i },
-          "creditscore-content-agent: could not parse Ollama response as draft JSON",
+          "creditscore-content-agent: could not parse Claude response as draft JSON",
         );
         skipped += 1;
         continue;
@@ -279,7 +300,7 @@ export function creditscoreContentAgent(db: Db) {
         htmlDraft: draft.html,
         markdownDraft: draft.markdown,
         promptMeta: {
-          model: OLLAMA_MODEL,
+          model: ANTHROPIC_MODEL,
           signal: signal.name,
           gap: signal.gap,
           baseScore: latestReport.score,

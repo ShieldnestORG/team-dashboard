@@ -4,6 +4,24 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-04-25] — Socials Hub
+
+### New Features
+
+**Unified `/socials` section** ([docs](docs/products/socials-hub.md))
+- New tables `social_accounts` + `social_automations` (migration 0095)
+- Three-tab UI at `/socials`: **Accounts** (CRUD registry per brand+platform), **Automation** (mirror of `JOB_DEFS` joined with `system_crons` runtime state), **Calendar** (last 7d of `content_items` + 14d of projected cron firings)
+- New routes under `/api/socials/*` — accounts CRUD, automations list, sync trigger, calendar feed
+- `scripts/seed-social-accounts.ts` — idempotent seed from `x_oauth_tokens`, `canva_oauth_tokens`, and the public-facing handles in `coherencedaddy-landing/components/sticky-footer.tsx`
+- `JOB_DEFS` and `ContentJobDef` now exported from `content-crons.ts` so introspection can map crons → social accounts deterministically
+
+### Files
+- Schema: `packages/db/src/schema/social_accounts.ts`, `social_automations.ts`
+- Migration: `packages/db/src/migrations/0095_socials_hub.sql`
+- Server: `server/src/routes/socials.ts`, `server/src/services/socials/{calendar,cron-introspect,platform-map}.ts`
+- UI: `ui/src/pages/socials/{SocialsLayout,SocialsAccounts,SocialsAutomation,SocialsCalendar}.tsx`, `ui/src/api/socials.ts`
+- Sidebar: new **Socials** entry (`Share2` icon)
+
 ## [2026-04-24] — Partner Network self-serve funnel
 
 ### New Features
