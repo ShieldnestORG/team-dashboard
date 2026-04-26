@@ -23,7 +23,7 @@ interface TopicResult {
   prompt: string;
 }
 
-interface ContentJobDef {
+export interface ContentJobDef {
   name: string;
   schedule: string;
   personality: string;
@@ -40,7 +40,7 @@ interface ContentJobDef {
   topic?: string;
 }
 
-const JOB_DEFS: ContentJobDef[] = [
+export const JOB_DEFS: ContentJobDef[] = [
   // Regular content crons — ownerAgent matches the personality agent responsible
   // brand controls which X account / publish target this content belongs to
   { name: "content:twitter",  schedule: "0 8,11,14,17,20,22 * * *", personality: "blaze",  ownerAgent: "blaze",  contentType: "tweet",      useContentBridge: true, brand: "cd" },

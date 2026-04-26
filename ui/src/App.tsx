@@ -36,6 +36,7 @@ import { PluginSettings } from "./pages/PluginSettings";
 import { PluginPage } from "./pages/PluginPage";
 import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
 import { TwitterDashboard } from "./pages/TwitterDashboard";
+import { SocialsLayout } from "./pages/socials/SocialsLayout";
 import { TxEcosystem } from "./pages/TxEcosystem";
 import Tokns from "./pages/Tokns";
 import { SystemHealth } from "./pages/SystemHealth";
@@ -222,6 +223,7 @@ function boardRoutes() {
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
       <Route path="twitter" element={<TwitterDashboard />} />
+      <Route path="socials" element={<SocialsLayout />} />
       <Route path="discord" element={<Discord />} />
       <Route path="tx-ecosystem" element={<TxEcosystem />} />
       <Route path="tokns" element={<Tokns />} />

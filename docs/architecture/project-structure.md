@@ -12,7 +12,11 @@ server/
       ladder.ts                     # Read-only access to ladder2.0 pipeline data
       log-store.ts                  # In-memory + file-based log aggregation
       content.ts                    # Text content generation service (Ollama, personality prompts)
-      content-crons.ts              # Scheduled content generation jobs (text + video scripts)
+      content-crons.ts              # Scheduled content generation jobs (text + video scripts) — exports JOB_DEFS for socials introspection
+      socials/
+        platform-map.ts             # contentType → platform mapping
+        cron-introspect.ts          # Upserts JOB_DEFS into social_automations
+        calendar.ts                 # Merges content_items + cron projections for /socials calendar
       visual-content.ts             # Visual content queue, generation orchestration, review
       visual-jobs.ts                # Async job tracker for visual generation (15s polling)
       visual-backends/              # Pluggable visual generation backends
@@ -175,6 +179,7 @@ doc/                  # Operational docs (SPEC, PRODUCT, GOAL, plans/)
 | `scripts/canva-generator.py` | Canva visual backend Python bridge (legacy) |
 | `server/src/services/canva-connect.ts` | Canva Connect API client (OAuth + design export) |
 | `server/src/routes/canva-oauth.ts` | Canva OAuth + design listing routes (`/api/canva/oauth/*`) |
+| `server/src/routes/socials.ts` | Socials Hub — accounts CRUD, automations mirror, unified calendar (`/api/socials/*`) |
 | `server/src/services/canva-media-cron.ts` | Canva design-to-tweet service (not yet activated) |
 | `server/src/services/x-api/retweet-service.ts` | Smart retweet service — single-query polling + intel save |
 | `server/src/services/intel-discovery.ts` | Auto-discovery of trending projects (CoinGecko + GitHub) |

@@ -79,6 +79,7 @@ import { publicReelsRoutes } from "./routes/public-reels.js";
 import { sitemapRoutes } from "./routes/sitemap.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
 import { canvaOauthRoutes } from "./routes/canva-oauth.js";
+import { socialsRoutes } from "./routes/socials.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -291,6 +292,7 @@ export async function createApp(
   api.use("/x/oauth", xOauthRoutes(db));
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/canva/oauth", canvaOauthRoutes(db));
+  api.use("/socials", socialsRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));

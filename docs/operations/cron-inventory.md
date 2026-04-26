@@ -12,6 +12,9 @@ The system relies on a vast array of scheduled jobs to power the intel engine, c
 - **Validator Ranks LCD (1 job)**: Top-50 validator rank tracking.
 - **Billing Overage (1 job)**: Daily reporting of Intel API usage to Stripe.
 
+## Socials Hub
+All content cron jobs below are mirrored into `social_automations` (linked to `social_accounts` by `brand` + `platform`). View them in the UI at `/socials → Automation`. The mirror is upserted by `POST /api/socials/automations/sync` — see [docs/products/socials-hub.md](../products/socials-hub.md).
+
 ## Content Engine Crons
 - **SEO Engine (1 job)**: Daily blog generation from trends at 7:03 AM (`content:seo-engine`).
 - **Retweet Cycle (1 job)**: Automated content sharing.
