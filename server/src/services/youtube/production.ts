@@ -7,7 +7,7 @@
 import type { Db } from "@paperclipai/db";
 import { ytProductions, ytPublishQueue } from "@paperclipai/db";
 import { eq, sql } from "drizzle-orm";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, copyFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
@@ -119,7 +119,14 @@ export async function runProductionPipeline(
       await writeFile(thumbnailPath, thumbnail.imageBuffer);
     }
 
-    // 6. Generate TTS audio
+    // 6. Generate visual assets first — we need slide spokenTexts to drive
+    //    chunked TTS, which is the only way to get measured (not estimated)
+    //    per-slide durations. See drift-baseline-2026-04-27.json for the bug
+    //    that motivated this ordering swap.
+    logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
+    const { paths: visualAssets, wordCounts: slideWordCounts, spokenTexts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
+
+    // 7. Generate TTS audio
     logger.info({ productionId }, "YT Pipeline: generating TTS audio...");
     let tts: TTSResult;
     let perSlideDurations: number[] | undefined;
@@ -138,18 +145,42 @@ export async function runProductionPipeline(
         const silenceDur = raw[i + 1] || 0;
         perSlideDurations.push(contentDur + silenceDur);
       }
+    } else if (spokenTexts && spokenTexts.length === visualAssets.length && spokenTexts.some((t) => t.length > 0)) {
+      // Presentation mode with slide-level spoken text — chunk per slide so
+      // each slide's duration is measured (ffprobe), not estimated. Eliminates
+      // the cumulative word-count drift documented in the regression fixture.
+      const chunks = spokenTexts.map((t) => applyPronunciationFixes(t || " "));
+      const chunkedResult = await generateChunkedTTS(chunks, `audio_${productionId}.mp3`);
+      tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
+      // generateChunkedTTS interleaves [chunk_0, gap, chunk_1, gap, ..., chunk_N]
+      // with no trailing gap (see tts.ts:166-170). Collapse to per-slide
+      // (content + following gap, last slide has no gap).
+      const raw = chunkedResult.chunkDurations;
+      perSlideDurations = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const contentDur = raw[i * 2] || 0;
+        const gapDur = i < chunks.length - 1 ? (raw[i * 2 + 1] || 0) : 0;
+        perSlideDurations.push(contentDur + gapDur);
+      }
     } else {
+      // AI-image fallback path with no per-slide narration — single TTS call.
+      // Drift will fall back to the legacy estimator; this path is a fallback,
+      // not the production default.
       const ttsText = formatScriptForTTS(script);
       tts = await generateTTSAudio(ttsText, `audio_${productionId}.mp3`);
     }
 
-    // 7. Generate visual assets (images for slideshow)
-    logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
-    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
-
-    // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text)
+    // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text).
+    //    Persist to /paperclip/youtube/assets/<pid>/captions.srt — same volume
+    //    as slides + audio. Previously written to container /tmp/yt-temp/, which
+    //    was wiped on container restart and broke any post-publish caption
+    //    audit/regeneration (DB held a dangling reference).
     const captionText = formatScriptPlainText(script);
-    const captionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
+    const tmpCaptionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
+    const persistentCaptionsDir = join(ASSETS_DIR, productionId);
+    ensureDir(persistentCaptionsDir);
+    const captionsPath = join(persistentCaptionsDir, "captions.srt");
+    await copyFile(tmpCaptionsPath, captionsPath);
 
     // 9. Assemble video
     let video: YtAssembleResult | undefined;
@@ -234,6 +265,10 @@ export async function runProductionPipeline(
 interface VisualResult {
   paths: string[];
   wordCounts: number[];
+  /** Per-slide narration text — present when slides come from a slide builder.
+   * Absent for AI-image fallback mode. When present, callers should drive TTS
+   * per slide (chunked) so slide durations are measured, not estimated. */
+  spokenTexts?: string[];
 }
 
 async function generateVisualAssets(
@@ -266,14 +301,16 @@ async function generateVisualAssets(
       const aiSlides = await buildSlidesFromScriptAI(script);
       const framePaths = await renderSlidesToImages(aiSlides, dir);
       if (framePaths.length > 0) {
-        const wordCounts = aiSlides.map((s: Slide) => {
+        const slidesUsed = aiSlides.slice(0, framePaths.length);
+        const wordCounts = slidesUsed.map((s: Slide) => {
           const text = s.spokenText || "";
           const words = text.split(/\s+/).filter(Boolean).length;
           if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
           return Math.max(words, 5);
         });
+        const spokenTexts = slidesUsed.map((s) => (s.spokenText || "").trim());
         logger.info({ frames: framePaths.length }, "AI-generated slides rendered successfully");
-        return { paths: framePaths, wordCounts };
+        return { paths: framePaths, wordCounts, spokenTexts };
       }
     } catch (err) {
       logger.warn({ err }, "AI slide generation failed, trying static templates...");
@@ -285,14 +322,16 @@ async function generateVisualAssets(
       logger.info({ slideCount: staticSlides.length }, "Built static presentation slides from script");
       const framePaths = await renderSlidesToImages(staticSlides, dir);
       if (framePaths.length > 0) {
-        const wordCounts = staticSlides.map((s: Slide) => {
+        const slidesUsed = staticSlides.slice(0, framePaths.length);
+        const wordCounts = slidesUsed.map((s: Slide) => {
           const text = s.spokenText || "";
           const words = text.split(/\s+/).filter(Boolean).length;
           if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
           return Math.max(words, 5);
         });
+        const spokenTexts = slidesUsed.map((s) => (s.spokenText || "").trim());
         logger.info({ frames: framePaths.length }, "Static slides rendered successfully");
-        return { paths: framePaths, wordCounts };
+        return { paths: framePaths, wordCounts, spokenTexts };
       }
     } catch (err) {
       logger.warn({ err }, "Static slide rendering failed, falling back to AI images");

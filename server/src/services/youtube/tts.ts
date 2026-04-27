@@ -148,28 +148,33 @@ export async function generateChunkedTTS(
     `ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t ${SILENCE_GAP_SEC} -codec:a libmp3lame -qscale:a 2 "${silencePath}"`,
   );
 
+  // Invariant: emit exactly two entries per chunk for the first N-1 chunks
+  // (content + gap) and one entry for the last chunk (content only). This
+  // keeps chunkDurations.length === 2 * chunks.length - 1, which downstream
+  // callers rely on to map back to per-slide durations. Empty/failing chunks
+  // emit silence-as-content so the shape never breaks.
   for (let i = 0; i < chunks.length; i++) {
     const text = chunks[i].trim();
+    const isLast = i === chunks.length - 1;
+
     if (!text) {
+      chunkPaths.push(silencePath);
       chunkDurations.push(SILENCE_GAP_SEC);
-      continue;
-    }
-
-    const chunkFile = join(AUDIO_DIR, `chunk_${Date.now()}_${i}.mp3`);
-    logger.info({ chunk: i + 1, total: chunks.length, chars: text.length }, "Generating TTS chunk...");
-
-    try {
-      const result = await generateGrokTTS(text, chunkFile);
-      chunkPaths.push(chunkFile);
-      chunkDurations.push(result.durationSec);
-
-      // Add silence gap after each chunk except the last
-      if (i < chunks.length - 1) {
+    } else {
+      const chunkFile = join(AUDIO_DIR, `chunk_${Date.now()}_${i}.mp3`);
+      logger.info({ chunk: i + 1, total: chunks.length, chars: text.length }, "Generating TTS chunk...");
+      try {
+        const result = await generateGrokTTS(text, chunkFile);
+        chunkPaths.push(chunkFile);
+        chunkDurations.push(result.durationSec);
+      } catch (err) {
+        logger.warn({ err, chunk: i }, "Chunk TTS failed, substituting silence");
         chunkPaths.push(silencePath);
         chunkDurations.push(SILENCE_GAP_SEC);
       }
-    } catch (err) {
-      logger.warn({ err, chunk: i }, "Chunk TTS failed, adding silence");
+    }
+
+    if (!isLast) {
       chunkPaths.push(silencePath);
       chunkDurations.push(SILENCE_GAP_SEC);
     }
