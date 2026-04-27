@@ -108,3 +108,4 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Blog Distribution](docs/products/blog-distribution.md) — Target surfaces, cron → target map, current wiring status.
 - [Socials Hub](docs/products/socials-hub.md) — Unified `/socials` view: account registry + automation mirror + release calendar.
 - [Shop Sharers](docs/products/shop-sharers.md) — Email capture on shop.coherencedaddy.com → referral code + QR + shareable link + opt-in affiliate approval queue.
+- [Tutorials Hub](docs/products/tutorials-hub.md) — `coherencedaddy.com/tutorials/<slug>` content surface: registry, subdirectory-vs-subdomain decision, add-a-tutorial checklist, AdSense behavior.
