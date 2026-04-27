@@ -109,3 +109,4 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Socials Hub](docs/products/socials-hub.md) — Unified `/socials` view: account registry + automation mirror + release calendar.
 - [Shop Sharers](docs/products/shop-sharers.md) — Email capture on shop.coherencedaddy.com → referral code + QR + shareable link + opt-in affiliate approval queue.
 - [Tutorials Hub](docs/products/tutorials-hub.md) — `coherencedaddy.com/tutorials/<slug>` content surface: registry, subdirectory-vs-subdomain decision, add-a-tutorial checklist, AdSense behavior.
+- [Launch Monitor](docs/products/launch-monitor.md) — HN/Reddit/dev.to launch-post comment poller + Haiku pattern classifier + human-in-the-loop reply queue at `/socials/launch-monitor`.

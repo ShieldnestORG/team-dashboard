@@ -136,3 +136,7 @@ export type {
   MarketingSkillOwnership,
   NewMarketingSkillOwnership,
 } from "./marketing_skill_ownership.js";
+export { launchTrackedItems } from "./launch_tracked_items.js";
+export type { LaunchTrackedItem, NewLaunchTrackedItem } from "./launch_tracked_items.js";
+export { commentReplies } from "./comment_replies.js";
+export type { CommentReply, NewCommentReply } from "./comment_replies.js";
