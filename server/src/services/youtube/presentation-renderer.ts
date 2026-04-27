@@ -167,18 +167,22 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
     const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
     const bulletTexts = bullets.map((b) => (typeof b === "string" ? b : String(b)));
 
+    // Content slides use the static bullet template — NOT a fresh Ollama call per
+    // highlight variant. The AI path was previously calling generateSlideHtml three
+    // times per 3-bullet chunk (once per highlightIndex), and Ollama produced
+    // different HTML each time: title color shifted between white/orange,
+    // title size jumped between sizes, the CTA tail rewrote ("Dive deeper at..."
+    // → "Explore more at..." → "If you want to dive deeper, check out..."). On
+    // screen the user perceived this as the entire card swapping out instead of
+    // a single bullet being highlighted. The static template renders a fixed
+    // layout where ONLY the per-bullet styling (color/weight/glow) varies with
+    // highlightIndex — exactly what was wanted.
     for (let c = 0; c < bulletTexts.length; c += 3) {
       const chunk = bulletTexts.slice(c, c + 3);
       for (let h = 0; h < chunk.length; h++) {
-        const contentHtml = await generateSlideHtml({
-          type: "content",
-          title: section.title || "Details",
-          content: chunk,
-          highlightIndex: h,
-        }, t);
         slides.push({
           type: "content",
-          html: contentHtml || staticTemplateBullets(t, section.title || "Details", chunk, h),
+          html: staticTemplateBullets(t, section.title || "Details", chunk, h),
           spokenText: chunk[h],
         });
       }
