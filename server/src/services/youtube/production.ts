@@ -170,29 +170,37 @@ export async function runProductionPipeline(
       tts = await generateTTSAudio(ttsText, `audio_${productionId}.mp3`);
     }
 
-    // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text).
-    //    Persist to /paperclip/youtube/assets/<pid>/captions.srt — same volume
-    //    as slides + audio. Previously written to container /tmp/yt-temp/, which
-    //    was wiped on container restart and broke any post-publish caption
-    //    audit/regeneration (DB held a dangling reference).
+    // 8. Generate captions. Persist to /paperclip/youtube/assets/<pid>/captions.srt
+    //    (same volume as slides + audio) so the SRT survives container restarts —
+    //    previously written to container /tmp/yt-temp/, which left DB rows with
+    //    dangling captionsPath references after every restart.
+    //
+    //    BURN-IN policy: captions are only burned into the MP4 for site-walker
+    //    mode (browser screenshots have no on-screen text). For presentation
+    //    mode, the slide images themselves render the spoken content as the
+    //    primary visual, so a second burned-in caption track is redundant and
+    //    visually competes with the slide. The SRT is still generated and saved
+    //    so it can be uploaded as a separate caption track via YouTube
+    //    Data API (captions.insert) where viewers can toggle it on/off.
     const captionText = formatScriptPlainText(script);
     const tmpCaptionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
     const persistentCaptionsDir = join(ASSETS_DIR, productionId);
     ensureDir(persistentCaptionsDir);
     const captionsPath = join(persistentCaptionsDir, "captions.srt");
     await copyFile(tmpCaptionsPath, captionsPath);
+    const burnInCaptions = mode === "site-walker";
 
     // 9. Assemble video
     let video: YtAssembleResult | undefined;
     if (visualAssets.length > 0) {
-      logger.info({ productionId, slides: visualAssets.length }, "YT Pipeline: assembling video...");
+      logger.info({ productionId, slides: visualAssets.length, burnInCaptions }, "YT Pipeline: assembling video...");
       video = await assembleYouTubeVideo({
         audioPath: tts.audioPath,
         audioDurationSec: tts.durationSec,
         visualAssets,
         slideWordCounts,
         slideDurations: perSlideDurations,
-        captionsPath,
+        captionsPath: burnInCaptions ? captionsPath : undefined,
         outputFilename: `video_${productionId}.mp4`,
         metadata: { title: seo.title, copyright: `${new Date().getFullYear()} Tokns.fi` },
       });
