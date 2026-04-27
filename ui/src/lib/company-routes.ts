@@ -45,6 +45,9 @@ const BOARD_ROUTE_ROOTS = new Set([
   "repo-updates",
   "automation-health",
   "socials",
+  "house-ads",
+  "creditscore-review",
+  "topic-takeover",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);

@@ -46,6 +46,7 @@ import { CreditScoreReview } from "./pages/CreditScoreReview";
 import { ContentAnalytics } from "./pages/ContentAnalytics";
 import { OwnedSites } from "./pages/OwnedSites";
 import { Structure } from "./pages/Structure";
+import { TopicTakeoverFlow } from "./pages/TopicTakeoverFlow";
 import { Intel } from "./pages/Intel";
 import { KnowledgeGraph } from "./pages/KnowledgeGraph";
 import { CityCollector } from "./pages/CityCollector";
@@ -251,6 +252,7 @@ function boardRoutes() {
       <Route path="content-analytics" element={<Navigate to="/socials/analytics" replace />} />
       <Route path="owned-sites" element={<OwnedSites />} />
       <Route path="structure" element={<Structure />} />
+      <Route path="topic-takeover" element={<TopicTakeoverFlow />} />
       <Route path="marketing-pushes" element={<Navigate to="/socials/pushes" replace />} />
       <Route path="affiliates" element={<AffiliatesAdmin />} />
       <Route path="affiliates/leads" element={<AffiliateAdminLeads />} />

@@ -283,6 +283,21 @@ export function Dashboard() {
             />
           </div>
 
+          <Link
+            to="/topic-takeover"
+            className="block rounded-xl border border-border bg-[linear-gradient(135deg,rgba(59,130,246,0.10),rgba(168,85,247,0.10))] hover:border-foreground/40 transition px-4 py-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Topic Takeover · Flow Machine</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  Animated view of SERP-ingest → directories → outbound → CreditScore
+                </div>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">Open flow →</span>
+            </div>
+          </Link>
+
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <ChartCard title="Run Activity" subtitle="Last 14 days">
               <RunActivityChart runs={runs ?? []} />
