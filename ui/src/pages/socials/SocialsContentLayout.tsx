@@ -7,6 +7,7 @@ import {
   Megaphone,
   MessageSquare,
   Newspaper,
+  Radar,
   Reply,
   Share2,
   Youtube,
@@ -24,7 +25,8 @@ type TabKey =
   | "youtube"
   | "pushes"
   | "house-ads"
-  | "auto-reply";
+  | "auto-reply"
+  | "launch-monitor";
 
 interface TabDef {
   key: TabKey;
@@ -44,6 +46,7 @@ const TABS: TabDef[] = [
   { key: "pushes", segment: "pushes", label: "Marketing Pushes", icon: Megaphone },
   { key: "house-ads", segment: "house-ads", label: "House Ads", icon: ImageIcon },
   { key: "auto-reply", segment: "auto-reply", label: "Auto-Reply", icon: Reply },
+  { key: "launch-monitor", segment: "launch-monitor", label: "Launch Monitor", icon: Radar },
 ];
 
 function activeTabFromPath(pathname: string): TabKey {

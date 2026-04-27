@@ -45,6 +45,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "repo-updates",
   "automation-health",
   "socials",
+  "launch-monitor",
   "house-ads",
   "creditscore-review",
   "topic-takeover",

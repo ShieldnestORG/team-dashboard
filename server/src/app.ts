@@ -80,6 +80,7 @@ import { sitemapRoutes } from "./routes/sitemap.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
 import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { socialsRoutes } from "./routes/socials.js";
+import { launchMonitorRoutes } from "./routes/launch-monitor.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -121,6 +122,7 @@ import { reconcileCreditscorePlans } from "./services/creditscore-stripe-reconci
 import { startCreditscoreReportAgent } from "./services/creditscore-report-agent.js";
 import { startCreditscoreContentAgent } from "./services/creditscore-content-agent-cron.js";
 import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
+import { startLaunchCommentMonitor } from "./services/launch-comment-monitor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
@@ -294,6 +296,7 @@ export async function createApp(
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/socials", socialsRoutes(db));
+  api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
@@ -478,6 +481,14 @@ export async function createApp(
       ownerAgentId: SCRIBE_AGENT_ID,
       fetchTasks: async () => [],
     });
+  }
+  // Launch Comment Monitor — HN/Reddit/dev.to comment poller. Disabled by
+  // default. When LAUNCH_MONITOR_ENABLED=true, the */3 cron runs against
+  // every active row in launch_tracked_items for the Coherence Daddy
+  // company id.
+  if (process.env.LAUNCH_MONITOR_ENABLED === "true") {
+    const LAUNCH_MONITOR_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+    startLaunchCommentMonitor(db, { companyId: LAUNCH_MONITOR_COMPANY_ID });
   }
   startCreditscoreFulfillmentCrons(db);
   startOwnedSitesCrons(db);

@@ -38,6 +38,7 @@ import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
 import { TwitterDashboard } from "./pages/TwitterDashboard";
 import { SocialsLayout } from "./pages/socials/SocialsLayout";
 import { SocialsContentLayout } from "./pages/socials/SocialsContentLayout";
+import { LaunchMonitor } from "./pages/socials/LaunchMonitor";
 import { TxEcosystem } from "./pages/TxEcosystem";
 import Tokns from "./pages/Tokns";
 import { SystemHealth } from "./pages/SystemHealth";
@@ -233,6 +234,7 @@ function boardRoutes() {
         <Route path="pushes" element={<MarketingPushes />} />
         <Route path="house-ads" element={<HouseAdsAdmin />} />
         <Route path="auto-reply" element={<AutoReply />} />
+        <Route path="launch-monitor" element={<LaunchMonitor />} />
       </Route>
       <Route path="twitter" element={<Navigate to="/socials/twitter" replace />} />
       <Route path="discord" element={<Navigate to="/socials/discord" replace />} />

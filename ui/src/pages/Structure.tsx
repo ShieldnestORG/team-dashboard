@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-23. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue. 2026-04-23: Storefront email-capture wiring shipped (coherencedaddy-landing@a9ae317 — components/shop/share-capture.tsx → POST /api/shop/sharers → redirect /shop/share?code=<code>); blog article ad migrated to unified <AdSlot> component (landing@6698bd2) — house-ads becomes live no-fill fallback once blog-article slot's providers flip to ['adsense','house']. Diagram edges wired: CDShop → ShopSharersRoutes, CD → HouseAdsRoutes, ShopSharersSvc -.→ AffiliatesDB on approve. 2026-04-26: Sidebar consolidation — /socials becomes tabbed shell for Content, Analytics, Twitter, Discord, YouTube, Marketing Pushes, House Ads, Auto-Reply. Old top-level routes (/content-review, /content-analytics, /twitter, /discord, /youtube, /marketing-pushes, /house-ads, /auto-reply) now redirect to /socials/<tab>. Sidebar collapses 9 entries to 1 ("Socials & Content").
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-23. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue. 2026-04-23: Storefront email-capture wiring shipped (coherencedaddy-landing@a9ae317 — components/shop/share-capture.tsx → POST /api/shop/sharers → redirect /shop/share?code=<code>); blog article ad migrated to unified <AdSlot> component (landing@6698bd2) — house-ads becomes live no-fill fallback once blog-article slot's providers flip to ['adsense','house']. Diagram edges wired: CDShop → ShopSharersRoutes, CD → HouseAdsRoutes, ShopSharersSvc -.→ AffiliatesDB on approve. 2026-04-26: Sidebar consolidation — /socials becomes tabbed shell for Content, Analytics, Twitter, Discord, YouTube, Marketing Pushes, House Ads, Auto-Reply. Old top-level routes (/content-review, /content-analytics, /twitter, /discord, /youtube, /marketing-pushes, /house-ads, /auto-reply) now redirect to /socials/<tab>. Sidebar collapses 9 entries to 1 ("Socials & Content"). 2026-04-27: Launch Comment Monitor — HN/Reddit/dev.to comment poller + Haiku classifier + suggest-reply queue at /socials/launch-monitor.
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -186,9 +186,12 @@ const DEFAULT_DIAGRAM = `graph TB
         CityIntelligenceDB[("city_intelligence")]
         PluginLogRetention(["Plugin Log Retention — 7d prune (Nova)"])
         ContentDB[("content_items")]
-        SocialsHub(["Socials & Content — /socials tabbed shell (Overview · Content · Analytics · Twitter · Discord · YouTube · Marketing Pushes · House Ads · Auto-Reply)"])
+        SocialsHub(["Socials & Content — /socials tabbed shell (Overview · Content · Analytics · Twitter · Discord · YouTube · Marketing Pushes · House Ads · Auto-Reply · Launch Monitor)"])
         SocialAccountsDB[("social_accounts")]
         SocialAutomationsDB[("social_automations")]
+        LaunchMonitor(["Launch Comment Monitor — HN/Reddit/dev.to comment poller + Haiku classifier (every 3m, gated by LAUNCH_MONITOR_ENABLED)"])
+        LaunchTrackedDB[("launch_tracked_items")]
+        CommentRepliesDB[("comment_replies")]
         VisualContent(["Visual Content"])
         VisualDB[("visual_content_items + assets")]
         VisualJobs(["Visual Jobs — 15s polling"])
@@ -887,6 +890,9 @@ const DEFAULT_DIAGRAM = `graph TB
   %% Socials & Content shell — tabs nested under /socials
   SocialsHub -->|"tab: Marketing Pushes"| MarketingPushesPage
   SocialsHub -->|"tab: House Ads"| HouseAdsPage
+  SocialsHub -->|"tab: Launch Monitor"| LaunchMonitor
+  LaunchMonitor --> LaunchTrackedDB
+  LaunchMonitor --> CommentRepliesDB
 
   %% Ecosystem cross-links
   Tokns -->|"validator"| TXChain
