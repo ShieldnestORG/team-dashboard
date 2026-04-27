@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-23. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue. 2026-04-23: Storefront email-capture wiring shipped (coherencedaddy-landing@a9ae317 — components/shop/share-capture.tsx → POST /api/shop/sharers → redirect /shop/share?code=<code>); blog article ad migrated to unified <AdSlot> component (landing@6698bd2) — house-ads becomes live no-fill fallback once blog-article slot's providers flip to ['adsense','house']. Diagram edges wired: CDShop → ShopSharersRoutes, CD → HouseAdsRoutes, ShopSharersSvc -.→ AffiliatesDB on approve.
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-23. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue. 2026-04-23: Storefront email-capture wiring shipped (coherencedaddy-landing@a9ae317 — components/shop/share-capture.tsx → POST /api/shop/sharers → redirect /shop/share?code=<code>); blog article ad migrated to unified <AdSlot> component (landing@6698bd2) — house-ads becomes live no-fill fallback once blog-article slot's providers flip to ['adsense','house']. Diagram edges wired: CDShop → ShopSharersRoutes, CD → HouseAdsRoutes, ShopSharersSvc -.→ AffiliatesDB on approve. 2026-04-26: Sidebar consolidation — /socials becomes tabbed shell for Content, Analytics, Twitter, Discord, YouTube, Marketing Pushes, House Ads, Auto-Reply. Old top-level routes (/content-review, /content-analytics, /twitter, /discord, /youtube, /marketing-pushes, /house-ads, /auto-reply) now redirect to /socials/<tab>. Sidebar collapses 9 entries to 1 ("Socials & Content").
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -186,7 +186,7 @@ const DEFAULT_DIAGRAM = `graph TB
         CityIntelligenceDB[("city_intelligence")]
         PluginLogRetention(["Plugin Log Retention — 7d prune (Nova)"])
         ContentDB[("content_items")]
-        SocialsHub(["Socials Hub — /socials (Accounts · Automation · Calendar)"])
+        SocialsHub(["Socials & Content — /socials tabbed shell (Overview · Content · Analytics · Twitter · Discord · YouTube · Marketing Pushes · House Ads · Auto-Reply)"])
         SocialAccountsDB[("social_accounts")]
         SocialAutomationsDB[("social_automations")]
         VisualContent(["Visual Content"])
@@ -367,7 +367,7 @@ const DEFAULT_DIAGRAM = `graph TB
         PartnerSiteContent[("partner_site_content")]
         PartnerDirectory(["Trusted Companies API — /partner-directory"])
         PartnerPublicEnroll(["Public self-serve — POST /api/partners/public/enroll → Stripe Checkout"])
-        MarketingPushesPage(["/marketing-pushes — admin campaign dashboard"])
+        MarketingPushesPage(["/socials/pushes — admin campaign dashboard (tab under Socials & Content)"])
       end
 
       subgraph CreditScoreNet["CreditScore — SEO + AEO Audit"]
@@ -420,7 +420,7 @@ const DEFAULT_DIAGRAM = `graph TB
         direction TB
         HouseAdsSvc(["House Ads Service — pickForSlot weighted random + impression/click tracking"])
         HouseAdsRoutes(["/api/house-ads — active?slot=X (public), :id/image (stream), :id/click (302), CRUD (board)"])
-        HouseAdsPage(["/house-ads — admin CRUD UI"])
+        HouseAdsPage(["/socials/house-ads — admin CRUD UI (tab under Socials & Content)"])
         HouseAdsDB[("house_ads — creative+slot+weight+window+counters")]
       end
 
@@ -883,6 +883,10 @@ const DEFAULT_DIAGRAM = `graph TB
   HouseAdsRoutes --> HouseAdsSvc
   HouseAdsSvc --> HouseAdsDB
   HouseAdsPage -->|"board CRUD"| HouseAdsSvc
+
+  %% Socials & Content shell — tabs nested under /socials
+  SocialsHub -->|"tab: Marketing Pushes"| MarketingPushesPage
+  SocialsHub -->|"tab: House Ads"| HouseAdsPage
 
   %% Ecosystem cross-links
   Tokns -->|"validator"| TXChain

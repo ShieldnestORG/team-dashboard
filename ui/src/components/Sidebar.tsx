@@ -11,29 +11,21 @@ import {
   Boxes,
   Repeat,
   Settings,
-  Bird,
   Coins,
   Hexagon,
   HeartPulse,
   Activity,
   Radar,
-  Newspaper,
   GitBranch,
   Database,
-  MessageSquare,
-  Reply,
   Clock,
   Handshake,
   UsersRound,
-  Youtube,
   Globe,
   MapPin,
   GitPullRequest,
-  Megaphone,
   CheckSquare,
-  LineChart,
   Gauge,
-  Image as ImageIcon,
   Share2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -136,33 +128,25 @@ export function Sidebar() {
           <SidebarNavItem to="/agent-ops" label="Agent Ops" icon={Radar} />
           <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
           <SidebarNavItem to="/approvals" label="Approvals" icon={CheckSquare} />
-          <SidebarNavItem to="/auto-reply" label="Auto-Reply" icon={Reply} />
           <SidebarNavItem to="/automation-health" label="Automation Health" icon={Activity} />
           <SidebarNavItem to="/cities" label="City Collector" icon={MapPin} />
-          <SidebarNavItem to="/content-review" label="Content" icon={Newspaper} />
-          <SidebarNavItem to="/content-analytics" label="Content Analytics" icon={LineChart} />
           <SidebarNavItem to="/creditscore-review" label="CreditScore Review" icon={Gauge} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
-          <SidebarNavItem to="/discord" label="Discord" icon={MessageSquare} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
           <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={Database} />
           <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
-          <SidebarNavItem to="/house-ads" label="House Ads" icon={ImageIcon} />
-          <SidebarNavItem to="/marketing-pushes" label="Marketing Pushes" icon={Megaphone} />
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
           <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
           <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-          <SidebarNavItem to="/socials" label="Socials" icon={Share2} />
+          <SidebarNavItem to="/socials" label="Socials & Content" icon={Share2} />
           <SidebarNavItem to="/structure" label="Structure" icon={GitBranch} />
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
           <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />
-          <SidebarNavItem to="/twitter" label="Twitter/X" icon={Bird} />
           <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
-          <SidebarNavItem to="/youtube" label="YouTube" icon={Youtube} />
         </SidebarSection>
 
         <PluginSlotOutlet
