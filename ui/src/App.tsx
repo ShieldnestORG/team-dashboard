@@ -37,6 +37,7 @@ import { PluginPage } from "./pages/PluginPage";
 import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
 import { TwitterDashboard } from "./pages/TwitterDashboard";
 import { SocialsLayout } from "./pages/socials/SocialsLayout";
+import { SocialsContentLayout } from "./pages/socials/SocialsContentLayout";
 import { TxEcosystem } from "./pages/TxEcosystem";
 import Tokns from "./pages/Tokns";
 import { SystemHealth } from "./pages/SystemHealth";
@@ -221,26 +222,36 @@ function boardRoutes() {
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
-      <Route path="twitter" element={<TwitterDashboard />} />
-      <Route path="socials" element={<SocialsLayout />} />
-      <Route path="discord" element={<Discord />} />
+      <Route path="socials" element={<SocialsContentLayout />}>
+        <Route index element={<SocialsLayout />} />
+        <Route path="content" element={<ContentReview />} />
+        <Route path="analytics" element={<ContentAnalytics />} />
+        <Route path="twitter" element={<TwitterDashboard />} />
+        <Route path="discord" element={<Discord />} />
+        <Route path="youtube" element={<YouTubePipeline />} />
+        <Route path="pushes" element={<MarketingPushes />} />
+        <Route path="house-ads" element={<HouseAdsAdmin />} />
+        <Route path="auto-reply" element={<AutoReply />} />
+      </Route>
+      <Route path="twitter" element={<Navigate to="/socials/twitter" replace />} />
+      <Route path="discord" element={<Navigate to="/socials/discord" replace />} />
       <Route path="tx-ecosystem" element={<TxEcosystem />} />
       <Route path="tokns" element={<Tokns />} />
-      <Route path="auto-reply" element={<AutoReply />} />
+      <Route path="auto-reply" element={<Navigate to="/socials/auto-reply" replace />} />
       <Route path="system-health" element={<SystemHealth />} />
       <Route path="api-routes" element={<ApiDashboard />} />
       <Route path="agent-ops" element={<AgentOps />} />
       <Route path="crons" element={<CronManagement />} />
-      <Route path="content-review" element={<ContentReview />} />
+      <Route path="content-review" element={<Navigate to="/socials/content" replace />} />
       <Route path="creditscore-review" element={<Navigate to="/creditscore-review/drafts" replace />} />
       <Route path="creditscore-review/drafts" element={<CreditScoreReview />} />
       <Route path="creditscore-review/impls" element={<CreditScoreReview />} />
       <Route path="creditscore-review/scans" element={<CreditScoreReview />} />
       <Route path="creditscore-review/docs" element={<CreditScoreReview />} />
-      <Route path="content-analytics" element={<ContentAnalytics />} />
+      <Route path="content-analytics" element={<Navigate to="/socials/analytics" replace />} />
       <Route path="owned-sites" element={<OwnedSites />} />
       <Route path="structure" element={<Structure />} />
-      <Route path="marketing-pushes" element={<MarketingPushes />} />
+      <Route path="marketing-pushes" element={<Navigate to="/socials/pushes" replace />} />
       <Route path="affiliates" element={<AffiliatesAdmin />} />
       <Route path="affiliates/leads" element={<AffiliateAdminLeads />} />
       <Route path="affiliates/leads/:id" element={<AffiliateAdminLeadDetail />} />
@@ -252,12 +263,12 @@ function boardRoutes() {
       <Route path="affiliates/tiers" element={<AffiliateAdminTiers />} />
       <Route path="affiliates/campaigns" element={<AffiliateAdminCampaigns />} />
       <Route path="affiliates/merch" element={<AffiliateAdminMerch />} />
-      <Route path="house-ads" element={<HouseAdsAdmin />} />
+      <Route path="house-ads" element={<Navigate to="/socials/house-ads" replace />} />
       <Route path="shop-sharers" element={<ShopSharersAdmin />} />
       <Route path="partners" element={<Partners />} />
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
-      <Route path="youtube" element={<YouTubePipeline />} />
+      <Route path="youtube" element={<Navigate to="/socials/youtube" replace />} />
       <Route path="youtube/videos" element={<YouTubeVideos />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
