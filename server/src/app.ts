@@ -465,6 +465,11 @@ export async function createApp(
   });
   startCreditscoreReportAgent(db);
   startCreditscoreContentAgent(db);
+  // TODO(scribe-pilot): once a Scribe agent row is seeded into agents and the
+  // pilot is validated, enable the marketing-drafts cron. The handler needs a
+  // companyId/ownerAgentId + a fetchTasks() impl pointing at the tutorial source.
+  //   import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
+  //   startTutorialsMarketingAgent(db, { companyId, ownerAgentId, fetchTasks });
   startCreditscoreFulfillmentCrons(db);
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
