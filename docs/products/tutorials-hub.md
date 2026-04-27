@@ -10,12 +10,35 @@ Canonical doc for the Coherence Daddy tutorials product surface. The implementat
 - **Source format:** each tutorial is a self-contained static HTML file at `coherencedaddy-landing/public/tutorials/<slug>/index.html` with all `<head>` metadata (title, OG, Twitter, AdSense script) inlined. Static HTML does NOT pass through the Next root layout.
 - **Registry:** `coherencedaddy-landing/lib/tutorials.ts` exports a typed `Tutorial[]` (slug, title, tagline, description, category, duration, level, publishedAt, updatedAt, tags, featured) and helpers `getAllTutorials()` / `getTutorialBySlug()`. Slugs are kebab-case and locked once published — renaming a slug breaks every share link in the wild.
 
-### Currently live (verified 2026-04-26)
+### Currently live (verified 2026-04-27)
 
-| Slug | Published | Repo |
-|---|---|---|
-| `use-ollama-to-enhance-claude` | 2026-04-25 | [Coherence-Daddy/use-ollama-to-enhance-claude](https://github.com/Coherence-Daddy/use-ollama-to-enhance-claude) |
-| `give-obsidian-a-memory` | 2026-04-26 | `Coherence-Daddy/give-obsidian-a-memory` |
+| Slug | Published | Series | Repo |
+|---|---|---|---|
+| `use-ollama-to-enhance-claude` | 2026-04-25 | — | [Coherence-Daddy/use-ollama-to-enhance-claude](https://github.com/Coherence-Daddy/use-ollama-to-enhance-claude) |
+| `give-obsidian-a-memory` | 2026-04-26 | — | `Coherence-Daddy/give-obsidian-a-memory` |
+| `give-claude-an-organized-brain` | 2026-04-27 | Coherent Obsidian Skills · 01 | `Coherence-Daddy/give-claude-an-organized-brain` |
+
+## Series: Coherent Obsidian Skills
+
+Named series for tutorials that pair an Anthropic-style skill (installed into
+`.claude/skills/`) with an Obsidian vault convention and a copy-paste setup
+prompt. Episodes share a locked sidebar brand, cover-tag eyebrow, and the
+`coherent-obsidian-skills` tag in `lib/tutorials.ts`. See
+[`coherencedaddy-landing/docs/TUTORIALS.md`](../../../coherencedaddy-landing/docs/TUTORIALS.md)
+"Series: Coherent Obsidian Skills" section for the full membership rules and
+brand-string spec.
+
+**When adding a new Coherent Obsidian Skills episode** (replaces step 3 of the
+generic checklist below for series episodes):
+
+1. Confirm the episode meets all three membership rules: ships a `.claude/skills/` folder, touches an Obsidian vault, ships a copy-paste setup prompt.
+2. Pick the next episode number — locked at publish, like slugs.
+3. Match the brand strings exactly:
+   - Sidebar `.brand-text .name` → `"Coherent Obsidian Skills"`
+   - Sidebar `.brand-text .tag` → `"Episode NN · <noun>"`
+   - Cover `.cover-tag` → `"Coherent Obsidian Skills · NN"`
+4. Append `"coherent-obsidian-skills"` to the `tags` array in `lib/tutorials.ts` so the series filters as a set later.
+5. Then proceed with the generic add-a-tutorial checklist below.
 
 ## Subdirectory vs subdomain — DECISION: subdirectory
 
