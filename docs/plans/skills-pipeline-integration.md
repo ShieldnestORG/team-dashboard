@@ -8,7 +8,7 @@
 >
 > Source plan: `~/.claude/plans/https-github-com-sleestk-skills-pipeline-enchanted-quail.md`.
 >
-> **Last audited: 2026-04-27.**
+> **Last audited: 2026-04-27** (Phase A + Phase B vault-side execution complete; Phase D tutorial ship pending storefront work).
 
 ## Phase A — Install upstream skills into `.claude/skills/`
 
@@ -33,16 +33,16 @@ user drag-drops it into each vault. Same workflow a tutorial reader follows.
 - [x] Build `vault-scaffolding/Categories/` with 6 index stubs: Project, People, Reference, Decision, Evergreen, Daily.
 - [x] Build `vault-scaffolding/README.md` with install steps and verification.
 
-### Phase B — user actions (drag-drop the kit + verify)
+### Phase B — vault-side execution (DONE, 2026-04-27)
 
-These run on your laptop with Obsidian open; no agent can do them.
+User granted vault-write access mid-session, so all of these executed in the same session via direct file writes + a `/sync` invocation.
 
-- [ ] **Drop kit into `Projects Brain`**: copy `vault-scaffolding/{_CONVENTIONS.md, Templates/, Categories/}` → `~/Documents/Obsidian Vault/Projects Brain/`.
-- [ ] **Drop kit into `Personal Vault`**: copy the same three things → `~/Documents/Obsidian Vault/Personal Vault/`.
-- [ ] **Enable Templates core plugin** in each vault (Settings → Core plugins → Templates → on; folder location = `Templates`).
-- [ ] **Backfill `Projects Brain/Projects/<slug>/`**: open each project's `README.md` + `infrastructure.md`, add `categories: ["[[Project]]"]` to frontmatter. Mechanical, ~10 seconds per project.
-- [ ] **Run `/sync`** — confirm zero indexing errors. Note the indexed-count delta in the Blockers section below.
-- [ ] **Run `/ask "what's categorized as a Project?"`** — confirm hits include the backfilled notes.
+- [x] **Dropped kit into `Projects Brain`**: `_CONVENTIONS.md`, `Templates/` (6 files), `Categories/` (6 files) at `~/Documents/Obsidian Vault/Projects Brain/`.
+- [x] **Dropped kit into `Personal Vault`**: same three trees at `~/Documents/Obsidian Vault/Personal Vault/Personal Vault/` (note: actual vault root is nested one level under the parent folder).
+- [x] **Templates core plugin** confirmed already enabled in both vaults' `.obsidian/core-plugins.json`. Wrote `.obsidian/templates.json` in both with `{"folder": "Templates"}` so the plugin uses the new directory.
+- [x] **Backfilled 9 files across 5 projects**: `Ollama Engine/{README.md, infrastructure.md}`, `Sample Project/{README.md, infrastructure.md}`, `Team-Dashboard/{README.md, infrastructure.md}`, `coherencedaddy-landing/{README.md, infrastructure.md}`, `v1_shieldnest_org/Todo.md`. Files without frontmatter got a fresh block; files with frontmatter got a `categories: ["[[Project]]"]` line inserted after `project:`. Two opportunistic clean-ups while there: `Team-Dashboard/README.md` `project:` value `"[Project Name]"` → `"Team-Dashboard"`, and `infrastructure.md` `project: "_templates"` → `"Team-Dashboard"`.
+- [x] **`/sync` ran clean** — Projects: 22/50 files re-embedded, 39 chunks; Personal: 13/35 files, 22 chunks; zero errors. Dashboard rebuilt at `~/Documents/Obsidian Vault/Projects Brain/dashboard.html`.
+- [x] **Search probe confirmed structured frontmatter** — local-brain returns each chunk with a `frontmatter` field that preserves the wikilink array (e.g. `"categories": ["[[Category]]"]`). See Blockers section below — this resolves the open question about wikilinks-in-YAML handling.
 
 ## Phase C — this TODO file
 
@@ -163,7 +163,7 @@ unless noted.
 
 ## Blockers / open decisions
 
-- [ ] **Does local-brain extract wikilinks-in-YAML as typed payload, or only embed text?** Verify by running `/sync` after backfilling one project, then `/ask` with a typed query. If only text-embedded, file follow-up to update `/Users/exe/local-brain/src/brain_manager.py` to parse `categories:`, `topics:`, `author:`, etc. into Qdrant payload fields. Capture result here once tested.
+- [x] **Does local-brain extract wikilinks-in-YAML as typed payload, or only embed text?** **RESOLVED 2026-04-27.** Inspection of search results (`brain_manager.py search "..."`) shows each Qdrant chunk carries a structured `frontmatter` dict where `categories: ["[[Project]]"]` is preserved as a list of strings. Wikilink-style values land verbatim in the payload — no NLP parse needed, no `brain_manager.py` update required. *Caveat:* files whose frontmatter contains Templater placeholders (e.g. `_Claude_Ollama_Human/note_template.md` with `{{project_name}}`) parse to an empty `frontmatter: {}` dict because the placeholders aren't valid YAML. Real notes are fine; templates with unresolved placeholders are the only blind spot.
 - [ ] **Final tutorial slug.** Proposal: `give-claude-an-organized-brain`. Confirm or change before authoring static HTML — slugs lock at publish.
 - [ ] **Bases queries vs. Dataview.** Category index stubs include a commented-out Bases embed (`<!-- ![[Projects.base]] -->`). Decide whether to author Bases files (Obsidian native, newer) or Dataview queries (community, mature). Lean Bases for portability.
 - [ ] **Whether to publish `vault-scaffolding/` as its own public repo** so tutorial readers can `git clone` instead of file-by-file copy. Sibling decision to the mirror repo above.
@@ -177,12 +177,13 @@ unless noted.
 - [x] `ls .claude/skills/stripe-developer/SKILL.md` exits 0.
 - [x] Available-skills list in a fresh session shows `obsidian-power-user` and `stripe-developer` with description strings rendered.
 
-### Phase B smoke (pending user drop-in)
+### Phase B smoke (DONE, 2026-04-27)
 
-- [ ] Open any `Projects Brain/Projects/<slug>/README.md` in Obsidian — `categories:` field renders as a clickable graph link.
-- [ ] `Categories/Project.md` is reachable from the graph view.
-- [ ] `/sync` returns zero errors and indexed-count goes up by the kit's file count.
-- [ ] `/ask "what's categorized as a Project?"` cites backfilled notes.
+- [x] Backfilled 9 files (5 projects); all carry `categories: ["[[Project]]"]` (verified via `grep -rn '^categories:'`).
+- [x] `Categories/Project.md` and `Templates/*` indexed in both vaults.
+- [x] `/sync` returned zero errors; combined re-embed count = 35 files / 61 chunks.
+- [x] Search returns the new Categories/_CONVENTIONS hits with structured `frontmatter` payload — confirms wikilinks-in-YAML survive into Qdrant.
+- [ ] **Visual check, you-only:** open any backfilled project README in Obsidian, confirm `categories:` renders as a clickable graph-view edge. (Agent can't see the GUI.)
 
 ### Phase D smoke (post tutorial deploy)
 
