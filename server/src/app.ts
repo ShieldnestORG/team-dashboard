@@ -120,6 +120,7 @@ import { startCreditscoreCrons } from "./services/creditscore-crons.js";
 import { reconcileCreditscorePlans } from "./services/creditscore-stripe-reconcile.js";
 import { startCreditscoreReportAgent } from "./services/creditscore-report-agent.js";
 import { startCreditscoreContentAgent } from "./services/creditscore-content-agent-cron.js";
+import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
@@ -465,11 +466,19 @@ export async function createApp(
   });
   startCreditscoreReportAgent(db);
   startCreditscoreContentAgent(db);
-  // TODO(scribe-pilot): once a Scribe agent row is seeded into agents and the
-  // pilot is validated, enable the marketing-drafts cron. The handler needs a
-  // companyId/ownerAgentId + a fetchTasks() impl pointing at the tutorial source.
-  //   import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
-  //   startTutorialsMarketingAgent(db, { companyId, ownerAgentId, fetchTasks });
+  // Scribe (Tutorials) marketing agent — registered but inert until
+  // SCRIBE_PILOT_ENABLED is set and fetchTasks is wired to a real tutorial
+  // source. Agent row is seeded in prod Neon (id below). When you flip the
+  // flag, replace the empty fetchTasks with one that returns drafts to enqueue.
+  if (process.env.SCRIBE_PILOT_ENABLED === "true") {
+    const SCRIBE_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+    const SCRIBE_AGENT_ID = "82e50bc4-5fb6-4489-9077-d32b1c6e09c6";
+    startTutorialsMarketingAgent(db, {
+      companyId: SCRIBE_COMPANY_ID,
+      ownerAgentId: SCRIBE_AGENT_ID,
+      fetchTasks: async () => [],
+    });
+  }
   startCreditscoreFulfillmentCrons(db);
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);

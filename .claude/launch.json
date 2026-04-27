@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "ui-worktree-nav",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/Users/exe/.local/share/fnm/node-versions/v22.22.0/installation/bin:$PATH && cd /Users/exe/Downloads/Claude/team-dashboard/.claude/worktrees/agent-acef71794911c9c99/ui && npx vite --port 5180 --strictPort"],
+      "port": 5180,
+      "autoPort": false
+    },
+    {
       "name": "dev",
       "runtimeExecutable": "/bin/zsh",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && pnpm dev"],
