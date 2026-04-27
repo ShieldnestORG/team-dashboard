@@ -15,7 +15,7 @@ import { generateContentStrategy, type ContentStrategy } from "./content-strateg
 import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunciationFixes, type ScriptData } from "./script-writer.js";
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
-import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
+import { generateTTSAudio, generateContinuousTTS, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
 import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
@@ -132,36 +132,23 @@ export async function runProductionPipeline(
     let perSlideDurations: number[] | undefined;
 
     if (mode === "site-walker") {
-      // Chunked TTS: one chunk per screenshot for cleaner voice output
+      // Site-walker: one chunk per screenshot, but routed through continuous
+      // TTS with silence-split for voice consistency across the walk.
       const ttsChunks = buildTTSChunks(script);
-      const chunkedResult = await generateChunkedTTS(ttsChunks, `audio_${productionId}.mp3`);
-      tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
-      // Collapse [content, silence, content, silence, ..., content] into per-slide durations
-      // Each slide = its content duration + the following silence gap (if any)
-      const raw = chunkedResult.chunkDurations;
-      perSlideDurations = [];
-      for (let i = 0; i < raw.length; i += 2) {
-        const contentDur = raw[i] || 0;
-        const silenceDur = raw[i + 1] || 0;
-        perSlideDurations.push(contentDur + silenceDur);
-      }
+      const continuousResult = await generateContinuousTTS(ttsChunks, `audio_${productionId}.mp3`);
+      tts = { audioPath: continuousResult.audioPath, durationSec: continuousResult.durationSec, provider: continuousResult.provider };
+      perSlideDurations = continuousResult.perSlideDurations;
     } else if (spokenTexts && spokenTexts.length === visualAssets.length && spokenTexts.some((t) => t.length > 0)) {
-      // Presentation mode with slide-level spoken text — chunk per slide so
-      // each slide's duration is measured (ffprobe), not estimated. Eliminates
-      // the cumulative word-count drift documented in the regression fixture.
-      const chunks = spokenTexts.map((t) => applyPronunciationFixes(t || " "));
-      const chunkedResult = await generateChunkedTTS(chunks, `audio_${productionId}.mp3`);
-      tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
-      // generateChunkedTTS interleaves [chunk_0, gap, chunk_1, gap, ..., chunk_N]
-      // with no trailing gap (see tts.ts:166-170). Collapse to per-slide
-      // (content + following gap, last slide has no gap).
-      const raw = chunkedResult.chunkDurations;
-      perSlideDurations = [];
-      for (let i = 0; i < chunks.length; i++) {
-        const contentDur = raw[i * 2] || 0;
-        const gapDur = i < chunks.length - 1 ? (raw[i * 2 + 1] || 0) : 0;
-        perSlideDurations.push(contentDur + gapDur);
-      }
+      // Presentation mode with slide-level spoken text. Single TTS call for
+      // the whole video keeps voice character consistent across slides — the
+      // earlier per-slide-chunked approach produced audibly different voice
+      // takes between slides because Grok TTS has no session/seed for
+      // cross-call consistency. ffmpeg silencedetect recovers per-slide
+      // boundaries from the marker pauses inserted between texts.
+      const slidesAsChunks = spokenTexts.map((t) => applyPronunciationFixes(t || " "));
+      const continuousResult = await generateContinuousTTS(slidesAsChunks, `audio_${productionId}.mp3`);
+      tts = { audioPath: continuousResult.audioPath, durationSec: continuousResult.durationSec, provider: continuousResult.provider };
+      perSlideDurations = continuousResult.perSlideDurations;
     } else {
       // AI-image fallback path with no per-slide narration — single TTS call.
       // Drift will fall back to the legacy estimator; this path is a fallback,
