@@ -129,3 +129,10 @@ export { houseAds } from "./house_ads.js";
 export { shopSharers, shopReferralEvents } from "./shop_sharers.js";
 export { cityBusinessLeads } from "./city_business_leads.js";
 export type { CityBusinessLead, NewCityBusinessLead } from "./city_business_leads.js";
+export { marketingDrafts } from "./marketing_drafts.js";
+export type { MarketingDraft, NewMarketingDraft } from "./marketing_drafts.js";
+export { marketingSkillOwnership } from "./marketing_skill_ownership.js";
+export type {
+  MarketingSkillOwnership,
+  NewMarketingSkillOwnership,
+} from "./marketing_skill_ownership.js";

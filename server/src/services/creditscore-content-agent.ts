@@ -9,6 +9,7 @@
 //
 // Quota per PRD: Growth = 2 pages/mo, Pro = 4 pages/mo.
 // Owner agent: cipher (Technical Writer).
+// Scope: on-site AEO content drafting only. Off-site marketing distribution belongs to Ledger (creditscore-marketing-agent.ts, planned).
 // LLM backend matches the rest of the content pipeline (SEO engine,
 // compliance second-opinion primary). No Claude dependency.
 // ---------------------------------------------------------------------------
