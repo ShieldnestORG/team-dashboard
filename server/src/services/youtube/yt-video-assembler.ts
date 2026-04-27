@@ -113,13 +113,19 @@ export async function assembleYouTubeVideo(opts: YtAssembleOptions): Promise<YtA
       { timeout: 300_000 },
     );
 
-    // Step 2: Merge with audio
-    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest`;
+    // Step 2: Merge with audio. Force output to exact audio duration via
+    // `-t` — `-shortest` alone is unreliable when video is re-encoded
+    // (the re-encoder picks up the silent-video's pre-truncation frame count,
+    // leaving the output video stream up to ~25ms/slide longer than the audio
+    // due to per-slide frame quantization in concat). `-t` clamps the muxer
+    // output to a precise wall-clock duration regardless of encoder behaviour.
+    const tFlag = `-t ${audioDurationSec.toFixed(3)}`;
+    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest ${tFlag}`;
 
     // Step 3: Optionally burn in captions
     if (captionsPath && existsSync(captionsPath)) {
       // Re-encode video with subtitle filter instead of copy
-      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest`;
+      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest ${tFlag}`;
     }
 
     // Add metadata
