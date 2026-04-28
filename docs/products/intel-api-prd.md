@@ -45,7 +45,7 @@ A real-time data API covering 500+ blockchain, AI, DeFi, and DevTools projects. 
 | Agent | Task | Cron Schedule |
 |-------|------|--------------|
 | **Echo** | Data ingestion (price, news, GitHub, chain), project discovery | Multiple — see cron-inventory.md |
-| **Nexus** | Extract entity relationships from ingested content | 4-hourly |
+| **Nexus** | Extract entity relationships from ingested content | 3-hourly |
 | **Weaver** | Knowledge graph curation, dedup, edge pruning | 6-hourly |
 | **Recall** | Memory compaction, fact expiration, stale data cleanup | Daily |
 | **Oracle** | Similarity search cache warming, multi-hop query optimization | Hourly |

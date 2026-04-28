@@ -88,12 +88,17 @@ interface GitHubRelease {
   html_url: string;
   prerelease: boolean;
   draft: boolean;
+  // Injected by fetchOrgReleases — the "<org>/<repo>" the release came from.
+  // Not in the GitHub API payload directly; we copy it off the parent repo.
+  repo_full_name: string;
 }
 
 interface GitHubCommit {
   sha: string;
   commit: { message: string; author: { date: string } };
   html_url: string;
+  // Injected by fetchRecentCommits, same idea as GitHubRelease.repo_full_name.
+  repo_full_name: string;
 }
 
 interface RedditPost {
@@ -116,6 +121,61 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 const GITHUB_API = "https://api.github.com";
+
+// ---------------------------------------------------------------------------
+// KG harvester slug-attribution map
+// ---------------------------------------------------------------------------
+// The harvester resolves a GitHub org -> intel_companies row by org name
+// (intel_companies.github_org). For orgs that publish many unrelated repos
+// (aws/, Azure/, argoproj/, ...), this collapses every repo onto whichever
+// single slug shares that org, producing wrong attributions like
+// "aws/code-editor release tagged as aws-bedrock" (intel_reports id 52537)
+// or "Azure/cli release tagged as azure-openai" (intel_reports id 65337).
+// Downstream the extractor then emits triples like "Amazon Bedrock uses
+// Vite" from a graph-explorer release note.
+//
+// `OVERLOADED_REPO_MAP` is a curated allowlist consulted before insert:
+//   - string value: rewrite company_slug to that slug
+//   - null value:   skip the row entirely (we don't track this repo)
+// Keys are the lowercased "<org>/<repo>" for stable matching across the
+// case-insensitive GitHub host.
+//
+// See: docs/architecture/kg-extractor-prompt-fix.md §4
+const OVERLOADED_REPO_MAP: Record<string, string | null> = {
+  // aws/ — github_org "aws" currently maps to slug "aws-bedrock"; but the
+  // org publishes ~hundreds of unrelated repos. Skip the ones we have
+  // confirmed bleed-through evidence for; tracked separately if/when needed.
+  "aws/code-editor": null,
+  "aws/graph-explorer": null,
+  "aws/aws-nitro-enclaves-nsm-api": null,
+  // Azure/ — github_org "Azure" currently maps to slug "azure-openai".
+  "azure/cli": null,
+  // argoproj/ — github_org "argoproj" currently maps to slug "argo-cd".
+  // argo-workflows is a sibling project, not argo-cd.
+  "argoproj/argo-workflows": "argo-workflows",
+  // argoproj/argo-cd is the canonical match — no rewrite needed.
+};
+
+/**
+ * Resolve the canonical (slug, repo) pair for a GitHub-sourced row.
+ * Returns `null` when the curated map says to skip ingestion entirely.
+ *
+ * Inputs:
+ *   defaultSlug: the slug derived from intel_companies.github_org (umbrella).
+ *   repoFullName: the "<org>/<repo>" string the activity came from.
+ */
+function resolveGithubSlug(
+  defaultSlug: string,
+  repoFullName: string,
+): { slug: string; repo: string } | null {
+  const key = repoFullName.toLowerCase();
+  if (key in OVERLOADED_REPO_MAP) {
+    const mapped = OVERLOADED_REPO_MAP[key];
+    if (mapped === null) return null;
+    return { slug: mapped, repo: repoFullName };
+  }
+  return { slug: defaultSlug, repo: repoFullName };
+}
 const FIRECRAWL_URL = process.env.FIRECRAWL_URL || "https://firecrawl.coherencedaddy.com";
 const FIRECRAWL_TIMEOUT_MS = 30_000;
 
@@ -762,6 +822,18 @@ export function intelService(db: Db) {
             const publishedAt = new Date(release.published_at);
             if (publishedAt < cutoff) { skipped++; continue; }
 
+            // Per-repo slug resolution — see OVERLOADED_REPO_MAP. Skips
+            // known-overloaded repos that don't belong to this umbrella.
+            const resolved = resolveGithubSlug(company.slug, release.repo_full_name);
+            if (!resolved) {
+              logger.info(
+                `[intel.ingestGithub] skip overloaded repo ${release.repo_full_name} ` +
+                `(would have been attributed to ${company.slug})`,
+              );
+              skipped++;
+              continue;
+            }
+
             const headline = `${company.name} released ${release.tag_name}: ${release.name || release.tag_name}`;
             const body = [
               release.body?.slice(0, 400) ?? "No release notes.",
@@ -770,15 +842,15 @@ export function intelService(db: Db) {
 
             const existing = await rawQuery(sql`
               SELECT id FROM intel_reports
-              WHERE company_slug = ${company.slug} AND source_url = ${release.html_url} LIMIT 1
+              WHERE company_slug = ${resolved.slug} AND source_url = ${release.html_url} LIMIT 1
             `);
             if (existing.length > 0) { skipped++; continue; }
 
             const embedding = await getEmbedding(`${headline} ${body}`);
             const embeddingStr = `[${embedding.join(",")}]`;
             const inserted = await rawQuery<{ id: number }>(sql`
-              INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, embedding)
-              VALUES (${company.slug}, 'github', ${headline}, ${body}, ${release.html_url}, ${embeddingStr}::vector)
+              INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, source_repo, embedding)
+              VALUES (${resolved.slug}, 'github', ${headline}, ${body}, ${release.html_url}, ${resolved.repo}, ${embeddingStr}::vector)
               ON CONFLICT DO NOTHING
               RETURNING id
             `);
@@ -803,36 +875,46 @@ export function intelService(db: Db) {
             const recentCommit = commits[0];
             const commitDate = new Date(recentCommit.commit.author.date);
             if (commitDate >= cutoff) {
-              const headline = `${company.name} GitHub activity: ${commits.length} recent commits`;
-              const summary = commits
-                .map((c) => `- ${c.commit.message.split("\n")[0].slice(0, 100)}`)
-                .join("\n");
-              const body = `${summary}\nSource: ${recentCommit.html_url}`;
-
-              const existing = await rawQuery(sql`
-                SELECT id FROM intel_reports
-                WHERE company_slug = ${company.slug} AND source_url = ${recentCommit.html_url} LIMIT 1
-              `);
-              if (existing.length === 0) {
-                const embedding = await getEmbedding(`${headline} ${body}`);
-                const embeddingStr = `[${embedding.join(",")}]`;
-                const inserted = await rawQuery<{ id: number }>(sql`
-                  INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, embedding)
-                  VALUES (${company.slug}, 'github', ${headline}, ${body}, ${recentCommit.html_url}, ${embeddingStr}::vector)
-                  ON CONFLICT DO NOTHING
-                  RETURNING id
-                `);
-
-                // Best-effort SBOM parse — never blocks the harvester.
-                if (inserted.length > 0) {
-                  const sourceRepo = extractRepoFromGithubUrl(recentCommit.html_url);
-                  parseAndStoreSbom(db, { sourceRepo, intelReportId: inserted[0]!.id })
-                    .catch((err) => logger.warn({ err, sourceRepo }, "sbom-parser: commit parse failed"));
-                }
-
-                processed++;
-              } else {
+              // Per-repo slug resolution — see OVERLOADED_REPO_MAP.
+              const resolved = resolveGithubSlug(company.slug, recentCommit.repo_full_name);
+              if (!resolved) {
+                logger.info(
+                  `[intel.ingestGithub] skip overloaded repo ${recentCommit.repo_full_name} ` +
+                  `commits (would have been attributed to ${company.slug})`,
+                );
                 skipped++;
+              } else {
+                const headline = `${company.name} GitHub activity: ${commits.length} recent commits`;
+                const summary = commits
+                  .map((c) => `- ${c.commit.message.split("\n")[0].slice(0, 100)}`)
+                  .join("\n");
+                const body = `${summary}\nSource: ${recentCommit.html_url}`;
+
+                const existing = await rawQuery(sql`
+                  SELECT id FROM intel_reports
+                  WHERE company_slug = ${resolved.slug} AND source_url = ${recentCommit.html_url} LIMIT 1
+                `);
+                if (existing.length === 0) {
+                  const embedding = await getEmbedding(`${headline} ${body}`);
+                  const embeddingStr = `[${embedding.join(",")}]`;
+                  const inserted = await rawQuery<{ id: number }>(sql`
+                    INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, source_repo, embedding)
+                    VALUES (${resolved.slug}, 'github', ${headline}, ${body}, ${recentCommit.html_url}, ${resolved.repo}, ${embeddingStr}::vector)
+                    ON CONFLICT DO NOTHING
+                    RETURNING id
+                  `);
+
+                  // Best-effort SBOM parse — never blocks the harvester.
+                  if (inserted.length > 0) {
+                    const sourceRepo = extractRepoFromGithubUrl(recentCommit.html_url);
+                    parseAndStoreSbom(db, { sourceRepo, intelReportId: inserted[0]!.id })
+                      .catch((err) => logger.warn({ err, sourceRepo }, "sbom-parser: commit parse failed"));
+                  }
+
+                  processed++;
+                } else {
+                  skipped++;
+                }
               }
             } else {
               skipped++;
@@ -1185,8 +1267,12 @@ async function fetchOrgReleases(org: string): Promise<GitHubRelease[]> {
           signal: AbortSignal.timeout(4000),
         });
         if (rRes.ok) {
-          const release: GitHubRelease = await rRes.json();
-          if (!release.draft && !release.prerelease) releases.push(release);
+          const raw = (await rRes.json()) as Omit<GitHubRelease, "repo_full_name">;
+          if (!raw.draft && !raw.prerelease) {
+            // Stamp the repo full_name onto the release so the ingest loop
+            // can attribute it to the correct slug. See OVERLOADED_REPO_MAP.
+            releases.push({ ...raw, repo_full_name: repo.full_name });
+          }
         }
       } catch { /* skip */ }
     }
@@ -1212,7 +1298,10 @@ async function fetchRecentCommits(org: string): Promise<GitHubCommit[]> {
       { headers: githubHeaders(), signal: AbortSignal.timeout(6000) },
     );
     if (!cRes.ok) return [];
-    return await cRes.json();
+    const raw = (await cRes.json()) as Array<Omit<GitHubCommit, "repo_full_name">>;
+    // Stamp the repo full_name onto each commit so the ingest loop can
+    // attribute it to the correct slug. See OVERLOADED_REPO_MAP.
+    return raw.map((c) => ({ ...c, repo_full_name: topRepo.full_name }));
   } catch {
     return [];
   }
