@@ -73,10 +73,12 @@ COPY --chown=node:node --from=build /app /app
 # Paths are fixed because the Node code shells out to them; if you move these,
 # update WHISPER_BIN / WHISPER_MODEL in server/src/services/youtube/tts.ts too.
 COPY --from=whisper-build /opt/whisper.cpp/build/bin/whisper-cli /opt/whisper/whisper-cli
+# Use wildcard globs so versioned soname files (libfoo.so.0, libfoo.so.0.x.x)
+# come along with the unversioned symlink — the ELF loader looks for the soname
+# (e.g. libggml.so.0), not the unversioned name. Earlier copy missed the .0
+# symlink for libggml/libggml-base/libggml-cpu and runtime failed.
 COPY --from=whisper-build /opt/whisper.cpp/build/src/libwhisper.so* /opt/whisper/lib/
-COPY --from=whisper-build /opt/whisper.cpp/build/ggml/src/libggml.so /opt/whisper/lib/
-COPY --from=whisper-build /opt/whisper.cpp/build/ggml/src/libggml-base.so /opt/whisper/lib/
-COPY --from=whisper-build /opt/whisper.cpp/build/ggml/src/libggml-cpu.so /opt/whisper/lib/
+COPY --from=whisper-build /opt/whisper.cpp/build/ggml/src/libggml*.so* /opt/whisper/lib/
 COPY --from=whisper-build /opt/whisper.cpp/models/ggml-tiny.en.bin /opt/whisper/ggml-tiny.en.bin
 RUN printf '#!/bin/sh\nLD_LIBRARY_PATH=/opt/whisper/lib exec /opt/whisper/whisper-cli "$@"\n' > /opt/whisper/whisper \
   && chmod +x /opt/whisper/whisper
