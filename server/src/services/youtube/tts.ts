@@ -218,13 +218,15 @@ export async function generateChunkedTTS(
 // Continuous TTS — single call + silence-split for per-slide durations
 // ---------------------------------------------------------------------------
 
-/** Marker we splice between slide texts. Five single-period "sentences" on
- * separate lines coerce most TTS engines to insert a sentence-end pause
- * after each, accumulating into a clearly-detectable gap. We do NOT rely on
- * this being the LONGEST silence in the audio though — natural emphatic
- * pauses in narration can be just as long. The detection algorithm uses
- * predicted-position matching instead (see assignBoundariesByPrediction). */
-const SLIDE_BOUNDARY_MARKER = "\n\n.\n.\n.\n.\n.\n\n";
+/** Marker we splice between slide texts. A minimal paragraph break — Grok
+ * TTS treats it as a normal sentence end and produces a small natural pause
+ * (~200-400ms) without verbalizing the marker text. Earlier we used five
+ * single-period lines to force a longer detectable silence for the
+ * silence-detection alignment path, but Grok TTS would sometimes audibly
+ * read those as "dot dot dot." Whisper alignment is now the primary path
+ * (it matches against words, not silence) so the marker just needs to
+ * provide a clean sentence boundary, not a measurable gap. */
+const SLIDE_BOUNDARY_MARKER = "\n\n";
 
 /** Path to the whisper.cpp binary baked into the production Docker image
  * (see Dockerfile whisper-build stage). When present, slide boundaries are

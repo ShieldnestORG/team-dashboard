@@ -102,6 +102,9 @@ export function applyPronunciationFixes(text: string): string {
   text = text.replace(/\bTX Ecosystem\b/g, "T-X Ecosystem");
   text = text.replace(/\bTX blockchain\b/gi, "T-X blockchain");
   text = text.replace(/\bNFTs\b/g, "N-F-Tees");
+  // tokens.fi (Finnish .fi TLD) — pronounce as "tokens dot fee" so Grok TTS
+  // doesn't read it as "tokens fi" / "tokens F-I" / spell the letters.
+  text = text.replace(/\btokens\.fi\b/gi, "tokens dot fee");
   text = text.replace(/\bNFT\b/g, "N-F-T");
   text = text.replace(/\bDAOs\b/g, "dow-z");
   text = text.replace(/\bDAO\b/g, "dow");
