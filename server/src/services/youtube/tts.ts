@@ -479,19 +479,29 @@ export async function generateContinuousTTS(
     const whisperResult = whisperWords ? alignSlideBoundariesViaWhisper(cleaned, whisperWords, totalDuration) : null;
 
     if (whisperResult && whisperResult.boundaries.length === N - 1) {
-      // Add breathing room: hold each slide on screen for a beat after its
-      // last spoken word, AND enforce a minimum display time per slide.
-      // Without this, slide transitions land exactly on the last spoken
-      // word — no visual buffer, slides "skip to the next one quick"
-      // particularly on short bullets.
+      // Slide-transition timing relative to whisper word boundaries.
       //
-      // Bumped to 0.6/3.5 from 0.4/2.5 after user feedback that slides still
-      // felt fast halfway through the video. The 3.5s floor in particular
-      // protects predicted-fallback slides where char-weighted prediction
-      // would otherwise compress slide N below the duration of its actual
-      // narration (since prediction can be 1-2s earlier than truth).
-      const HOLD_AFTER_NARRATION_SEC = 0.6;
-      const MIN_SLIDE_DISPLAY_SEC = 3.5;
+      // HOLD_AFTER_NARRATION_SEC: how many seconds after slide N's last
+      // spoken word do we transition to slide N+1. Set too high and the
+      // next slide's narration begins BEFORE the slide change (perceived
+      // as "voice is ahead of the slide" / "voice behind slide" since
+      // the slide arrives late). The marker `\n\n` produces a natural
+      // ~200-300ms sentence pause after slide N's last word, so anything
+      // above 0.2s starts pushing the transition past where the next
+      // narration begins.
+      //
+      // MIN_SLIDE_DISPLAY_SEC: floor for slide display time. Only kicks
+      // in when narration was very short (titles, hooks, fallback-to-
+      // predicted boundaries that landed early). Keep modest so it
+      // doesn't routinely override whisper's word-perfect timing.
+      //
+      // History: 0.4/2.5 felt too fast → 0.6/3.5 gave breathing room but
+      // pushed transitions late so audio led the slide → 0.1/2.5 lands
+      // the slide change right at the natural sentence-pause moment,
+      // with breathing room provided by the marker pause itself rather
+      // than by an artificial post-narration hold.
+      const HOLD_AFTER_NARRATION_SEC = 0.1;
+      const MIN_SLIDE_DISPLAY_SEC = 2.5;
       const adjusted: number[] = [];
       let prev = 0;
       for (let i = 0; i < whisperResult.boundaries.length; i++) {
