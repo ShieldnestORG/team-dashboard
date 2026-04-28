@@ -478,17 +478,49 @@ export async function generateContinuousTTS(
     const whisperResult = whisperWords ? alignSlideBoundariesViaWhisper(cleaned, whisperWords, totalDuration) : null;
 
     if (whisperResult && whisperResult.boundaries.length === N - 1) {
-      perSlideDurations = [];
+      // Add breathing room: hold each slide on screen for a beat after its
+      // last spoken word, AND enforce a minimum display time per slide.
+      // Without this, slide transitions land exactly on the last spoken
+      // word — no visual buffer, slides "skip to the next one quick"
+      // particularly on short bullets.
+      const HOLD_AFTER_NARRATION_SEC = 0.4;
+      const MIN_SLIDE_DISPLAY_SEC = 2.5;
+      const adjusted: number[] = [];
       let prev = 0;
-      for (const b of whisperResult.boundaries) {
+      for (let i = 0; i < whisperResult.boundaries.length; i++) {
+        const wantedStart = Math.max(
+          whisperResult.boundaries[i] + HOLD_AFTER_NARRATION_SEC,
+          prev + MIN_SLIDE_DISPLAY_SEC,
+        );
+        adjusted.push(wantedStart);
+        prev = wantedStart;
+      }
+      // Constrain rightward — the LAST slide also needs MIN_SLIDE_DISPLAY,
+      // and total can't exceed totalDuration. Cap last boundary so the
+      // tail slide gets its minimum, walking back through earlier
+      // boundaries if necessary.
+      const maxLastBoundary = totalDuration - MIN_SLIDE_DISPLAY_SEC;
+      for (let i = adjusted.length - 1; i >= 0; i--) {
+        const ceiling = i === adjusted.length - 1
+          ? maxLastBoundary
+          : adjusted[i + 1] - MIN_SLIDE_DISPLAY_SEC;
+        if (adjusted[i] > ceiling) adjusted[i] = ceiling;
+      }
+
+      perSlideDurations = [];
+      prev = 0;
+      for (const b of adjusted) {
         perSlideDurations.push(Math.max(0.1, b - prev));
         prev = b;
       }
       perSlideDurations.push(Math.max(0.1, totalDuration - prev));
+
       const lockedViaWhisper = whisperResult.statuses.filter((s) => s === "whisper").length;
       const fellThroughToPredicted = whisperResult.statuses.length - lockedViaWhisper;
+      const minSlide = Math.min(...perSlideDurations);
+      const maxSlide = Math.max(...perSlideDurations);
       logger.info(
-        { slides: N, totalDuration, alignedVia: "whisper", whisperWords: whisperWords?.length ?? 0, lockedViaWhisper, fellThroughToPredicted },
+        { slides: N, totalDuration, alignedVia: "whisper", whisperWords: whisperWords?.length ?? 0, lockedViaWhisper, fellThroughToPredicted, minSlideDurSec: minSlide.toFixed(2), maxSlideDurSec: maxSlide.toFixed(2) },
         "Continuous TTS: slide boundaries assigned via whisper word alignment",
       );
       return { audioPath: outputPath, durationSec: totalDuration, perSlideDurations, provider: "grok" };
