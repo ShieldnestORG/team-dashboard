@@ -10,6 +10,7 @@ import { DEFI_COMPANIES } from "../data/intel-companies-defi.js";
 import { DEVTOOLS_COMPANIES } from "../data/intel-companies-devtools.js";
 import { logger } from "../middleware/logger.js";
 import { nitterHealthService } from "./nitter-health.js";
+import { parseAndStoreSbom, extractRepoFromGithubUrl } from "./sbom-parser.js";
 
 // ---------------------------------------------------------------------------
 // Merge all directory seed data, deduplicating by slug (first occurrence wins)
@@ -847,11 +848,21 @@ export function intelService(db: Db) {
 
             const embedding = await getEmbedding(`${headline} ${body}`);
             const embeddingStr = `[${embedding.join(",")}]`;
-            await db.execute(sql`
+            const inserted = await rawQuery<{ id: number }>(sql`
               INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, source_repo, embedding)
               VALUES (${resolved.slug}, 'github', ${headline}, ${body}, ${release.html_url}, ${resolved.repo}, ${embeddingStr}::vector)
               ON CONFLICT DO NOTHING
+              RETURNING id
             `);
+
+            // Best-effort SBOM parse — never blocks the harvester.
+            // Source repo derived from the release URL, NOT company.slug —
+            // see docs/architecture/sbom-parser-design.md §4.
+            if (inserted.length > 0) {
+              const sourceRepo = extractRepoFromGithubUrl(release.html_url);
+              parseAndStoreSbom(db, { sourceRepo, intelReportId: inserted[0]!.id })
+                .catch((err) => logger.warn({ err, sourceRepo }, "sbom-parser: release parse failed"));
+            }
 
             processed++;
           } catch (e) {
@@ -886,11 +897,20 @@ export function intelService(db: Db) {
                 if (existing.length === 0) {
                   const embedding = await getEmbedding(`${headline} ${body}`);
                   const embeddingStr = `[${embedding.join(",")}]`;
-                  await db.execute(sql`
+                  const inserted = await rawQuery<{ id: number }>(sql`
                     INSERT INTO intel_reports (company_slug, report_type, headline, body, source_url, source_repo, embedding)
                     VALUES (${resolved.slug}, 'github', ${headline}, ${body}, ${recentCommit.html_url}, ${resolved.repo}, ${embeddingStr}::vector)
                     ON CONFLICT DO NOTHING
+                    RETURNING id
                   `);
+
+                  // Best-effort SBOM parse — never blocks the harvester.
+                  if (inserted.length > 0) {
+                    const sourceRepo = extractRepoFromGithubUrl(recentCommit.html_url);
+                    parseAndStoreSbom(db, { sourceRepo, intelReportId: inserted[0]!.id })
+                      .catch((err) => logger.warn({ err, sourceRepo }, "sbom-parser: commit parse failed"));
+                  }
+
                   processed++;
                 } else {
                   skipped++;
