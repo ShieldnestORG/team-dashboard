@@ -102,9 +102,18 @@ export function applyPronunciationFixes(text: string): string {
   text = text.replace(/\bTX Ecosystem\b/g, "T-X Ecosystem");
   text = text.replace(/\bTX blockchain\b/gi, "T-X blockchain");
   text = text.replace(/\bNFTs\b/g, "N-F-Tees");
-  // tokens.fi (Finnish .fi TLD) — pronounce as "tokens dot fee" so Grok TTS
-  // doesn't read it as "tokens fi" / "tokens F-I" / spell the letters.
+  // tokns.fi / Tokns.fi / tokens.fi — pronounce the .fi TLD as "dot fee"
+  // so Grok TTS doesn't read it as "T-O-K-N-S F-I" / spell the letters.
+  // The brand canonical spelling is "Tokns" (no "e") — handle that and
+  // common typo "tokens" both. Same treatment for the bare "tokensfi"
+  // / "toknsfi" no-dot smushed forms produced by some upstream prompts.
+  text = text.replace(/\btokns\.fi\b/gi, "tokens dot fee");
   text = text.replace(/\btokens\.fi\b/gi, "tokens dot fee");
+  text = text.replace(/\btoknsfi\b/gi, "tokens fee");
+  text = text.replace(/\btokensfi\b/gi, "tokens fee");
+  // Bare "Tokns" brand without the .fi suffix — still pronounce as "tokens"
+  // (the brand is a stylized vowel-drop, not a different word).
+  text = text.replace(/\btokns\b/gi, "tokens");
   text = text.replace(/\bNFT\b/g, "N-F-T");
   text = text.replace(/\bDAOs\b/g, "dow-z");
   text = text.replace(/\bDAO\b/g, "dow");
