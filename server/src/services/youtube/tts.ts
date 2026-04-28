@@ -376,22 +376,16 @@ function alignSlideBoundariesViaWhisper(
     }
 
     if (anchorWordIdx === -1) {
-      // This single slide couldn't lock — use predicted for THIS boundary
-      // only and keep going with whisper for the rest. Don't advance
-      // wordIdx aggressively; let the next slide search from where we
-      // would have been (cursor before this attempt) plus a small gap.
-      const predicted = predictedBoundaries[s];
-      // Advance wordIdx to whatever word is closest to predicted so we
-      // don't search backwards on the next slide.
-      let bestW = wordIdx;
-      let bestDist = Infinity;
-      for (let w = wordIdx; w < words.length; w++) {
-        const d = Math.abs(words[w].start - predicted);
-        if (d < bestDist) { bestDist = d; bestW = w; }
-        if (words[w].start > predicted + 2) break;
-      }
-      wordIdx = bestW;
-      boundaries.push(predicted);
+      // This single slide couldn't lock. Use predicted for THIS boundary
+      // and DO NOT advance wordIdx — keep searching the next slide from
+      // the same position. Earlier we tried to advance wordIdx to predicted,
+      // but predicted is char-weighted (assumes uniform speech rate) and
+      // can overshoot the real audio position; that caused cascade failures
+      // where every slide AFTER the first failure couldn't lock because
+      // their content was now BEHIND the cursor. Leaving wordIdx alone
+      // preserves the option for the next slide to find its content
+      // downstream of the last SUCCESSFUL anchor.
+      boundaries.push(predictedBoundaries[s]);
       statuses.push("predicted");
       logger.warn({ slideIdx: s, probeTokens: probeAttempts[0] || [] }, "whisper alignment couldn't lock this slide; using predicted for this boundary only");
     } else {
