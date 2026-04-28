@@ -218,17 +218,18 @@ export async function generateChunkedTTS(
 // Continuous TTS — single call + silence-split for per-slide durations
 // ---------------------------------------------------------------------------
 
-/** Marker we splice between slide texts to force a long pause in the rendered
- * audio. Long enough that ffmpeg silencedetect can distinguish it from the
- * ~150-400ms natural sentence-end pauses TTS engines insert. The newlines
- * + multiple periods nudge most TTS engines (Grok included) to insert a
- * ~700-1200ms gap rather than speak the periods aloud. */
-const SLIDE_BOUNDARY_MARKER = "\n\n. . . . .\n\n";
+/** Marker we splice between slide texts. Five single-period "sentences" on
+ * separate lines coerce most TTS engines to insert a sentence-end pause
+ * after each, accumulating into a clearly-detectable gap. We do NOT rely on
+ * this being the LONGEST silence in the audio though — natural emphatic
+ * pauses in narration can be just as long. The detection algorithm uses
+ * predicted-position matching instead (see assignBoundariesByPrediction). */
+const SLIDE_BOUNDARY_MARKER = "\n\n.\n.\n.\n.\n.\n\n";
 
-/** Minimum silence duration that counts as a slide boundary, in seconds.
- * Tuned to be longer than typical sentence pauses (~300-500ms) and shorter
- * than the marker-induced pauses (~700-1200ms). */
-const SLIDE_BOUNDARY_MIN_SEC = 0.55;
+/** Minimum silence duration that counts as a candidate boundary, in seconds.
+ * Set lower (0.3s) to capture all plausible boundaries; the assignment
+ * algorithm picks among them using slide-character-weighted prediction. */
+const SLIDE_BOUNDARY_MIN_SEC = 0.3;
 
 /** Silence detection threshold in dB (audio below this is considered silent). */
 const SLIDE_BOUNDARY_NOISE_DB = -30;
@@ -306,28 +307,81 @@ export async function generateContinuousTTS(
   } else {
     const silences = await detectSilences(outputPath);
     const needed = N - 1;
+
+    // Predicted boundary timestamps based on slide character counts. The
+    // working assumption is that TTS speech rate is roughly constant, so the
+    // proportion of total audio devoted to each slide is approximately the
+    // slide's share of total characters (boundary marker text included so
+    // the prediction matches what's actually rendered).
+    const segmentChars = cleaned.map((t) => t.length + SLIDE_BOUNDARY_MARKER.length);
+    const totalChars = segmentChars.reduce((a, b) => a + b, 0);
+    const predicted: number[] = [];
+    let cumChars = 0;
+    for (let i = 0; i < N - 1; i++) {
+      cumChars += segmentChars[i];
+      predicted.push((totalDuration * cumChars) / totalChars);
+    }
+
     if (silences.length < needed) {
-      // Fallback: proportional split by character count. Rare; we still get
-      // measured total audio duration so the post-assembly drift guardrail
-      // catches any mismatch.
+      // Fewer detected silences than slide boundaries — fall back directly
+      // to the predicted positions. The post-assembly drift guardrail still
+      // catches any total-duration mismatch on the final MP4.
       logger.warn(
         { detected: silences.length, expected: needed, totalDuration },
-        "Continuous TTS: silence detection found fewer boundaries than expected — falling back to char-weighted split",
+        "Continuous TTS: silence detection found fewer boundaries than slides — falling back to char-weighted split",
       );
-      const totalChars = cleaned.reduce((a, b) => a + b.length, 0) || 1;
-      perSlideDurations = cleaned.map((t) => (totalDuration * t.length) / totalChars);
-    } else {
-      // Take the longest `needed` silences as slide boundaries (the
-      // marker-induced pauses are always among the longest in the audio).
-      const sorted = [...silences].sort((a, b) => b.duration - a.duration).slice(0, needed);
-      const midpoints = sorted.map((s) => (s.start + s.end) / 2).sort((a, b) => a - b);
       perSlideDurations = [];
       let prev = 0;
-      for (const m of midpoints) {
-        perSlideDurations.push(m - prev);
-        prev = m;
+      for (const p of predicted) {
+        perSlideDurations.push(p - prev);
+        prev = p;
       }
       perSlideDurations.push(totalDuration - prev);
+    } else {
+      // Pick the silence closest to each predicted boundary, walking left to
+      // right and never reusing a silence (so two predicted boundaries can't
+      // collapse onto the same silence). This is more robust than picking
+      // the longest N-1 silences because it doesn't assume the marker pauses
+      // are longer than every emphatic in-narration pause — only that they
+      // exist somewhere near the predicted positions.
+      const sortedSilences = [...silences].sort((a, b) => a.start - b.start);
+      const used = new Set<number>();
+      const chosen: number[] = [];
+      for (const p of predicted) {
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        for (let i = 0; i < sortedSilences.length; i++) {
+          if (used.has(i)) continue;
+          const mid = (sortedSilences[i].start + sortedSilences[i].end) / 2;
+          if (mid <= (chosen[chosen.length - 1] ?? 0)) continue; // no going backwards
+          const dist = Math.abs(mid - p);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestIdx = i;
+          }
+        }
+        if (bestIdx === -1) {
+          // No usable silence remaining for this boundary — use predicted as fallback.
+          chosen.push(p);
+        } else {
+          used.add(bestIdx);
+          chosen.push((sortedSilences[bestIdx].start + sortedSilences[bestIdx].end) / 2);
+        }
+      }
+
+      perSlideDurations = [];
+      let prev = 0;
+      for (const m of chosen) {
+        perSlideDurations.push(Math.max(0.1, m - prev));
+        prev = m;
+      }
+      perSlideDurations.push(Math.max(0.1, totalDuration - prev));
+
+      const maxDeviation = Math.max(...predicted.map((p, i) => Math.abs(p - chosen[i])));
+      logger.info(
+        { detectedSilences: silences.length, slideBoundaries: chosen.length, maxDeviationSec: maxDeviation.toFixed(3) },
+        "Continuous TTS: slide boundaries assigned via predicted-position matching",
+      );
     }
   }
 
