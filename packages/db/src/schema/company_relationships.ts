@@ -23,6 +23,12 @@ export const companyRelationships = pgTable(
     evidenceReportIds: jsonb("evidence_report_ids").$type<number[]>().notNull().default([]),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     extractedBy: text("extracted_by"),
+    /**
+     * For `depends_on` edges only: 'runtime' | 'devDependency' | 'transitive'.
+     * NULL for all other edge types and for legacy rows. Added by migration
+     * 0098_depends_on_edges.sql for the deterministic SBOM parser.
+     */
+    scope: text("scope"),
     verified: boolean("verified").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
