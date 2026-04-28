@@ -224,8 +224,12 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
     });
   }
 
-  // CTA
-  const ctaHtml = await generateSlideHtml({ type: "cta" }, t);
+  // CTA — always use static template. Ollama-generated CTAs come back as
+  // malformed/empty card stacks ("001 // COHERENCE" eyebrow over a blank
+  // card, no subscribe button) because the prompt is generic and the
+  // model can't reliably produce a high-stakes layout like a CTA. The
+  // static template has a guaranteed clear subscribe button + brand voice.
+  // Same pattern we use for content/bullet slides.
   const ctaText = [
     script.callToAction?.subscribe,
     script.callToAction?.like,
@@ -233,7 +237,7 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
   ].filter(Boolean).join(". ");
   slides.push({
     type: "cta",
-    html: ctaHtml || staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
+    html: staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
     spokenText: ctaText || "Subscribe for more content!",
   });
 

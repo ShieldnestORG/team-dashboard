@@ -335,16 +335,21 @@ function alignSlideBoundariesViaWhisper(
   }
 
   for (let s = 0; s < N - 1; s++) {
+    // Split on whitespace AND hyphens so compound words like "long-term"
+    // produce ["long", "term"] (whisper transcribes hyphenated words as
+    // separate tokens). Drop pure-digit tokens — whisper transcribes "2026"
+    // as "twenty twenty six" so digit tokens never match. Drop very short
+    // (<=2 char) and common stopwords so probes are distinctive.
+    const STOPWORDS = new Set(["the", "and", "for", "you", "are", "but", "not", "all", "any", "can", "has", "had", "her", "his", "its", "our", "out", "she", "was", "way", "who", "why", "how", "now", "yes", "yet"]);
     const slideTokens = slideTexts[s]
-      .split(/\s+/)
+      .split(/[\s-]+/)
       .map(normalizeWord)
-      .filter((t) => t.length > 0);
+      .filter((t) => t.length > 0 && !/^\d+$/.test(t));
 
     // Try progressively shorter probe-token sets so a near-miss on the longest
-    // tail doesn't kill the whole match. A title slide with 3 distinctive
-    // tokens that whisper heard slightly differently can still lock if we
-    // try the last 2, last 1, or any of the slide's distinctive tokens.
-    const distinctive = slideTokens.filter((t) => t.length >= 4);
+    // tail doesn't kill the whole match. Prefer length>=4 distinctive
+    // tokens (skip stopwords); fall back to last 2-1 raw tokens if needed.
+    const distinctive = slideTokens.filter((t) => t.length >= 4 && !STOPWORDS.has(t));
     const probeAttempts: string[][] = [];
     if (distinctive.length >= 3) probeAttempts.push(distinctive.slice(-3));
     if (distinctive.length >= 2) probeAttempts.push(distinctive.slice(-2));
@@ -477,8 +482,14 @@ export async function generateContinuousTTS(
       // Without this, slide transitions land exactly on the last spoken
       // word — no visual buffer, slides "skip to the next one quick"
       // particularly on short bullets.
-      const HOLD_AFTER_NARRATION_SEC = 0.4;
-      const MIN_SLIDE_DISPLAY_SEC = 2.5;
+      //
+      // Bumped to 0.6/3.5 from 0.4/2.5 after user feedback that slides still
+      // felt fast halfway through the video. The 3.5s floor in particular
+      // protects predicted-fallback slides where char-weighted prediction
+      // would otherwise compress slide N below the duration of its actual
+      // narration (since prediction can be 1-2s earlier than truth).
+      const HOLD_AFTER_NARRATION_SEC = 0.6;
+      const MIN_SLIDE_DISPLAY_SEC = 3.5;
       const adjusted: number[] = [];
       let prev = 0;
       for (let i = 0; i < whisperResult.boundaries.length; i++) {
