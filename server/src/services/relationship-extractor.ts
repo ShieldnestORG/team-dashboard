@@ -20,6 +20,35 @@ const VALID_RELATIONSHIPS = [
   "fork_of", "invested_in", "maintains", "integrates",
 ] as const;
 
+/**
+ * Patterns that indicate a candidate string is NOT a real entity and should
+ * not be auto-promoted to a knowledge_tags row. Keeps junk like `node24`,
+ * `v3.0.1`, commit SHAs, and bare file extensions out of the KG.
+ *
+ * See 2026-04-27 KG audit (kg-audit-20260428.txt). Companion to the prompt
+ * patch (PR #14) and harvester slug attribution (PR #15).
+ */
+export const NON_ENTITY_PATTERNS: RegExp[] = [
+  // Version strings: v3.0.1, 1.2, 0.5.0-beta
+  /^v?\d+(\.\d+){1,3}(-[\w.]+)?$/i,
+  // Node-version shorthand: node24, node 18 (no space form is the bug case)
+  /^node\d+$/i,
+  // Commit SHAs (7-40 hex chars, no other content)
+  /^[a-f0-9]{7,40}$/i,
+  // Bare file extensions: .ts, .json
+  /^\.\w{1,5}$/,
+];
+
+/** Return true if `candidate` looks like a non-entity that shouldn't become a tag. */
+export function looksLikeNonEntity(candidate: string): boolean {
+  const trimmed = candidate.trim();
+  if (trimmed.length < 3) return true;
+  for (const pattern of NON_ENTITY_PATTERNS) {
+    if (pattern.test(trimmed)) return true;
+  }
+  return false;
+}
+
 type RelationshipType = typeof VALID_RELATIONSHIPS[number];
 
 interface ExtractedTriple {
@@ -132,8 +161,15 @@ export function relationshipExtractorService(db: Db) {
     `);
   }
 
-  /** Resolve an entity name to a company slug or tag slug. */
-  async function resolveEntity(name: string): Promise<{ type: "company" | "tag"; id: string }> {
+  /**
+   * Resolve an entity name to a company slug or tag slug.
+   *
+   * Returns `null` if the candidate matches a non-entity pattern (version
+   * string, node version, SHA, file extension, sub-3-char) AND no existing
+   * company/tag/alias matches. Callers should drop any triple referencing
+   * a null resolution to avoid creating half-formed edges.
+   */
+  async function resolveEntity(name: string): Promise<{ type: "company" | "tag"; id: string } | null> {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
     // Check intel_companies first
@@ -156,6 +192,16 @@ export function relationshipExtractorService(db: Db) {
     `) as unknown as Array<{ slug: string }>;
 
     if (aliasTag.length > 0) return { type: "tag", id: aliasTag[0]!.slug };
+
+    // Denylist gate: don't auto-create knowledge_tags for things that aren't entities.
+    // (See NON_ENTITY_PATTERNS / looksLikeNonEntity above.) Drop the triple instead.
+    if (looksLikeNonEntity(name)) {
+      logger.warn(
+        { name, slug },
+        "Relationship extractor: skipping tag creation for non-entity candidate (denylist)",
+      );
+      return null;
+    }
 
     // Create new tag
     const [newTag] = await db
@@ -261,6 +307,15 @@ export function relationshipExtractorService(db: Db) {
             try {
               const source = await resolveEntity(triple.source);
               const target = await resolveEntity(triple.target);
+
+              // Drop the triple if either endpoint is a denylisted non-entity.
+              if (!source || !target) {
+                logger.warn(
+                  { triple, sourceResolved: !!source, targetResolved: !!target },
+                  "Relationship extractor: dropping triple with unresolvable endpoint",
+                );
+                continue;
+              }
 
               // Upsert edge
               await db.execute(sql`
