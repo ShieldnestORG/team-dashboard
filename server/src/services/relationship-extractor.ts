@@ -42,6 +42,27 @@ export interface ExtractionResult {
 
 const EXTRACTION_PROMPT = `You are a knowledge graph extraction agent. Given an intel report about a blockchain/crypto/tech company, extract structured relationship triples.
 
+CRITICAL — SUBJECT SCOPING RULES (read before extracting):
+1. Each report block is delimited by "---". Treat blocks as INDEPENDENT.
+   Never emit a triple whose source comes from one block and whose target
+   comes from a different block.
+2. The bracketed slug at the start of each block (e.g. "[argo-cd]") is the
+   ONLY allowed value for "source" in that block. Do not infer a different
+   subject from text inside the block.
+3. If the block is a price snapshot, chain-metrics JSON, or otherwise has no
+   prose describing what the subject uses/integrates/etc., emit nothing for
+   that block.
+4. Dependabot / version-bump commits ("chore(deps): bump X", "chore(deps-dev):
+   bump X", "Updated to use nodeNN", "bump library/...") are NOT relationship
+   evidence. Skip them. They surface transitive deps and dev-tooling, not
+   product architecture.
+5. Frontend build tooling (Vite, PostCSS, Webpack, Rollup, Tailwind, esbuild)
+   inside a sibling /ui or /web subdirectory describes the UI subproject, not
+   the parent product. Do not emit "<backend product> uses <frontend tool>"
+   edges.
+6. Reject anything that isn't a real named product/company/library:
+   version numbers (node24, v3.0.1), file paths, PR titles, commit SHAs.
+
 Output ONLY a JSON array of objects with these fields:
 - "source": the name of the source entity (company or technology)
 - "relationship": one of: uses, built_on, competes_with, partners_with, fork_of, invested_in, maintains, integrates
@@ -55,8 +76,20 @@ Rules:
 - Return an empty array [] if no relationships are found
 - Output ONLY valid JSON, no markdown or explanation
 
-Example output:
-[{"source":"Osmosis","relationship":"built_on","target":"Cosmos SDK","confidence":0.95},{"source":"Osmosis","relationship":"integrates","target":"IBC Protocol","confidence":0.9}]
+Positive example:
+Block: "[osmosis] Osmosis upgrades to Cosmos SDK v0.50 — also enabled IBC v8."
+Output: [{"source":"Osmosis","relationship":"built_on","target":"Cosmos SDK","confidence":0.95},
+         {"source":"Osmosis","relationship":"integrates","target":"IBC Protocol","confidence":0.9}]
+
+NEGATIVE examples (DO NOT emit these):
+- Block "[argo-cd] chore(deps-dev): bump postcss from 8.5.6 to 8.5.10 in /ui"
+  → emit []. PostCSS is dev-tooling for the UI subdir; this is a Dependabot bump.
+- Block "[aws-bedrock] released v3.0.1 ... upgraded to Vite 8 ..."
+  Source: github.com/aws/graph-explorer
+  → emit []. The release belongs to aws/graph-explorer, not Bedrock; the slug
+  is wrong but you cannot re-attribute it. Skip rather than misattribute.
+- Block "[azure-openai] Updated to use node24"
+  → emit []. node24 = Node.js 24 runtime version, not an entity.
 
 Intel report:
 `;
