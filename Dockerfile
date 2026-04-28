@@ -66,11 +66,20 @@ RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" &
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-# whisper.cpp binary + tiny.en model for word-level TTS alignment in YouTube pipeline.
-# Path is fixed because the Node code shells out to it; if you move these,
+# whisper.cpp binary + shared libs + tiny.en model for word-level TTS alignment.
+# whisper-cli is dynamically linked to libwhisper / libggml, so we copy those
+# alongside the binary and ship them under /opt/whisper. The wrapper script
+# sets LD_LIBRARY_PATH so the runtime loader finds them at /opt/whisper/lib.
+# Paths are fixed because the Node code shells out to them; if you move these,
 # update WHISPER_BIN / WHISPER_MODEL in server/src/services/youtube/tts.ts too.
-COPY --from=whisper-build /opt/whisper.cpp/build/bin/whisper-cli /opt/whisper/whisper
+COPY --from=whisper-build /opt/whisper.cpp/build/bin/whisper-cli /opt/whisper/whisper-cli
+COPY --from=whisper-build /opt/whisper.cpp/build/src/libwhisper.so* /opt/whisper/lib/
+COPY --from=whisper-build /opt/whisper.cpp/build/ggml/src/libggml.so /opt/whisper/lib/
+COPY --from=whisper-build /opt/whisper.cpp/build/ggml/src/libggml-base.so /opt/whisper/lib/
+COPY --from=whisper-build /opt/whisper.cpp/build/ggml/src/libggml-cpu.so /opt/whisper/lib/
 COPY --from=whisper-build /opt/whisper.cpp/models/ggml-tiny.en.bin /opt/whisper/ggml-tiny.en.bin
+RUN printf '#!/bin/sh\nLD_LIBRARY_PATH=/opt/whisper/lib exec /opt/whisper/whisper-cli "$@"\n' > /opt/whisper/whisper \
+  && chmod +x /opt/whisper/whisper
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && mkdir -p /paperclip /opt/pw-browsers \
   && chown node:node /paperclip /opt/pw-browsers \
