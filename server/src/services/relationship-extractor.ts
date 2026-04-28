@@ -46,9 +46,13 @@ CRITICAL — SUBJECT SCOPING RULES (read before extracting):
 1. Each report block is delimited by "---". Treat blocks as INDEPENDENT.
    Never emit a triple whose source comes from one block and whose target
    comes from a different block.
-2. The bracketed slug at the start of each block (e.g. "[argo-cd]") is the
-   ONLY allowed value for "source" in that block. Do not infer a different
-   subject from text inside the block.
+2. The bracketed slug at the start of each block (e.g. "[argo-cd]") identifies
+   which subject this block is about — it is the ONLY allowed subject for that
+   block. Do not infer a different subject from text inside the block. However,
+   in the emitted "source" field, prefer the canonical display name (e.g.
+   "Argo CD", "Amazon Bedrock") over the slug whenever the block's prose makes
+   the proper name clear; fall back to the slug only when the proper name is
+   unavailable.
 3. If the block is a price snapshot, chain-metrics JSON, or otherwise has no
    prose describing what the subject uses/integrates/etc., emit nothing for
    that block.
