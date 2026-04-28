@@ -101,7 +101,7 @@ id that triggered the parse. `extracted_by` is `'sbom-parser'`.
 
 ### 6. Migration plan
 
-File: `packages/db/src/migrations/0098_depends_on_edges.sql`
+File: `packages/db/src/migrations/0099_depends_on_edges.sql`
 
 ```sql
 ALTER TABLE company_relationships

@@ -1,4 +1,4 @@
--- 0098_depends_on_edges.sql
+-- 0099_depends_on_edges.sql
 -- SBOM deterministic parser: add `scope` column to company_relationships so
 -- the new `depends_on` edge type can record runtime|devDependency|transitive.
 --
