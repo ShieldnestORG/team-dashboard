@@ -158,10 +158,17 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
       title: section.title,
       badge: (section.type || "topic").toUpperCase(),
     }, t);
+    // Pad the section-title narration so the slide gets ~3-4s of display
+    // time. The bare `section.title` (~3 words) renders to ~1.5s of TTS,
+    // which felt like the title was being flashed past on screen before
+    // the first bullet's narration started. Adding a short framing phrase
+    // gives a natural pause between sections without changing the slide
+    // visual or pulling time from adjacent slides.
+    const sectionTitleText = section.title || "Section";
     slides.push({
       type: "section_title",
-      html: sectionHtml || staticTemplateSectionTitle(t, section.title || "Section", (section.type || "topic").toUpperCase()),
-      spokenText: section.title || "",
+      html: sectionHtml || staticTemplateSectionTitle(t, sectionTitleText, (section.type || "topic").toUpperCase()),
+      spokenText: `Now... ${sectionTitleText}. Let's get into it.`,
     });
 
     const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
@@ -239,10 +246,11 @@ export function buildSlidesFromScript(script: ScriptData, template?: SlideTempla
   }
 
   for (const section of script.mainContent?.sections || []) {
+    const sectionTitleText = section.title || "Section";
     slides.push({
       type: "section_title",
-      html: staticTemplateSectionTitle(t, section.title || "Section", (section.type || "topic").toUpperCase()),
-      spokenText: section.title || "",
+      html: staticTemplateSectionTitle(t, sectionTitleText, (section.type || "topic").toUpperCase()),
+      spokenText: `Now... ${sectionTitleText}. Let's get into it.`,
     });
 
     const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
@@ -329,7 +337,13 @@ function staticTemplateSectionTitle(t: SlideTemplate, title: string, badge = "TO
 function staticTemplateBullets(t: SlideTemplate, title: string, bullets: string[], highlightIndex = -1): string {
   const bulletHtml = bullets
     .map((b, i) => {
-      const text = b.length > 120 ? b.slice(0, 117) + "..." : b;
+      // Truncation cap raised from 120 to 200 chars. The narrated text comes
+      // from the same source string, so anything we truncate visually creates
+      // a "card lies" moment where the slide reads "...truncated" but the
+      // narration keeps going. Combined with the script-writer prompt that
+      // now caps bullet length at ~120 chars, truncation at 200 should fire
+      // only on extreme outliers.
+      const text = b.length > 200 ? b.slice(0, 197) + "..." : b;
       const isActive = highlightIndex === -1 || i === highlightIndex;
       const isPast = highlightIndex !== -1 && i < highlightIndex;
       const textColor = isActive ? t.text : isPast ? hexToRgba(t.text, 0.45) : hexToRgba(t.text, 0.2);

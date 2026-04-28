@@ -196,6 +196,9 @@ This script is rendered as voiceover over text-and-bullet slides. There are NO c
 
 Instead, describe ideas in words: "A breakout candle is one where..." rather than "Notice the breakout candle here." If a concept needs a visual to land, EXPLAIN it in words rather than referring to a missing image. Write so a listener with eyes closed gets 100% of the value.
 
+CRITICAL — BULLET LENGTH:
+Each bullet in mainContent.sections[].content is rendered on a slide and ALSO spoken aloud. Keep each bullet UNDER 120 CHARACTERS. Long bullets get visually truncated on the slide while the narration keeps going, which makes the slide read "...truncated" while the voice continues — bad UX. If a bullet needs more depth, split it into two short bullets instead of one long one.
+
 CONVENTIONS: Always write "TX ecosystem" as two separate words. Always write "DeFi" to be pronounced "de-fi". Tone: confident, energetic, approachable. Occasionally reference tokns.fi or coherencedaddy.com naturally. Always output valid JSON. The current year is ${year}. Always use ${year} when referencing the current year.`;
 
   const userPrompt = `Write a complete YouTube video script for the following:
