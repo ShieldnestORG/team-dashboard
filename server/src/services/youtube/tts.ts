@@ -339,14 +339,24 @@ export async function generateContinuousTTS(
       perSlideDurations.push(totalDuration - prev);
     } else {
       // Pick the silence closest to each predicted boundary, walking left to
-      // right and never reusing a silence (so two predicted boundaries can't
-      // collapse onto the same silence). This is more robust than picking
-      // the longest N-1 silences because it doesn't assume the marker pauses
-      // are longer than every emphatic in-narration pause — only that they
-      // exist somewhere near the predicted positions.
+      // right, never reusing a silence, never going backwards. CRITICAL:
+      // also reject any silence more than MAX_SILENCE_DEVIATION_SEC away
+      // from predicted — when the inter-slide marker pause is similar in
+      // length to natural mid-bullet emphatic pauses (which happens on
+      // short-bullet decks), the algorithm can pick a sentence-end silence
+      // INSIDE slide N's narration as a "boundary," which causes slide N+1
+      // to pop in while slide N is still being spoken. This was producing
+      // 1.5-1.9s deviations and the user-perceptible "slide jumps too
+      // early" failure mode. Falling back to predicted in those cases
+      // bounds the worst-case error to speech-rate variance (~15% × slide
+      // duration), which is much smaller than the silence-misassignment
+      // risk it replaces.
+      const MAX_SILENCE_DEVIATION_SEC = 0.5;
       const sortedSilences = [...silences].sort((a, b) => a.start - b.start);
       const used = new Set<number>();
       const chosen: number[] = [];
+      let snapped = 0;
+      let fellThrough = 0;
       for (const p of predicted) {
         let bestIdx = -1;
         let bestDist = Infinity;
@@ -360,12 +370,15 @@ export async function generateContinuousTTS(
             bestIdx = i;
           }
         }
-        if (bestIdx === -1) {
-          // No usable silence remaining for this boundary — use predicted as fallback.
+        if (bestIdx === -1 || bestDist > MAX_SILENCE_DEVIATION_SEC) {
+          // No silence within tolerance — use predicted directly. Bounded by
+          // character-rate variance instead of unbounded mismatch.
           chosen.push(p);
+          fellThrough++;
         } else {
           used.add(bestIdx);
           chosen.push((sortedSilences[bestIdx].start + sortedSilences[bestIdx].end) / 2);
+          snapped++;
         }
       }
 
@@ -379,7 +392,7 @@ export async function generateContinuousTTS(
 
       const maxDeviation = Math.max(...predicted.map((p, i) => Math.abs(p - chosen[i])));
       logger.info(
-        { detectedSilences: silences.length, slideBoundaries: chosen.length, maxDeviationSec: maxDeviation.toFixed(3) },
+        { detectedSilences: silences.length, slideBoundaries: chosen.length, snapped, fellThroughToPredicted: fellThrough, maxDeviationSec: maxDeviation.toFixed(3) },
         "Continuous TTS: slide boundaries assigned via predicted-position matching",
       );
     }
