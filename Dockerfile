@@ -15,7 +15,7 @@ RUN corepack enable
 # timestamps in ~5-10s for a 2-3 minute audio.
 FROM debian:trixie-slim AS whisper-build
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
+  && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt
 RUN git clone --depth=1 https://github.com/ggerganov/whisper.cpp.git whisper.cpp \
