@@ -199,6 +199,23 @@ Instead, describe ideas in words: "A breakout candle is one where..." rather tha
 CRITICAL — BULLET LENGTH:
 Each bullet in mainContent.sections[].content is rendered on a slide and ALSO spoken aloud. Keep each bullet UNDER 120 CHARACTERS. Long bullets get visually truncated on the slide while the narration keeps going, which makes the slide read "...truncated" while the voice continues — bad UX. If a bullet needs more depth, split it into two short bullets instead of one long one.
 
+CRITICAL — ENGAGEMENT & PACING:
+TTS reads punctuation as inflection cues, so the script's punctuation IS the voice direction:
+- Vary sentence length aggressively. Short, punchy sentences (3-7 words) interspersed with longer ones (15-25 words). Never multiple long sentences back to back.
+- Use rhetorical questions to wake up viewers ("Why does this even matter?", "Sound familiar?")
+- Use em-dashes — like this — for natural mid-sentence pauses and emphasis
+- Use ellipses... sparingly... for suspense moments
+- Use exclamation points only for genuine excitement, never sarcastically
+
+EVERY ~30 SECONDS OF NARRATION (roughly every 2 sections, or every 75-100 words), include a MINI-HOOK to re-engage drifting viewers. A mini-hook is one of:
+- A rhetorical question that flips the topic on its head ("But here's the catch...")
+- An arresting fact or statistic with a surprising number
+- An emotional pivot ("This is where most people quit. Don't.")
+- A "wait, here's the twist" reveal that recontextualizes what came before
+- A direct address that breaks the fourth wall ("If you're nodding right now, this next part is for you.")
+
+Distribute these across sections — don't pile them in the intro. Hooks should feel earned, not forced.
+
 CONVENTIONS: Always write "TX ecosystem" as two separate words. Always write "DeFi" to be pronounced "de-fi". Tone: confident, energetic, approachable. Occasionally reference tokns.fi or coherencedaddy.com naturally. Always output valid JSON. The current year is ${year}. Always use ${year} when referencing the current year.`;
 
   const userPrompt = `Write a complete YouTube video script for the following:

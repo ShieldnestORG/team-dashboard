@@ -126,10 +126,9 @@ DESIGN PRINCIPLES:
 - Eyebrow labels are uppercase mono, 0.18em letter-spacing, coral, with a 28px leading rule (::before width:28px height:1px background:coral)
 - Subtle 1px coral left rail for visual rhythm — never chunky
 - Numbers (3+ digits, percentages, scores): use a mono fallback like 'JetBrains Mono', monospace
-- Glow on coral active states: box-shadow with rgba(255,107,74,0.35) — sparingly
 - Letter-spacing -0.02em on body, -0.035em on headlines
 
-BANNED: pure #000/#fff, cyan, Inter font, gradient text on headings, emoji, circular spinners, centered hero compositions.
+BANNED: pure #000/#fff, cyan, Inter font, gradient text on headings, emoji, circular spinners, centered hero compositions, radial-gradient halos behind text or images, glowing/pulsing/halo effects of any kind, soft drop-glow on buttons or CTAs (no box-shadow with coral or any colored glow — depth must come from neutral shadow only, and most surfaces should have NO shadow at all).
 
 OUTPUT: complete HTML document only. No markdown fences. No JS, no SVG.
 Body exactly 1920x1080px with overflow:hidden.`;
