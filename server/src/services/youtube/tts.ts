@@ -7,7 +7,7 @@
 
 import { exec } from "child_process";
 import { promisify } from "util";
-import { writeFile, unlink } from "fs/promises";
+import { writeFile, unlink, readFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
@@ -226,6 +226,15 @@ export async function generateChunkedTTS(
  * predicted-position matching instead (see assignBoundariesByPrediction). */
 const SLIDE_BOUNDARY_MARKER = "\n\n.\n.\n.\n.\n.\n\n";
 
+/** Path to the whisper.cpp binary baked into the production Docker image
+ * (see Dockerfile whisper-build stage). When present, slide boundaries are
+ * derived from word-level timestamps instead of silence detection — much
+ * more accurate on short-bullet decks where natural and inter-slide pauses
+ * are similar in length. Falls through to silence-based assignment if the
+ * binary isn't present (dev/test environments without whisper installed). */
+const WHISPER_BIN = process.env.WHISPER_BIN || "/opt/whisper/whisper";
+const WHISPER_MODEL = process.env.WHISPER_MODEL || "/opt/whisper/ggml-tiny.en.bin";
+
 /** Minimum silence duration that counts as a candidate boundary, in seconds.
  * Set lower (0.3s) to capture all plausible boundaries; the assignment
  * algorithm picks among them using slide-character-weighted prediction. */
@@ -238,6 +247,129 @@ interface DetectedSilence {
   start: number;
   end: number;
   duration: number;
+}
+
+interface WhisperWord {
+  text: string;       // normalized lowercase, alphanum only
+  start: number;      // seconds from audio start
+  end: number;        // seconds from audio start
+}
+
+/** Normalize a word for matching: lowercase, strip non-alphanumeric.
+ * Whisper output may include leading/trailing whitespace and the source
+ * slide text often has punctuation that doesn't appear in the transcription. */
+function normalizeWord(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Extract per-word timestamps from rendered audio via whisper.cpp.
+ * Returns null if whisper isn't installed or invocation fails — caller falls
+ * back to silence-detection-based boundary assignment. */
+async function transcribeWithWhisper(audioPath: string): Promise<WhisperWord[] | null> {
+  if (!existsSync(WHISPER_BIN) || !existsSync(WHISPER_MODEL)) {
+    logger.info({ bin: WHISPER_BIN, model: WHISPER_MODEL }, "whisper not installed; using silence-based alignment");
+    return null;
+  }
+  try {
+    // -ml 1: max one word per segment (gives word-level timestamps directly)
+    // -oj : output JSON
+    // -of <prefix> : output filename prefix (whisper appends .json)
+    // -nt : no timestamps in plaintext output (we want JSON)
+    const outPrefix = `${audioPath}.whisper`;
+    const cmd = `${WHISPER_BIN} -m ${WHISPER_MODEL} -f "${audioPath}" -ml 1 -oj -of "${outPrefix}" -nt`;
+    await execAsync(cmd, { maxBuffer: 32 * 1024 * 1024, timeout: 180_000 });
+    const jsonPath = `${outPrefix}.json`;
+    const raw = await readFile(jsonPath, "utf-8");
+    await unlink(jsonPath).catch(() => {});
+    const parsed = JSON.parse(raw) as { transcription?: Array<{ text?: string; offsets?: { from: number; to: number } }> };
+    const segs = parsed.transcription || [];
+    const words: WhisperWord[] = [];
+    for (const seg of segs) {
+      const text = normalizeWord(seg.text || "");
+      if (!text) continue;
+      const off = seg.offsets;
+      if (!off) continue;
+      // whisper.cpp offsets are in milliseconds
+      words.push({ text, start: off.from / 1000, end: off.to / 1000 });
+    }
+    if (words.length === 0) {
+      logger.warn("whisper returned no words; falling back to silence-based alignment");
+      return null;
+    }
+    return words;
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "whisper invocation failed; falling back to silence-based alignment");
+    return null;
+  }
+}
+
+/** Walk slide texts in order and locate the END timestamp of each slide's
+ * last word in the whisper transcript. Returns N-1 boundary timestamps
+ * (between consecutive slides). Falls back to null if word matching fails
+ * for any slide — in which case the caller uses silence/prediction. */
+function alignSlideBoundariesViaWhisper(slideTexts: string[], words: WhisperWord[]): number[] | null {
+  if (words.length === 0 || slideTexts.length < 2) return null;
+  const N = slideTexts.length;
+  const boundaries: number[] = [];
+  let wordIdx = 0;
+
+  for (let s = 0; s < N - 1; s++) {
+    const slideTokens = slideTexts[s]
+      .split(/\s+/)
+      .map(normalizeWord)
+      .filter((t) => t.length > 0);
+    if (slideTokens.length === 0) {
+      // Empty slide — boundary stays where previous one was (or 0)
+      boundaries.push(boundaries[boundaries.length - 1] ?? 0);
+      continue;
+    }
+
+    // Find the LAST token of this slide in the whisper word stream, walking
+    // forward from where the previous slide ended. We do a fuzzy-ish match:
+    // try to match the slide's last 2-3 distinctive (non-stopword, length>=4)
+    // tokens in order, falling back to the very last token if those don't
+    // appear cleanly. This is robust to whisper mis-hearing one word.
+    const lastTokens = slideTokens.filter((t) => t.length >= 4).slice(-3);
+    const probeTokens = lastTokens.length > 0 ? lastTokens : slideTokens.slice(-2);
+
+    // Walk forward looking for probeTokens in order. The "anchor" we lock to
+    // is the END timestamp of the LAST probe token's match.
+    let anchorWordIdx = -1;
+    let cursor = wordIdx;
+    for (let pi = 0; pi < probeTokens.length; pi++) {
+      const probe = probeTokens[pi];
+      let found = -1;
+      // Bound the search so we don't scan the entire transcript per probe —
+      // each slide should have its content within ~speech-rate * slideDur
+      // words from the previous boundary. Use a generous window of 80 words.
+      const searchEnd = Math.min(cursor + 80, words.length);
+      for (let w = cursor; w < searchEnd; w++) {
+        if (words[w].text === probe) {
+          found = w;
+          break;
+        }
+      }
+      if (found === -1) {
+        // Couldn't find this probe — abort whisper alignment for this boundary,
+        // fall through to caller. Don't try to recover with looser matching;
+        // it's better to fall back than to lock onto a wrong word.
+        anchorWordIdx = -1;
+        break;
+      }
+      anchorWordIdx = found;
+      cursor = found + 1;
+    }
+
+    if (anchorWordIdx === -1) {
+      logger.warn({ slideIdx: s, probeTokens }, "whisper alignment couldn't lock slide boundary; falling back");
+      return null;
+    }
+
+    boundaries.push(words[anchorWordIdx].end);
+    wordIdx = anchorWordIdx + 1;
+  }
+
+  return boundaries;
 }
 
 async function detectSilences(audioPath: string): Promise<DetectedSilence[]> {
@@ -305,6 +437,28 @@ export async function generateContinuousTTS(
   if (N === 1) {
     perSlideDurations = [totalDuration];
   } else {
+    // Try word-level whisper alignment first — it's word-perfect when it
+    // works, so we don't have the silence-detection-vs-prediction tradeoff
+    // that produces 1-2s timing errors on short-bullet decks.
+    const whisperWords = await transcribeWithWhisper(outputPath);
+    const whisperBoundaries = whisperWords ? alignSlideBoundariesViaWhisper(cleaned, whisperWords) : null;
+
+    if (whisperBoundaries && whisperBoundaries.length === N - 1) {
+      perSlideDurations = [];
+      let prev = 0;
+      for (const b of whisperBoundaries) {
+        perSlideDurations.push(Math.max(0.1, b - prev));
+        prev = b;
+      }
+      perSlideDurations.push(Math.max(0.1, totalDuration - prev));
+      logger.info(
+        { slides: N, totalDuration, alignedVia: "whisper", whisperWords: whisperWords?.length ?? 0 },
+        "Continuous TTS: slide boundaries assigned via whisper word alignment",
+      );
+      return { audioPath: outputPath, durationSec: totalDuration, perSlideDurations, provider: "grok" };
+    }
+
+    // Fall through: silence detection + predicted-position matching.
     const silences = await detectSilences(outputPath);
     const needed = N - 1;
 

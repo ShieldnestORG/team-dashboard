@@ -8,6 +8,22 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
+# whisper.cpp: word-level audio transcription used by the YouTube pipeline to
+# align rendered TTS audio to slide texts (replaces fragile silence-detection-
+# based boundary inference). Built as a separate stage so the production image
+# doesn't carry build-essential / cmake. tiny.en is ~75MB and gives word-perfect
+# timestamps in ~5-10s for a 2-3 minute audio.
+FROM debian:trixie-slim AS whisper-build
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt
+RUN git clone --depth=1 https://github.com/ggerganov/whisper.cpp.git whisper.cpp \
+  && cd whisper.cpp \
+  && cmake -B build -DCMAKE_BUILD_TYPE=Release \
+  && cmake --build build -j --config Release \
+  && bash ./models/download-ggml-model.sh tiny.en
+
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
@@ -50,6 +66,11 @@ RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" &
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
+# whisper.cpp binary + tiny.en model for word-level TTS alignment in YouTube pipeline.
+# Path is fixed because the Node code shells out to it; if you move these,
+# update WHISPER_BIN / WHISPER_MODEL in server/src/services/youtube/tts.ts too.
+COPY --from=whisper-build /opt/whisper.cpp/build/bin/whisper-cli /opt/whisper/whisper
+COPY --from=whisper-build /opt/whisper.cpp/models/ggml-tiny.en.bin /opt/whisper/ggml-tiny.en.bin
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && mkdir -p /paperclip /opt/pw-browsers \
   && chown node:node /paperclip /opt/pw-browsers \
