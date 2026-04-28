@@ -140,3 +140,11 @@ export { launchTrackedItems } from "./launch_tracked_items.js";
 export type { LaunchTrackedItem, NewLaunchTrackedItem } from "./launch_tracked_items.js";
 export { commentReplies } from "./comment_replies.js";
 export type { CommentReply, NewCommentReply } from "./comment_replies.js";
+export { tiktokReviewSubmissions } from "./tiktok_review_submissions.js";
+export type {
+  TiktokReviewSubmission,
+  NewTiktokReviewSubmission,
+} from "./tiktok_review_submissions.js";
+export { tiktokAudits } from "./tiktok_audits.js";
+export type { TiktokAudit, NewTiktokAudit } from "./tiktok_audits.js";
+export type { ProfileSnapshot, RecentVideo, HookTiming } from "./tiktok_audits.js";

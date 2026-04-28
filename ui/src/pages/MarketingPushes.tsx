@@ -43,6 +43,7 @@ const BRANDS = [
   { value: "tx", label: "TX" },
   { value: "directory", label: "Directory" },
   { value: "partners", label: "Partners" },
+  { value: "rizz", label: "Rizz" },
 ] as const;
 
 const PERSONALITIES = [
@@ -93,6 +94,7 @@ function brandChip(brand: string) {
     tx: "bg-lime-500/15 text-lime-400 border-lime-500/30",
     directory: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
     partners: "bg-rose-500/15 text-rose-400 border-rose-500/30",
+    rizz: "bg-teal-500/15 text-teal-400 border-teal-500/30",
   };
   return (
     <Badge
