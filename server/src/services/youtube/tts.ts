@@ -305,71 +305,103 @@ async function transcribeWithWhisper(audioPath: string): Promise<WhisperWord[] |
 
 /** Walk slide texts in order and locate the END timestamp of each slide's
  * last word in the whisper transcript. Returns N-1 boundary timestamps
- * (between consecutive slides). Falls back to null if word matching fails
- * for any slide — in which case the caller uses silence/prediction. */
-function alignSlideBoundariesViaWhisper(slideTexts: string[], words: WhisperWord[]): number[] | null {
+ * (between consecutive slides) plus a parallel array of per-boundary status
+ * ("whisper" if locked via word matching, "predicted" if it fell back to
+ * char-weighted prediction for that one boundary). Returns null only if
+ * whisper output is empty. Per-slide fallback prevents one stubborn slide
+ * (e.g. a 3-word title that whisper transcribes slightly differently from
+ * the script) from killing alignment for the whole video. */
+function alignSlideBoundariesViaWhisper(
+  slideTexts: string[],
+  words: WhisperWord[],
+  totalDuration: number,
+): { boundaries: number[]; statuses: Array<"whisper" | "predicted"> } | null {
   if (words.length === 0 || slideTexts.length < 2) return null;
   const N = slideTexts.length;
   const boundaries: number[] = [];
+  const statuses: Array<"whisper" | "predicted"> = [];
   let wordIdx = 0;
+
+  // Char-weighted predicted positions (used when an individual slide's
+  // boundary can't be locked via word matching — the rest of the video
+  // still benefits from whisper's word-perfect anchors).
+  const segmentChars = slideTexts.map((t) => t.length + SLIDE_BOUNDARY_MARKER.length);
+  const totalChars = segmentChars.reduce((a, b) => a + b, 0);
+  const predictedBoundaries: number[] = [];
+  let cumChars = 0;
+  for (let i = 0; i < N - 1; i++) {
+    cumChars += segmentChars[i];
+    predictedBoundaries.push((totalDuration * cumChars) / totalChars);
+  }
 
   for (let s = 0; s < N - 1; s++) {
     const slideTokens = slideTexts[s]
       .split(/\s+/)
       .map(normalizeWord)
       .filter((t) => t.length > 0);
-    if (slideTokens.length === 0) {
-      // Empty slide — boundary stays where previous one was (or 0)
-      boundaries.push(boundaries[boundaries.length - 1] ?? 0);
-      continue;
-    }
 
-    // Find the LAST token of this slide in the whisper word stream, walking
-    // forward from where the previous slide ended. We do a fuzzy-ish match:
-    // try to match the slide's last 2-3 distinctive (non-stopword, length>=4)
-    // tokens in order, falling back to the very last token if those don't
-    // appear cleanly. This is robust to whisper mis-hearing one word.
-    const lastTokens = slideTokens.filter((t) => t.length >= 4).slice(-3);
-    const probeTokens = lastTokens.length > 0 ? lastTokens : slideTokens.slice(-2);
+    // Try progressively shorter probe-token sets so a near-miss on the longest
+    // tail doesn't kill the whole match. A title slide with 3 distinctive
+    // tokens that whisper heard slightly differently can still lock if we
+    // try the last 2, last 1, or any of the slide's distinctive tokens.
+    const distinctive = slideTokens.filter((t) => t.length >= 4);
+    const probeAttempts: string[][] = [];
+    if (distinctive.length >= 3) probeAttempts.push(distinctive.slice(-3));
+    if (distinctive.length >= 2) probeAttempts.push(distinctive.slice(-2));
+    if (distinctive.length >= 1) probeAttempts.push(distinctive.slice(-1));
+    if (slideTokens.length >= 2) probeAttempts.push(slideTokens.slice(-2));
+    if (slideTokens.length >= 1) probeAttempts.push(slideTokens.slice(-1));
 
-    // Walk forward looking for probeTokens in order. The "anchor" we lock to
-    // is the END timestamp of the LAST probe token's match.
     let anchorWordIdx = -1;
-    let cursor = wordIdx;
-    for (let pi = 0; pi < probeTokens.length; pi++) {
-      const probe = probeTokens[pi];
-      let found = -1;
-      // Bound the search so we don't scan the entire transcript per probe —
-      // each slide should have its content within ~speech-rate * slideDur
-      // words from the previous boundary. Use a generous window of 80 words.
-      const searchEnd = Math.min(cursor + 80, words.length);
-      for (let w = cursor; w < searchEnd; w++) {
-        if (words[w].text === probe) {
-          found = w;
-          break;
+    for (const probeTokens of probeAttempts) {
+      let cursor = wordIdx;
+      let attemptAnchor = -1;
+      for (const probe of probeTokens) {
+        let found = -1;
+        const searchEnd = Math.min(cursor + 80, words.length);
+        for (let w = cursor; w < searchEnd; w++) {
+          if (words[w].text === probe) {
+            found = w;
+            break;
+          }
         }
+        if (found === -1) { attemptAnchor = -1; break; }
+        attemptAnchor = found;
+        cursor = found + 1;
       }
-      if (found === -1) {
-        // Couldn't find this probe — abort whisper alignment for this boundary,
-        // fall through to caller. Don't try to recover with looser matching;
-        // it's better to fall back than to lock onto a wrong word.
-        anchorWordIdx = -1;
+      if (attemptAnchor !== -1) {
+        anchorWordIdx = attemptAnchor;
         break;
       }
-      anchorWordIdx = found;
-      cursor = found + 1;
     }
 
     if (anchorWordIdx === -1) {
-      logger.warn({ slideIdx: s, probeTokens }, "whisper alignment couldn't lock slide boundary; falling back");
-      return null;
+      // This single slide couldn't lock — use predicted for THIS boundary
+      // only and keep going with whisper for the rest. Don't advance
+      // wordIdx aggressively; let the next slide search from where we
+      // would have been (cursor before this attempt) plus a small gap.
+      const predicted = predictedBoundaries[s];
+      // Advance wordIdx to whatever word is closest to predicted so we
+      // don't search backwards on the next slide.
+      let bestW = wordIdx;
+      let bestDist = Infinity;
+      for (let w = wordIdx; w < words.length; w++) {
+        const d = Math.abs(words[w].start - predicted);
+        if (d < bestDist) { bestDist = d; bestW = w; }
+        if (words[w].start > predicted + 2) break;
+      }
+      wordIdx = bestW;
+      boundaries.push(predicted);
+      statuses.push("predicted");
+      logger.warn({ slideIdx: s, probeTokens: probeAttempts[0] || [] }, "whisper alignment couldn't lock this slide; using predicted for this boundary only");
+    } else {
+      boundaries.push(words[anchorWordIdx].end);
+      statuses.push("whisper");
+      wordIdx = anchorWordIdx + 1;
     }
-
-    boundaries.push(words[anchorWordIdx].end);
-    wordIdx = anchorWordIdx + 1;
   }
 
-  return boundaries;
+  return { boundaries, statuses };
 }
 
 async function detectSilences(audioPath: string): Promise<DetectedSilence[]> {
@@ -439,20 +471,24 @@ export async function generateContinuousTTS(
   } else {
     // Try word-level whisper alignment first — it's word-perfect when it
     // works, so we don't have the silence-detection-vs-prediction tradeoff
-    // that produces 1-2s timing errors on short-bullet decks.
+    // that produces 1-2s timing errors on short-bullet decks. Per-slide
+    // fallback inside the aligner means a single hard-to-match slide
+    // doesn't kill alignment for the rest of the video.
     const whisperWords = await transcribeWithWhisper(outputPath);
-    const whisperBoundaries = whisperWords ? alignSlideBoundariesViaWhisper(cleaned, whisperWords) : null;
+    const whisperResult = whisperWords ? alignSlideBoundariesViaWhisper(cleaned, whisperWords, totalDuration) : null;
 
-    if (whisperBoundaries && whisperBoundaries.length === N - 1) {
+    if (whisperResult && whisperResult.boundaries.length === N - 1) {
       perSlideDurations = [];
       let prev = 0;
-      for (const b of whisperBoundaries) {
+      for (const b of whisperResult.boundaries) {
         perSlideDurations.push(Math.max(0.1, b - prev));
         prev = b;
       }
       perSlideDurations.push(Math.max(0.1, totalDuration - prev));
+      const lockedViaWhisper = whisperResult.statuses.filter((s) => s === "whisper").length;
+      const fellThroughToPredicted = whisperResult.statuses.length - lockedViaWhisper;
       logger.info(
-        { slides: N, totalDuration, alignedVia: "whisper", whisperWords: whisperWords?.length ?? 0 },
+        { slides: N, totalDuration, alignedVia: "whisper", whisperWords: whisperWords?.length ?? 0, lockedViaWhisper, fellThroughToPredicted },
         "Continuous TTS: slide boundaries assigned via whisper word alignment",
       );
       return { audioPath: outputPath, durationSec: totalDuration, perSlideDurations, provider: "grok" };
