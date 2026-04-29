@@ -123,6 +123,7 @@ import { startCreditscoreReportAgent } from "./services/creditscore-report-agent
 import { startCreditscoreContentAgent } from "./services/creditscore-content-agent-cron.js";
 import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
 import { startLaunchCommentMonitor } from "./services/launch-comment-monitor-cron.js";
+import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
@@ -489,6 +490,19 @@ export async function createApp(
   if (process.env.LAUNCH_MONITOR_ENABLED === "true") {
     const LAUNCH_MONITOR_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
     startLaunchCommentMonitor(db, { companyId: LAUNCH_MONITOR_COMPANY_ID });
+  }
+  // Rizz comment monitor — polls @coherencedaddy TikTok comments for
+  // @-mentions and inserts mentioned rows into tiktok_review_submissions.
+  // Default off (week-1 manual mode); flip the env to true OR toggle the
+  // job via the dashboard cron registry to enable.
+  if (process.env.RIZZ_COMMENT_MONITOR_ENABLED === "true") {
+    const RIZZ_COMPANY_ID =
+      process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+    const RIZZ_OWN_HANDLE = process.env.RIZZ_TIKTOK_HANDLE || "coherencedaddy";
+    startRizzCommentMonitorCron(db, {
+      companyId: RIZZ_COMPANY_ID,
+      ownHandle: RIZZ_OWN_HANDLE,
+    });
   }
   startCreditscoreFulfillmentCrons(db);
   startOwnedSitesCrons(db);

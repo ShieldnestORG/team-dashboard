@@ -5,12 +5,15 @@ import {
   timestamp,
   jsonb,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { companies } from "./companies.js";
 
 // Queue of submitted TikTok @-handles awaiting review by Rizz.
 //
 // Lifecycle (formStatus):
+//   mentioned             → discovered via @-mention in a comment; no form yet (form_id is null)
 //   pending_verification → submitter has filled out the consent form, awaiting email-confirmation reply
 //   verified              → submitter replied YES to verification email
 //   countersigned         → owner has countersigned and assigned a Form ID
@@ -42,9 +45,10 @@ export const tiktokReviewSubmissions = pgTable(
     countryOfResidence: text("country_of_residence"),
     dateOfBirth: text("date_of_birth"),
 
-    // Consent form gate
-    formId: text("form_id").notNull(),
-    // 'pending_verification' | 'verified' | 'countersigned' | 'rejected' | 'withdrawn'
+    // Consent form gate. Null when row was created from a raw @-mention
+    // (formStatus = 'mentioned'); set once the submitter fills out the form.
+    formId: text("form_id"),
+    // 'mentioned' | 'pending_verification' | 'verified' | 'countersigned' | 'rejected' | 'withdrawn'
     formStatus: text("form_status").notNull().default("pending_verification"),
     consentVerifiedAt: timestamp("consent_verified_at", { withTimezone: true }),
     countersignedAt: timestamp("countersigned_at", { withTimezone: true }),
@@ -83,6 +87,10 @@ export const tiktokReviewSubmissions = pgTable(
       table.pipelineStatus,
     ),
     formIdIdx: index("tiktok_review_submissions_form_id_idx").on(table.formId),
+    companyHandleUniq: uniqueIndex("tiktok_review_submissions_company_handle_uniq").on(
+      table.companyId,
+      sql`lower(${table.submitterHandle})`,
+    ),
   }),
 );
 
