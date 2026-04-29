@@ -10,7 +10,7 @@ const PLATFORMS = [
   "x", "reddit", "devto", "hn", "instagram", "facebook", "youtube",
   "discord", "bluesky", "linkedin", "substack", "skool", "tiktok", "github",
 ];
-const BRANDS = ["cd", "tokns", "tx", "shieldnest", "directory", "partners", "coherencedaddy"];
+const BRANDS = ["cd", "tokns", "tx", "shieldnest", "directory", "partners", "coherencedaddy", "rizz"];
 
 function connectionVariant(t: string): "default" | "secondary" | "outline" {
   if (t === "oauth") return "default";
