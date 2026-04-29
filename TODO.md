@@ -7,9 +7,10 @@
 > Source PRD: `/Users/exe/.claude/plans/prd-1-looks-good-fluffy-parnas.md`.
 > Canonical product spec: `docs/products/creditscore-prd.md`.
 >
-> **Last audited: 2026-04-23.** Verified unchecked items against current code
-> state; flipped items whose implementation was already shipped in
-> `676f29d2` (PRD 1 cutover, 2026-04-22) and successors.
+> **Last audited: 2026-04-28.** Re-audited after the KG cleanup sprint
+> (PRs #14–#18) and Phase 1 silent enrichment (PR #20). New section
+> "KG Cleanup + Phase 1" appended at the bottom; nothing earlier was
+> changed except a few cross-references where KG work touched them.
 
 ## Phase 0 — Lock PRDs & scaffolding
 
@@ -160,9 +161,63 @@ Shipped 2026-04-22 (migration `0093_house_ads.sql`, admin CRUD + public slot end
 
 Shipped progressively through 2026-04-22 (blog#9 merge + retry + per-target visibility).
 
-- [ ] Residual onboarding-wizard Playwright timing flake — orthogonal to PR-pipeline fix, tracked separately (not yet filed as issue).
+- [ ] **Onboarding-wizard Playwright flake is now chronic.** Every recent PR run (Apr 22 → Apr 28) shows `e2e fail` on `tests/e2e/onboarding.spec.ts` "completes full wizard flow" — locator times out at 15s with `429 Too Many Requests` warnings on Vite source files. Team has been merging through it, but it makes `e2e` worthless as a signal. Either fix the rate-limit on the dev server during e2e, raise the locator timeout, or quarantine the test.
 
 ## CI / Infra
 
 - [ ] **Dependabot** — GitHub flags 4 moderate vulnerabilities on `team-dashboard` default branch. Review at https://github.com/ShieldnestORG/team-dashboard/security/dependabot and patch or suppress.
 - [ ] **NPM_TOKEN for canary publish** — release canary publish gated on `NPM_PUBLISH_ENABLED` repo variable (currently `false`). When token lands, flip variable to `true`.
+
+---
+
+# KG Cleanup Sprint + Phase 1 Silent Enrichment (2026-04-28)
+
+Full handoff: [`docs/architecture/kg-2026-04-28-handoff.md`](docs/architecture/kg-2026-04-28-handoff.md).
+Strategy: [`docs/products/knowledge-graph-positioning.md`](docs/products/knowledge-graph-positioning.md).
+60-day kill metric deadline: **2026-06-26**.
+
+## Shipped to prod 2026-04-28
+
+- [x] PR [#14](https://github.com/ShieldnestORG/team-dashboard/pull/14) — extractor prompt: 6 SUBJECT SCOPING RULES + 3 negative examples (kills subject bleed + Dependabot edges).
+- [x] PR [#15](https://github.com/ShieldnestORG/team-dashboard/pull/15) — harvester slug attribution: `OVERLOADED_REPO_MAP` + `intel_reports.source_repo` column populated.
+- [x] PR [#16](https://github.com/ShieldnestORG/team-dashboard/pull/16) — Nexus cron doc 4h → 3h (cosmetic).
+- [x] PR [#17](https://github.com/ShieldnestORG/team-dashboard/pull/17) — `resolveEntity()` denylist drops version strings, SHAs, file extensions; `node24` etc. no longer create edges.
+- [x] PR [#18](https://github.com/ShieldnestORG/team-dashboard/pull/18) — deterministic SBOM parser for `package.json` + `go.mod` emits `depends_on` edges with `scope` (runtime/devDependency).
+- [x] PR [#20](https://github.com/ShieldnestORG/team-dashboard/pull/20) — **Phase 1 silent dependencies block** on `GET /api/intel/company/:slug`. `bucketDependencyRows()` pure helper + 9 unit tests. Live in prod on `c165e8a4`.
+- [x] Migrations `0098_intel_reports_source_repo.sql` + `0099_depends_on_edges.sql` applied to prod Neon (via direct psql — Drizzle migrator is broken; see P1 below).
+- [x] DB cleanup: 48 H2-mismatched rows flagged with `verified=false`; 3 confirmed-garbage rows deleted (38, 40, 82) with backup; 1 orphan `knowledge_tags` row deleted (`node24`); 1 row added to `intel_companies` (`argo-workflows`).
+- [x] Validation infra: `scripts/audit/kg-phase1-validation.ts` (re-runnable post-deploy script comparing live state to baseline).
+- [x] 48h validation scheduled: remote routine `trig_015aSfHYBvkGEMdguvhfvZfk` (code-level, posts to PR #20) + local cron `18f2281c` (prod-state, posts to PR #20). Both fire 2026-05-01T00:43:00Z.
+
+## Open — surfaced by validation script run 2026-04-28T17:41 PDT
+
+- [ ] **Verified edge count dropped 87 → 81 (-6) within 30min of merge.** Six rows flipped from `verified=true` → `verified=false`. Suspect either the patched extractor or `kg:deduplicate-tags` / `kg:prune-edges` is resetting the verified flag on re-extraction. If this keeps draining, the 60-day kill-metric is at risk. Investigate by:
+  - Pulling the 6 affected rows (`SELECT * FROM company_relationships WHERE updated_at > '2026-04-28 17:30' AND verified = false`)
+  - Reading `extractor.extractFromReports()` for upsert behavior on existing rows
+  - Reading `pruneEdges()` and `deduplicateTags()` for any path that flips `verified`
+- [ ] **Pre-existing `kg:deduplicate-tags` UNIQUE-key bug** — `offchainlabs → offchain-labs` consolidation fails on every run with "duplicate key value violates unique constraint". Root cause: trying to UPDATE `source_id` to a slug that already has the same `(source_type, relationship, target_type, target_id)` tuple. Need to switch to upsert-then-delete-loser, or merge confidence via DO UPDATE.
+
+## Open — P0/P1 from the handoff
+
+- [ ] **Drizzle migrator is broken.** `pnpm db:migrate` thinks 40 migrations are pending and errors on `type "vector" does not exist`. `_journal.json` only tracks up to migration 0050; everything from 0051+ is treated as pending; runner doesn't bootstrap pgvector before migrations that reference `vector` type. Workaround used this sprint: apply SQL via direct psql. Root-cause investigation owners: `packages/db/src/client.ts:applyPendingMigrations` and `inspectMigrations`.
+- [ ] **YT branch redeploy.** VPS1 was on `fix/yt-caption-sync` (10+ in-flight YT commits, `b2391d15`) before this sprint pulled it onto master. The branch is safely on origin. Either rebase `fix/yt-caption-sync` onto current master and re-deploy, or merge YT into master, before re-deploying YT work to prod.
+
+## Open — Phase 1 follow-through (drives the kill metric)
+
+- [ ] **Wait 24–48h for ingestion to fill in `depends_on` and re-verify rows.** `intel:github` cron last fired before deploy; SBOM parser hasn't had a `package.json` to chew on yet. The two scheduled validation agents (above) will report state on 2026-05-01.
+- [ ] **2026-06-26 kill-metric tracker.** Concrete check: ≥200 enriched paid Intel API responses in any rolling 7-day window AND ≥75% accuracy on a 50-edge spot-check of dependency blocks served to paid customers. Needs:
+  - Request-logging on Intel API that distinguishes paid vs free
+  - A non-empty-`dependencies` filter on those logs
+  - A 50-row spot-check sampling script (similar to existing `kg-accuracy-sample.sql`)
+  - Calendar reminder set for 2026-06-26 (or scheduled remote agent)
+- [ ] **P3 — Dogfood the KG for one real operator decision.** Council put this *before* full Phase 1 wiring. Before the next product / partner / tutorial decision, run `GET /api/intel/company/<candidate>` and let the `dependencies` block influence the call. If it doesn't change behavior, the customer-facing version won't change theirs.
+- [ ] **Re-run A/B test on substantive prose.** After 3+ days of fresh ingestion under the new code, re-run `scripts/audit/kg-extractor-ab-test.ts` on substantive release notes (≥500-char body) to confirm the patched prompt isn't over-correcting on real architecture text.
+- [ ] **Phase 2 (only if Phase 1 earns it):** single `GET /v1/entity/:slug/dependencies` endpoint on existing Pro tier. Triggered by ≥200 enriched paid responses in 7d. Killed plays (do not resurrect): Crayon/Klue competitive-intel upsell, CreditScore competitive landscape, programmatic vs/alternatives SEO, standalone KG SaaS, embedding licensing.
+
+## Killed plays (for the record — do not resurrect without re-reading the council transcript)
+
+- ❌ Competitive-intel SaaS positioning (vs Crayon/Klue)
+- ❌ CreditScore competitive landscape upsell
+- ❌ Programmatic "X vs Y / alternatives" SEO landing pages
+- ❌ Standalone KG SaaS product
+- ❌ KG embedding licensing
