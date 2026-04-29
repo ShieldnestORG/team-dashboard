@@ -124,6 +124,7 @@ import { startCreditscoreContentAgent } from "./services/creditscore-content-age
 import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
 import { startLaunchCommentMonitor } from "./services/launch-comment-monitor-cron.js";
 import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cron.js";
+import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
@@ -491,8 +492,8 @@ export async function createApp(
     const LAUNCH_MONITOR_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
     startLaunchCommentMonitor(db, { companyId: LAUNCH_MONITOR_COMPANY_ID });
   }
-  // Rizz comment monitor — polls @coherencedaddy TikTok comments for
-  // @-mentions and inserts mentioned rows into tiktok_review_submissions.
+  // Rizz comment monitor (V1.1) — polls @coherencedaddy TikTok comments for
+  // @-mentions and inserts 'mentioned' rows into tiktok_review_submissions.
   // Default off (week-1 manual mode); flip the env to true OR toggle the
   // job via the dashboard cron registry to enable.
   if (process.env.RIZZ_COMMENT_MONITOR_ENABLED === "true") {
@@ -503,6 +504,17 @@ export async function createApp(
       companyId: RIZZ_COMPANY_ID,
       ownHandle: RIZZ_OWN_HANDLE,
     });
+  }
+  // Rizz TikTok extractor (V1.2) — picks up countersigned submissions in
+  // pipeline_status='queued', scrapes the @-handle's profile, derives
+  // ProfileSnapshot + video URL list + bio specificity score, inserts a
+  // tiktok_audits row, and advances the submission to 'drafting' for
+  // V1.3's draft router. Default off; flip env to true OR enable via the
+  // dashboard cron registry to start the 15-min cron.
+  if (process.env.RIZZ_EXTRACTOR_ENABLED === "true") {
+    const RIZZ_COMPANY_ID =
+      process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+    startRizzExtractorCron(db, { companyId: RIZZ_COMPANY_ID });
   }
   startCreditscoreFulfillmentCrons(db);
   startOwnedSitesCrons(db);
