@@ -13,6 +13,53 @@ import { nitterHealthService } from "./nitter-health.js";
 import { parseAndStoreSbom, extractRepoFromGithubUrl } from "./sbom-parser.js";
 
 // ---------------------------------------------------------------------------
+// Phase 1 KG enrichment helpers (exported for unit tests)
+// ---------------------------------------------------------------------------
+
+export const DEPENDENCY_RELATIONSHIPS = [
+  "uses",
+  "integrates",
+  "built_on",
+  "maintains",
+  "depends_on",
+] as const;
+
+export const DEPENDENCY_PER_BUCKET_CAP = 25;
+
+export type DependencyRow = {
+  relationship: string;
+  target_id: string;
+  target_type: string;
+  confidence: number;
+  scope: string | null;
+  target_name: string | null;
+};
+
+export function bucketDependencyRows(
+  rows: DependencyRow[],
+  cap: number = DEPENDENCY_PER_BUCKET_CAP,
+): Record<string, Array<Record<string, unknown>>> {
+  const buckets: Record<string, Array<Record<string, unknown>>> = {};
+  for (const rel of DEPENDENCY_RELATIONSHIPS) buckets[rel] = [];
+  for (const r of rows) {
+    const bucket = buckets[r.relationship];
+    if (!bucket || bucket.length >= cap) continue;
+    const entry: Record<string, unknown> = {
+      slug: r.target_id,
+      name: r.target_name,
+      confidence: r.confidence,
+    };
+    if (r.scope) entry.scope = r.scope;
+    bucket.push(entry);
+  }
+  const out: Record<string, Array<Record<string, unknown>>> = {};
+  for (const [k, v] of Object.entries(buckets)) {
+    if (v.length > 0) out[k] = v;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Merge all directory seed data, deduplicating by slug (first occurrence wins)
 // ---------------------------------------------------------------------------
 
@@ -320,7 +367,9 @@ export function intelService(db: Db) {
     );
     const reportCount = Number(countRows[0]?.total ?? 0);
 
-    return { company, latest_reports: latestReports, report_count: reportCount };
+    const dependencies = await getDependenciesBlock(slug);
+
+    return { company, latest_reports: latestReports, report_count: reportCount, dependencies };
   }
 
   async function seedCompanies() {
@@ -1157,6 +1206,40 @@ export function intelService(db: Db) {
   }
 
   // ------ Related companies (same directory/category) ------
+
+  /**
+   * Phase 1 silent enrichment for the Intel API. Returns a bucketed map of
+   * verified outbound KG edges (uses / integrates / built_on / maintains /
+   * depends_on) for a given company slug. Best-effort: never throws.
+   *
+   * Each bucket is capped to bound payload size when SBOM-derived
+   * `depends_on` edges fan out wide.
+   */
+  async function getDependenciesBlock(slug: string): Promise<Record<string, unknown>> {
+    try {
+      const rows = await rawQuery<DependencyRow>(sql`
+        SELECT
+          cr.relationship,
+          cr.target_id,
+          cr.target_type,
+          cr.confidence,
+          cr.scope,
+          c.name AS target_name
+        FROM company_relationships cr
+        LEFT JOIN intel_companies c
+          ON c.slug = cr.target_id AND cr.target_type = 'company'
+        WHERE cr.source_type = 'company'
+          AND cr.source_id = ${slug}
+          AND cr.verified = true
+          AND cr.relationship IN ('uses', 'integrates', 'built_on', 'maintains', 'depends_on')
+        ORDER BY cr.confidence DESC, cr.relationship ASC, cr.target_id ASC
+      `);
+      return bucketDependencyRows(rows);
+    } catch (err) {
+      logger.warn({ err, slug }, "getDependenciesBlock failed; returning empty");
+      return {};
+    }
+  }
 
   async function getRelatedCompanies(slug: string, limit = 10) {
     const qLimit = Math.min(Math.max(1, limit), 20);
