@@ -58,6 +58,14 @@ export const BRAND_PERSONAS: Record<string, BrandPersona> = {
     ctaUrl: 'https://coherencedaddy.com/partners',
     ctaText: 'Join the AEO partner network',
   },
+  vector: {
+    slug: 'vector',
+    name: 'Vector',
+    tagline: 'Real prospects from the Coherence Directory. Real briefs. Drafts inside your approved templates.',
+    voiceGuidelines: 'Direct, data-first, anti-hype. Speak to service-sellers (fractional CTOs, dev-shop founders, AI-implementation consultants) who need pipeline. Always reference real public signals — recent funding, open hiring posts, tech-stack changes, content gaps. Never promise revenue, conversion rates, or growth percentages. Never invent a pitch from scratch — only fill owner-approved templates from the question bank. Outputs always go to the user review queue, never directly to send.',
+    ctaUrl: 'https://coherencedaddy.com/agents/vector',
+    ctaText: 'Get your first 5 prospects free',
+  },
 };
 
 export function getBrandPersona(brand?: string): BrandPersona {
