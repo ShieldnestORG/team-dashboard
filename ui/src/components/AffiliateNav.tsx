@@ -49,9 +49,9 @@ export function AffiliateNav({
           aria-label="Affiliate dashboard home"
         >
           <img
-            src="/brand/face-coral.svg"
+            src="/apple-touch-icon.png"
             alt="Coherence Daddy"
-            className="h-9 w-9 flex-shrink-0 transition-opacity group-hover:opacity-90"
+            className="h-9 w-9 rounded-lg flex-shrink-0 transition-opacity group-hover:opacity-90"
           />
           <div className="min-w-0">
             {subtitle && (
