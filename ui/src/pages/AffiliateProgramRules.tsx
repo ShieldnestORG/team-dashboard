@@ -98,9 +98,9 @@ export function AffiliateProgramRules() {
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
             <a href="/" className="flex items-center gap-3">
               <img
-                src="/apple-touch-icon.png"
+                src="/brand/face-coral.svg"
                 alt="Coherence Daddy"
-                className="h-9 w-9 rounded-lg"
+                className="h-9 w-9"
               />
               <div>
                 <p className="text-xs text-muted-foreground">Affiliate Program</p>
