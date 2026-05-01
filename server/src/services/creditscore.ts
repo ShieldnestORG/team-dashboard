@@ -38,6 +38,27 @@ function domainFromUrl(input: string): string | null {
   }
 }
 
+// A result is "degraded" if the crawler returned no pages OR the three
+// data-derived subscores are all zero (which means the regex/JSON-LD
+// detection found nothing — usually a sign that scraping silently
+// returned empty markdown).
+//
+// AI-bot-access and technical can be non-zero from robots.txt + URL
+// inspection alone, so they don't count toward this check.
+export function isDegradedAuditResult(result: AuditResult): boolean {
+  if ((result.pagesScraped ?? 0) === 0) return true;
+  const dataSubscoreSum =
+    result.breakdown.structuredData.score
+    + result.breakdown.contentQuality.score
+    + result.breakdown.freshness.score;
+  return dataSubscoreSum === 0;
+}
+
+type RawScrape = AuditResult["rawData"][number];
+function rawDataForDb(result: AuditResult): RawScrape[] | null {
+  return result.rawData && result.rawData.length > 0 ? result.rawData : null;
+}
+
 export function creditscoreService(db: Db) {
   async function listPlans() {
     return db
@@ -186,6 +207,13 @@ export function creditscoreService(db: Db) {
       })
         .then(({ result }) => {
           if (!sub.email || !result) return;
+          if (isDegradedAuditResult(result)) {
+            logger.warn(
+              { subId: sub.id },
+              "creditscore: skipping welcome email — initial report was degraded; will retry on next scheduled scan",
+            );
+            return;
+          }
           const kind =
             sub.tier === "report"
               ? "one_time_report"
@@ -365,12 +393,27 @@ export function creditscoreService(db: Db) {
     }
 
     const typedResult = result as AuditResult;
+    const degraded = isDegradedAuditResult(typedResult);
+
+    if (degraded) {
+      logger.warn(
+        {
+          reportId,
+          domain,
+          pagesScraped: typedResult.pagesScraped,
+          score: typedResult.score,
+        },
+        "creditscore: generated report is degraded — crawler returned partial/no data",
+      );
+    }
+
     await db
       .update(creditscoreReports)
       .set({
-        status: "complete",
-        score: typedResult.score,
+        status: degraded ? "degraded" : "complete",
+        score: degraded ? null : typedResult.score,
         resultJson: typedResult as unknown as Record<string, unknown>,
+        rawData: rawDataForDb(typedResult) as unknown as Record<string, unknown> | null,
         updatedAt: new Date(),
       })
       .where(eq(creditscoreReports.id, reportId));
@@ -382,9 +425,23 @@ export function creditscoreService(db: Db) {
     url: string;
     result: AuditResult;
     email?: string;
-  }): Promise<{ reportId: string }> {
+  }): Promise<{ reportId: string; status: "complete" | "degraded" }> {
     const domain = domainFromUrl(args.url);
     if (!domain) throw new Error("Valid url required");
+
+    const degraded = isDegradedAuditResult(args.result);
+    const status: "complete" | "degraded" = degraded ? "degraded" : "complete";
+
+    if (degraded) {
+      logger.warn(
+        {
+          domain,
+          pagesScraped: args.result.pagesScraped,
+          score: args.result.score,
+        },
+        "creditscore: storing audit result as degraded — crawler returned partial/no data",
+      );
+    }
 
     const [row] = await db
       .insert(creditscoreReports)
@@ -392,12 +449,15 @@ export function creditscoreService(db: Db) {
         subscriptionId: null,
         domain,
         email: args.email ?? null,
-        status: "complete",
-        score: args.result.score,
+        status,
+        // Suppress score on degraded rows so dashboards / upsells can't
+        // ORDER BY score and surface garbage data.
+        score: degraded ? null : args.result.score,
         resultJson: args.result as unknown as Record<string, unknown>,
+        rawData: rawDataForDb(args.result) as unknown as Record<string, unknown> | null,
       })
       .returning({ id: creditscoreReports.id });
-    return { reportId: row!.id };
+    return { reportId: row!.id, status };
   }
 
   async function scheduleScans(): Promise<void> {

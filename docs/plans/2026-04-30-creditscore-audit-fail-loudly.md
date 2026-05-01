@@ -48,7 +48,7 @@
   - **Depends on:** 2, 4
   - **Parallel-safe:** no
 
-- [ ] **6. Validation gate in `storeAuditResult` and `generateReport`**
+- [x] **6. Validation gate in `storeAuditResult` and `generateReport`**
   - **Files:** `server/src/services/creditscore.ts`
   - **Action:** Helper `isDegraded(result)` checks `pagesScraped === 0` OR `(structuredData.score + contentQuality.score + freshness.score) === 0`. In `storeAuditResult`: if degraded, write `status:"degraded"` (not `"complete"`) and skip `score`. In `generateReport`: same — also `raw_data` column gets the rawScrapes if present.
   - **Verify:** New unit test in `server/src/__tests__/creditscore-audit-validation.test.ts` covers: (a) all-zero subscore degrades, (b) zero pages scraped degrades, (c) healthy result writes `complete`. Run `npm test -w server -- creditscore-audit-validation` (or framework equivalent — match existing test conventions).
