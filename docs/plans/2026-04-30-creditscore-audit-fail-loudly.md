@@ -55,7 +55,7 @@
   - **Depends on:** 4, 5
   - **Parallel-safe:** no
 
-- [ ] **7. Exclude `degraded` rows from cron mailing + entitlement upsells**
+- [x] **7. Exclude `degraded` rows from cron mailing + entitlement upsells**
   - **Files:** `server/src/services/creditscore-fulfillment-crons.ts`, any other consumer of `creditscore_reports` that filters by `status`.
   - **Action:** Search for `eq(creditscoreReports.status, "complete")` and confirm all consumers already filter on `complete` (degraded won't match). If any consumer uses `!= "failed"` or similar broad filter, tighten it to whitelist `complete` only.
   - **Verify:** `grep -rn 'creditscoreReports.status' server/src` — every match should narrow to `complete` (or be a write site).
