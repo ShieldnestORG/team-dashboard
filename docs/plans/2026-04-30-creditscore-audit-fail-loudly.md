@@ -13,7 +13,7 @@
 
 ## Steps
 
-- [ ] **1. Make Firecrawl helpers throw, not swallow**
+- [x] **1. Make Firecrawl helpers throw, not swallow**
   - **Files:** `server/src/routes/audit.ts`
   - **Action:** Replace `} catch { return null/[]; }` in `fcScrape`, `fcMap`, `fcSearch` with throws. Convert HTTP non-2xx to thrown errors as well. Introduce a typed `FirecrawlError` so callers can distinguish crawler-down from "site genuinely empty."
   - **Verify:** `npx tsc --noEmit --project server/tsconfig.json` is clean.

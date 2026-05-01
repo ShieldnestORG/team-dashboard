@@ -95,11 +95,26 @@ function validateAuditUrl(raw: string): { ok: true; url: string } | { ok: false;
 
 // ── Firecrawl helpers ─────────────────────────────────────────────────────────
 
+// Distinguishes "crawler is unreachable / errored" from "site genuinely
+// returned empty results." Callers can `instanceof` check this to decide
+// whether to fail the audit or just emit a 0-result step.
+export class FirecrawlError extends Error {
+  constructor(
+    message: string,
+    readonly endpoint: "scrape" | "map" | "search",
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "FirecrawlError";
+  }
+}
+
 async function fcScrape(
   url: string,
-): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> } | null> {
+): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> {
+  let res: Response;
   try {
-    const res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
+    res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -108,29 +123,34 @@ async function fcScrape(
       body: JSON.stringify({ url, formats: ["markdown", "links"], timeout: 30000 }),
       signal: AbortSignal.timeout(45_000),
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      success: boolean;
-      data?: {
-        markdown?: string;
-        links?: string[];
-        metadata?: Record<string, unknown>;
-      };
-    };
-    if (!data.success || !data.data) return null;
-    return {
-      markdown: (data.data.markdown ?? "").slice(0, 60_000),
-      links: data.data.links ?? [],
-      metadata: data.data.metadata ?? {},
-    };
-  } catch {
-    return null;
+  } catch (err) {
+    throw new FirecrawlError(`scrape: network error (${(err as Error).message})`, "scrape", err);
   }
+  if (!res.ok) {
+    throw new FirecrawlError(`scrape: HTTP ${res.status}`, "scrape");
+  }
+  const data = (await res.json()) as {
+    success: boolean;
+    data?: {
+      markdown?: string;
+      links?: string[];
+      metadata?: Record<string, unknown>;
+    };
+  };
+  if (!data.success || !data.data) {
+    throw new FirecrawlError("scrape: response missing data", "scrape");
+  }
+  return {
+    markdown: (data.data.markdown ?? "").slice(0, 60_000),
+    links: data.data.links ?? [],
+    metadata: data.data.metadata ?? {},
+  };
 }
 
 async function fcMap(url: string): Promise<string[]> {
+  let res: Response;
   try {
-    const res = await fetch(`${FIRECRAWL_URL}/v1/map`, {
+    res = await fetch(`${FIRECRAWL_URL}/v1/map`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -139,24 +159,29 @@ async function fcMap(url: string): Promise<string[]> {
       body: JSON.stringify({ url, limit: 50 }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      success: boolean;
-      links?: string[];
-      urls?: string[];
-    };
-    if (!data.success) return [];
-    return data.links ?? data.urls ?? [];
-  } catch {
-    return [];
+  } catch (err) {
+    throw new FirecrawlError(`map: network error (${(err as Error).message})`, "map", err);
   }
+  if (!res.ok) {
+    throw new FirecrawlError(`map: HTTP ${res.status}`, "map");
+  }
+  const data = (await res.json()) as {
+    success: boolean;
+    links?: string[];
+    urls?: string[];
+  };
+  if (!data.success) {
+    throw new FirecrawlError("map: response success=false", "map");
+  }
+  return data.links ?? data.urls ?? [];
 }
 
 async function fcSearch(
   query: string,
 ): Promise<Array<{ url: string; title: string }>> {
+  let res: Response;
   try {
-    const res = await fetch(`${FIRECRAWL_URL}/v1/search`, {
+    res = await fetch(`${FIRECRAWL_URL}/v1/search`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -165,18 +190,22 @@ async function fcSearch(
       body: JSON.stringify({ query, limit: 3 }),
       signal: AbortSignal.timeout(20_000),
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      success: boolean;
-      data?: Array<{ url?: string; title?: string }>;
-    };
-    if (!data.success || !data.data) return [];
-    return data.data
-      .filter((d) => d.url)
-      .map((d) => ({ url: d.url!, title: d.title ?? d.url! }));
-  } catch {
-    return [];
+  } catch (err) {
+    throw new FirecrawlError(`search: network error (${(err as Error).message})`, "search", err);
   }
+  if (!res.ok) {
+    throw new FirecrawlError(`search: HTTP ${res.status}`, "search");
+  }
+  const data = (await res.json()) as {
+    success: boolean;
+    data?: Array<{ url?: string; title?: string }>;
+  };
+  if (!data.success || !data.data) {
+    throw new FirecrawlError("search: response missing data", "search");
+  }
+  return data.data
+    .filter((d) => d.url)
+    .map((d) => ({ url: d.url!, title: d.title ?? d.url! }));
 }
 
 // ── Audit pipeline ────────────────────────────────────────────────────────────
