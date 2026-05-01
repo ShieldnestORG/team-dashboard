@@ -74,9 +74,12 @@ export type AuditResult = {
   // result must NOT be written as status:"complete".
   pagesScraped: number;
   // Raw per-page Firecrawl payloads for downstream replay / re-scoring.
-  // Persisted into creditscore_reports.raw_data JSONB. Excluded from
-  // SSE responses to keep wire size sane — readers should fetch the full
-  // raw_data via the report API instead.
+  // Persisted into creditscore_reports.raw_data JSONB. Flows over SSE in
+  // the `complete` event so the storefront's POST /audit/store proxy
+  // can hand it through to storeAuditResult — anonymous free audits are
+  // the only path where the persistence layer doesn't run runAudit
+  // itself. Each page's markdown is already capped at 60_000 chars in
+  // fcScrape, so per-audit ceiling is ~180 KB.
   rawData: Array<{
     url: string;
     markdown: string;
