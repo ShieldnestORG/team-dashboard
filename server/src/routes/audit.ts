@@ -73,6 +73,15 @@ export type AuditResult = {
   // gate on this — pagesScraped===0 means the crawler failed and the
   // result must NOT be written as status:"complete".
   pagesScraped: number;
+  // Raw per-page Firecrawl payloads for downstream replay / re-scoring.
+  // Persisted into creditscore_reports.raw_data JSONB. Excluded from
+  // SSE responses to keep wire size sane — readers should fetch the full
+  // raw_data via the report API instead.
+  rawData: Array<{
+    url: string;
+    markdown: string;
+    metadata: Record<string, unknown>;
+  }>;
   scannedAt: string;
 };
 
@@ -335,11 +344,21 @@ export async function runAudit(
   // crawler-down rather than persisting a 0-page "complete" report.
   const scrapeOutcomes = await Promise.allSettled(pagesToScrape.map((u) => fcScrape(u)));
   const validScrapes = scrapeOutcomes
-    .filter(
-      (o): o is PromiseFulfilledResult<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> =>
-        o.status === "fulfilled",
+    .map((o, i) =>
+      o.status === "fulfilled"
+        ? { url: pagesToScrape[i]!, ...o.value }
+        : null,
     )
-    .map((o) => o.value);
+    .filter(
+      (
+        v,
+      ): v is {
+        url: string;
+        markdown: string;
+        links: string[];
+        metadata: Record<string, unknown>;
+      } => v !== null,
+    );
 
   if (validScrapes.length === 0) {
     emit({
@@ -641,6 +660,11 @@ export async function runAudit(
     competitors,
     recommendations,
     pagesScraped: validScrapes.length,
+    rawData: validScrapes.map((s) => ({
+      url: s.url,
+      markdown: s.markdown,
+      metadata: s.metadata,
+    })),
     scannedAt: new Date().toISOString(),
   };
 
