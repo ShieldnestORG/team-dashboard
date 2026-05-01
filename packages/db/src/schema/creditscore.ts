@@ -78,10 +78,16 @@ export const creditscoreReports = pgTable(
     email: text("email"),
     // Raw audit microservice payload (signals + narrative + competitors).
     resultJson: jsonb("result_json").notNull().default({}),
-    // Composite 0–100 score; nullable while status=pending.
+    // Full per-page Firecrawl response for replay / re-scoring. Nullable for
+    // legacy rows and for status=degraded/failed where the crawler returned
+    // nothing useful. Phase 2 signal upgrades will read from this.
+    rawData: jsonb("raw_data"),
+    // Composite 0–100 score; nullable while status=pending or degraded.
     score: integer("score"),
     previousScore: integer("previous_score"),
-    // status: pending | complete | failed
+    // status: pending | complete | failed | degraded
+    // "degraded" means crawler returned partial/no data; score is untrustworthy
+    // and consumers (mailing cron, upsells) MUST filter to status='complete'.
     status: text("status").notNull().default("pending"),
     // Public share token — null until report is complete + opted in to sharing.
     shareableSlug: text("shareable_slug"),

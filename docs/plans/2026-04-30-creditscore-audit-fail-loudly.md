@@ -34,7 +34,7 @@
   - **Depends on:** 1
   - **Parallel-safe:** yes with 4
 
-- [ ] **4. Migration `0102_creditscore_reports_raw_data.sql`**
+- [x] **4. Migration `0102_creditscore_reports_raw_data.sql`**
   - **Files:** `packages/db/src/migrations/0102_creditscore_reports_raw_data.sql`, `packages/db/src/schema/creditscore.ts`
   - **Action:** Add `raw_data JSONB` column (nullable, no default). Document the `status:"degraded"` value in a comment on the `status` column. Update Drizzle schema with the new column.
   - **Verify:** `npx tsc --noEmit --project server/tsconfig.json` clean. Migration file follows the project's idiomatic shape (cross-check `0101`).
