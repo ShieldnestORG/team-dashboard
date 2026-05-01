@@ -647,6 +647,32 @@ export async function runAudit(
   emit({ type: "complete", result });
 }
 
+// ── Health probe ──────────────────────────────────────────────────────────────
+
+// Cache the result for 30s so a noisy storefront doesn't hammer Firecrawl.
+let healthCache: { ok: boolean; reason?: string; checkedAt: number } | null = null;
+const HEALTH_CACHE_MS = 30_000;
+
+async function probeFirecrawl(): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    const res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
+      },
+      body: JSON.stringify({ url: "https://example.com", formats: ["markdown"], timeout: 4000 }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      return { ok: false, reason: `firecrawl HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `firecrawl unreachable (${(err as Error).message})` };
+  }
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export function auditRoutes(): Router {
@@ -659,6 +685,30 @@ export function auditRoutes(): Router {
       "Access-Control-Allow-Headers": "Content-Type",
     });
     res.sendStatus(204);
+  });
+
+  router.get("/audit/health", async (_req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+
+    const now = Date.now();
+    if (!healthCache || now - healthCache.checkedAt > HEALTH_CACHE_MS) {
+      const probe = await probeFirecrawl();
+      healthCache = {
+        ok: probe.ok,
+        reason: probe.ok ? undefined : probe.reason,
+        checkedAt: now,
+      };
+    }
+
+    if (healthCache.ok) {
+      res.json({ ok: true, checkedAt: new Date(healthCache.checkedAt).toISOString() });
+    } else {
+      res.status(503).json({
+        ok: false,
+        reason: healthCache.reason ?? "unknown",
+        checkedAt: new Date(healthCache.checkedAt).toISOString(),
+      });
+    }
   });
 
   router.post("/audit", (req, res) => {
