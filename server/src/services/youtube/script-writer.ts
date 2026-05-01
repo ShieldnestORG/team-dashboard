@@ -102,6 +102,18 @@ export function applyPronunciationFixes(text: string): string {
   text = text.replace(/\bTX Ecosystem\b/g, "T-X Ecosystem");
   text = text.replace(/\bTX blockchain\b/gi, "T-X blockchain");
   text = text.replace(/\bNFTs\b/g, "N-F-Tees");
+  // tokns.fi / Tokns.fi / tokens.fi — pronounce the .fi TLD as "dot fee"
+  // so Grok TTS doesn't read it as "T-O-K-N-S F-I" / spell the letters.
+  // The brand canonical spelling is "Tokns" (no "e") — handle that and
+  // common typo "tokens" both. Same treatment for the bare "tokensfi"
+  // / "toknsfi" no-dot smushed forms produced by some upstream prompts.
+  text = text.replace(/\btokns\.fi\b/gi, "tokens dot fee");
+  text = text.replace(/\btokens\.fi\b/gi, "tokens dot fee");
+  text = text.replace(/\btoknsfi\b/gi, "tokens fee");
+  text = text.replace(/\btokensfi\b/gi, "tokens fee");
+  // Bare "Tokns" brand without the .fi suffix — still pronounce as "tokens"
+  // (the brand is a stylized vowel-drop, not a different word).
+  text = text.replace(/\btokns\b/gi, "tokens");
   text = text.replace(/\bNFT\b/g, "N-F-T");
   text = text.replace(/\bDAOs\b/g, "dow-z");
   text = text.replace(/\bDAO\b/g, "dow");
@@ -186,7 +198,37 @@ async function generateScriptWithOllama(
 ): Promise<ScriptData> {
   const year = new Date().getFullYear();
 
-  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Tokns.fi — a crypto, motivation, and blockchain education channel. The channel covers Bitcoin, altcoins, and the TX blockchain ecosystem (social handle: @txecosystem). Related sites: tokns.fi and coherencedaddy.com. IMPORTANT: Always write "TX ecosystem" as two separate words. Also always write "DeFi" to be pronounced "de-fi". The tone is confident, energetic, and approachable. Occasionally reference tokns.fi or coherencedaddy.com naturally. Always output valid JSON. The current year is ${year}. Always use ${year} when referencing the current year.`;
+  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Tokns.fi — a crypto, motivation, and blockchain education channel. The channel covers Bitcoin, altcoins, and the TX blockchain ecosystem (social handle: @txecosystem). Related sites: tokns.fi and coherencedaddy.com.
+
+CRITICAL — AUDIO-ONLY NARRATION:
+This script is rendered as voiceover over text-and-bullet slides. There are NO charts, NO candlesticks, NO diagrams, NO photos, NO arrows pointing at things on screen. Write narration that lands as audio alone. Do NOT use phrases like:
+- "as you can see", "notice this", "look at this", "see the chart", "here is the diagram"
+- "this image shows", "in this graphic", "the picture above/below", "watch the line move"
+- "point to", "highlighted in red", "the green candle", references to specific colors/shapes/positions on screen
+
+Instead, describe ideas in words: "A breakout candle is one where..." rather than "Notice the breakout candle here." If a concept needs a visual to land, EXPLAIN it in words rather than referring to a missing image. Write so a listener with eyes closed gets 100% of the value.
+
+CRITICAL — BULLET LENGTH:
+Each bullet in mainContent.sections[].content is rendered on a slide and ALSO spoken aloud. Keep each bullet UNDER 120 CHARACTERS. Long bullets get visually truncated on the slide while the narration keeps going, which makes the slide read "...truncated" while the voice continues — bad UX. If a bullet needs more depth, split it into two short bullets instead of one long one.
+
+CRITICAL — ENGAGEMENT & PACING:
+TTS reads punctuation as inflection cues, so the script's punctuation IS the voice direction:
+- Vary sentence length aggressively. Short, punchy sentences (3-7 words) interspersed with longer ones (15-25 words). Never multiple long sentences back to back.
+- Use rhetorical questions to wake up viewers ("Why does this even matter?", "Sound familiar?")
+- Use em-dashes — like this — for natural mid-sentence pauses and emphasis
+- Use ellipses... sparingly... for suspense moments
+- Use exclamation points only for genuine excitement, never sarcastically
+
+EVERY ~30 SECONDS OF NARRATION (roughly every 2 sections, or every 75-100 words), include a MINI-HOOK to re-engage drifting viewers. A mini-hook is one of:
+- A rhetorical question that flips the topic on its head ("But here's the catch...")
+- An arresting fact or statistic with a surprising number
+- An emotional pivot ("This is where most people quit. Don't.")
+- A "wait, here's the twist" reveal that recontextualizes what came before
+- A direct address that breaks the fourth wall ("If you're nodding right now, this next part is for you.")
+
+Distribute these across sections — don't pile them in the intro. Hooks should feel earned, not forced.
+
+CONVENTIONS: Always write "TX ecosystem" as two separate words. Always write "DeFi" to be pronounced "de-fi". Tone: confident, energetic, approachable. Occasionally reference tokns.fi or coherencedaddy.com naturally. Always output valid JSON. The current year is ${year}. Always use ${year} when referencing the current year.`;
 
   const userPrompt = `Write a complete YouTube video script for the following:
 

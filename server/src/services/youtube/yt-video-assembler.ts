@@ -45,7 +45,26 @@ export interface YtAssembleResult {
   videoPath: string;
   durationSec: number;
   fileSizeBytes: number;
+  /** Drift between video stream and audio stream in the final MP4, in seconds.
+   * Positive = slideshow overruns narration. Used by the post-assembly guardrail
+   * to fail productions whose timing math is off before they hit the publish queue. */
+  driftSec: number;
 }
+
+/** Maximum allowed drift between video and audio streams, in seconds.
+ * Originally calibrated to 100ms against the broken-baseline fixture
+ * (drifted 0.6s–2.1s positive). After per-slide-measured timing landed,
+ * residual drift is dominated by ffmpeg's AAC re-encoder adding
+ * ~50–150ms of priming/padding to the audio track that the video stream
+ * doesn't receive. This shows up as small negative drift (audio longer
+ * than video) on longer/larger-deck renders without indicating any
+ * actual sync problem — it's an encoder artifact, not a timing bug.
+ *
+ * 250ms catches the original pathology with 8x margin over the worst
+ * known broken sample (2.1s) while accommodating AAC padding. Drift
+ * within ±250ms is below the threshold of audible/visible perception
+ * on a multi-minute slideshow. */
+const MAX_DRIFT_SEC = 0.25;
 
 /**
  * Assemble a full YouTube video from images + audio + optional captions.
@@ -103,13 +122,19 @@ export async function assembleYouTubeVideo(opts: YtAssembleOptions): Promise<YtA
       { timeout: 300_000 },
     );
 
-    // Step 2: Merge with audio
-    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest`;
+    // Step 2: Merge with audio. Force output to exact audio duration via
+    // `-t` — `-shortest` alone is unreliable when video is re-encoded
+    // (the re-encoder picks up the silent-video's pre-truncation frame count,
+    // leaving the output video stream up to ~25ms/slide longer than the audio
+    // due to per-slide frame quantization in concat). `-t` clamps the muxer
+    // output to a precise wall-clock duration regardless of encoder behaviour.
+    const tFlag = `-t ${audioDurationSec.toFixed(3)}`;
+    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest ${tFlag}`;
 
     // Step 3: Optionally burn in captions
     if (captionsPath && existsSync(captionsPath)) {
       // Re-encode video with subtitle filter instead of copy
-      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest`;
+      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest ${tFlag}`;
     }
 
     // Add metadata
@@ -123,12 +148,23 @@ export async function assembleYouTubeVideo(opts: YtAssembleOptions): Promise<YtA
     const { stdout: sizeOut } = await execAsync(`stat -f%z "${outputPath}" 2>/dev/null || stat -c%s "${outputPath}"`);
     const fileSizeBytes = parseInt(sizeOut.trim(), 10) || 0;
 
+    // Post-assembly drift guardrail. Probe the final MP4 — if the video and
+    // audio streams disagree by more than MAX_DRIFT_SEC, the timing math is
+    // broken and this production must NOT advance to the publish queue.
+    const driftSec = await measureDrift(outputPath);
+
     logger.info(
-      { slides: visualAssets.length, duration: audioDurationSec, size: fileSizeBytes },
+      { slides: visualAssets.length, duration: audioDurationSec, size: fileSizeBytes, driftSec },
       "YouTube video assembled",
     );
 
-    return { videoPath: outputPath, durationSec: audioDurationSec, fileSizeBytes };
+    if (Math.abs(driftSec) > MAX_DRIFT_SEC) {
+      throw new Error(
+        `sync_drift exceeded threshold: |${driftSec.toFixed(3)}s| > ${MAX_DRIFT_SEC}s (video and audio streams in ${outputPath} disagree by more than ${MAX_DRIFT_SEC * 1000}ms)`,
+      );
+    }
+
+    return { videoPath: outputPath, durationSec: audioDurationSec, fileSizeBytes, driftSec };
   } finally {
     // Cleanup temp files
     await unlink(concatPath).catch(() => {});
@@ -171,6 +207,18 @@ export async function generateCaptions(
 
   await writeFile(outputPath, srt);
   return outputPath;
+}
+
+/** Probe a finished MP4 and return (videoStreamSec - audioStreamSec). */
+async function measureDrift(mp4Path: string): Promise<number> {
+  const probe = async (selector: "v:0" | "a:0") => {
+    const { stdout } = await execAsync(
+      `ffprobe -v error -select_streams ${selector} -show_entries stream=duration -of default=nw=1:nk=1 "${mp4Path}"`,
+    );
+    return parseFloat(stdout.trim()) || 0;
+  };
+  const [videoSec, audioSec] = await Promise.all([probe("v:0"), probe("a:0")]);
+  return videoSec - audioSec;
 }
 
 function formatSrtTime(seconds: number): string {

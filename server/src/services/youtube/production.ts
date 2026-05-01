@@ -7,7 +7,7 @@
 import type { Db } from "@paperclipai/db";
 import { ytProductions, ytPublishQueue } from "@paperclipai/db";
 import { eq, sql } from "drizzle-orm";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, copyFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
@@ -15,7 +15,7 @@ import { generateContentStrategy, type ContentStrategy } from "./content-strateg
 import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunciationFixes, type ScriptData } from "./script-writer.js";
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
-import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
+import { generateTTSAudio, generateContinuousTTS, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
 import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
@@ -119,49 +119,75 @@ export async function runProductionPipeline(
       await writeFile(thumbnailPath, thumbnail.imageBuffer);
     }
 
-    // 6. Generate TTS audio
+    // 6. Generate visual assets first — we need slide spokenTexts to drive
+    //    chunked TTS, which is the only way to get measured (not estimated)
+    //    per-slide durations. See drift-baseline-2026-04-27.json for the bug
+    //    that motivated this ordering swap.
+    logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
+    const { paths: visualAssets, wordCounts: slideWordCounts, spokenTexts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
+
+    // 7. Generate TTS audio
     logger.info({ productionId }, "YT Pipeline: generating TTS audio...");
     let tts: TTSResult;
     let perSlideDurations: number[] | undefined;
 
     if (mode === "site-walker") {
-      // Chunked TTS: one chunk per screenshot for cleaner voice output
+      // Site-walker: one chunk per screenshot, but routed through continuous
+      // TTS with silence-split for voice consistency across the walk.
       const ttsChunks = buildTTSChunks(script);
-      const chunkedResult = await generateChunkedTTS(ttsChunks, `audio_${productionId}.mp3`);
-      tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
-      // Collapse [content, silence, content, silence, ..., content] into per-slide durations
-      // Each slide = its content duration + the following silence gap (if any)
-      const raw = chunkedResult.chunkDurations;
-      perSlideDurations = [];
-      for (let i = 0; i < raw.length; i += 2) {
-        const contentDur = raw[i] || 0;
-        const silenceDur = raw[i + 1] || 0;
-        perSlideDurations.push(contentDur + silenceDur);
-      }
+      const continuousResult = await generateContinuousTTS(ttsChunks, `audio_${productionId}.mp3`);
+      tts = { audioPath: continuousResult.audioPath, durationSec: continuousResult.durationSec, provider: continuousResult.provider };
+      perSlideDurations = continuousResult.perSlideDurations;
+    } else if (spokenTexts && spokenTexts.length === visualAssets.length && spokenTexts.some((t) => t.length > 0)) {
+      // Presentation mode with slide-level spoken text. Single TTS call for
+      // the whole video keeps voice character consistent across slides — the
+      // earlier per-slide-chunked approach produced audibly different voice
+      // takes between slides because Grok TTS has no session/seed for
+      // cross-call consistency. ffmpeg silencedetect recovers per-slide
+      // boundaries from the marker pauses inserted between texts.
+      const slidesAsChunks = spokenTexts.map((t) => applyPronunciationFixes(t || " "));
+      const continuousResult = await generateContinuousTTS(slidesAsChunks, `audio_${productionId}.mp3`);
+      tts = { audioPath: continuousResult.audioPath, durationSec: continuousResult.durationSec, provider: continuousResult.provider };
+      perSlideDurations = continuousResult.perSlideDurations;
     } else {
+      // AI-image fallback path with no per-slide narration — single TTS call.
+      // Drift will fall back to the legacy estimator; this path is a fallback,
+      // not the production default.
       const ttsText = formatScriptForTTS(script);
       tts = await generateTTSAudio(ttsText, `audio_${productionId}.mp3`);
     }
 
-    // 7. Generate visual assets (images for slideshow)
-    logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
-    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
-
-    // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text)
+    // 8. Generate captions. Persist to /paperclip/youtube/assets/<pid>/captions.srt
+    //    (same volume as slides + audio) so the SRT survives container restarts —
+    //    previously written to container /tmp/yt-temp/, which left DB rows with
+    //    dangling captionsPath references after every restart.
+    //
+    //    BURN-IN policy: captions are only burned into the MP4 for site-walker
+    //    mode (browser screenshots have no on-screen text). For presentation
+    //    mode, the slide images themselves render the spoken content as the
+    //    primary visual, so a second burned-in caption track is redundant and
+    //    visually competes with the slide. The SRT is still generated and saved
+    //    so it can be uploaded as a separate caption track via YouTube
+    //    Data API (captions.insert) where viewers can toggle it on/off.
     const captionText = formatScriptPlainText(script);
-    const captionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
+    const tmpCaptionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
+    const persistentCaptionsDir = join(ASSETS_DIR, productionId);
+    ensureDir(persistentCaptionsDir);
+    const captionsPath = join(persistentCaptionsDir, "captions.srt");
+    await copyFile(tmpCaptionsPath, captionsPath);
+    const burnInCaptions = mode === "site-walker";
 
     // 9. Assemble video
     let video: YtAssembleResult | undefined;
     if (visualAssets.length > 0) {
-      logger.info({ productionId, slides: visualAssets.length }, "YT Pipeline: assembling video...");
+      logger.info({ productionId, slides: visualAssets.length, burnInCaptions }, "YT Pipeline: assembling video...");
       video = await assembleYouTubeVideo({
         audioPath: tts.audioPath,
         audioDurationSec: tts.durationSec,
         visualAssets,
         slideWordCounts,
         slideDurations: perSlideDurations,
-        captionsPath,
+        captionsPath: burnInCaptions ? captionsPath : undefined,
         outputFilename: `video_${productionId}.mp4`,
         metadata: { title: seo.title, copyright: `${new Date().getFullYear()} Tokns.fi` },
       });
@@ -234,6 +260,10 @@ export async function runProductionPipeline(
 interface VisualResult {
   paths: string[];
   wordCounts: number[];
+  /** Per-slide narration text — present when slides come from a slide builder.
+   * Absent for AI-image fallback mode. When present, callers should drive TTS
+   * per slide (chunked) so slide durations are measured, not estimated. */
+  spokenTexts?: string[];
 }
 
 async function generateVisualAssets(
@@ -266,14 +296,16 @@ async function generateVisualAssets(
       const aiSlides = await buildSlidesFromScriptAI(script);
       const framePaths = await renderSlidesToImages(aiSlides, dir);
       if (framePaths.length > 0) {
-        const wordCounts = aiSlides.map((s: Slide) => {
+        const slidesUsed = aiSlides.slice(0, framePaths.length);
+        const wordCounts = slidesUsed.map((s: Slide) => {
           const text = s.spokenText || "";
           const words = text.split(/\s+/).filter(Boolean).length;
           if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
           return Math.max(words, 5);
         });
+        const spokenTexts = slidesUsed.map((s) => (s.spokenText || "").trim());
         logger.info({ frames: framePaths.length }, "AI-generated slides rendered successfully");
-        return { paths: framePaths, wordCounts };
+        return { paths: framePaths, wordCounts, spokenTexts };
       }
     } catch (err) {
       logger.warn({ err }, "AI slide generation failed, trying static templates...");
@@ -285,14 +317,16 @@ async function generateVisualAssets(
       logger.info({ slideCount: staticSlides.length }, "Built static presentation slides from script");
       const framePaths = await renderSlidesToImages(staticSlides, dir);
       if (framePaths.length > 0) {
-        const wordCounts = staticSlides.map((s: Slide) => {
+        const slidesUsed = staticSlides.slice(0, framePaths.length);
+        const wordCounts = slidesUsed.map((s: Slide) => {
           const text = s.spokenText || "";
           const words = text.split(/\s+/).filter(Boolean).length;
           if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
           return Math.max(words, 5);
         });
+        const spokenTexts = slidesUsed.map((s) => (s.spokenText || "").trim());
         logger.info({ frames: framePaths.length }, "Static slides rendered successfully");
-        return { paths: framePaths, wordCounts };
+        return { paths: framePaths, wordCounts, spokenTexts };
       }
     } catch (err) {
       logger.warn({ err }, "Static slide rendering failed, falling back to AI images");
