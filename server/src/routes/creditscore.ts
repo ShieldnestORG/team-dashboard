@@ -153,7 +153,12 @@ export function creditscoreRoutes(db: Db): Router {
       );
       if (search) conditions.push(search);
     }
-    if (status === "pending" || status === "complete" || status === "failed") {
+    if (
+      status === "pending"
+      || status === "complete"
+      || status === "failed"
+      || status === "degraded"
+    ) {
       conditions.push(eq(creditscoreReports.status, status));
     }
     if (hasEmail) {
