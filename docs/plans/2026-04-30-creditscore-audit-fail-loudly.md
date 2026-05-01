@@ -27,7 +27,7 @@
   - **Depends on:** 1
   - **Parallel-safe:** no
 
-- [ ] **3. Add `GET /api/public/audit/health`**
+- [x] **3. Add `GET /api/public/audit/health`**
   - **Files:** `server/src/routes/audit.ts`
   - **Action:** New route on `auditRoutes()` router. Calls `${FIRECRAWL_URL}/v1/scrape` with `https://example.com` and 5s timeout (or `/v1/health` if Firecrawl exposes it — fall back to `/v1/scrape` for the self-hosted variant). Returns `{ ok: true }` on success, `503 { ok: false, reason }` on any error. Cache result in-memory for 30s to avoid hammering on repeated probes.
   - **Verify:** `curl https://api.coherencedaddy.com/api/public/audit/health` returns 200 when Firecrawl is up, 503 when down. Storefront `vercel.json` already rewrites this — banner flips automatically.
