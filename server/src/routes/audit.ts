@@ -69,6 +69,22 @@ export type AuditResult = {
   };
   competitors: Array<{ domain: string; score: number }>;
   recommendations: Array<{ priority: "high" | "medium" | "low"; title: string; impact: string }>;
+  // Number of pages successfully scraped by Firecrawl. Persistence layers
+  // gate on this — pagesScraped===0 means the crawler failed and the
+  // result must NOT be written as status:"complete".
+  pagesScraped: number;
+  // Raw per-page Firecrawl payloads for downstream replay / re-scoring.
+  // Persisted into creditscore_reports.raw_data JSONB. Flows over SSE in
+  // the `complete` event so the storefront's POST /audit/store proxy
+  // can hand it through to storeAuditResult — anonymous free audits are
+  // the only path where the persistence layer doesn't run runAudit
+  // itself. Each page's markdown is already capped at 60_000 chars in
+  // fcScrape, so per-audit ceiling is ~180 KB.
+  rawData: Array<{
+    url: string;
+    markdown: string;
+    metadata: Record<string, unknown>;
+  }>;
   scannedAt: string;
 };
 
@@ -95,11 +111,26 @@ function validateAuditUrl(raw: string): { ok: true; url: string } | { ok: false;
 
 // ── Firecrawl helpers ─────────────────────────────────────────────────────────
 
+// Distinguishes "crawler is unreachable / errored" from "site genuinely
+// returned empty results." Callers can `instanceof` check this to decide
+// whether to fail the audit or just emit a 0-result step.
+export class FirecrawlError extends Error {
+  constructor(
+    message: string,
+    readonly endpoint: "scrape" | "map" | "search",
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "FirecrawlError";
+  }
+}
+
 async function fcScrape(
   url: string,
-): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> } | null> {
+): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> {
+  let res: Response;
   try {
-    const res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
+    res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -108,29 +139,34 @@ async function fcScrape(
       body: JSON.stringify({ url, formats: ["markdown", "links"], timeout: 30000 }),
       signal: AbortSignal.timeout(45_000),
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      success: boolean;
-      data?: {
-        markdown?: string;
-        links?: string[];
-        metadata?: Record<string, unknown>;
-      };
-    };
-    if (!data.success || !data.data) return null;
-    return {
-      markdown: (data.data.markdown ?? "").slice(0, 60_000),
-      links: data.data.links ?? [],
-      metadata: data.data.metadata ?? {},
-    };
-  } catch {
-    return null;
+  } catch (err) {
+    throw new FirecrawlError(`scrape: network error (${(err as Error).message})`, "scrape", err);
   }
+  if (!res.ok) {
+    throw new FirecrawlError(`scrape: HTTP ${res.status}`, "scrape");
+  }
+  const data = (await res.json()) as {
+    success: boolean;
+    data?: {
+      markdown?: string;
+      links?: string[];
+      metadata?: Record<string, unknown>;
+    };
+  };
+  if (!data.success || !data.data) {
+    throw new FirecrawlError("scrape: response missing data", "scrape");
+  }
+  return {
+    markdown: (data.data.markdown ?? "").slice(0, 60_000),
+    links: data.data.links ?? [],
+    metadata: data.data.metadata ?? {},
+  };
 }
 
 async function fcMap(url: string): Promise<string[]> {
+  let res: Response;
   try {
-    const res = await fetch(`${FIRECRAWL_URL}/v1/map`, {
+    res = await fetch(`${FIRECRAWL_URL}/v1/map`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -139,24 +175,29 @@ async function fcMap(url: string): Promise<string[]> {
       body: JSON.stringify({ url, limit: 50 }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      success: boolean;
-      links?: string[];
-      urls?: string[];
-    };
-    if (!data.success) return [];
-    return data.links ?? data.urls ?? [];
-  } catch {
-    return [];
+  } catch (err) {
+    throw new FirecrawlError(`map: network error (${(err as Error).message})`, "map", err);
   }
+  if (!res.ok) {
+    throw new FirecrawlError(`map: HTTP ${res.status}`, "map");
+  }
+  const data = (await res.json()) as {
+    success: boolean;
+    links?: string[];
+    urls?: string[];
+  };
+  if (!data.success) {
+    throw new FirecrawlError("map: response success=false", "map");
+  }
+  return data.links ?? data.urls ?? [];
 }
 
 async function fcSearch(
   query: string,
 ): Promise<Array<{ url: string; title: string }>> {
+  let res: Response;
   try {
-    const res = await fetch(`${FIRECRAWL_URL}/v1/search`, {
+    res = await fetch(`${FIRECRAWL_URL}/v1/search`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -165,18 +206,22 @@ async function fcSearch(
       body: JSON.stringify({ query, limit: 3 }),
       signal: AbortSignal.timeout(20_000),
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      success: boolean;
-      data?: Array<{ url?: string; title?: string }>;
-    };
-    if (!data.success || !data.data) return [];
-    return data.data
-      .filter((d) => d.url)
-      .map((d) => ({ url: d.url!, title: d.title ?? d.url! }));
-  } catch {
-    return [];
+  } catch (err) {
+    throw new FirecrawlError(`search: network error (${(err as Error).message})`, "search", err);
   }
+  if (!res.ok) {
+    throw new FirecrawlError(`search: HTTP ${res.status}`, "search");
+  }
+  const data = (await res.json()) as {
+    success: boolean;
+    data?: Array<{ url?: string; title?: string }>;
+  };
+  if (!data.success || !data.data) {
+    throw new FirecrawlError("search: response missing data", "search");
+  }
+  return data.data
+    .filter((d) => d.url)
+    .map((d) => ({ url: d.url!, title: d.title ?? d.url! }));
 }
 
 // ── Audit pipeline ────────────────────────────────────────────────────────────
@@ -260,7 +305,19 @@ export async function runAudit(
 
   // Step 3 — Map site structure
   emit({ type: "step", label: "Mapping site structure..." });
-  const siteUrls = await fcMap(url);
+  let siteUrls: string[];
+  try {
+    siteUrls = await fcMap(url);
+  } catch (err) {
+    if (err instanceof FirecrawlError) {
+      emit({
+        type: "error",
+        message: "Crawler temporarily unavailable. Try again in a few minutes.",
+      });
+      return;
+    }
+    throw err;
+  }
   emit({ type: "step", label: "Mapping site structure...", detail: `${siteUrls.length} pages found` });
 
   if (isCancelled()) return;
@@ -285,8 +342,35 @@ export async function runAudit(
     }
   }
 
-  const scrapeResults = await Promise.all(pagesToScrape.map((u) => fcScrape(u)));
-  const validScrapes = scrapeResults.filter((r): r is NonNullable<typeof r> => r !== null);
+  // Per-page scrapes can fail individually — that's fine, we record what
+  // came back. But if NONE of them succeed we treat the whole audit as
+  // crawler-down rather than persisting a 0-page "complete" report.
+  const scrapeOutcomes = await Promise.allSettled(pagesToScrape.map((u) => fcScrape(u)));
+  const validScrapes = scrapeOutcomes
+    .map((o, i) =>
+      o.status === "fulfilled"
+        ? { url: pagesToScrape[i]!, ...o.value }
+        : null,
+    )
+    .filter(
+      (
+        v,
+      ): v is {
+        url: string;
+        markdown: string;
+        links: string[];
+        metadata: Record<string, unknown>;
+      } => v !== null,
+    );
+
+  if (validScrapes.length === 0) {
+    emit({
+      type: "error",
+      message: "Crawler temporarily unavailable. Try again in a few minutes.",
+    });
+    return;
+  }
+
   const combinedMarkdown = validScrapes.map((r) => r.markdown).join("\n\n");
   const homepageScrape = validScrapes[0] ?? null;
 
@@ -385,10 +469,13 @@ export async function runAudit(
   if (isCancelled()) return;
 
   // Step 7 — Competitors
+  // Search failures are non-fatal: emit an empty array and let the
+  // storefront hide the section. NEVER fall back to fake alt1/alt2/alt3
+  // domains — that's worse than no data because customers think it's real.
   emit({ type: "step", label: "Finding competitors..." });
   let competitors: Array<{ domain: string; score: number }> = [];
-  const searchResults = await fcSearch(`${domain} competitors OR alternatives`);
-  if (searchResults.length > 0) {
+  try {
+    const searchResults = await fcSearch(`${domain} competitors OR alternatives`);
     competitors = searchResults.map((r) => {
       try {
         return { domain: new URL(r.url).hostname, score: Math.floor(Math.random() * 30) + 55 };
@@ -396,14 +483,20 @@ export async function runAudit(
         return { domain: r.title, score: Math.floor(Math.random() * 30) + 55 };
       }
     });
-    emit({ type: "step", label: "Finding competitors...", detail: `${competitors.length} competitors identified` });
-  } else {
-    competitors = [
-      { domain: `alt1.${domain.split(".").slice(-2).join(".")}`, score: 62 },
-      { domain: `alt2.${domain.split(".").slice(-2).join(".")}`, score: 58 },
-      { domain: `alt3.${domain.split(".").slice(-2).join(".")}`, score: 51 },
-    ];
-    emit({ type: "step", label: "Finding competitors...", detail: "Skipped" });
+    emit({
+      type: "step",
+      label: "Finding competitors...",
+      detail:
+        competitors.length > 0
+          ? `${competitors.length} competitors identified`
+          : "No competitors found",
+    });
+  } catch (err) {
+    if (err instanceof FirecrawlError) {
+      emit({ type: "step", label: "Finding competitors...", detail: "Search unavailable" });
+    } else {
+      throw err;
+    }
   }
 
   if (isCancelled()) return;
@@ -569,10 +662,42 @@ export async function runAudit(
     },
     competitors,
     recommendations,
+    pagesScraped: validScrapes.length,
+    rawData: validScrapes.map((s) => ({
+      url: s.url,
+      markdown: s.markdown,
+      metadata: s.metadata,
+    })),
     scannedAt: new Date().toISOString(),
   };
 
   emit({ type: "complete", result });
+}
+
+// ── Health probe ──────────────────────────────────────────────────────────────
+
+// Cache the result for 30s so a noisy storefront doesn't hammer Firecrawl.
+let healthCache: { ok: boolean; reason?: string; checkedAt: number } | null = null;
+const HEALTH_CACHE_MS = 30_000;
+
+async function probeFirecrawl(): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    const res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
+      },
+      body: JSON.stringify({ url: "https://example.com", formats: ["markdown"], timeout: 4000 }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      return { ok: false, reason: `firecrawl HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `firecrawl unreachable (${(err as Error).message})` };
+  }
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
@@ -587,6 +712,30 @@ export function auditRoutes(): Router {
       "Access-Control-Allow-Headers": "Content-Type",
     });
     res.sendStatus(204);
+  });
+
+  router.get("/audit/health", async (_req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+
+    const now = Date.now();
+    if (!healthCache || now - healthCache.checkedAt > HEALTH_CACHE_MS) {
+      const probe = await probeFirecrawl();
+      healthCache = {
+        ok: probe.ok,
+        reason: probe.ok ? undefined : probe.reason,
+        checkedAt: now,
+      };
+    }
+
+    if (healthCache.ok) {
+      res.json({ ok: true, checkedAt: new Date(healthCache.checkedAt).toISOString() });
+    } else {
+      res.status(503).json({
+        ok: false,
+        reason: healthCache.reason ?? "unknown",
+        checkedAt: new Date(healthCache.checkedAt).toISOString(),
+      });
+    }
   });
 
   router.post("/audit", (req, res) => {

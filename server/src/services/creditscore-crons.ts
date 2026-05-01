@@ -14,7 +14,7 @@ import { and, desc, eq, inArray, or } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { creditscoreReports, creditscoreSubscriptions } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
-import { creditscoreService } from "./creditscore.js";
+import { creditscoreService, isDegradedAuditResult } from "./creditscore.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
 import { logger } from "../middleware/logger.js";
 
@@ -96,6 +96,19 @@ async function runScheduledScans(db: Db): Promise<void> {
       enqueued += 1;
 
       if (result && sub.email) {
+        // Refuse to email customers off a degraded result. generateReport
+        // already wrote status:"degraded" + score:null to the DB, but it
+        // returns the in-memory AuditResult unchanged (with the bogus
+        // score:30 / all-zero subscores), so without this guard the cron
+        // would fire score_drop_alert / weekly_report / monthly_report
+        // emails containing fake data the moment Firecrawl flapped.
+        if (isDegradedAuditResult(result)) {
+          logger.warn(
+            { subId: sub.id, domain: sub.domain },
+            "creditscore:scan — skipping email; rescan was degraded; will retry next cycle",
+          );
+          continue;
+        }
         // Score-drop alert takes priority over the regular monthly report.
         if (
           typeof previousScore === "number" &&
