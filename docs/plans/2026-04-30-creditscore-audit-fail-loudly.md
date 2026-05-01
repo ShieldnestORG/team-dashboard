@@ -69,7 +69,7 @@
   - **Depends on:** 6
   - **Parallel-safe:** yes with 7
 
-- [ ] **9. Typecheck + smoke test + commit**
+- [x] **9. Typecheck + smoke test + commit**
   - **Files:** none (verification only)
   - **Action:** Run server typecheck, UI typecheck (per CLAUDE.md — UI doesn't touch this but it's the project rule before merging), run any creditscore-related test suite. Hand-trigger one audit against `https://stripe.com` via curl/`runAudit` if dev env is available.
   - **Verify:** `npx tsc --noEmit --project server/tsconfig.json` clean; `cd ui && npx tsc --noEmit` clean; Phase 1 verification checklist from handoff items 1-3 (skip 4 — DB query — until backfill runs in prod).
