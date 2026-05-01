@@ -62,7 +62,7 @@
   - **Depends on:** 6
   - **Parallel-safe:** no
 
-- [ ] **8. Backfill SQL: mark existing zero-scrape rows as `degraded`**
+- [x] **8. Backfill SQL: mark existing zero-scrape rows as `degraded`**
   - **Files:** `scripts/audit/creditscore-backfill-degraded.sql` (new)
   - **Action:** SQL script (not migration — one-shot data fix to run manually against prod): `UPDATE creditscore_reports SET status='degraded' WHERE status='complete' AND score < 35 AND (result_json->>'pagesScraped')::int IS NOT DISTINCT FROM 0`. Include a `SELECT COUNT(*) ... FOR REVIEW` first; commit a dry-run output as `kg-audit`-style note in `docs/operations/`.
   - **Verify:** Script runs cleanly against a local DB copy or shows expected row count via `EXPLAIN ANALYZE`. Exec against prod is a separate, gated step (user runs).
