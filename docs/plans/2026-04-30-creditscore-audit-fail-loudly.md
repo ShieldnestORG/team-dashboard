@@ -41,7 +41,7 @@
   - **Depends on:** none
   - **Parallel-safe:** yes with 3
 
-- [ ] **5. `runAudit` populates `rawData` per scraped page**
+- [x] **5. `runAudit` populates `rawData` per scraped page**
   - **Files:** `server/src/routes/audit.ts`
   - **Action:** Track `rawScrapes: Array<{url, markdown, metadata}>` from `validScrapes` and include on the `AuditResult`. (This is what the new `raw_data` column will store.)
   - **Verify:** Type compiles; `AuditResult` has `rawData: Array<{...}>` field.
