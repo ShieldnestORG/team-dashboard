@@ -1,6 +1,8 @@
 import express, { Router } from "express";
 import type { Request, Response } from "express";
+import { and, count, desc, eq, gte, ilike, isNotNull, or, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { creditscoreReports, creditscoreSubscriptions } from "@paperclipai/db";
 import { creditscoreService } from "../services/creditscore.js";
 import { creditscoreContentAgent } from "../services/creditscore-content-agent.js";
 import { creditscoreSchemaAgent } from "../services/creditscore-schema-agent.js";
@@ -113,6 +115,123 @@ export function creditscoreRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err, id }, "creditscore: getReport failed");
       res.status(500).json({ error: "Failed to fetch report" });
+    }
+  });
+
+  // GET /api/creditscore/reports — board admin lead view of stored reports
+  // Filters: q (domain/email ilike), status, hasEmail, hasSubscription, tier,
+  //          since (ISO date), limit (max 200), offset.
+  router.get("/reports", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const status = typeof req.query.status === "string" ? req.query.status : "";
+    const tier = typeof req.query.tier === "string" ? req.query.tier : "";
+    const sinceRaw = typeof req.query.since === "string" ? req.query.since : "";
+    const hasEmail = req.query.hasEmail === "true" || req.query.hasEmail === "1";
+    const hasSubscription =
+      req.query.hasSubscription === "true" || req.query.hasSubscription === "1";
+
+    const parsedLimit = Number.parseInt(String(req.query.limit ?? ""), 10);
+    const parsedOffset = Number.parseInt(String(req.query.offset ?? ""), 10);
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 200)
+        : 50;
+    const offset =
+      Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+
+    const conditions: SQL[] = [];
+    if (q) {
+      const like = `%${q}%`;
+      const search = or(
+        ilike(creditscoreReports.domain, like),
+        ilike(creditscoreReports.email, like),
+      );
+      if (search) conditions.push(search);
+    }
+    if (status === "pending" || status === "complete" || status === "failed") {
+      conditions.push(eq(creditscoreReports.status, status));
+    }
+    if (hasEmail) {
+      conditions.push(isNotNull(creditscoreReports.email));
+    }
+    if (hasSubscription) {
+      conditions.push(isNotNull(creditscoreReports.subscriptionId));
+    }
+    if (tier) {
+      conditions.push(eq(creditscoreSubscriptions.tier, tier));
+    }
+    if (sinceRaw) {
+      const sinceDate = new Date(sinceRaw);
+      if (!Number.isNaN(sinceDate.getTime())) {
+        conditions.push(gte(creditscoreReports.createdAt, sinceDate));
+      }
+    }
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    try {
+      const rowsQuery = db
+        .select({
+          id: creditscoreReports.id,
+          domain: creditscoreReports.domain,
+          email: creditscoreReports.email,
+          score: creditscoreReports.score,
+          previousScore: creditscoreReports.previousScore,
+          status: creditscoreReports.status,
+          shareableSlug: creditscoreReports.shareableSlug,
+          createdAt: creditscoreReports.createdAt,
+          subscriptionId: creditscoreReports.subscriptionId,
+          subscriptionTier: creditscoreSubscriptions.tier,
+          subscriptionStatus: creditscoreSubscriptions.status,
+        })
+        .from(creditscoreReports)
+        .leftJoin(
+          creditscoreSubscriptions,
+          eq(creditscoreSubscriptions.id, creditscoreReports.subscriptionId),
+        )
+        .orderBy(desc(creditscoreReports.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const totalQuery = db
+        .select({ total: count() })
+        .from(creditscoreReports)
+        .leftJoin(
+          creditscoreSubscriptions,
+          eq(creditscoreSubscriptions.id, creditscoreReports.subscriptionId),
+        );
+
+      const [rows, totalRows] = await Promise.all([
+        where ? rowsQuery.where(where) : rowsQuery,
+        where ? totalQuery.where(where) : totalQuery,
+      ]);
+
+      res.json({
+        reports: rows.map((r) => ({
+          id: r.id,
+          domain: r.domain,
+          email: r.email,
+          score: r.score,
+          previousScore: r.previousScore,
+          status: r.status,
+          shareableSlug: r.shareableSlug,
+          createdAt:
+            r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+          subscriptionId: r.subscriptionId,
+          subscriptionTier: r.subscriptionTier,
+          subscriptionStatus: r.subscriptionStatus,
+        })),
+        total: Number(totalRows[0]?.total ?? 0),
+        limit,
+        offset,
+      });
+    } catch (err) {
+      logger.error({ err }, "creditscore: listReports failed");
+      res.status(500).json({ error: "Failed to list reports" });
     }
   });
 

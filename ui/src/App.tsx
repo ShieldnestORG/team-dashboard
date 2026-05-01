@@ -246,7 +246,8 @@ function boardRoutes() {
       <Route path="agent-ops" element={<AgentOps />} />
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<Navigate to="/socials/content" replace />} />
-      <Route path="creditscore-review" element={<Navigate to="/creditscore-review/drafts" replace />} />
+      <Route path="creditscore-review" element={<Navigate to="/creditscore-review/leads" replace />} />
+      <Route path="creditscore-review/leads" element={<CreditScoreReview />} />
       <Route path="creditscore-review/drafts" element={<CreditScoreReview />} />
       <Route path="creditscore-review/impls" element={<CreditScoreReview />} />
       <Route path="creditscore-review/scans" element={<CreditScoreReview />} />
@@ -491,6 +492,7 @@ export function App() {
           <Route path="affiliates/commissions" element={<UnprefixedBoardRedirect />} />
           <Route path="affiliates/payouts" element={<UnprefixedBoardRedirect />} />
           <Route path="creditscore-review" element={<UnprefixedBoardRedirect />} />
+          <Route path="creditscore-review/leads" element={<UnprefixedBoardRedirect />} />
           <Route path="creditscore-review/drafts" element={<UnprefixedBoardRedirect />} />
           <Route path="creditscore-review/impls" element={<UnprefixedBoardRedirect />} />
           <Route path="creditscore-review/scans" element={<UnprefixedBoardRedirect />} />

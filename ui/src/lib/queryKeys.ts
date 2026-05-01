@@ -149,6 +149,8 @@ export const queryKeys = {
     schemaImpls: ["creditscore-review", "schema-impls"] as const,
     competitorScans: ["creditscore-review", "competitor-scans"] as const,
     strategyDocs: ["creditscore-review", "strategy-docs"] as const,
+    leads: (filters: Record<string, unknown>) =>
+      ["creditscore-review", "leads", filters] as const,
   },
   apiRoutes: ["api-routes"] as const,
   plugins: {

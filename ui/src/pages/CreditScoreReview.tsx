@@ -19,9 +19,10 @@ import {
   type CompetitorScan,
   type StrategyDoc,
 } from "../api/creditscoreReview";
+import { CreditScoreLeadsTab } from "./CreditScoreLeads";
 
-type Tab = "drafts" | "impls" | "scans" | "docs";
-const TABS: Tab[] = ["drafts", "impls", "scans", "docs"];
+type Tab = "leads" | "drafts" | "impls" | "scans" | "docs";
+const TABS: Tab[] = ["leads", "drafts", "impls", "scans", "docs"];
 
 function isTab(v: string): v is Tab {
   return (TABS as string[]).includes(v);
@@ -600,8 +601,8 @@ export function CreditScoreReview() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const location = useLocation();
-  const seg = location.pathname.split("/").pop() ?? "drafts";
-  const tab: Tab = isTab(seg) ? seg : "drafts";
+  const seg = location.pathname.split("/").pop() ?? "leads";
+  const tab: Tab = isTab(seg) ? seg : "leads";
 
   useEffect(() => {
     setBreadcrumbs([{ label: "CreditScore Review" }]);
@@ -632,6 +633,7 @@ export function CreditScoreReview() {
           value={tab}
           onValueChange={(v) => navigate(`/creditscore-review/${v}`)}
           items={[
+            { value: "leads", label: "Leads" },
             {
               value: "drafts",
               label: (
@@ -664,6 +666,7 @@ export function CreditScoreReview() {
         />
       </Tabs>
 
+      {tab === "leads" && <CreditScoreLeadsTab />}
       {tab === "drafts" && <DraftsTab />}
       {tab === "impls" && <ImplsTab />}
       {tab === "scans" && <ScansTab />}
