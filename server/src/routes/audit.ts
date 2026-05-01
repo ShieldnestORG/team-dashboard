@@ -69,6 +69,10 @@ export type AuditResult = {
   };
   competitors: Array<{ domain: string; score: number }>;
   recommendations: Array<{ priority: "high" | "medium" | "low"; title: string; impact: string }>;
+  // Number of pages successfully scraped by Firecrawl. Persistence layers
+  // gate on this — pagesScraped===0 means the crawler failed and the
+  // result must NOT be written as status:"complete".
+  pagesScraped: number;
   scannedAt: string;
 };
 
@@ -289,7 +293,19 @@ export async function runAudit(
 
   // Step 3 — Map site structure
   emit({ type: "step", label: "Mapping site structure..." });
-  const siteUrls = await fcMap(url);
+  let siteUrls: string[];
+  try {
+    siteUrls = await fcMap(url);
+  } catch (err) {
+    if (err instanceof FirecrawlError) {
+      emit({
+        type: "error",
+        message: "Crawler temporarily unavailable. Try again in a few minutes.",
+      });
+      return;
+    }
+    throw err;
+  }
   emit({ type: "step", label: "Mapping site structure...", detail: `${siteUrls.length} pages found` });
 
   if (isCancelled()) return;
@@ -314,8 +330,25 @@ export async function runAudit(
     }
   }
 
-  const scrapeResults = await Promise.all(pagesToScrape.map((u) => fcScrape(u)));
-  const validScrapes = scrapeResults.filter((r): r is NonNullable<typeof r> => r !== null);
+  // Per-page scrapes can fail individually — that's fine, we record what
+  // came back. But if NONE of them succeed we treat the whole audit as
+  // crawler-down rather than persisting a 0-page "complete" report.
+  const scrapeOutcomes = await Promise.allSettled(pagesToScrape.map((u) => fcScrape(u)));
+  const validScrapes = scrapeOutcomes
+    .filter(
+      (o): o is PromiseFulfilledResult<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> =>
+        o.status === "fulfilled",
+    )
+    .map((o) => o.value);
+
+  if (validScrapes.length === 0) {
+    emit({
+      type: "error",
+      message: "Crawler temporarily unavailable. Try again in a few minutes.",
+    });
+    return;
+  }
+
   const combinedMarkdown = validScrapes.map((r) => r.markdown).join("\n\n");
   const homepageScrape = validScrapes[0] ?? null;
 
@@ -414,10 +447,13 @@ export async function runAudit(
   if (isCancelled()) return;
 
   // Step 7 — Competitors
+  // Search failures are non-fatal: emit an empty array and let the
+  // storefront hide the section. NEVER fall back to fake alt1/alt2/alt3
+  // domains — that's worse than no data because customers think it's real.
   emit({ type: "step", label: "Finding competitors..." });
   let competitors: Array<{ domain: string; score: number }> = [];
-  const searchResults = await fcSearch(`${domain} competitors OR alternatives`);
-  if (searchResults.length > 0) {
+  try {
+    const searchResults = await fcSearch(`${domain} competitors OR alternatives`);
     competitors = searchResults.map((r) => {
       try {
         return { domain: new URL(r.url).hostname, score: Math.floor(Math.random() * 30) + 55 };
@@ -425,14 +461,20 @@ export async function runAudit(
         return { domain: r.title, score: Math.floor(Math.random() * 30) + 55 };
       }
     });
-    emit({ type: "step", label: "Finding competitors...", detail: `${competitors.length} competitors identified` });
-  } else {
-    competitors = [
-      { domain: `alt1.${domain.split(".").slice(-2).join(".")}`, score: 62 },
-      { domain: `alt2.${domain.split(".").slice(-2).join(".")}`, score: 58 },
-      { domain: `alt3.${domain.split(".").slice(-2).join(".")}`, score: 51 },
-    ];
-    emit({ type: "step", label: "Finding competitors...", detail: "Skipped" });
+    emit({
+      type: "step",
+      label: "Finding competitors...",
+      detail:
+        competitors.length > 0
+          ? `${competitors.length} competitors identified`
+          : "No competitors found",
+    });
+  } catch (err) {
+    if (err instanceof FirecrawlError) {
+      emit({ type: "step", label: "Finding competitors...", detail: "Search unavailable" });
+    } else {
+      throw err;
+    }
   }
 
   if (isCancelled()) return;
@@ -598,6 +640,7 @@ export async function runAudit(
     },
     competitors,
     recommendations,
+    pagesScraped: validScrapes.length,
     scannedAt: new Date().toISOString(),
   };
 

@@ -20,7 +20,7 @@
   - **Depends on:** none
   - **Parallel-safe:** no (foundation for steps 2, 3, 5)
 
-- [ ] **2. `runAudit` propagates crawler failure as SSE error event**
+- [x] **2. `runAudit` propagates crawler failure as SSE error event**
   - **Files:** `server/src/routes/audit.ts`
   - **Action:** Wrap the map+scrape phase in try/catch on `FirecrawlError`; on failure, `emit({ type:"error", message:"Crawler temporarily unavailable. Try again in a few minutes." })` and `return` without emitting `complete`. Drop the hardcoded `alt1/alt2/alt3` competitor fallback (lines 401-405) — when `fcSearch` fails or returns empty, return `competitors: []`. Add `pagesScraped` to the `AuditResult` shape so validators can gate on it.
   - **Verify:** Mock-fetch test (or existing test if present) confirms an `error` SSE is emitted when fetch throws and no `complete` is emitted.
