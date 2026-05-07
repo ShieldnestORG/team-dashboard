@@ -58,10 +58,10 @@ export const AEO_CTAS: Record<string, AeoCta> = {
     youtubePinnedComment: '🛠️ Try the free Optimize-Me tools → https://optimize-me.coherencedaddy.com',
   },
   affiliate: {
-    tweetSuffix: '\n\n💸 Earn promoting AEO tools — become an affiliate → https://coherencedaddy.com/affiliates',
-    blogCtaBlock: '<div style="margin-top:2em;padding:1em;border-left:4px solid #ec4899;background:#fdf2f8"><strong>Earn while helping businesses get found by AI.</strong><br>Become a Coherence Daddy affiliate — <a href="https://coherencedaddy.com/affiliates" style="color:#db2777">Apply →</a></div>',
-    youtubeDescriptionBlock: '💸 Become a Coherence Daddy affiliate:\nhttps://coherencedaddy.com/affiliates\n🤝 Earn promoting tools that help businesses win AI search.',
-    youtubePinnedComment: '💸 Want to earn promoting AEO? Become an affiliate → https://coherencedaddy.com/affiliates',
+    tweetSuffix: '\n\n💸 Earn promoting AEO tools — become an affiliate → https://affiliates.coherencedaddy.com',
+    blogCtaBlock: '<div style="margin-top:2em;padding:1em;border-left:4px solid #ec4899;background:#fdf2f8"><strong>Earn while helping businesses get found by AI.</strong><br>Become a Coherence Daddy affiliate — <a href="https://affiliates.coherencedaddy.com" style="color:#db2777">Apply →</a></div>',
+    youtubeDescriptionBlock: '💸 Become a Coherence Daddy affiliate:\nhttps://affiliates.coherencedaddy.com\n🤝 Earn promoting tools that help businesses win AI search.',
+    youtubePinnedComment: '💸 Want to earn promoting AEO? Become an affiliate → https://affiliates.coherencedaddy.com',
   },
   default: {
     tweetSuffix: '\n\n🌐 coherencedaddy.com',
