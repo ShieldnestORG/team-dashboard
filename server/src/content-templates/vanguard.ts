@@ -41,7 +41,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   linkedin: "Write a LinkedIn post analyzing an XRP/Ripple development. Professional, data-driven. Include regulatory context where relevant. End with forward-looking implications for the payments industry.",
   reddit: "Write a Reddit post for r/XRP or r/Ripple. Include a title in [TITLE] tags. Be thorough with data and source references. Present balanced analysis — the XRP community values substance over shilling.",
   discord: "Write a Discord message sharing an XRP update or analysis. Concise, factual, with key data points. Use discord markdown formatting.",
-  bluesky: "Write a Bluesky post with a key XRP data point or development. Authoritative and concise. Under 300 characters.",
+  bluesky: "Write a Bluesky post body, 180-240 characters. Open with a SHARP XRP HOOK — a contrarian read on the news, a precise stat that flips the prevailing narrative, or a regulatory implication others missed. Authoritative, not generic. Skip 'Hey!' or 'Quick update'. Write only the message — no URLs, no 'check out' lines, no sign-off CTA.",
   video_script: "Write a short video script (15-30 seconds) for a vertical reel about XRP/Ripple. Include: [HOOK] a surprising XRP stat or development, [BODY] 2-3 key data points with market context, [CTA] where to track XRP (tokns.fi). Authoritative tone. No more than 6 lines of overlay text.",
 };
 

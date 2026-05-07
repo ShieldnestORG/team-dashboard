@@ -40,7 +40,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   linkedin: "Write a LinkedIn post summarizing a key blockchain trend or development. Professional, data-driven, objective. Include 2-3 key takeaways. End with a forward-looking statement.",
   reddit: "Write a Reddit post analyzing a trend or development. Include a title in [TITLE] tags. Be thorough and balanced. Present multiple perspectives. Include data and sources.",
   discord: "Write a Discord message sharing a key update or trend. Concise and factual. Include relevant links or data points. Use discord markdown formatting.",
-  bluesky: "Write a Bluesky post with a key data point or trend observation. Factual and concise. Under 300 characters.",
+  bluesky: "Write a Bluesky post body, 180-240 characters. Open with a SURPRISING STAT or counterintuitive data point that makes readers stop scrolling. Factual but punchy — let the numbers do the edge. Skip generic openers ('Hey!', 'Quick update'). Write only the message — no URLs, no 'check out' lines, no sign-off CTA.",
   video_script: "Write a short video script (15-30 seconds) for a vertical reel reporting on a trend. Include: [HOOK] the most surprising stat or development, [BODY] 2-3 key data points with context, [CTA] where to get the full analysis. Neutral, factual tone. No more than 6 lines of overlay text.",
 };
 

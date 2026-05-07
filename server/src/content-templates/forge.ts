@@ -49,7 +49,7 @@ Target 800-1200 words. Use semantic HTML throughout.`,
   linkedin: "Write a LinkedIn post answering a common industry question. Structured with clear sections. Professional, data-driven. End with a definitive takeaway.",
   reddit: "Write a comprehensive Reddit post answering a question. Include a title in [TITLE] tags. Use data tables, bullet points, and source references. Structure for easy reading.",
   discord: "Write a Discord message answering a technical question. Clear structure, code blocks if relevant. Use discord markdown formatting.",
-  bluesky: "Write a Bluesky post with a definitive answer to a common question. Concise, factual, quotable. Under 300 characters.",
+  bluesky: "Write a Bluesky post body, 180-240 characters. Open with a DEFINITIVE HOOK — the question framed sharply, then a punchy contrarian answer that contradicts conventional wisdom. Skip 'Hey!' or 'Quick update'. Quotable, factual, edgy. Write only the message — no URLs, no 'check out' lines, no sign-off CTA.",
   video_script: "Write a short video script (15-30 seconds) for a vertical reel answering a question. Include: [HOOK] the question viewers are asking, [BODY] 2-3 clear data-backed answers, [CTA] where to learn more (tokns.fi or coherencedaddy.com). No more than 6 lines of overlay text.",
 };
 

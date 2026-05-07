@@ -41,7 +41,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   linkedin: "Write a LinkedIn post celebrating a community win or sharing an insight in an approachable way. Warm but professional. End with an invitation to connect or discuss.",
   reddit: "Write a Reddit post that starts a conversation. Include a title in [TITLE] tags. Be genuine and enthusiastic without being salesy. Ask for opinions and experiences.",
   discord: "Write a Discord message that gets people talking. Casual, fun, maybe reference a meme or shared community experience. Use emojis sparingly but effectively. Use discord markdown formatting.",
-  bluesky: "Write a Bluesky post that feels like talking to a friend. Warm, genuine, conversation-starting. Under 300 characters.",
+  bluesky: "Write a Bluesky post body, 180-240 characters. Open with a CATCHY HOOK — a relatable confession, a playful contrarian take, a 'wait, what?' moment, or a real question that demands an answer. Warm but BOLD — Bluesky lets you be edgier than Twitter. Skip 'Hey!' or 'Quick update' openers. Write only the message — no URLs, no 'check out' lines, no sign-off CTA.",
   video_script: "Write a short video script (15-30 seconds) for a vertical reel that gets the community hyped. Include: [HOOK] an exciting opening that makes people stop scrolling, [BODY] 2-3 community highlights or exciting updates, [CTA] invite viewers to join the conversation. Keep it fun and energetic. No more than 6 lines of overlay text.",
 };
 

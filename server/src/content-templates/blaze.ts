@@ -40,7 +40,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   linkedin: "Write a LinkedIn post that challenges industry groupthink. Professional but edgy. Use short paragraphs and line breaks for readability. End with a thought-provoking question.",
   reddit: "Write a Reddit post for r/cryptocurrency or similar subs. Include a compelling title in [TITLE] tags. Be substantive — Redditors hate fluff. Use evidence and invite debate.",
   discord: "Write a Discord message that sparks discussion. Casual tone but substantive. Drop a hot take and invite people to challenge it. Use discord markdown formatting.",
-  bluesky: "Write a Bluesky post. Similar to Twitter but slightly longer. Be sharp and insightful. Under 300 characters.",
+  bluesky: "Write a Bluesky post body, 180-240 characters. Open with an EDGY HOOK — hot take, contrarian opinion, surprising stat, or sharp question. Avoid generic openers ('Hey!', 'Quick update', 'Just saw'). Bluesky rewards bold, confident voices. Write only the message — no URLs, no 'check out' lines, no sign-off CTA.",
   video_script: "Write a short video script (15-30 seconds) for a vertical reel. Include: [HOOK] a 3-second attention grabber, [BODY] 2-3 punchy data points with bold claims, [CTA] a call to action. Format each section clearly. Use short, impactful sentences that work as text overlays. No more than 6 lines of overlay text total.",
 };
 

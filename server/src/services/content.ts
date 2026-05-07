@@ -13,7 +13,7 @@ import * as vanguard from "../content-templates/vanguard.js";
 import * as forge from "../content-templates/forge.js";
 import { getPartnerInjection } from "./partner-content.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
-import { getAeoCta } from "./aeo-cta.js";
+import { getAeoCta, pickBlueskyCta } from "./aeo-cta.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -327,7 +327,16 @@ export function contentService(db: Db) {
     );
 
     let generatedText = enforced;
-    if (opts.brand) {
+    if (opts.contentType === 'bluesky') {
+      // Rotate across product CTAs (directory, creditscore, optimize-me, affiliate, partners)
+      // so audiences don't see the same suffix every post. Skip if the post is already
+      // close to the limit — preserving the LLM's organic close beats jamming a CTA in.
+      const cta = pickBlueskyCta();
+      const suffix = cta.tweetSuffix;
+      if (generatedText.length + suffix.length <= charLimit) {
+        generatedText = generatedText + suffix;
+      }
+    } else if (opts.brand) {
       const cta = getAeoCta(opts.brand);
       if (opts.contentType === 'tweet') {
         const suffix = cta.tweetSuffix;
