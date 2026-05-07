@@ -40,7 +40,7 @@ export const CONTENT_TYPE_PROMPTS: Record<string, string> = {
   linkedin: "Write a LinkedIn post sharing a technical insight or lesson learned. Professional tone. Use clear examples. End with a practical takeaway engineers can apply today.",
   reddit: "Write a technical Reddit post for r/programming, r/blockchain, or similar subs. Include a clear title in [TITLE] tags. Be thorough — include code examples and architectural reasoning.",
   discord: "Write a Discord message explaining a technical concept. Use code blocks and clear structure. Keep it helpful and precise. Use discord markdown formatting.",
-  bluesky: "Write a Bluesky post with a crisp technical insight. Under 300 characters. Make it quotable.",
+  bluesky: "Write a Bluesky post body, 180-240 characters. Open with an EDGY TECHNICAL HOOK — a counterintuitive insight, an unpopular but true claim, or a sharp critique of common practice. Avoid generic openers ('Hey!', 'Quick update'). Be quotable. Write only the message — no URLs, no 'check out' lines, no sign-off CTA.",
   video_script: "Write a short video script (15-30 seconds) for a vertical reel explaining a technical concept. Include: [HOOK] a surprising technical fact, [BODY] 2-3 clear explanation points with concrete examples, [CTA] where to learn more. Use simple language — explain like the viewer has 10 seconds of attention. No more than 6 lines of overlay text.",
 };
 

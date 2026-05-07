@@ -13,7 +13,7 @@ import * as vanguard from "../content-templates/vanguard.js";
 import * as forge from "../content-templates/forge.js";
 import { getPartnerInjection } from "./partner-content.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
-import { getAeoCta } from "./aeo-cta.js";
+import { getAeoCta, pickBlueskyCta } from "./aeo-cta.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,6 +93,7 @@ const PERSONALITIES: Record<string, {
 // ---------------------------------------------------------------------------
 
 import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
+import { enforceCharLimit, smartTruncate } from "./char-limit.js";
 
 const callOllama = callOllamaGenerate;
 
@@ -267,16 +268,30 @@ async function buildFeedbackContext(
 
 const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
+interface GenerateOpts {
+  personalityId: string;
+  contentType: string;
+  topic: string;
+  contextQuery?: string;
+  companyId?: string;
+  /** brand controls which X account / publish target this content belongs to (default: 'cd') */
+  brand?: string;
+}
+
+interface ProducedText {
+  text: string;
+  charLimit: number;
+  platform: string;
+  companyId: string;
+}
+
 export function contentService(db: Db) {
-  async function generate(opts: {
-    personalityId: string;
-    contentType: string;
-    topic: string;
-    contextQuery?: string;
-    companyId?: string;
-    /** brand controls which X account / publish target this content belongs to (default: 'cd') */
-    brand?: string;
-  }): Promise<GeneratedContent> {
+  /**
+   * Internal helper — runs the full prompt + Ollama + enforce + CTA pipeline
+   * and returns the final text. Used by both generate() (which inserts a new
+   * row) and regenerateContent() (which updates an existing row in place).
+   */
+  async function produceText(opts: GenerateOpts): Promise<ProducedText> {
     const personality = PERSONALITIES[opts.personalityId];
     if (!personality) {
       throw new Error(`Unknown personality: ${opts.personalityId}. Valid: ${Object.keys(PERSONALITIES).join(", ")}`);
@@ -291,30 +306,39 @@ export function contentService(db: Db) {
     const companyId = opts.companyId || DEFAULT_COMPANY_ID;
     const platform = resolvePlatform(opts.contentType);
 
-    // Fetch context from intel reports
     const contextTopic = opts.contextQuery || opts.topic;
     const context = await fetchContext(db, contextTopic);
-
-    // Fetch admin feedback for training
     const feedbackContext = await buildFeedbackContext(db, companyId, opts.personalityId, platform);
-
-    // Fetch partner context for natural mentions (scoped by brand)
     const partnerContext = await getPartnerInjection(db, opts.topic, opts.brand);
 
-    // Build the full prompt — append brand persona block so the LLM stays on-brand
     const brandBlock = buildBrandSystemPromptBlock(opts.brand);
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context) + brandBlock;
     const fullPrompt = `${systemPrompt}${feedbackContext}${partnerContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
-    // Call Ollama
     const rawGeneratedText = await callOllama(fullPrompt);
 
-    // Append AEO funnel CTA (only when brand is explicitly set)
-    let generatedText = rawGeneratedText;
-    if (opts.brand) {
+    const enforced = await enforceCharLimit(
+      rawGeneratedText,
+      charLimit,
+      callOllama,
+      (attempt) =>
+        `${fullPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The output MUST be ${charLimit} characters or fewer, including spaces, line breaks, and emojis. Count carefully. Output ONLY the post text — no preamble, no quotes, no explanation.`,
+      { personalityId: opts.personalityId, contentType: opts.contentType },
+    );
+
+    let generatedText = enforced;
+    if (opts.contentType === 'bluesky') {
+      // Rotate across product CTAs (directory, creditscore, optimize-me, affiliate, partners)
+      // so audiences don't see the same suffix every post. Skip if the post is already
+      // close to the limit — preserving the LLM's organic close beats jamming a CTA in.
+      const cta = pickBlueskyCta();
+      const suffix = cta.tweetSuffix;
+      if (generatedText.length + suffix.length <= charLimit) {
+        generatedText = generatedText + suffix;
+      }
+    } else if (opts.brand) {
       const cta = getAeoCta(opts.brand);
       if (opts.contentType === 'tweet') {
-        // Only append if adding the suffix keeps us under the 280-char limit
         const suffix = cta.tweetSuffix;
         if (generatedText.length + suffix.length <= 280) {
           generatedText = generatedText + suffix;
@@ -324,8 +348,17 @@ export function contentService(db: Db) {
           generatedText = generatedText + '\n' + cta.blogCtaBlock;
         }
       }
-      // For other types (linkedin, reddit, discord, bluesky, thread) — no suffix
     }
+
+    if (generatedText.length > charLimit) {
+      generatedText = smartTruncate(generatedText, charLimit);
+    }
+
+    return { text: generatedText, charLimit, platform, companyId };
+  }
+
+  async function generate(opts: GenerateOpts): Promise<GeneratedContent> {
+    const { text: generatedText, charLimit, platform, companyId } = await produceText(opts);
 
     const charCount = generatedText.length;
     const withinLimit = charCount <= charLimit;
@@ -486,7 +519,15 @@ export function contentService(db: Db) {
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context);
     const fullPrompt = `${systemPrompt}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
-    const generatedText = await callOllama(fullPrompt);
+    const rawGeneratedText = await callOllama(fullPrompt);
+    const generatedText = await enforceCharLimit(
+      rawGeneratedText,
+      charLimit,
+      callOllama,
+      (attempt) =>
+        `${fullPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The output MUST be ${charLimit} characters or fewer, including spaces, line breaks, and emojis. Count carefully. Output ONLY the post text — no preamble, no quotes, no explanation.`,
+      { personalityId: opts.personalityId, contentType: opts.contentType },
+    );
 
     const charCount = generatedText.length;
     const withinLimit = charCount <= charLimit;
@@ -508,5 +549,49 @@ export function contentService(db: Db) {
     return { content: generatedText, metadata };
   }
 
-  return { generate, preview, listQueue, reviewItem, stats };
+  /**
+   * Re-run an existing content_items row through the generation pipeline,
+   * updating it in place. Used by cleanup scripts when existing drafts violate
+   * char limits or otherwise need a fresh take. Preserves id and createdAt.
+   */
+  async function regenerateContent(rowId: string): Promise<{ id: string; before: number; after: number }> {
+    const [row] = await db.select().from(contentItems).where(eq(contentItems.id, rowId));
+    if (!row) throw new Error(`content_items row not found: ${rowId}`);
+    if (row.status === "published") {
+      throw new Error(`refusing to regenerate published content: ${rowId}`);
+    }
+
+    const beforeLen = row.content.length;
+    const { text: newText, charLimit } = await produceText({
+      personalityId: row.personalityId,
+      contentType: row.contentType,
+      topic: row.topic,
+      contextQuery: row.contextQuery ?? undefined,
+      companyId: row.companyId,
+      brand: row.brand ?? undefined,
+    });
+
+    const charCount = newText.length;
+    await db
+      .update(contentItems)
+      .set({
+        content: newText,
+        charCount,
+        charLimit,
+        model: OLLAMA_MODEL,
+        // reset review state — this is effectively a new draft
+        reviewStatus: "pending",
+        reviewComment: null,
+      })
+      .where(eq(contentItems.id, rowId));
+
+    logger.info(
+      { rowId, beforeLen, afterLen: charCount, charLimit, withinLimit: charCount <= charLimit },
+      "Content regenerated and updated in place",
+    );
+
+    return { id: rowId, before: beforeLen, after: charCount };
+  }
+
+  return { generate, preview, listQueue, reviewItem, stats, regenerateContent };
 }

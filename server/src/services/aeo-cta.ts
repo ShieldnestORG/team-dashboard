@@ -45,6 +45,24 @@ export const AEO_CTAS: Record<string, AeoCta> = {
     youtubeDescriptionBlock: '🤝 Grow your business with AEO-powered content marketing:\nhttps://coherencedaddy.com\n📣 Coherence Daddy drives real, qualified traffic to local partners.',
     youtubePinnedComment: '🤝 Want to grow your business with AEO content? Partner with Coherence Daddy → https://coherencedaddy.com',
   },
+  creditscore: {
+    tweetSuffix: '\n\n📊 Free AEO/SEO audit for your site → https://creditscore.coherencedaddy.com',
+    blogCtaBlock: '<div style="margin-top:2em;padding:1em;border-left:4px solid #10b981;background:#f0fdf4"><strong>Find out your AEO/SEO Credit Score — free.</strong><br>See exactly where AI search engines see (or miss) your business — <a href="https://creditscore.coherencedaddy.com" style="color:#059669">Run Audit →</a></div>',
+    youtubeDescriptionBlock: '📊 Get your free AEO/SEO Credit Score:\nhttps://creditscore.coherencedaddy.com\n🔎 See exactly where AI search engines find (or miss) your site.',
+    youtubePinnedComment: '📊 How visible is your business to AI search? Run a free audit → https://creditscore.coherencedaddy.com',
+  },
+  optimizeme: {
+    tweetSuffix: '\n\n🛠️ Free self-optimization tools → https://optimize-me.coherencedaddy.com',
+    blogCtaBlock: '<div style="margin-top:2em;padding:1em;border-left:4px solid #6366f1;background:#eef2ff"><strong>Free tools to optimize your work, focus, and life.</strong><br><a href="https://optimize-me.coherencedaddy.com" style="color:#4f46e5">Try Optimize-Me →</a></div>',
+    youtubeDescriptionBlock: '🛠️ Free self-optimization tools at:\nhttps://optimize-me.coherencedaddy.com\n🧠 Focus, productivity, life optimization.',
+    youtubePinnedComment: '🛠️ Try the free Optimize-Me tools → https://optimize-me.coherencedaddy.com',
+  },
+  affiliate: {
+    tweetSuffix: '\n\n💸 Earn promoting AEO tools — become an affiliate → https://affiliates.coherencedaddy.com',
+    blogCtaBlock: '<div style="margin-top:2em;padding:1em;border-left:4px solid #ec4899;background:#fdf2f8"><strong>Earn while helping businesses get found by AI.</strong><br>Become a Coherence Daddy affiliate — <a href="https://affiliates.coherencedaddy.com" style="color:#db2777">Apply →</a></div>',
+    youtubeDescriptionBlock: '💸 Become a Coherence Daddy affiliate:\nhttps://affiliates.coherencedaddy.com\n🤝 Earn promoting tools that help businesses win AI search.',
+    youtubePinnedComment: '💸 Want to earn promoting AEO? Become an affiliate → https://affiliates.coherencedaddy.com',
+  },
   default: {
     tweetSuffix: '\n\n🌐 coherencedaddy.com',
     blogCtaBlock: '',
@@ -55,4 +73,18 @@ export const AEO_CTAS: Record<string, AeoCta> = {
 
 export function getAeoCta(brand?: string): AeoCta {
   return AEO_CTAS[brand ?? 'cd'] ?? AEO_CTAS['default'];
+}
+
+/**
+ * Bluesky CTA rotation pool. The bluesky generation path picks one of these
+ * at random per post so the audience sees variety across products instead of
+ * the same directory CTA every time.
+ *
+ * Order matters only for documentation; selection is uniformly random.
+ */
+const BLUESKY_CTA_POOL_KEYS = ['cd', 'creditscore', 'optimizeme', 'affiliate', 'partners'] as const;
+
+export function pickBlueskyCta(): AeoCta {
+  const key = BLUESKY_CTA_POOL_KEYS[Math.floor(Math.random() * BLUESKY_CTA_POOL_KEYS.length)];
+  return AEO_CTAS[key] ?? AEO_CTAS['default'];
 }
