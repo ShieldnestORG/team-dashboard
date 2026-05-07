@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { socialAccounts, socialAutomations } from "@paperclipai/db";
+import { socialAccounts, socialAutomations, socialPosts } from "@paperclipai/db";
 import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
+import { runSocialRelayerTick } from "../services/social-relayer.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -106,6 +107,110 @@ export function socialsRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "syncSocialAutomations failed");
       res.status(500).json({ error: "sync failed" });
+    }
+  });
+
+  // ----- Posts queue (relayer) -----
+
+  // List queued/posted/failed posts. Supports ?accountId=, ?status=, ?limit=
+  router.get("/posts", async (req, res) => {
+    const accountId = req.query.accountId as string | undefined;
+    const status = req.query.status as string | undefined;
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+
+    const where = [eq(socialAccounts.companyId, COMPANY_ID)];
+    if (accountId) where.push(eq(socialPosts.socialAccountId, accountId));
+    if (status) where.push(eq(socialPosts.status, status));
+
+    const rows = await db
+      .select({
+        id: socialPosts.id,
+        socialAccountId: socialPosts.socialAccountId,
+        text: socialPosts.text,
+        mediaUrls: socialPosts.mediaUrls,
+        altTexts: socialPosts.altTexts,
+        replyToUrl: socialPosts.replyToUrl,
+        scheduledAt: socialPosts.scheduledAt,
+        status: socialPosts.status,
+        attempts: socialPosts.attempts,
+        maxAttempts: socialPosts.maxAttempts,
+        postedUrl: socialPosts.postedUrl,
+        platformPostId: socialPosts.platformPostId,
+        error: socialPosts.error,
+        createdAt: socialPosts.createdAt,
+        postedAt: socialPosts.postedAt,
+        platform: socialAccounts.platform,
+        brand: socialAccounts.brand,
+        handle: socialAccounts.handle,
+      })
+      .from(socialPosts)
+      .innerJoin(socialAccounts, eq(socialAccounts.id, socialPosts.socialAccountId))
+      .where(and(...where))
+      .orderBy(desc(socialPosts.scheduledAt))
+      .limit(limit);
+    res.json({ posts: rows });
+  });
+
+  // Schedule a new post.
+  router.post("/posts", async (req, res) => {
+    const body = req.body ?? {};
+    if (!body.socialAccountId || typeof body.text !== "string" || !body.text.trim()) {
+      return res.status(400).json({ error: "socialAccountId and non-empty text required" });
+    }
+    // Verify the account belongs to this company before scheduling.
+    const account = await db
+      .select({ id: socialAccounts.id, status: socialAccounts.status })
+      .from(socialAccounts)
+      .where(
+        and(
+          eq(socialAccounts.id, String(body.socialAccountId)),
+          eq(socialAccounts.companyId, COMPANY_ID),
+        ),
+      )
+      .limit(1);
+    if (!account[0]) return res.status(404).json({ error: "social_account not found" });
+
+    const scheduledAt = body.scheduledAt ? new Date(String(body.scheduledAt)) : new Date();
+    if (Number.isNaN(scheduledAt.getTime())) {
+      return res.status(400).json({ error: "scheduledAt is invalid" });
+    }
+
+    const inserted = await db
+      .insert(socialPosts)
+      .values({
+        socialAccountId: String(body.socialAccountId),
+        text: String(body.text),
+        mediaUrls: Array.isArray(body.mediaUrls) ? body.mediaUrls.map(String) : [],
+        altTexts: Array.isArray(body.altTexts) ? body.altTexts.map(String) : [],
+        replyToUrl: body.replyToUrl ? String(body.replyToUrl) : null,
+        scheduledAt,
+        maxAttempts: typeof body.maxAttempts === "number" ? body.maxAttempts : 3,
+        payload: body.payload && typeof body.payload === "object" ? body.payload : {},
+      })
+      .returning();
+    res.status(201).json({ post: inserted[0] });
+  });
+
+  // Cancel a queued post (only if still scheduled).
+  router.delete("/posts/:id", async (req, res) => {
+    const id = req.params.id as string;
+    const updated = await db
+      .update(socialPosts)
+      .set({ status: "canceled", updatedAt: sql`now()` })
+      .where(and(eq(socialPosts.id, id), eq(socialPosts.status, "scheduled")))
+      .returning();
+    if (!updated[0]) return res.status(409).json({ error: "post is not in scheduled status" });
+    res.json({ ok: true });
+  });
+
+  // Manual relayer tick for testing — runs one drain pass right now.
+  router.post("/posts/relay-now", async (_req, res) => {
+    try {
+      const result = await runSocialRelayerTick(db);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "relay-now failed");
+      res.status(500).json({ error: "relay failed" });
     }
   });
 

@@ -3,6 +3,7 @@ import { youtubePublisher } from "./youtube.js";
 import { tiktokPublisher } from "./tiktok.js";
 import { twitterVideoPublisher } from "./twitter-video.js";
 import { instagramPublisher } from "./instagram.js";
+import { blueskyPublisher } from "./bluesky.js";
 import { logger } from "../../middleware/logger.js";
 
 const ALL_PUBLISHERS: PlatformPublisher[] = [
@@ -10,6 +11,7 @@ const ALL_PUBLISHERS: PlatformPublisher[] = [
   tiktokPublisher,
   twitterVideoPublisher,
   instagramPublisher,
+  blueskyPublisher,
 ];
 
 export function getPublisher(platform: string): PlatformPublisher | undefined {

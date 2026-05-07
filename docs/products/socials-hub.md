@@ -128,9 +128,41 @@ DATABASE_URL=… npx tsx scripts/seed-social-accounts.ts
 
 | Phase | Status | What |
 |---|---|---|
-| 1. Inventory | ✅ this PR | Schema, CRUD, read-only Automation + Calendar |
-| 2. Control | pending | Edit/disable automations from UI; migrate `content-crons.ts` to read from `social_automations`; "Schedule a post" button on Calendar; X token expiry alerts |
-| 3. New platforms | pending | Reddit OAuth, LinkedIn API, Bluesky AT Proto, Substack, Skool |
+| 1. Inventory | ✅ shipped | Schema, CRUD, read-only Automation + Calendar |
+| 2. Control | 🟡 partial | **Compose + Queue tabs shipped** with `social_posts` queue and `socials:relay` cron drainer. Still pending: edit/disable automations from UI, migrate `content-crons.ts` to read from `social_automations`, X token expiry alerts |
+| 3. New platforms | 🟡 partial | **Bluesky AT Proto adapter shipped** (env-keyed app password). Still pending: Reddit OAuth, LinkedIn API, Substack, Skool, IG Graph publisher |
+
+## Relayer (Phase 2)
+
+The Compose tab writes rows to `social_posts`. A 1-minute cron job
+(`socials:relay`, owned by `social-crons.ts`) drains rows where
+`status='scheduled' AND scheduled_at <= now()` using `FOR UPDATE SKIP LOCKED`,
+dispatches each row to the publisher resolved from `social_accounts.platform`
+via `services/platform-publishers/`, and writes back `posted_url`,
+`platform_post_id`, `error`, `attempts`. Below `max_attempts` the row stays
+`scheduled` for retry; at/over → `failed`. The Queue tab polls
+`/api/socials/posts` every 5s and lets the user cancel scheduled rows or
+trigger a manual relayer tick (`POST /api/socials/posts/relay-now`).
+
+### Bluesky configuration
+
+The Bluesky adapter (`services/platform-publishers/bluesky.ts`) currently
+reads a single account from env:
+
+- `BLUESKY_HANDLE` — e.g. `coherencedaddy.bsky.social`
+- `BLUESKY_APP_PASSWORD` — created at <https://bsky.app/settings/app-passwords>
+- `BLUESKY_SERVICE` — defaults to `https://bsky.social`
+
+For multi-account support a follow-up will introduce a `bluesky_credentials`
+table keyed by `social_accounts.id`.
+
+### Adding a new text publisher
+
+1. Implement `publishText(opts)` on a new file in
+   `services/platform-publishers/<name>.ts` returning `PublishResult`.
+2. Register it in `platform-publishers/index.ts`.
+3. Add the platform string to the `TEXT_PLATFORMS` set in
+   `ui/src/pages/socials/SocialsCompose.tsx` so the composer surfaces it.
 
 ## Verification
 
