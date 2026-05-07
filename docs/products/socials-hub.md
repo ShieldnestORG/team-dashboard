@@ -130,7 +130,7 @@ DATABASE_URL=… npx tsx scripts/seed-social-accounts.ts
 |---|---|---|
 | 1. Inventory | ✅ shipped | Schema, CRUD, read-only Automation + Calendar |
 | 2. Control | 🟡 partial | **Compose + Queue tabs shipped** with `social_posts` queue and `socials:relay` cron drainer. Still pending: edit/disable automations from UI, migrate `content-crons.ts` to read from `social_automations`, X token expiry alerts |
-| 3. New platforms | 🟡 partial | **Bluesky AT Proto adapter shipped** (env-keyed app password). Still pending: Reddit OAuth, LinkedIn API, Substack, Skool, IG Graph publisher |
+| 3. New platforms | 🟡 partial | **Bluesky AT Proto adapter shipped** (env-keyed app password). **Instagram Graph publishers shipped** (`instagram_feed` for image+caption/carousel, `instagram_reels` for video) — gated on Business-account connection + Meta App Review for cross-account use; works in Dev Mode for owned accounts. See [docs/products/instagram-app-review.md](./instagram-app-review.md). Still pending: Reddit OAuth, LinkedIn API, Substack, Skool |
 
 ## Relayer (Phase 2)
 
