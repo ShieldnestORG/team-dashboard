@@ -21,6 +21,7 @@ import * as forge from "../../content-templates/forge.js";
 // ---------------------------------------------------------------------------
 
 import { callOllamaGenerate, OLLAMA_MODEL } from "../ollama-client.js";
+import { enforceCharLimit } from "../char-limit.js";
 
 const callOllama = callOllamaGenerate;
 const DEFAULT_COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
@@ -256,12 +257,17 @@ export async function generateTweetWithContext(
   ].join("\n");
 
   // Call Ollama
-  let generatedText = await callOllama(fullPrompt);
+  const rawGeneratedText = await callOllama(fullPrompt);
 
-  // Truncate if over limit (Ollama sometimes exceeds)
-  if (generatedText.length > MAX_TWEET_CHARS) {
-    generatedText = generatedText.slice(0, MAX_TWEET_CHARS - 1) + "\u2026";
-  }
+  // Enforce 280-char limit: retry with stricter prompt, then sentence-aware truncate
+  const generatedText = await enforceCharLimit(
+    rawGeneratedText,
+    MAX_TWEET_CHARS,
+    callOllama,
+    (attempt) =>
+      `${fullPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The output MUST be ${MAX_TWEET_CHARS} characters or fewer, including spaces and emojis. Count carefully. Output ONLY the tweet text \u2014 no preamble, no quotes, no explanation.`,
+    { personalityId: personality, contentType: "tweet" },
+  );
 
   const charCount = generatedText.length;
   const charLimit = personaConfig.PLATFORM_LIMITS["tweet"] || MAX_TWEET_CHARS;
@@ -326,12 +332,15 @@ export async function generateEngagementReply(
     `IMPORTANT: The reply MUST be under ${MAX_TWEET_CHARS} characters.`,
   ].join("\n");
 
-  let reply = await callOllama(replyPrompt);
-
-  // Truncate if over limit
-  if (reply.length > MAX_TWEET_CHARS) {
-    reply = reply.slice(0, MAX_TWEET_CHARS - 1) + "\u2026";
-  }
+  const rawReply = await callOllama(replyPrompt);
+  const reply = await enforceCharLimit(
+    rawReply,
+    MAX_TWEET_CHARS,
+    callOllama,
+    (attempt) =>
+      `${replyPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The reply MUST be ${MAX_TWEET_CHARS} characters or fewer, including spaces and emojis. Output ONLY the reply text \u2014 no preamble, no quotes, no explanation.`,
+    { personalityId: personality, contentType: "reply" },
+  );
 
   logger.info(
     { personality, tweetAuthor, replyLength: reply.length },
