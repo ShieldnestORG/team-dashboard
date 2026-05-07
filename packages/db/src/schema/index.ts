@@ -74,6 +74,7 @@ export { autoReplyConfig, autoReplyLog, autoReplySettings } from "./auto_reply.j
 export { systemCrons } from "./system_crons.js";
 export { socialAccounts } from "./social_accounts.js";
 export { socialAutomations } from "./social_automations.js";
+export { socialPosts } from "./social_posts.js";
 export { partnerCompanies, partnerClicks, partnerSiteContent } from "./partners.js";
 export { affiliates } from "./affiliates.js";
 export { referralAttribution } from "./referral_attribution.js";

@@ -540,6 +540,9 @@ importers:
 
   server:
     dependencies:
+      '@atproto/api':
+        specifier: ^0.19.14
+        version: 0.19.14
       '@aws-sdk/client-s3':
         specifier: ^3.888.0
         version: 3.994.0
@@ -848,6 +851,27 @@ packages:
 
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
+
+  '@atproto/api@0.19.14':
+    resolution: {integrity: sha512-WItNUBt40ifQDzCIRu+JZmnhG68cufDi5y9khqMVnvVAnSLyWyHoNPbGmoyZQRGide7C2FYCxvJHbhbinEIINw==}
+
+  '@atproto/common-web@0.4.21':
+    resolution: {integrity: sha512-Odq+wdk3YNasGCjjlpl3bCIPvqYHige5DLfMkIffNv/2PI/iIj5ZvAvMvJlJ59OhReKSxtpI0invx5UQPc3+fw==}
+
+  '@atproto/lex-data@0.0.15':
+    resolution: {integrity: sha512-ZsbGiaM5S3CnGrcTMbDGON3bLZzCi/Mx9UvcMREKSRujnF68eHgMiXxJqvykP7+QpOX6tYCK93axZkuJVhtSEw==}
+
+  '@atproto/lex-json@0.0.16':
+    resolution: {integrity: sha512-IgLgQ0krshVlrIYZ+heTBDbCnM3LmAgWvsaYn5MxvKA3LcBot3PG3ptdO8VOweVZ+WgCLuo39cz9EbUmIbqdtg==}
+
+  '@atproto/lexicon@0.6.2':
+    resolution: {integrity: sha512-p3Ly6hinVZW0ETuAXZMeUGwuMm3g8HvQMQ41yyEE6AL0hAkfeKFaZKos6BdBrr6CjkpbrDZqE8M+5+QOceysMw==}
+
+  '@atproto/syntax@0.5.4':
+    resolution: {integrity: sha512-9XJOpMAgsGFxMEIp8nJ8AIWv+krrY1xQMj+wULbbXhQztQV+9aZ0TbG9Jtn3Op2or8Kr6OqyWR4ga9Z189kKDw==}
+
+  '@atproto/xrpc@0.7.7':
+    resolution: {integrity: sha512-K1ZyO/BU8JNtXX5dmPp7b5UrkLMMqpsIa/Lrj5D3Su+j1Xwq1m6QJ2XJ1AgjEjkI1v4Muzm7klianLE6XGxtmA==}
 
   '@aws-crypto/crc32@5.2.0':
     resolution: {integrity: sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg==}
@@ -3829,6 +3853,9 @@ packages:
     resolution: {integrity: sha512-kNOjDqAh7px0XWNI+4QbzoiR/nTkHAWNud2uvnJquD1/x5a7EQZMJT0AczqK0Qn67oY/TTQ1LbUKajZpp3I9tQ==}
     engines: {node: '>=8.0.0'}
 
+  await-lock@2.2.2:
+    resolution: {integrity: sha512-aDczADvlvTGajTDjcjpJMqRkOF6Qdz3YbPZm/PyW6tKPkx2hlYBzxMhEywM/tU72HrVZjgl5VCdRuMlA7pZ8Gw==}
+
   axios@1.15.0:
     resolution: {integrity: sha512-wWyJDlAatxk30ZJer+GeCWS209sA42X+N5jU2jy6oHTp7ufw8uzUTVFBX9+wTfAlhiJXGS0Bq7X6efruWjuK9Q==}
 
@@ -4950,6 +4977,9 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
+  iso-datestring-validator@2.2.2:
+    resolution: {integrity: sha512-yLEMkBbLZTlVQqOnQ4FiMujR6T4DEcCb1xizmvXS+OxuhwcbtynoosRzdMA69zZCShCNAbi+gJ71FxZBBXx1SA==}
+
   isomorphic.js@0.2.5:
     resolution: {integrity: sha512-PIeMbHqMt4DnUP3MA/Flc0HElYjMXArsw1qwJZcm9sqR8mq3l8NYizFMty0pWwE/tzIGH3EKK5+jes5mAr85yw==}
 
@@ -5466,6 +5496,9 @@ packages:
   multer@2.1.1:
     resolution: {integrity: sha512-mo+QTzKlx8R7E5ylSXxWzGoXoZbOsRMpyitcht8By2KHvMbf3tjwosZ/Mu/XYU6UuJ3VZnODIrak5ZrPiPyB6A==}
     engines: {node: '>= 10.16.0'}
+
+  multiformats@9.9.0:
+    resolution: {integrity: sha512-HoMUjhH9T8DDBNT+6xzkrd9ga/XiBI4xLr58LJACwK6G3HTOPeMz4nB4KJs33L2BelrIJa7P0VuNaVF3hMYfjg==}
 
   nanoid@3.3.11:
     resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
@@ -6177,6 +6210,10 @@ packages:
     resolution: {integrity: sha512-azl+t0z7pw/z958Gy9svOTuzqIk6xq+NSheJzn5MMWtWTFywIacg2wUlzKFGtt3cthx0r2SxMK0yzJOR0IES7Q==}
     engines: {node: '>=14.0.0'}
 
+  tlds@1.261.0:
+    resolution: {integrity: sha512-QXqwfEl9ddlGBaRFXIvNKK6OhipSiLXuRuLJX5DErz0o0Q0rYxulWLdFryTkV5PkdZct5iMInwYEGe/eR++1AA==}
+    hasBin: true
+
   tldts-core@7.0.26:
     resolution: {integrity: sha512-5WJ2SqFsv4G2Dwi7ZFVRnz6b2H1od39QME1lc2y5Ew3eWiZMAeqOAfWpRP9jHvhUl881406QtZTODvjttJs+ew==}
 
@@ -6245,6 +6282,9 @@ packages:
   ufo@1.6.3:
     resolution: {integrity: sha512-yDJTmhydvl5lJzBmy/hyOAA0d+aqCBuwl818haVdYCRrWV84o7YyeVm4QlVHStqNrrJSTb6jKuFAVqAFsr+K3Q==}
 
+  uint8arrays@3.0.0:
+    resolution: {integrity: sha512-HRCx0q6O9Bfbp+HHSfQQKD7wU70+lydKVt4EghkdOvlK/NlrF90z+eXV34mUd48rNvVJXwkrMSPpCATkct8fJA==}
+
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
@@ -6261,6 +6301,9 @@ packages:
   undici@7.24.4:
     resolution: {integrity: sha512-BM/JzwwaRXxrLdElV2Uo6cTLEjhSb3WXboncJamZ15NgUURmvlXvxa6xkwIOILIjPNo9i8ku136ZvWV0Uly8+w==}
     engines: {node: '>=20.18.1'}
+
+  unicode-segmenter@0.14.5:
+    resolution: {integrity: sha512-jHGmj2LUuqDcX3hqY12Ql+uhUTn8huuxNZGq7GvtF6bSybzH3aFgedYu/KTzQStEgt1Ra2F3HxadNXsNjb3m3g==}
 
   unidiff@1.0.4:
     resolution: {integrity: sha512-ynU0vsAXw0ir8roa+xPCUHmnJ5goc5BTM2Kuc3IJd8UwgaeRs7VSD5+eeaQL+xp1JtB92hu/Zy/Lgy7RZcr1pQ==}
@@ -6604,6 +6647,53 @@ snapshots:
       lru-cache: 11.2.7
 
   '@asamuzakjp/nwsapi@2.3.9': {}
+
+  '@atproto/api@0.19.14':
+    dependencies:
+      '@atproto/common-web': 0.4.21
+      '@atproto/lexicon': 0.6.2
+      '@atproto/syntax': 0.5.4
+      '@atproto/xrpc': 0.7.7
+      await-lock: 2.2.2
+      multiformats: 9.9.0
+      tlds: 1.261.0
+      zod: 3.25.76
+
+  '@atproto/common-web@0.4.21':
+    dependencies:
+      '@atproto/lex-data': 0.0.15
+      '@atproto/lex-json': 0.0.16
+      '@atproto/syntax': 0.5.4
+      zod: 3.25.76
+
+  '@atproto/lex-data@0.0.15':
+    dependencies:
+      multiformats: 9.9.0
+      tslib: 2.8.1
+      uint8arrays: 3.0.0
+      unicode-segmenter: 0.14.5
+
+  '@atproto/lex-json@0.0.16':
+    dependencies:
+      '@atproto/lex-data': 0.0.15
+      tslib: 2.8.1
+
+  '@atproto/lexicon@0.6.2':
+    dependencies:
+      '@atproto/common-web': 0.4.21
+      '@atproto/syntax': 0.5.4
+      iso-datestring-validator: 2.2.2
+      multiformats: 9.9.0
+      zod: 3.25.76
+
+  '@atproto/syntax@0.5.4':
+    dependencies:
+      tslib: 2.8.1
+
+  '@atproto/xrpc@0.7.7':
+    dependencies:
+      '@atproto/lexicon': 0.6.2
+      zod: 3.25.76
 
   '@aws-crypto/crc32@5.2.0':
     dependencies:
@@ -10186,6 +10276,8 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
+  await-lock@2.2.2: {}
+
   axios@1.15.0:
     dependencies:
       follow-redirects: 1.16.0
@@ -11313,6 +11405,8 @@ snapshots:
 
   isexe@2.0.0: {}
 
+  iso-datestring-validator@2.2.2: {}
+
   isomorphic.js@0.2.5: {}
 
   jiti@2.6.1: {}
@@ -12087,6 +12181,8 @@ snapshots:
       busboy: 1.6.0
       concat-stream: 2.0.0
       type-is: 1.6.18
+
+  multiformats@9.9.0: {}
 
   nanoid@3.3.11: {}
 
@@ -12934,6 +13030,8 @@ snapshots:
 
   tinyspy@4.0.4: {}
 
+  tlds@1.261.0: {}
+
   tldts-core@7.0.26: {}
 
   tldts@7.0.26:
@@ -12992,6 +13090,10 @@ snapshots:
 
   ufo@1.6.3: {}
 
+  uint8arrays@3.0.0:
+    dependencies:
+      multiformats: 9.9.0
+
   undici-types@6.21.0: {}
 
   undici-types@7.16.0: {}
@@ -13001,6 +13103,8 @@ snapshots:
   undici@6.24.1: {}
 
   undici@7.24.4: {}
+
+  unicode-segmenter@0.14.5: {}
 
   unidiff@1.0.4:
     dependencies:

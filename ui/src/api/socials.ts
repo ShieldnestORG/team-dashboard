@@ -35,6 +35,46 @@ export interface SocialAutomation {
   notes: string | null;
 }
 
+export interface SocialPost {
+  id: string;
+  socialAccountId: string;
+  text: string;
+  mediaUrls: string[];
+  altTexts: string[];
+  replyToUrl: string | null;
+  scheduledAt: string;
+  status: "scheduled" | "publishing" | "posted" | "failed" | "canceled";
+  attempts: number;
+  maxAttempts: number;
+  postedUrl: string | null;
+  platformPostId: string | null;
+  error: string | null;
+  createdAt: string;
+  postedAt: string | null;
+  platform: string;
+  brand: string;
+  handle: string;
+}
+
+export interface NewSocialPost {
+  socialAccountId: string;
+  text: string;
+  mediaUrls?: string[];
+  altTexts?: string[];
+  replyToUrl?: string;
+  scheduledAt?: string;
+  maxAttempts?: number;
+  payload?: Record<string, unknown>;
+}
+
+export interface RelayerTickResult {
+  picked: number;
+  posted: number;
+  failed: number;
+  retrying: number;
+  skipped: number;
+}
+
 export interface CalendarEvent {
   id: string;
   source: "content" | "cron-projection";
@@ -67,6 +107,18 @@ export const socialsApi = {
       `/socials/automations${accountId ? `?accountId=${accountId}` : ""}`,
     ),
   syncAutomations: () => api.post<{ upserted: number; skipped: number }>("/socials/automations/sync", {}),
+  listPosts: (params?: { accountId?: string; status?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.accountId) q.set("accountId", params.accountId);
+    if (params?.status) q.set("status", params.status);
+    if (params?.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return api.get<{ posts: SocialPost[] }>(`/socials/posts${qs ? `?${qs}` : ""}`);
+  },
+  createPost: (data: NewSocialPost) =>
+    api.post<{ post: SocialPost }>("/socials/posts", data),
+  cancelPost: (id: string) => api.delete<{ ok: true }>(`/socials/posts/${id}`),
+  relayNow: () => api.post<RelayerTickResult>("/socials/posts/relay-now", {}),
   calendar: (params: { from?: string; to?: string; brand?: string; platform?: string }) => {
     const q = new URLSearchParams();
     if (params.from) q.set("from", params.from);

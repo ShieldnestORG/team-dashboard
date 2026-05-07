@@ -51,6 +51,7 @@ import { startIntelCrons } from "./services/intel-crons.js";
 import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
+import { startSocialCrons } from "./services/social-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
 import { initFeedbackDb } from "./services/intel-quality.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
@@ -453,6 +454,7 @@ export async function createApp(
   startEvalCrons();
   startAlertCrons(db);
   startContentCrons(db);
+  startSocialCrons(db);
   startTrendCrons(db);
   startMaintenanceCrons(db);
   startMoltbookCrons(db);

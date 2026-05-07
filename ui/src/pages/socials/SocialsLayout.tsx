@@ -4,10 +4,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SocialsAccounts } from "./SocialsAccounts";
 import { SocialsAutomation } from "./SocialsAutomation";
 import { SocialsCalendar } from "./SocialsCalendar";
+import { SocialsCompose } from "./SocialsCompose";
+import { SocialsQueue } from "./SocialsQueue";
+
+type Tab = "accounts" | "automation" | "calendar" | "compose" | "queue";
 
 export function SocialsLayout() {
   const { setBreadcrumbs } = useBreadcrumbs();
-  const [tab, setTab] = useState<"accounts" | "automation" | "calendar">("accounts");
+  const [tab, setTab] = useState<Tab>("accounts");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Socials" }]);
@@ -18,14 +22,17 @@ export function SocialsLayout() {
       <div>
         <h1 className="text-2xl font-semibold">Socials Hub</h1>
         <p className="text-sm text-muted-foreground">
-          All social accounts, the automations driving them, and the unified release calendar.
+          All social accounts, the automations driving them, the unified release calendar, and a queue-backed
+          composer that drains via the socials relayer.
         </p>
       </div>
-      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="w-full">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
         <TabsList>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="automation">Automation</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="compose">Compose</TabsTrigger>
+          <TabsTrigger value="queue">Queue</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts" className="mt-4">
           <SocialsAccounts />
@@ -35,6 +42,12 @@ export function SocialsLayout() {
         </TabsContent>
         <TabsContent value="calendar" className="mt-4">
           <SocialsCalendar />
+        </TabsContent>
+        <TabsContent value="compose" className="mt-4">
+          <SocialsCompose />
+        </TabsContent>
+        <TabsContent value="queue" className="mt-4">
+          <SocialsQueue />
         </TabsContent>
       </Tabs>
     </div>
