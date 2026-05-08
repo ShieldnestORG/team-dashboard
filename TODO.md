@@ -214,6 +214,10 @@ Strategy: [`docs/products/knowledge-graph-positioning.md`](docs/products/knowled
 - [ ] **Re-run A/B test on substantive prose.** After 3+ days of fresh ingestion under the new code, re-run `scripts/audit/kg-extractor-ab-test.ts` on substantive release notes (≥500-char body) to confirm the patched prompt isn't over-correcting on real architecture text.
 - [ ] **Phase 2 (only if Phase 1 earns it):** single `GET /v1/entity/:slug/dependencies` endpoint on existing Pro tier. Triggered by ≥200 enriched paid responses in 7d. Killed plays (do not resurrect): Crayon/Klue competitive-intel upsell, CreditScore competitive landscape, programmatic vs/alternatives SEO, standalone KG SaaS, embedding licensing.
 
+## Running CI / infra debt
+
+- [ ] **Fix flaky e2e: `Onboarding-wizard-completes-full-wizard-flow`** — failing on every recent PR (#25, #26, #27, #28, #32) but team has been merging through it. Test asserts `expect(locator).toBeVisible()` with 15s timeout — element-not-found. Either the wizard regressed, the selector is stale, or fixture data is missing. Triage: check `tests/e2e/test-results/onboarding-Onboarding-wizard-completes-full-wizard-flow-chromium/test-failed-1.png` artifact for the actual rendered state.
+
 ## Killed plays (for the record — do not resurrect without re-reading the council transcript)
 
 - ❌ Competitive-intel SaaS positioning (vs Crayon/Klue)

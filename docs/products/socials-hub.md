@@ -156,6 +156,25 @@ reads a single account from env:
 For multi-account support a follow-up will introduce a `bluesky_credentials`
 table keyed by `social_accounts.id`.
 
+### Content-side char-limit enforcement
+
+Bluesky's 300-char limit is enforced at **generation time** in
+`services/content.ts` (and the X-API tweet path in
+`services/x-api/content-bridge.ts`). Both call `enforceCharLimit()` from
+`services/char-limit.ts`, which re-prompts Ollama up to 2× with strict
+instructions before falling back to sentence-aware truncation. Don't add a
+new Ollama call site for short-form content without piping through this —
+without it, drafts pile up over the limit and the relayer either fails or
+silently truncates mid-thought.
+
+Bluesky drafts also get a **rotated CTA** appended via `pickBlueskyCta()`
+in `services/aeo-cta.ts`, sampling uniformly across `cd` (directory),
+`creditscore`, `optimizeme`, `affiliate`, `partners`. This is bluesky-only;
+tweet/blog paths still use the deterministic `getAeoCta(brand)`.
+
+If a queue of overflow drafts ever needs cleanup, see
+`server/scripts/tighten-overflow-content.ts` (`--dry-run`, `--regenerate`).
+
 ### Adding a new text publisher
 
 1. Implement `publishText(opts)` on a new file in
