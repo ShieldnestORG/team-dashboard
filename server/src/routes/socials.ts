@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { socialAccounts, socialAutomations, socialPosts } from "@paperclipai/db";
+import { socialAccounts, socialAutomations, socialPosts, platformCaps } from "@paperclipai/db";
 import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
 import { runSocialRelayerTick } from "../services/social-relayer.js";
+import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
+import { invalidatePlatformCapCache } from "../services/socials/platform-caps.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -203,6 +205,21 @@ export function socialsRoutes(db: Db) {
     res.json({ ok: true });
   });
 
+  router.post("/posts/enqueue-from-content", async (req, res) => {
+    const contentItemId = req.body?.contentItemId;
+    if (typeof contentItemId !== "string" || !contentItemId) {
+      return res.status(400).json({ error: "contentItemId required" });
+    }
+    try {
+      const result = await enqueueApprovedContent(db, contentItemId);
+      const status = result.enqueued ? 201 : 200;
+      return res.status(status).json(result);
+    } catch (err) {
+      logger.error({ err, contentItemId }, "enqueue-from-content failed");
+      return res.status(500).json({ error: "enqueue failed" });
+    }
+  });
+
   // Manual relayer tick for testing — runs one drain pass right now.
   router.post("/posts/relay-now", async (_req, res) => {
     try {
@@ -212,6 +229,34 @@ export function socialsRoutes(db: Db) {
       logger.error({ err }, "relay-now failed");
       res.status(500).json({ error: "relay failed" });
     }
+  });
+
+  // ----- Platform caps -----
+  router.get("/platform-caps", async (_req, res) => {
+    const rows = await db.select().from(platformCaps).orderBy(platformCaps.platform);
+    res.json({ caps: rows });
+  });
+
+  router.patch("/platform-caps/:platform", async (req, res) => {
+    const platform = req.params.platform as string;
+    const body = req.body ?? {};
+    const patch: Record<string, unknown> = {};
+    if (typeof body.maxGeneratedPerDay === "number") patch.maxGeneratedPerDay = body.maxGeneratedPerDay;
+    if (typeof body.maxPublishedPerDay === "number") patch.maxPublishedPerDay = body.maxPublishedPerDay;
+    if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+    if (typeof body.notes === "string" || body.notes === null) patch.notes = body.notes;
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: "no fields to update" });
+    }
+    patch.updatedAt = sql`now()`;
+    const updated = await db
+      .update(platformCaps)
+      .set(patch)
+      .where(eq(platformCaps.platform, platform))
+      .returning();
+    if (!updated[0]) return res.status(404).json({ error: "not found" });
+    invalidatePlatformCapCache(platform);
+    res.json({ cap: updated[0] });
   });
 
   // ----- Calendar -----

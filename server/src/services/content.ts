@@ -14,6 +14,12 @@ import * as forge from "../content-templates/forge.js";
 import { getPartnerInjection } from "./partner-content.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 import { getAeoCta, pickBlueskyCta } from "./aeo-cta.js";
+import {
+  enqueueApprovedContent,
+  flagContent,
+  isDuplicateRecent,
+  resolveAccountForContent,
+} from "./socials/content-bridge.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -396,6 +402,48 @@ export function contentService(db: Db) {
       "Content generated and stored in DB",
     );
 
+    try {
+      const brand = row.brand ?? "cd";
+      const account = await resolveAccountForContent(db, companyId, brand, opts.contentType);
+      if (account && account.status === "active") {
+        const mode = account.automationMode;
+        if (mode === "full_auto" || mode === "assisted") {
+          let proceed = true;
+          let flagReason: string | null = null;
+          if (mode === "assisted") {
+            flagReason = flagContent(generatedText, account.platform);
+            if (!flagReason) {
+              const dup = await isDuplicateRecent(db, companyId, generatedText);
+              if (dup) flagReason = "duplicate of recent content";
+            }
+            if (flagReason) proceed = false;
+          }
+          if (proceed) {
+            const now = new Date();
+            await db
+              .update(contentItems)
+              .set({
+                reviewStatus: "approved",
+                status: "published",
+                publishedAt: now,
+                updatedAt: now,
+              })
+              .where(eq(contentItems.id, row.id));
+            const enqueue = await enqueueApprovedContent(db, row.id);
+            logger.info({ contentId: row.id, mode, enqueue }, "Auto-approved content via automation_mode");
+          } else {
+            await db
+              .update(contentItems)
+              .set({ reviewComment: flagReason, updatedAt: new Date() })
+              .where(eq(contentItems.id, row.id));
+            logger.info({ contentId: row.id, flagReason }, "Assisted-mode content flagged, kept pending");
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, contentId: row.id }, "Auto-enqueue path failed; row left in pending");
+    }
+
     return { contentId: row.id, content: generatedText, metadata };
   }
 
@@ -465,6 +513,15 @@ export function contentService(db: Db) {
     }
 
     logger.info({ id, reviewStatus }, "Content item reviewed");
+
+    if (reviewStatus === "approved") {
+      try {
+        const enqueue = await enqueueApprovedContent(db, id);
+        logger.info({ id, enqueue }, "Content approval enqueue result");
+      } catch (err) {
+        logger.warn({ err, id }, "Content approval succeeded but enqueue to social_posts failed");
+      }
+    }
   }
 
   async function stats(companyId?: string): Promise<ContentStats> {

@@ -46,6 +46,7 @@ export const contentItems = pgTable(
     publishResults: jsonb("publish_results").$type<PublishResults>().notNull().default({} as PublishResults),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    bodyTrimmedAt: timestamp("body_trimmed_at", { withTimezone: true }),
   },
   (table) => ({
     companyCreatedIdx: index("content_items_company_created_idx").on(table.companyId, table.createdAt),

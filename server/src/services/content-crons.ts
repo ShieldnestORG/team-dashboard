@@ -8,6 +8,8 @@ import { publishBlogFromContent, buildPartnerFooter, type PublishTarget } from "
 import { embedPublishedContent } from "./content-embedder.js";
 import { runRetweetCycle } from "./x-api/retweet-service.js";
 import { registerCronJob } from "./cron-registry.js";
+import { canGenerate } from "./socials/platform-caps.js";
+import { contentTypeToPlatform } from "./socials/platform-map.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -634,6 +636,24 @@ export function startContentCrons(db: Db) {
         // Normalize: structured TopicResult separates display title from LLM prompt
         const topicPrompt = typeof topicRaw === "string" ? topicRaw : topicRaw?.prompt ?? "";
         const topicDisplay = typeof topicRaw === "string" ? topicRaw : topicRaw?.display ?? topicPrompt;
+
+        // Per-platform daily generation cap. Fail-open on errors so an unrelated
+        // platform_caps issue can't kill the cron.
+        try {
+          const capPlatform = contentTypeToPlatform(def.contentType);
+          if (capPlatform) {
+            const check = await canGenerate(db, capPlatform);
+            if (!check.allowed) {
+              logger.info(
+                { job: def.name, platform: capPlatform, used: check.used, cap: check.cap },
+                "platform-caps: generate cap reached, skipping",
+              );
+              return;
+            }
+          }
+        } catch (capErr) {
+          logger.warn({ err: capErr, job: def.name }, "platform-caps: canGenerate threw, proceeding");
+        }
 
         // Slideshow blog generation — uses presentation renderer pipeline
         if (def.contentType === "slideshow_blog") {
