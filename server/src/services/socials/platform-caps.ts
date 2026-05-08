@@ -124,7 +124,7 @@ export async function listCounters(db: Db): Promise<PlatformCounter[]> {
   const generatedRows = (await db.execute(sql`
     SELECT platform, COUNT(*)::int AS cnt
     FROM content_items
-    WHERE platform = ANY(${contentPlatforms})
+    WHERE platform IN ${contentPlatforms}
       AND date_trunc('day', created_at AT TIME ZONE 'utc')
           = date_trunc('day', now() AT TIME ZONE 'utc')
     GROUP BY platform
@@ -136,7 +136,7 @@ export async function listCounters(db: Db): Promise<PlatformCounter[]> {
     SELECT sa.platform AS platform, COUNT(*)::int AS cnt
     FROM social_posts sp
     JOIN social_accounts sa ON sa.id = sp.social_account_id
-    WHERE sa.platform = ANY(${platforms})
+    WHERE sa.platform IN ${platforms}
       AND sp.status = 'posted'
       AND sp.posted_at IS NOT NULL
       AND date_trunc('day', sp.posted_at AT TIME ZONE 'utc')
@@ -150,7 +150,7 @@ export async function listCounters(db: Db): Promise<PlatformCounter[]> {
     SELECT sa.platform AS platform, COUNT(*)::int AS cnt
     FROM social_posts sp
     JOIN social_accounts sa ON sa.id = sp.social_account_id
-    WHERE sa.platform = ANY(${platforms})
+    WHERE sa.platform IN ${platforms}
       AND sp.status = 'scheduled'
     GROUP BY sa.platform
   `)) as unknown as Array<{ platform: string; cnt: number }>;
@@ -161,7 +161,7 @@ export async function listCounters(db: Db): Promise<PlatformCounter[]> {
     SELECT sa.platform AS platform, COUNT(*)::int AS cnt
     FROM social_posts sp
     JOIN social_accounts sa ON sa.id = sp.social_account_id
-    WHERE sa.platform = ANY(${platforms})
+    WHERE sa.platform IN ${platforms}
       AND sp.status = 'failed'
       AND sp.updated_at > now() - INTERVAL '24 hours'
     GROUP BY sa.platform
