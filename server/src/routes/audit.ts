@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 
+import { logger } from "../middleware/logger.js";
+
 const FIRECRAWL_URL =
   process.env.FIRECRAWL_URL || "https://firecrawl.coherencedaddy.com";
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || "self-hosted";
@@ -692,11 +694,22 @@ async function probeFirecrawl(): Promise<{ ok: true } | { ok: false; reason: str
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
-      return { ok: false, reason: `firecrawl HTTP ${res.status}` };
+      // Log internal detail server-side; return opaque enum to public callers.
+      logger.warn(
+        { status: res.status, errorMessage: null },
+        "audit health: firecrawl HTTP non-2xx",
+      );
+      return { ok: false, reason: "crawler_http_error" };
     }
     return { ok: true };
   } catch (err) {
-    return { ok: false, reason: `firecrawl unreachable (${(err as Error).message})` };
+    // Log internal detail server-side (may include hostnames in error message);
+    // return opaque enum to public callers so we don't leak infrastructure.
+    logger.warn(
+      { status: null, errorMessage: (err as Error).message },
+      "audit health: firecrawl unreachable",
+    );
+    return { ok: false, reason: "crawler_unreachable" };
   }
 }
 

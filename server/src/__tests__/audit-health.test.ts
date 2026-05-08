@@ -56,6 +56,9 @@ describe("GET /audit/health", () => {
     const res = await request(app).get("/api/public/audit/health");
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({ ok: false });
-    expect(res.body.reason).toMatch(/firecrawl/i);
+    // Public health endpoint must not leak internal vendor name or raw error
+    // strings (e.g. "getaddrinfo ENOTFOUND <internal-hostname>").
+    expect(res.body.reason).not.toMatch(/firecrawl/i);
+    expect(["crawler_unreachable", "crawler_http_error"]).toContain(res.body.reason);
   });
 });

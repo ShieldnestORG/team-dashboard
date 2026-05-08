@@ -215,6 +215,13 @@ export function creditscoreService(db: Db) {
     })
       .then(({ result }) => {
         if (!result) return;
+        if (isDegradedAuditResult(result)) {
+          logger.warn(
+            { subId },
+            "creditscore: skipping welcome email — initial report was degraded; will retry on next scheduled scan",
+          );
+          return;
+        }
         const kind =
           plan.tier === "report"
             ? "one_time_report"
