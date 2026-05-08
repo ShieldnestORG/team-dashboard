@@ -75,6 +75,28 @@ export interface RelayerTickResult {
   skipped: number;
 }
 
+export interface PlatformCap {
+  id: string;
+  platform: string;
+  maxGeneratedPerDay: number;
+  maxPublishedPerDay: number;
+  enabled: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformCounter {
+  platform: string;
+  generatedToday: number;
+  generatedCap: number;
+  publishedToday: number;
+  publishedCap: number;
+  queued: number;
+  failed24h: number;
+  enabled: boolean;
+}
+
 export interface CalendarEvent {
   id: string;
   source: "content" | "cron-projection";
@@ -119,6 +141,14 @@ export const socialsApi = {
     api.post<{ post: SocialPost }>("/socials/posts", data),
   cancelPost: (id: string) => api.delete<{ ok: true }>(`/socials/posts/${id}`),
   relayNow: () => api.post<RelayerTickResult>("/socials/posts/relay-now", {}),
+  listPlatformCaps: () =>
+    api.get<{ caps: PlatformCap[] }>("/socials/platform-caps"),
+  updatePlatformCap: (
+    platform: string,
+    data: Partial<Pick<PlatformCap, "maxGeneratedPerDay" | "maxPublishedPerDay" | "enabled" | "notes">>,
+  ) => api.patch<{ cap: PlatformCap }>(`/socials/platform-caps/${platform}`, data),
+  listPlatformCounters: () =>
+    api.get<{ counters: PlatformCounter[] }>("/socials/platform-counters"),
   calendar: (params: { from?: string; to?: string; brand?: string; platform?: string }) => {
     const q = new URLSearchParams();
     if (params.from) q.set("from", params.from);
