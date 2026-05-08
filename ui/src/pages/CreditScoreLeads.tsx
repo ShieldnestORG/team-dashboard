@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Copy,
   ExternalLink,
+  Gift,
   Inbox as InboxIcon,
   Link2,
+  Tag,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -18,6 +21,7 @@ import {
   type CreditScoreReportLead,
   type CreditScoreReportStatus,
   type CreditScoreSubscriptionTier,
+  type PromoCode,
 } from "../api/creditscoreLeads";
 
 const PAGE_SIZE = 50;
@@ -129,7 +133,13 @@ function ScoreCell({
   );
 }
 
-function ActionsCell({ row }: { row: CreditScoreReportLead }) {
+function ActionsCell({
+  row,
+  onComp,
+}: {
+  row: CreditScoreReportLead;
+  onComp: (row: CreditScoreReportLead) => void;
+}) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex items-center gap-1">
@@ -182,11 +192,339 @@ function ActionsCell({ row }: { row: CreditScoreReportLead }) {
           </a>
         </Button>
       )}
+      {row.email && !row.subscriptionId && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-xs text-amber-500 hover:text-amber-400"
+          title="Comp this lead (free promo)"
+          onClick={() => onComp(row)}
+        >
+          <Gift className="h-3.5 w-3.5" />
+        </Button>
+      )}
     </div>
   );
 }
 
+const COMP_TIER_OPTIONS: { value: CreditScoreSubscriptionTier; label: string }[] = [
+  { value: "report", label: "Report (one-time $19)" },
+  { value: "starter", label: "Starter (monthly)" },
+  { value: "growth", label: "Growth (monthly)" },
+  { value: "pro", label: "Pro (monthly)" },
+];
+
+function CompGrantDialog({
+  row,
+  open,
+  onOpenChange,
+}: {
+  row: CreditScoreReportLead | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const [tier, setTier] = useState<CreditScoreSubscriptionTier>("report");
+  const [reason, setReason] = useState("");
+  const [durationDays, setDurationDays] = useState<string>("30");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (open) {
+      setTier("report");
+      setReason("");
+      setDurationDays("30");
+      setError(null);
+      setSuccess(null);
+    }
+  }, [open]);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!row?.email) throw new Error("Lead has no email");
+      const url = row.domain.startsWith("http")
+        ? row.domain
+        : `https://${row.domain}`;
+      const parsedDuration = Number.parseInt(durationDays, 10);
+      return creditscoreLeadsApi.compGrant({
+        tier,
+        url,
+        email: row.email,
+        compReason: reason.trim() || "admin_comp",
+        durationDays:
+          tier !== "report" && Number.isFinite(parsedDuration) && parsedDuration > 0
+            ? parsedDuration
+            : undefined,
+      });
+    },
+    onSuccess: () => {
+      setSuccess("Comped — welcome email + initial audit triggered.");
+      setError(null);
+      void qc.invalidateQueries({ queryKey: queryKeys.creditscoreReview.all });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to comp lead");
+      setSuccess(null);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold">Comp this lead</h2>
+            <p className="text-xs text-muted-foreground">
+              Grants a free CreditScore subscription. Customer gets the welcome
+              email + initial audit automatically.
+            </p>
+          </div>
+          {row && (
+            <div className="rounded border border-border bg-muted/30 p-2 text-xs">
+              <div>
+                <span className="text-muted-foreground">Email:</span> {row.email}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Domain:</span> {row.domain}
+              </div>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Tier</label>
+            <select
+              value={tier}
+              onChange={(e) =>
+                setTier(e.target.value as CreditScoreSubscriptionTier)
+              }
+              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              {COMP_TIER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {tier !== "report" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Duration (days)</label>
+              <Input
+                type="number"
+                min={1}
+                value={durationDays}
+                onChange={(e) => setDurationDays(e.target.value)}
+              />
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">
+              Reason <span className="text-muted-foreground">(internal)</span>
+            </label>
+            <Input
+              placeholder="launch_promo, friend, support_credit…"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          {success && <p className="text-xs text-green-500">{success}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              disabled={mutation.isPending}
+            >
+              Close
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending || !row?.email}
+            >
+              {mutation.isPending ? "Granting…" : "Grant comp"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PromoCodePanel() {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [percentOff, setPercentOff] = useState("100");
+  const [maxRedemptions, setMaxRedemptions] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const qc = useQueryClient();
+
+  const { data: promoData } = useQuery({
+    queryKey: queryKeys.creditscoreReview.promoCodes,
+    queryFn: () => creditscoreLeadsApi.listPromoCodes(),
+  });
+  const codes: PromoCode[] = promoData?.codes ?? [];
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const pct = Number.parseInt(percentOff, 10);
+      const max = Number.parseInt(maxRedemptions, 10);
+      return creditscoreLeadsApi.createPromoCode({
+        code: code.trim().toUpperCase(),
+        percentOff: Number.isFinite(pct) && pct > 0 ? pct : undefined,
+        maxRedemptions: Number.isFinite(max) && max > 0 ? max : undefined,
+        expiresAt: expiresAt || undefined,
+      });
+    },
+    onSuccess: (out) => {
+      setSuccess(`Created promo code "${out.code}" in Stripe.`);
+      setError(null);
+      setCode("");
+      setMaxRedemptions("");
+      setExpiresAt("");
+      void qc.invalidateQueries({
+        queryKey: queryKeys.creditscoreReview.promoCodes,
+      });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to create code");
+      setSuccess(null);
+    },
+  });
+
+  return (
+    <Card>
+      <CardContent className="space-y-2 p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+            Promo codes
+            <span className="text-xs font-normal text-muted-foreground">
+              ({codes.length})
+            </span>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            Create code
+          </Button>
+        </div>
+        {codes.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {codes.slice(0, 8).map((c) => (
+              <Badge
+                key={c.id}
+                variant={c.active ? "secondary" : "outline"}
+                className="text-[10px]"
+                title={`${c.timesRedeemed}${c.maxRedemptions ? ` / ${c.maxRedemptions}` : ""} redeemed${c.expiresAt ? ` · expires ${new Date(c.expiresAt * 1000).toLocaleDateString()}` : ""}`}
+              >
+                {c.code}
+                {c.coupon.percentOff != null && ` · ${c.coupon.percentOff}% off`}
+                {c.coupon.amountOff != null &&
+                  ` · $${(c.coupon.amountOff / 100).toFixed(2)} off`}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        <Dialog
+          open={open}
+          onOpenChange={(v) => {
+            setOpen(v);
+            if (!v) {
+              setError(null);
+              setSuccess(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-base font-semibold">Create promo code</h2>
+                <p className="text-xs text-muted-foreground">
+                  Creates a Stripe coupon + promotion code. Redeemable at
+                  checkout on coherencedaddy.com.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Code</label>
+                <Input
+                  placeholder="LAUNCH19"
+                  value={code}
+                  onChange={(e) =>
+                    setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Percent off</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={percentOff}
+                  onChange={(e) => setPercentOff(e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">
+                    Max redemptions{" "}
+                    <span className="text-muted-foreground">(optional)</span>
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={maxRedemptions}
+                    onChange={(e) => setMaxRedemptions(e.target.value)}
+                    placeholder="unlimited"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">
+                    Expires{" "}
+                    <span className="text-muted-foreground">(optional)</span>
+                  </label>
+                  <Input
+                    type="date"
+                    value={expiresAt}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                  />
+                </div>
+              </div>
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              {success && <p className="text-xs text-green-500">{success}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOpen(false)}
+                  disabled={mutation.isPending}
+                >
+                  Close
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => mutation.mutate()}
+                  disabled={mutation.isPending || !code.trim()}
+                >
+                  {mutation.isPending ? "Creating…" : "Create in Stripe"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CreditScoreLeadsTab() {
+  // Comp dialog state
+  const [compRow, setCompRow] = useState<CreditScoreReportLead | null>(null);
+  const [compOpen, setCompOpen] = useState(false);
+
   // Filter state
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput, 300);
@@ -232,6 +570,8 @@ export function CreditScoreLeadsTab() {
 
   return (
     <div className="space-y-3">
+      <PromoCodePanel />
+
       {/* Filters */}
       <Card>
         <CardContent className="space-y-3 p-3">
@@ -362,7 +702,13 @@ export function CreditScoreLeadsTab() {
                       <TierBadge tier={r.subscriptionTier ?? null} />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <ActionsCell row={r} />
+                      <ActionsCell
+                        row={r}
+                        onComp={(row) => {
+                          setCompRow(row);
+                          setCompOpen(true);
+                        }}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -405,6 +751,8 @@ export function CreditScoreLeadsTab() {
           </Button>
         </div>
       </div>
+
+      <CompGrantDialog row={compRow} open={compOpen} onOpenChange={setCompOpen} />
     </div>
   );
 }

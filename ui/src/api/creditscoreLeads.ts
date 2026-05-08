@@ -56,6 +56,41 @@ function buildQuery(
   return qs ? `?${qs}` : "";
 }
 
+export interface CompGrantInput {
+  tier: CreditScoreSubscriptionTier;
+  url: string;
+  email: string;
+  compReason: string;
+  durationDays?: number;
+}
+
+export interface CreatePromoCodeInput {
+  code: string;
+  percentOff?: number;
+  amountOffCents?: number;
+  maxRedemptions?: number;
+  expiresAt?: string;
+  duration?: "once" | "repeating" | "forever";
+  durationInMonths?: number;
+  name?: string;
+}
+
+export interface PromoCode {
+  id: string;
+  code: string;
+  active: boolean;
+  timesRedeemed: number;
+  maxRedemptions: number | null;
+  expiresAt: number | null;
+  coupon: {
+    id: string;
+    percentOff: number | null;
+    amountOff: number | null;
+    currency: string | null;
+    duration: string;
+  };
+}
+
 export const creditscoreLeadsApi = {
   listReports: (filters: ListReportsFilters = {}) =>
     api.get<ListReportsResponse>(
@@ -69,5 +104,14 @@ export const creditscoreLeadsApi = {
         limit: filters.limit,
         offset: filters.offset,
       })}`,
+    ),
+  compGrant: (input: CompGrantInput) =>
+    api.post<{ subscriptionId: string }>("/creditscore/comp-grant", input),
+  listPromoCodes: () =>
+    api.get<{ codes: PromoCode[] }>("/creditscore/promo-codes"),
+  createPromoCode: (input: CreatePromoCodeInput) =>
+    api.post<{ couponId: string; promoCodeId: string; code: string }>(
+      "/creditscore/promo-codes",
+      input,
     ),
 };

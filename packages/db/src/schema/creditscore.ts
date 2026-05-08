@@ -53,6 +53,9 @@ export const creditscoreSubscriptions = pgTable(
     currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    // Set when an admin comps the subscription (gives it away free). Null for paid subs.
+    compReason: text("comp_reason"),
+    grantedByUserId: uuid("granted_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
