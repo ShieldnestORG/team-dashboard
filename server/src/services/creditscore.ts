@@ -115,6 +115,7 @@ export function creditscoreService(db: Db) {
       "line_items[0][quantity]": "1",
       success_url: successUrl,
       cancel_url: cancelUrl,
+      allow_promotion_codes: "true",
       "metadata[product]": "creditscore",
       "metadata[plan_slug]": plan.slug,
       "metadata[tier]": plan.tier,
@@ -143,6 +144,196 @@ export function creditscoreService(db: Db) {
     });
 
     return { url: session.url, sessionId: session.id };
+  }
+
+  async function compGrant(args: {
+    tier: string;
+    url: string;
+    email: string;
+    compReason: string;
+    grantedByUserId?: string;
+    durationDays?: number;
+  }): Promise<{ subscriptionId: string }> {
+    const plan = await getPlanBySlug(args.tier);
+    if (!plan) throw new Error(`Unknown creditscore plan: ${args.tier}`);
+
+    const domain = domainFromUrl(args.url);
+    if (!domain) throw new Error("Valid url required (must be absolute URL)");
+
+    const reason = args.compReason.trim();
+    if (!reason) throw new Error("compReason required");
+
+    const oneTime = plan.billingInterval === "one_time";
+    const now = new Date();
+    const durationDays = args.durationDays ?? 30;
+    const periodEnd = oneTime
+      ? null
+      : new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+    const [row] = await db
+      .insert(creditscoreSubscriptions)
+      .values({
+        companyId: null,
+        email: args.email,
+        domain,
+        planId: plan.id,
+        tier: plan.tier,
+        status: oneTime ? "fulfilled" : "active",
+        currentPeriodStart: oneTime ? null : now,
+        currentPeriodEnd: periodEnd,
+        compReason: reason,
+        grantedByUserId: args.grantedByUserId ?? null,
+      })
+      .returning({ id: creditscoreSubscriptions.id });
+    const subId = row!.id;
+
+    // Fire-and-forget initial audit + welcome email (mirrors paid checkout path).
+    void generateReport(args.url, {
+      subscriptionId: subId,
+      email: args.email,
+    })
+      .then(({ result }) => {
+        if (!result) return;
+        const kind =
+          plan.tier === "report"
+            ? "one_time_report"
+            : plan.tier === "pro"
+              ? "welcome_pro"
+              : plan.tier === "growth"
+                ? "welcome_growth"
+                : "welcome_starter";
+        void sendCreditscoreEmail({
+          kind,
+          to: args.email,
+          data: {
+            url: result.url,
+            score: result.score,
+            breakdown: result.breakdown,
+            competitors: result.competitors,
+            recommendations: result.recommendations,
+            scanFrequency: plan.tier === "pro" ? "weekly" : "monthly",
+          },
+        });
+      })
+      .catch((err) => {
+        logger.error({ err, subId }, "creditscore: comp grant initial audit failed");
+      });
+
+    return { subscriptionId: subId };
+  }
+
+  async function createPromoCode(args: {
+    code: string;
+    percentOff?: number;
+    amountOffCents?: number;
+    currency?: string;
+    maxRedemptions?: number;
+    expiresAt?: Date | null;
+    duration?: "once" | "repeating" | "forever";
+    durationInMonths?: number;
+    name?: string;
+  }): Promise<{ couponId: string; promoCodeId: string; code: string }> {
+    const code = args.code.trim().toUpperCase();
+    if (!code) throw new Error("code required");
+    if (!/^[A-Z0-9_-]{3,40}$/.test(code)) {
+      throw new Error("code must be 3-40 chars, A-Z 0-9 _ - only");
+    }
+    if (
+      (args.percentOff == null || args.percentOff <= 0) &&
+      (args.amountOffCents == null || args.amountOffCents <= 0)
+    ) {
+      throw new Error("percentOff or amountOffCents required");
+    }
+
+    const couponBody: Record<string, unknown> = {
+      duration: args.duration ?? "once",
+      name: args.name ?? `CreditScore promo ${code}`,
+    };
+    if (args.percentOff != null) couponBody.percent_off = String(args.percentOff);
+    if (args.amountOffCents != null) {
+      couponBody.amount_off = String(args.amountOffCents);
+      couponBody.currency = (args.currency ?? "usd").toLowerCase();
+    }
+    if (args.duration === "repeating" && args.durationInMonths) {
+      couponBody.duration_in_months = String(args.durationInMonths);
+    }
+    if (args.maxRedemptions && args.maxRedemptions > 0) {
+      couponBody.max_redemptions = String(args.maxRedemptions);
+    }
+
+    const coupon = await stripeRequest<{ id: string }>("POST", "/coupons", couponBody);
+
+    const promoBody: Record<string, unknown> = {
+      coupon: coupon.id,
+      code,
+    };
+    if (args.expiresAt) {
+      promoBody.expires_at = String(Math.floor(args.expiresAt.getTime() / 1000));
+    }
+    if (args.maxRedemptions && args.maxRedemptions > 0) {
+      promoBody.max_redemptions = String(args.maxRedemptions);
+    }
+
+    const promo = await stripeRequest<{ id: string; code: string }>(
+      "POST",
+      "/promotion_codes",
+      promoBody,
+    );
+
+    return { couponId: coupon.id, promoCodeId: promo.id, code: promo.code };
+  }
+
+  async function listPromoCodes(): Promise<
+    Array<{
+      id: string;
+      code: string;
+      active: boolean;
+      timesRedeemed: number;
+      maxRedemptions: number | null;
+      expiresAt: number | null;
+      coupon: {
+        id: string;
+        percentOff: number | null;
+        amountOff: number | null;
+        currency: string | null;
+        duration: string;
+      };
+    }>
+  > {
+    type StripePromo = {
+      id: string;
+      code: string;
+      active: boolean;
+      times_redeemed: number;
+      max_redemptions: number | null;
+      expires_at: number | null;
+      coupon: {
+        id: string;
+        percent_off: number | null;
+        amount_off: number | null;
+        currency: string | null;
+        duration: string;
+      };
+    };
+    const res = await stripeRequest<{ data: StripePromo[] }>(
+      "GET",
+      "/promotion_codes?limit=100",
+    );
+    return res.data.map((p) => ({
+      id: p.id,
+      code: p.code,
+      active: p.active,
+      timesRedeemed: p.times_redeemed,
+      maxRedemptions: p.max_redemptions,
+      expiresAt: p.expires_at,
+      coupon: {
+        id: p.coupon.id,
+        percentOff: p.coupon.percent_off,
+        amountOff: p.coupon.amount_off,
+        currency: p.coupon.currency,
+        duration: p.coupon.duration,
+      },
+    }));
   }
 
   async function activateFromCheckout(session: {
@@ -413,6 +604,9 @@ export function creditscoreService(db: Db) {
     getReport,
     resolveEntitlement,
     createCheckout,
+    compGrant,
+    createPromoCode,
+    listPromoCodes,
     handleWebhook,
     generateReport,
     storeAuditResult,

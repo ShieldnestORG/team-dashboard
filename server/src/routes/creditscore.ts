@@ -76,6 +76,129 @@ export function creditscoreRoutes(db: Db): Router {
     }
   });
 
+  // POST /api/creditscore/comp-grant — board admin: comp a subscription (free promo)
+  // Body: { tier, url, email, compReason, durationDays? }
+  router.post("/comp-grant", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const tier = typeof req.body?.tier === "string" ? req.body.tier : "";
+    const url = typeof req.body?.url === "string" ? req.body.url : "";
+    const email =
+      typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const compReason =
+      typeof req.body?.compReason === "string" ? req.body.compReason : "";
+    const parsedDuration = Number.parseInt(String(req.body?.durationDays ?? ""), 10);
+    const durationDays =
+      Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : undefined;
+
+    if (!tier || !url || !email || !compReason) {
+      res.status(400).json({ error: "tier, url, email, compReason required" });
+      return;
+    }
+    try {
+      const out = await svc.compGrant({
+        tier,
+        url,
+        email,
+        compReason,
+        durationDays,
+        grantedByUserId: req.actor.userId ?? undefined,
+      });
+      res.json(out);
+    } catch (err) {
+      logger.error({ err, tier, email }, "creditscore: comp-grant failed");
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // GET /api/creditscore/promo-codes — board admin: list Stripe promo codes
+  router.get("/promo-codes", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    try {
+      const codes = await svc.listPromoCodes();
+      res.json({ codes });
+    } catch (err) {
+      logger.error({ err }, "creditscore: listPromoCodes failed");
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // POST /api/creditscore/promo-codes — board admin: create Stripe coupon + promo code
+  // Body: { code, percentOff?, amountOffCents?, currency?, maxRedemptions?, expiresAt?,
+  //         duration?, durationInMonths?, name? }
+  router.post("/promo-codes", async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const code = typeof req.body?.code === "string" ? req.body.code : "";
+    const percentOffRaw = req.body?.percentOff;
+    const amountOffRaw = req.body?.amountOffCents;
+    const maxRedemptionsRaw = req.body?.maxRedemptions;
+    const durationInMonthsRaw = req.body?.durationInMonths;
+    const expiresAtRaw =
+      typeof req.body?.expiresAt === "string" ? req.body.expiresAt : "";
+    const duration =
+      req.body?.duration === "repeating" || req.body?.duration === "forever"
+        ? (req.body.duration as "repeating" | "forever")
+        : "once";
+    const currency =
+      typeof req.body?.currency === "string" ? req.body.currency : "usd";
+    const name = typeof req.body?.name === "string" ? req.body.name : undefined;
+
+    const percentOff = Number(percentOffRaw);
+    const amountOffCents = Number(amountOffRaw);
+    const maxRedemptions = Number(maxRedemptionsRaw);
+    const durationInMonths = Number(durationInMonthsRaw);
+
+    let expiresAt: Date | null = null;
+    if (expiresAtRaw) {
+      const d = new Date(expiresAtRaw);
+      if (Number.isNaN(d.getTime())) {
+        res.status(400).json({ error: "expiresAt must be a valid date" });
+        return;
+      }
+      expiresAt = d;
+    }
+
+    if (!code) {
+      res.status(400).json({ error: "code required" });
+      return;
+    }
+
+    try {
+      const out = await svc.createPromoCode({
+        code,
+        percentOff: Number.isFinite(percentOff) && percentOff > 0 ? percentOff : undefined,
+        amountOffCents:
+          Number.isFinite(amountOffCents) && amountOffCents > 0
+            ? amountOffCents
+            : undefined,
+        currency,
+        maxRedemptions:
+          Number.isFinite(maxRedemptions) && maxRedemptions > 0
+            ? maxRedemptions
+            : undefined,
+        expiresAt,
+        duration,
+        durationInMonths:
+          Number.isFinite(durationInMonths) && durationInMonths > 0
+            ? durationInMonths
+            : undefined,
+        name,
+      });
+      res.json(out);
+    } catch (err) {
+      logger.error({ err, code }, "creditscore: createPromoCode failed");
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // GET /api/creditscore/entitlement?domain=X&email=Y — public
   router.get("/entitlement", async (req: Request, res: Response) => {
     const domain = typeof req.query.domain === "string" ? req.query.domain : undefined;

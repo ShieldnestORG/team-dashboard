@@ -145,10 +145,12 @@ export const queryKeys = {
     stats: ["auto-reply", "stats"] as const,
   },
   creditscoreReview: {
+    all: ["creditscore-review"] as const,
     contentDrafts: ["creditscore-review", "content-drafts"] as const,
     schemaImpls: ["creditscore-review", "schema-impls"] as const,
     competitorScans: ["creditscore-review", "competitor-scans"] as const,
     strategyDocs: ["creditscore-review", "strategy-docs"] as const,
+    promoCodes: ["creditscore-review", "promo-codes"] as const,
     leads: (filters: Record<string, unknown>) =>
       ["creditscore-review", "leads", filters] as const,
   },
