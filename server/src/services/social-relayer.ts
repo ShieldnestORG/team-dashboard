@@ -15,6 +15,7 @@ import type { Db } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { getPublisher } from "./platform-publishers/index.js";
 import type { PublishResult } from "./platform-publishers/index.js";
+import { canPublish } from "./socials/platform-caps.js";
 
 const BATCH_SIZE = 5;
 
@@ -38,10 +39,11 @@ export interface RelayerResult {
   failed: number;
   retrying: number;
   skipped: number;
+  overCap: number;
 }
 
 export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
-  const result: RelayerResult = { picked: 0, posted: 0, failed: 0, retrying: 0, skipped: 0 };
+  const result: RelayerResult = { picked: 0, posted: 0, failed: 0, retrying: 0, skipped: 0, overCap: 0 };
 
   const due = await db.execute(sql`
     SELECT
@@ -82,6 +84,29 @@ export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
       await markFailed(db, row.id, `social_account is ${row.accountStatus}`, row.attempts + 1, row.maxAttempts);
       result.failed += 1;
       continue;
+    }
+
+    // Per-platform daily publish cap. Over cap = revert to scheduled, no
+    // attempts increment, so the row retries tomorrow when count resets.
+    try {
+      const cap = await canPublish(db, row.platform);
+      if (!cap.allowed) {
+        await db.execute(sql`
+          UPDATE social_posts
+             SET status = 'scheduled',
+                 error = 'over daily publish cap',
+                 updated_at = now()
+           WHERE id = ${row.id}
+        `);
+        result.overCap += 1;
+        logger.info(
+          { id: row.id, platform: row.platform, used: cap.used, cap: cap.cap },
+          "social-relayer over daily publish cap, deferring",
+        );
+        continue;
+      }
+    } catch (capErr) {
+      logger.warn({ err: capErr, id: row.id, platform: row.platform }, "platform-caps: canPublish threw, proceeding");
     }
 
     const publisher = getPublisher(row.platform);

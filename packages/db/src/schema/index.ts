@@ -75,6 +75,7 @@ export { systemCrons } from "./system_crons.js";
 export { socialAccounts } from "./social_accounts.js";
 export { socialAutomations } from "./social_automations.js";
 export { socialPosts } from "./social_posts.js";
+export { platformCaps } from "./platform_caps.js";
 export { partnerCompanies, partnerClicks, partnerSiteContent } from "./partners.js";
 export { affiliates } from "./affiliates.js";
 export { referralAttribution } from "./referral_attribution.js";
