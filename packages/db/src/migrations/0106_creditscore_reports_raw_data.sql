@@ -1,4 +1,4 @@
--- 0102_creditscore_reports_raw_data.sql
+-- 0106_creditscore_reports_raw_data.sql
 -- Adds raw_data JSONB column to creditscore_reports for full Firecrawl-response
 -- replay/audit, and documents the new "degraded" status value.
 --
