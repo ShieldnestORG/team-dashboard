@@ -6,8 +6,9 @@ import { SocialsAutomation } from "./SocialsAutomation";
 import { SocialsCalendar } from "./SocialsCalendar";
 import { SocialsCompose } from "./SocialsCompose";
 import { SocialsQueue } from "./SocialsQueue";
+import { SocialsSchedule } from "./SocialsSchedule";
 
-type Tab = "accounts" | "automation" | "calendar" | "compose" | "queue";
+type Tab = "accounts" | "schedule" | "automation" | "calendar" | "compose" | "queue";
 
 export function SocialsLayout() {
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -29,6 +30,7 @@ export function SocialsLayout() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
         <TabsList>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
+          <TabsTrigger value="schedule">Schedule</TabsTrigger>
           <TabsTrigger value="automation">Automation</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="compose">Compose</TabsTrigger>
@@ -36,6 +38,9 @@ export function SocialsLayout() {
         </TabsList>
         <TabsContent value="accounts" className="mt-4">
           <SocialsAccounts />
+        </TabsContent>
+        <TabsContent value="schedule" className="mt-4">
+          <SocialsSchedule />
         </TabsContent>
         <TabsContent value="automation" className="mt-4">
           <SocialsAutomation />

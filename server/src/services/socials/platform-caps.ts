@@ -102,3 +102,84 @@ export async function listCaps(db: Db): Promise<PlatformCap[]> {
   `)) as unknown as PlatformCap[];
   return rows;
 }
+
+export interface PlatformCounter {
+  platform: string;
+  generatedToday: number;
+  generatedCap: number;
+  publishedToday: number;
+  publishedCap: number;
+  queued: number;
+  failed24h: number;
+  enabled: boolean;
+}
+
+export async function listCounters(db: Db): Promise<PlatformCounter[]> {
+  const caps = await listCaps(db);
+  if (caps.length === 0) return [];
+
+  const platforms = caps.map((c) => c.platform);
+  const contentPlatforms = platforms.map(capPlatformToContentPlatform);
+
+  const generatedRows = (await db.execute(sql`
+    SELECT platform, COUNT(*)::int AS cnt
+    FROM content_items
+    WHERE platform = ANY(${contentPlatforms})
+      AND date_trunc('day', created_at AT TIME ZONE 'utc')
+          = date_trunc('day', now() AT TIME ZONE 'utc')
+    GROUP BY platform
+  `)) as unknown as Array<{ platform: string; cnt: number }>;
+  const generatedMap = new Map<string, number>();
+  for (const row of generatedRows) generatedMap.set(row.platform, Number(row.cnt));
+
+  const publishedRows = (await db.execute(sql`
+    SELECT sa.platform AS platform, COUNT(*)::int AS cnt
+    FROM social_posts sp
+    JOIN social_accounts sa ON sa.id = sp.social_account_id
+    WHERE sa.platform = ANY(${platforms})
+      AND sp.status = 'posted'
+      AND sp.posted_at IS NOT NULL
+      AND date_trunc('day', sp.posted_at AT TIME ZONE 'utc')
+          = date_trunc('day', now() AT TIME ZONE 'utc')
+    GROUP BY sa.platform
+  `)) as unknown as Array<{ platform: string; cnt: number }>;
+  const publishedMap = new Map<string, number>();
+  for (const row of publishedRows) publishedMap.set(row.platform, Number(row.cnt));
+
+  const queuedRows = (await db.execute(sql`
+    SELECT sa.platform AS platform, COUNT(*)::int AS cnt
+    FROM social_posts sp
+    JOIN social_accounts sa ON sa.id = sp.social_account_id
+    WHERE sa.platform = ANY(${platforms})
+      AND sp.status = 'scheduled'
+    GROUP BY sa.platform
+  `)) as unknown as Array<{ platform: string; cnt: number }>;
+  const queuedMap = new Map<string, number>();
+  for (const row of queuedRows) queuedMap.set(row.platform, Number(row.cnt));
+
+  const failedRows = (await db.execute(sql`
+    SELECT sa.platform AS platform, COUNT(*)::int AS cnt
+    FROM social_posts sp
+    JOIN social_accounts sa ON sa.id = sp.social_account_id
+    WHERE sa.platform = ANY(${platforms})
+      AND sp.status = 'failed'
+      AND sp.updated_at > now() - INTERVAL '24 hours'
+    GROUP BY sa.platform
+  `)) as unknown as Array<{ platform: string; cnt: number }>;
+  const failedMap = new Map<string, number>();
+  for (const row of failedRows) failedMap.set(row.platform, Number(row.cnt));
+
+  return caps.map((cap) => {
+    const contentKey = capPlatformToContentPlatform(cap.platform);
+    return {
+      platform: cap.platform,
+      generatedToday: generatedMap.get(contentKey) ?? 0,
+      generatedCap: cap.maxGeneratedPerDay,
+      publishedToday: publishedMap.get(cap.platform) ?? 0,
+      publishedCap: cap.maxPublishedPerDay,
+      queued: queuedMap.get(cap.platform) ?? 0,
+      failed24h: failedMap.get(cap.platform) ?? 0,
+      enabled: cap.enabled,
+    };
+  });
+}

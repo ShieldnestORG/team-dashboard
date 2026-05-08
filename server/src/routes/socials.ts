@@ -6,7 +6,7 @@ import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
 import { runSocialRelayerTick } from "../services/social-relayer.js";
 import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
-import { invalidatePlatformCapCache } from "../services/socials/platform-caps.js";
+import { invalidatePlatformCapCache, listCounters } from "../services/socials/platform-caps.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -257,6 +257,16 @@ export function socialsRoutes(db: Db) {
     if (!updated[0]) return res.status(404).json({ error: "not found" });
     invalidatePlatformCapCache(platform);
     res.json({ cap: updated[0] });
+  });
+
+  router.get("/platform-counters", async (_req, res) => {
+    try {
+      const counters = await listCounters(db);
+      res.json({ counters });
+    } catch (err) {
+      logger.error({ err }, "platform-counters failed");
+      res.status(500).json({ error: "counters failed" });
+    }
   });
 
   // ----- Calendar -----
