@@ -4,7 +4,7 @@
 > a passive inventory into an active control plane: agent-generated drafts →
 > human-gated approval → multi-platform auto-publishing → bounded data growth.
 >
-> **Last audited: 2026-05-07** (Phase 1 shipped via PR #34).
+> **Last audited: 2026-05-08** (Phase 2 shipped via PR #35 + #37).
 
 ## Phase 1 — Make automation real ✅ shipped 2026-05-07
 
@@ -30,26 +30,28 @@ PR #34. Three feature branches merged. Migrations `0103_platform_caps`,
 
 ## Phase 1.5 — Post-merge follow-up (open)
 
-- [ ] Update `social_accounts` row for `(brand=cd, platform=bluesky)`:
+- [x] Update `social_accounts` row for `(brand=cd, platform=bluesky)`:
       `handle='coherencedaddy.bsky.social'`, `automation_mode='manual'`,
-      `connection_type='api_key'`, `status='active'`
+      `connection_type='api_key'`, `status='active'` — verified already correct on prod
 - [ ] End-to-end smoke test: generate → approve → confirm `social_posts` row → confirm post on Bluesky within ~1 min
-- [ ] Confirm `maintenance:retention-sweep` and platform-caps endpoints visible in `/system-crons`
+- [x] Confirm `maintenance:retention-sweep` and platform-caps endpoints visible in `/system-crons` — `maintenance:retention-sweep` and `socials:relay` confirmed registered
 - [ ] First retention-sweep run will be largest — monitor logs at 3:15am UTC
 - [ ] Consider populating `flagContent` BANNED_PHRASES with anything you'd never auto-post
 
-## Phase 2 — Per-platform control panel UI 🟡 not started
+## Phase 2 — Per-platform control panel UI ✅ shipped 2026-05-08
+
+PR #35 (UI + counters endpoint) + #37 (drizzle ANY→IN hotfix). VPS1 redeployed; `/api/socials/platform-counters` returns all 6 platforms.
 
 See full handoff: [`docs/products/socials-phase2-handoff.md`](../products/socials-phase2-handoff.md).
 
-- [ ] `GET /api/socials/platform-counters` — per-platform live counters (today's generated/published/queued/failed)
-- [ ] `ui/src/pages/socials/SocialsSchedule.tsx` — new tab card-per-platform with caps editor, automations list, accounts list, live counters
-- [ ] Inline cron-expression editor (reuse `CronManagement` widget)
-- [ ] Pause/resume toggle per `social_automation`
-- [ ] Per-account `automation_mode` dropdown wired to PATCH endpoint
-- [ ] Visual treatment for at-cap (red) and near-cap (yellow)
-- [ ] Decide: replace or coexist with read-only Automation tab
-- [ ] Decide: per-platform vs per-account caps once multi-account scenarios appear
+- [x] `GET /api/socials/platform-counters` — per-platform live counters (today's generated/published/queued/failed)
+- [x] `ui/src/pages/socials/SocialsSchedule.tsx` — new tab card-per-platform with caps editor, automations list, accounts list, live counters
+- [x] Inline cron-expression editor (reuse `CronManagement` widget)
+- [x] Pause/resume toggle per `social_automation`
+- [x] Per-account `automation_mode` dropdown wired to PATCH endpoint
+- [x] Visual treatment for at-cap (red) and near-cap (yellow)
+- Decision: **coexist with read-only Automation tab** for now; revisit after Schedule is exercised in production
+- Decision: **stayed per-platform**; cross-account aggregation deferred to Phase 5
 
 ## Phase 3 — Native text publishing for the rest 🟡 not started
 
