@@ -49,6 +49,7 @@ export const creditscoreContentDrafts = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    bodyTrimmedAt: timestamp("body_trimmed_at", { withTimezone: true }),
   },
   (table) => ({
     subscriptionIdx: index("creditscore_content_drafts_subscription_idx").on(

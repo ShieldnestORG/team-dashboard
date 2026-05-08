@@ -50,6 +50,7 @@ export const marketingDrafts = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    payloadTrimmedAt: timestamp("payload_trimmed_at", { withTimezone: true }),
   },
   (table) => ({
     companyScopeIdx: index("marketing_drafts_company_scope_idx").on(

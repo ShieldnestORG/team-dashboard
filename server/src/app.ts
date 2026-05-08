@@ -55,6 +55,8 @@ import { startSocialCrons } from "./services/social-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
 import { initFeedbackDb } from "./services/intel-quality.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
+import { startRetentionCron } from "./services/maintenance-retention-cron.js";
+import { maintenanceRoutes } from "./routes/maintenance.js";
 import { startMoltbookCrons } from "./services/moltbook-crons.js";
 import { startAffiliateCrons } from "./services/affiliate-crons.js";
 import { trendRoutes } from "./routes/trends.js";
@@ -294,6 +296,7 @@ export async function createApp(
   api.use("/media", mediaDropRoutes(db, opts.storageService));
   api.use("/system-health", systemHealthRoutes(db));
   api.use("/system-crons", systemCronRoutes(db));
+  api.use("/maintenance", maintenanceRoutes(db));
   api.use(structureRoutes(db));
   api.use("/x/oauth", xOauthRoutes(db));
   api.use("/x/analytics", xAnalyticsRoutes(db));
@@ -457,6 +460,7 @@ export async function createApp(
   startSocialCrons(db);
   startTrendCrons(db);
   startMaintenanceCrons(db);
+  startRetentionCron(db);
   startMoltbookCrons(db);
   startAffiliateCrons(db);
   startComplianceScanCron(db);
