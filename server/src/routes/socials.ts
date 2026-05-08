@@ -5,6 +5,7 @@ import { socialAccounts, socialAutomations, socialPosts } from "@paperclipai/db"
 import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
 import { runSocialRelayerTick } from "../services/social-relayer.js";
+import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -201,6 +202,21 @@ export function socialsRoutes(db: Db) {
       .returning();
     if (!updated[0]) return res.status(409).json({ error: "post is not in scheduled status" });
     res.json({ ok: true });
+  });
+
+  router.post("/posts/enqueue-from-content", async (req, res) => {
+    const contentItemId = req.body?.contentItemId;
+    if (typeof contentItemId !== "string" || !contentItemId) {
+      return res.status(400).json({ error: "contentItemId required" });
+    }
+    try {
+      const result = await enqueueApprovedContent(db, contentItemId);
+      const status = result.enqueued ? 201 : 200;
+      return res.status(status).json(result);
+    } catch (err) {
+      logger.error({ err, contentItemId }, "enqueue-from-content failed");
+      return res.status(500).json({ error: "enqueue failed" });
+    }
   });
 
   // Manual relayer tick for testing — runs one drain pass right now.
