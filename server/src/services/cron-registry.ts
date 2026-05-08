@@ -9,7 +9,7 @@
 
 import { eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { systemCrons } from "@paperclipai/db";
+import { systemCrons, socialAutomations } from "@paperclipai/db";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
 
@@ -388,6 +388,25 @@ export async function updateCronJob(
     .update(systemCrons)
     .set(setValues)
     .where(eq(systemCrons.jobName, jobName));
+
+  // Side-effect: keep social_automations.enabled in sync with system_crons.enabled
+  // so the read-only Automation tab on /socials doesn't show stale data until the
+  // next manual sync. Not every cron is a social automation — if no row matches,
+  // drizzle's update is a no-op. Failure here is logged but not fatal: system_crons
+  // is the source of truth.
+  if (updates.enabled !== undefined) {
+    try {
+      await db
+        .update(socialAutomations)
+        .set({ enabled: updates.enabled, updatedAt: new Date() })
+        .where(eq(socialAutomations.sourceRef, jobName));
+    } catch (err) {
+      logger.error(
+        { err, jobName },
+        "Failed to live-sync social_automations.enabled after cron toggle",
+      );
+    }
+  }
 
   // Update cache
   const state = dbState.get(jobName);
