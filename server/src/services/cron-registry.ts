@@ -389,21 +389,30 @@ export async function updateCronJob(
     .set(setValues)
     .where(eq(systemCrons.jobName, jobName));
 
-  // Side-effect: keep social_automations.enabled in sync with system_crons.enabled
+  // Side-effect: keep social_automations rows in sync with system_crons changes
   // so the read-only Automation tab on /socials doesn't show stale data until the
-  // next manual sync. Not every cron is a social automation — if no row matches,
-  // drizzle's update is a no-op. Failure here is logged but not fatal: system_crons
-  // is the source of truth.
+  // next manual sync. Mirrors `enabled` (toggle) and `cronExpr`/`nextRunAt`
+  // (schedule override). Not every cron is a social automation — if no row
+  // matches, drizzle's update is a no-op. Failure here is logged but not fatal:
+  // system_crons is the source of truth.
+  const automationPatch: Record<string, unknown> = { updatedAt: new Date() };
   if (updates.enabled !== undefined) {
+    automationPatch.enabled = updates.enabled;
+  }
+  if (updates.scheduleOverride !== undefined) {
+    automationPatch.cronExpr = effectiveSchedule;
+    automationPatch.nextRunAt = nextRunAt;
+  }
+  if (Object.keys(automationPatch).length > 1) {
     try {
       await db
         .update(socialAutomations)
-        .set({ enabled: updates.enabled, updatedAt: new Date() })
+        .set(automationPatch)
         .where(eq(socialAutomations.sourceRef, jobName));
     } catch (err) {
       logger.error(
         { err, jobName },
-        "Failed to live-sync social_automations.enabled after cron toggle",
+        "Failed to live-sync social_automations after cron update",
       );
     }
   }

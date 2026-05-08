@@ -105,6 +105,7 @@ import { agentOpsRoutes } from "./routes/agent-ops.js";
 import { youtubeRoutes } from "./routes/youtube.js";
 import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
 import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
+import { syncSocialAutomations } from "./services/socials/cron-introspect.js";
 import { startYouTubeCrons } from "./services/youtube/yt-crons.js";
 import { initVpsMonitor } from "./services/vps-monitor.js";
 import { knowledgeGraphRoutes } from "./routes/knowledge-graph.js";
@@ -528,9 +529,17 @@ export async function createApp(
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);
   // Sync registry to DB + start the single cron scheduler
-  void syncCronRegistry(db).catch((err) => {
-    logger.error({ err }, "Failed to sync cron registry to DB");
-  });
+  void syncCronRegistry(db)
+    .then(() => {
+      // After cron rows exist in system_crons, refresh social_automations
+      // so any drift from before the live-sync side-effect landed is corrected.
+      const SOCIALS_COMPANY_ID =
+        process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+      return syncSocialAutomations(db, SOCIALS_COMPANY_ID);
+    })
+    .catch((err) => {
+      logger.error({ err }, "Failed to sync cron registry / social_automations on startup");
+    });
   const stopCronScheduler = startCronScheduler(db);
   // Initialize auto-reply service + its own dynamic-interval poll cron
   void initAutoReplyService(db);
