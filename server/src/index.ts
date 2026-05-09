@@ -28,7 +28,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
-import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService, seedManagedInstructionsFromRepo } from "./services/index.js";
+import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService, seedManagedInstructionsFromRepo, syncStructureDiagramFromRepo } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -579,6 +579,21 @@ export async function startServer(): Promise<StartedServer> {
       })
       .catch((err) => {
         logger.error({ err }, "startup agent instructions seeding failed");
+      });
+
+    void syncStructureDiagramFromRepo(db as any, companyId)
+      .then((result) => {
+        if (result.status === "synced") {
+          logger.info(
+            { revisionNumber: result.revisionNumber, bodyHash: result.bodyHash },
+            "synced company-structure diagram from docs/architecture/company-structure.mmd",
+          );
+        } else if (result.status === "missing-file") {
+          logger.warn({ message: result.message }, "skipped structure-diagram sync");
+        }
+      })
+      .catch((err) => {
+        logger.error({ err }, "startup structure-diagram sync failed");
       });
   }
 
