@@ -215,16 +215,13 @@ export function customerPortalService(db: Db) {
     // continues; the link is still in the DB for manual testing.
     try {
       await sendCreditscoreEmail({
-        // Reusing the welcome_starter kind for V1 — Worker B (storefront)
-        // will add a dedicated `portal_magic_link` template; until then the
-        // welcome template's CTA URL is overridden via `data.actionUrl`.
-        kind: "welcome_starter",
+        kind: "portal_magic_link",
         to: email,
         data: {
-          purpose: "customer_portal_magic_link",
           actionUrl: url,
           expiresAt: expiresAt.toISOString(),
           ttlMinutes: ttl,
+          email,
         },
       });
     } catch (err) {
