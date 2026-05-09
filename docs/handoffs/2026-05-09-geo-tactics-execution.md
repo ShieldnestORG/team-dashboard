@@ -284,6 +284,18 @@ Worker A flagged this and it's real: **`customer_accounts.stripe_customer_id` is
 
 **Resolution:** add a follow-up task (do NOT block this batch on it) — the orchestrator's first follow-up worker is "Stripe webhook → portal account linker." Spec: when a `checkout.session.completed` or `customer.created` event fires, look up `customer_accounts` by email; if it exists, set `stripe_customer_id`; if it doesn't, create a row and set both. Idempotent.
 
+**SHIPPED (2026-05-09):** PR `feat/portal-stripe-linker` on branch
+`feat/portal-stripe-linker`. Linker at
+`server/src/services/customer-account-linker.ts`. Called from
+`checkout.session.completed` in creditscore, bundle-entitlements, and
+intel-billing webhook handlers. 10 unit tests in
+`server/src/__tests__/customer-account-linker.test.ts`. All typechecks clean.
+
+Remaining open item (out of scope for this PR): one-shot backfill script to
+populate `stripe_customer_id` on pre-existing `customer_accounts` rows from
+Stripe customer list. Must be written and run before portal is announced to
+existing customers.
+
 ### 🚨 BLOCKER #3 — Magic-link Resend template misattribution
 
 Worker A's report says "Worker C will own the `portal_magic_link` Resend template" — **this was never in Worker C's spec and Worker C did not build it.** The portal currently reuses the `welcome_starter` template with `data.actionUrl` shoehorned in. Magic-link emails will technically deliver but render as a "welcome" email with a link button.

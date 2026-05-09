@@ -82,7 +82,9 @@ These variables are required for the project to function. **VPS** requires all v
 | `TX_VALIDATORS_URL` | Optional | VPS | Public validator-list URL for TX chain |
 | `SHIELDNEST_COSMOS_MONIKER` / `_OSMOSIS_MONIKER` / `_TX_MONIKER` | Optional | VPS | Validator monikers tracked for rank-delta content |
 | `GITHUB_TOKEN` | Yes | VPS | GitHub API access for intel + deployment |
-| `EMBED_URL` | Yes | VPS | Embedding service (`http://147.79.78.251:8000`) |
+| `EMBED_URL` | Yes | VPS | BGE-M3 embedding service over Tailnet (`http://100.67.128.51:8080` — VPS1 `shield-llm`). Pre-2026-05-09 value `http://147.79.78.251:8000` (VPS3) is dead. |
+| `FIRECRAWL_URL` | Yes | VPS | Firecrawl over Tailnet (`http://100.67.128.51:3002` — VPS1 `shield-llm`). |
+| `FIRECRAWL_API_KEY` | Yes | VPS | `self-hosted` for Tailnet self-hosted Firecrawl (`USE_DB_AUTHENTICATION=false`). |
 | `EMBED_API_KEY` | Yes | VPS | Embedding service auth |
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
 | `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |
@@ -111,13 +113,13 @@ These variables are required for the project to function. **VPS** requires all v
 | `CREDITSCORE_CANCEL_URL` | Optional | VPS | Abandon-checkout redirect (fallback: `freetools.coherencedaddy.com/creditscore-home?checkout=canceled`) |
 | `CREDITSCORE_CALLBACK_KEY` | Optional | VPS + coherencedaddy | HMAC shared secret for email callback from team-dashboard → storefront. If unset, emails are skipped. |
 | `CREDITSCORE_EMAIL_CALLBACK_URL` | Optional | VPS | Storefront endpoint that renders + sends via Resend (default: `https://freetools.coherencedaddy.com/api/email/creditscore`) |
-| `OLLAMA_URL` / `OLLAMA_API_KEY` / `OLLAMA_MODEL` | Yes | VPS | Ollama Cloud endpoint (default VPS2, `gemma4:31b`). Powers the Content Agent (AEO page drafting), SEO Engine, and other content pipelines. |
+| `OLLAMA_URL` / `OLLAMA_API_KEY` / `OLLAMA_MODEL` | Yes | VPS | Ollama Cloud endpoint (`https://ollama.com/api`, default model `gemma4:31b-cloud`). Powers the Content Agent (AEO page drafting), SEO Engine, and other content pipelines. Self-hosted fallback runs on VPS1 Tailnet `http://100.67.128.51:11434` (gemma2:2b) for agent + KG workloads. |
 | `INTEL_BILLING_SUCCESS_URL` | Optional | VPS | Checkout success redirect |
 | `INTEL_BILLING_CANCEL_URL` | Optional | VPS | Checkout cancel redirect |
 | `ENTERPRISE_BOOKING_URL` | Optional | VPS | Cal.com or Calendly booking URL for enterprise calls |
 | `VITE_ENTERPRISE_BOOKING_URL` | Optional | UI build | Same URL exposed to frontend |
 | **Monitoring** | | | |
 | `SITE_METRICS_KEY` | Yes | VPS + coherencedaddy | Site analytics ingestion auth |
-| `SMTP_HOST/PORT/USER/PASS` | Optional | VPS | Email alerting (Proton Mail) |
-| `ALERT_EMAIL_TO/FROM` | Optional | VPS | Alert email recipients (also receives new affiliate application notifications) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Optional | VPS | Email alerting via Proton Mail SMTP (`smtp.protonmail.ch:587`). `SMTP_PASS` is a 16-char Proton SMTP token, NOT the account password. Rotate when `535 5.7.8 auth failed` appears (last rotated 2026-05-09). The host-level `egress-watch` cron on VPS1+VPS4 also reads from `/etc/egress-watch.env` — keep both in sync after rotation. |
+| `ALERT_EMAIL_TO` / `ALERT_EMAIL_FROM` | Optional | VPS | Alert recipient + sender (also receives new affiliate application notifications). Production: `nestd@pm.me` ← `info@coherencedaddy.com`. |
 | `AFFILIATE_SUPPORT_EMAIL` | Optional | VPS | Support email shown to affiliates on pending/approved screens (default: `SMTP_USER`) |

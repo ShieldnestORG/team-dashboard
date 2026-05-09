@@ -73,7 +73,7 @@ only `{id, kind, createdAt}`. No "show value" affordance exists.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/login` | none | Body `{email}`. Always returns `{ok: true}` (no enumeration). Stores a `customer_magic_links` row and dispatches the email via the existing `sendCreditscoreEmail` callback (Worker C will switch this to a dedicated `portal_magic_link` template). |
+| POST | `/login` | none | Body `{email}`. Always returns `{ok: true}` (no enumeration). Stores a `customer_magic_links` row and dispatches the email via `sendCreditscoreEmail` with `kind: "portal_magic_link"` (fields: `actionUrl`, `ttlMinutes`, `email`, `expiresAt`). Storefront template: `emails/portal-magic-link.tsx` in coherencedaddy-landing. |
 | GET | `/auth?token=…` | none | Consumes token, sets cookie, 302 to `${PORTAL_BASE_URL}/`. Failures redirect to `/auth?error=…`. |
 | POST | `/logout` | cookie | Clears cookie. |
 | GET | `/me` | cookie | Returns `{account, entitlements: {creditscore, bundles}}`. Joins on email for creditscore; on `stripe_customer_id` for bundles. |
@@ -119,14 +119,47 @@ encryption.
 Stripe and the email callback are mocked — the test surface is route +
 service composition, not third-party integrations.
 
+## Wire-up status
+
+### Stripe → customer_accounts linker (Blocker #2) — SHIPPED
+
+`server/src/services/customer-account-linker.ts` exports:
+- `linkStripeCustomerToAccount(db, { email, stripeCustomerId })` — idempotent
+  upsert on `email` unique key using `INSERT ... ON CONFLICT DO UPDATE WHERE
+  stripe_customer_id IS DISTINCT FROM EXCLUDED.stripe_customer_id`.
+- `handleStripeCustomerEvent(db, event)` — wraps the linker for
+  `customer.created` / `customer.updated` event types.
+
+The linker is called from `checkout.session.completed` in:
+- `server/src/services/creditscore.ts` — after `activateFromCheckout`
+- `server/src/services/bundle-entitlements.ts` — after `activateFromCheckout`
+- `server/src/services/intel-billing.ts` — after `provisionFromCheckout`
+
+All three call sites are **fire-and-catch** — a linker failure logs an error but
+does not roll back product fulfillment.
+
+Stripe session email is resolved as: `customer_details.email || customer_email`
+(Stripe sends the actual entered email in `customer_details`; `customer_email`
+is the pre-filled value passed to checkout). Both fields are now included in the
+typed session shape in each webhook handler.
+
+**Backfill note:** existing `customer_accounts` rows whose `stripe_customer_id`
+is NULL will not be auto-populated by this PR. A one-shot backfill script
+should be written separately to call the Stripe API and match on email.
+See handoff doc §BLOCKER #2 for context.
+
 ## Followups (handed off, not blocking)
 
 - Worker B: portal SPA at `app.coherencedaddy.com` (Vercel) consuming the
   routes above. Login form, credentials manager, Stripe portal launcher.
-- Worker C: dedicated `portal_magic_link` Resend template in
+- ~~Worker C: dedicated `portal_magic_link` Resend template in
   coherencedaddy-landing; team-dashboard switches `sendCreditscoreEmail` call
-  to the new kind once it exists.
-- Stripe webhook side-effect: on `customer.created` / first purchase, set
-  `customer_accounts.stripe_customer_id` so bundles resolve via the join.
+  to the new kind once it exists.~~ **SHIPPED (Blocker #3, 2026-05-09).**
+  Storefront PR: https://github.com/ShieldnestORG/coherencedaddy/pull/27
+  Backend PR: this PR (`feat/portal-use-magic-link-kind`).
+  Merge storefront PR first — backend PR depends on the new kind existing on
+  the storefront before it deploys.
+- Backfill script: iterate Stripe customers → match by email → set
+  `stripe_customer_id` on pre-existing `customer_accounts` rows (one-shot).
 - Multi-tenant workspaces: `portal_workspaces` + per-workspace credentials.
 - Credential vault audit before any "paste-your-token" SKU is offered.

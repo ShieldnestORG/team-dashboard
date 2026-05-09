@@ -28,7 +28,7 @@ graph TB
         TXF["tokns.fi — crypto / NFT / staking platform\n(+ app.tokns.fi dashboard)"]
         TX["TX Blockchain — tx.org\n(Cosmos SDK chain, validator)"]
         DAO["Trustee DAO — dao.nestd.xyz\n(VPS4 — DAO governance)"]
-        ROLL["rollwithsolo.com / runatthebullets.com\n(ShieldNest properties, VPS3)"]
+        ROLL["rollwithsolo.com / runatthebullets.com\n(ShieldNest properties, were on VPS3 — migration TBD)"]
     end
 
     SN --> YA

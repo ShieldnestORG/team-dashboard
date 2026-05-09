@@ -9,6 +9,7 @@ import {
 } from "@paperclipai/db";
 import { sendTransactional } from "./email-templates.js";
 import { logger } from "../middleware/logger.js";
+import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 
 // ---------------------------------------------------------------------------
 // Stripe REST client (fetch-based, no npm dependency)
@@ -304,7 +305,28 @@ export function intelBillingService(db: Db) {
     const obj = event.data.object;
     switch (event.type) {
       case "checkout.session.completed": {
-        await provisionFromCheckout(obj as Parameters<typeof provisionFromCheckout>[0]);
+        const checkoutSession = obj as Parameters<typeof provisionFromCheckout>[0];
+        await provisionFromCheckout(checkoutSession);
+        // Link Stripe customer to portal account — cross-cutting; runs for
+        // every checkout. Wrapped in try/catch so linker failure is non-fatal.
+        const sessionEmail =
+          (obj as { customer_details?: { email?: string | null } | null })
+            .customer_details?.email ||
+          checkoutSession.customer_email ||
+          null;
+        if (sessionEmail && checkoutSession.customer) {
+          try {
+            await linkStripeCustomerToAccount(db, {
+              email: sessionEmail,
+              stripeCustomerId: checkoutSession.customer,
+            });
+          } catch (err) {
+            logger.error(
+              { err, sessionId: checkoutSession.id },
+              "intel-billing: customer-account-linker failed (non-fatal)",
+            );
+          }
+        }
         break;
       }
       case "invoice.payment_succeeded": {
