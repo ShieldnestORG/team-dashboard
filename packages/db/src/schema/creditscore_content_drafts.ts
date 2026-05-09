@@ -50,6 +50,12 @@ export const creditscoreContentDrafts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     bodyTrimmedAt: timestamp("body_trimmed_at", { withTimezone: true }),
+    // Customer-portal approval/rejection (migration 0110).
+    // NULL = no customer action taken. At most one of the two will be set.
+    approvedByCustomerAccountId: uuid("approved_by_customer_account_id"),
+    rejectedByCustomerAccountId: uuid("rejected_by_customer_account_id"),
+    customerRejectionReason: text("customer_rejection_reason"),
+    customerActionedAt: timestamp("customer_actioned_at", { withTimezone: true }),
   },
   (table) => ({
     subscriptionIdx: index("creditscore_content_drafts_subscription_idx").on(

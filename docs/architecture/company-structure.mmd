@@ -344,6 +344,8 @@ graph TB
         WatchtowerCron{{"watchtower:weekly-runs — Mon 09:00 UTC (gated)"}}
         WatchtowerEngines(["Engines — ChatGPT (gpt-4o-mini), Claude (haiku-4-5), Perplexity (sonar), Gemini (2.0-flash)"])
         WatchtowerSubsDB[("watchtower_subscriptions + runs + results")]
+        PortalAgentsRoutes(["/api/portal/agents — feed, items/:kind/:id, approve, reject"])
+        AgentsDashboard(["100 Agents Dashboard — customer feed + approval queue (3 agent types)"])
       end
 
       subgraph OwnedSitesNet["Owned Utility-Site Network"]
@@ -761,6 +763,11 @@ graph TB
   WatchtowerEngines -->|"OpenAI"| ExtAPIs
   WatchtowerCron --> WatchtowerSvc
   WatchtowerSvc -.->|"Stripe sub events (pending)"| StripeAPI
+  PortalAgentsRoutes -->|"agent items"| CSContentDraftsDB
+  PortalAgentsRoutes -->|"agent items"| CSSchemaImplsDB
+  PortalAgentsRoutes -->|"agent items"| CSCompetitorDB
+  AgentsDashboard -.->|"feed + approve/reject"| PortalAgentsRoutes
+  PortalAppFrontend --> AgentsDashboard
 
   %% Partner flows
   PartnerSvc --> PartnerDB

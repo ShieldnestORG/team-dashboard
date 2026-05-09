@@ -40,6 +40,11 @@ export const creditscoreSchemaImpls = pgTable(
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // Customer-portal approval/rejection (migration 0110).
+    approvedByCustomerAccountId: uuid("approved_by_customer_account_id"),
+    rejectedByCustomerAccountId: uuid("rejected_by_customer_account_id"),
+    customerRejectionReason: text("customer_rejection_reason"),
+    customerActionedAt: timestamp("customer_actioned_at", { withTimezone: true }),
   },
   (table) => ({
     subscriptionIdx: index("creditscore_schema_impls_subscription_idx").on(table.subscriptionId),
@@ -75,6 +80,11 @@ export const creditscoreCompetitorScans = pgTable(
     status: text("status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // Customer-portal approval/rejection (migration 0110).
+    approvedByCustomerAccountId: uuid("approved_by_customer_account_id"),
+    rejectedByCustomerAccountId: uuid("rejected_by_customer_account_id"),
+    customerRejectionReason: text("customer_rejection_reason"),
+    customerActionedAt: timestamp("customer_actioned_at", { withTimezone: true }),
   },
   (table) => ({
     subscriptionIdx: index("creditscore_competitor_scans_subscription_idx").on(
