@@ -412,8 +412,10 @@ const DEFAULT_DIAGRAM = `graph TB
         direction TB
         PortalSvc(["Customer Portal Service — magic-link auth + per-account credentials (AES-256-GCM)"])
         PortalRoutes(["/api/portal — login, auth, me, credentials, stripe-portal"])
+        PortalAgentsRoutes(["/api/portal/agents — feed, items, approve/reject"])
+        AgentsDashboard(["100 Agents Dashboard — activity feed + approval queue"]):::readyNode
         PortalAccountsDB[("customer_accounts + magic_links + credentials + action_log")]
-        PortalAppFrontend(["app.coherencedaddy.com — portal UI (follow-up — backend only this batch)"]):::readyNode
+        PortalAppFrontend(["app.coherencedaddy.com — portal UI"]):::readyNode
         LlmsTxtSvc(["llms.txt Generator Service — sitemap crawl + BGE-M3 + AEO build (one-shot $19)"])
         LlmsTxtRoutes(["/api/llms-txt — generate, jobs/:id, status"])
         LlmsTxtJobsDB[("llms_txt_jobs + llms_txt_outputs")]
@@ -826,6 +828,12 @@ const DEFAULT_DIAGRAM = `graph TB
   PortalSvc -->|"magic-link emails"| EmailTemplatesSvc
   PortalSvc -->|"billing-portal sessions"| StripeAPI
   PortalAppFrontend -.->|"/api/portal/*"| PortalRoutes
+  PortalAppFrontend -.->|"/api/portal/agents/*"| PortalAgentsRoutes
+  PortalAgentsRoutes --> PortalSvc
+  PortalAgentsRoutes -->|"agent items"| CSContentDraftsDB
+  PortalAgentsRoutes -->|"agent items"| CSSchemaImplsDB
+  PortalAgentsRoutes -->|"agent items"| CSCompetitorDB
+  AgentsDashboard -.->|"rendered by"| PortalAppFrontend
   LlmsTxtRoutes --> LlmsTxtSvc
   LlmsTxtSvc --> LlmsTxtJobsDB
   LlmsTxtSvc --> Embeddings

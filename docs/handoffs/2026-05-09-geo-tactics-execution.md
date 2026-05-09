@@ -380,7 +380,7 @@ WATCHTOWER_ENABLED=false
 1. **Stripe webhook → `customer_accounts` linker** (Blocker #2 fix, ~half day)
 2. **`portal_magic_link` Resend template** in `coherencedaddy-landing` (Blocker #3 fix, ~1 hour)
 3. **Portal frontend Next.js app at `app.coherencedaddy.com`** (Worker A backend only — needs UI, ~6 routes, 2-3 days)
-4. **100 Agents dashboard MVP** for the 3 existing agent types (founding-cohort customers can't use what they bought, ~1 week)
+4. **100 Agents dashboard MVP** ✅ SHIPPED 2026-05-09 — PR `feat/portal-agents-routes` (team-dashboard) + `feat/agents-dashboard` (app-coherencedaddy-portal). Migration `0110_portal_agent_approval.sql` adds customer approval columns to all 3 agent output tables. Backend: `/api/portal/agents/feed`, `/api/portal/agents/items/:kind/:id`, approve + reject POST routes. Frontend: `/agents` feed page + `/agents/[kind]/[id]` detail/action page. Sidebar nav updated. Structure diagram updated.
 5. **Watchtower v2 detection** (Haiku classifier) — only after we have ≥10 paying customers and real noise data
 
 ### Closing checklist for the orchestrator

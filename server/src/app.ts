@@ -137,6 +137,7 @@ import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { portalRoutes } from "./routes/portal.js";
+import { portalAgentsRoutes } from "./routes/portal-agents.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -395,6 +396,8 @@ export async function createApp(
   // public storefront can hit /api/portal/auth and /api/portal/login without
   // tripping the board-CSRF origin check.
   app.use("/api/portal", portalRoutes(db));
+  // 100 Agents customer feed + approval queue — mounted under /api/portal/agents.
+  app.use("/api/portal/agents", portalAgentsRoutes(db));
   // Public AEO audit — no auth required
   app.use("/api/public", auditRoutes());
   // Sitemap + robots — unauthenticated, for search engine crawlers
