@@ -150,3 +150,4 @@ export type {
 export { tiktokAudits } from "./tiktok_audits.js";
 export type { TiktokAudit, NewTiktokAudit } from "./tiktok_audits.js";
 export type { ProfileSnapshot, RecentVideo, HookTiming } from "./tiktok_audits.js";
+export { llmsTxtJobs, llmsTxtOutputs } from "./llms_txt.js";
