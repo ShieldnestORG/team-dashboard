@@ -119,6 +119,35 @@ encryption.
 Stripe and the email callback are mocked — the test surface is route +
 service composition, not third-party integrations.
 
+## Wire-up status
+
+### Stripe → customer_accounts linker (Blocker #2) — SHIPPED
+
+`server/src/services/customer-account-linker.ts` exports:
+- `linkStripeCustomerToAccount(db, { email, stripeCustomerId })` — idempotent
+  upsert on `email` unique key using `INSERT ... ON CONFLICT DO UPDATE WHERE
+  stripe_customer_id IS DISTINCT FROM EXCLUDED.stripe_customer_id`.
+- `handleStripeCustomerEvent(db, event)` — wraps the linker for
+  `customer.created` / `customer.updated` event types.
+
+The linker is called from `checkout.session.completed` in:
+- `server/src/services/creditscore.ts` — after `activateFromCheckout`
+- `server/src/services/bundle-entitlements.ts` — after `activateFromCheckout`
+- `server/src/services/intel-billing.ts` — after `provisionFromCheckout`
+
+All three call sites are **fire-and-catch** — a linker failure logs an error but
+does not roll back product fulfillment.
+
+Stripe session email is resolved as: `customer_details.email || customer_email`
+(Stripe sends the actual entered email in `customer_details`; `customer_email`
+is the pre-filled value passed to checkout). Both fields are now included in the
+typed session shape in each webhook handler.
+
+**Backfill note:** existing `customer_accounts` rows whose `stripe_customer_id`
+is NULL will not be auto-populated by this PR. A one-shot backfill script
+should be written separately to call the Stripe API and match on email.
+See handoff doc §BLOCKER #2 for context.
+
 ## Followups (handed off, not blocking)
 
 - Worker B: portal SPA at `app.coherencedaddy.com` (Vercel) consuming the
@@ -126,7 +155,7 @@ service composition, not third-party integrations.
 - Worker C: dedicated `portal_magic_link` Resend template in
   coherencedaddy-landing; team-dashboard switches `sendCreditscoreEmail` call
   to the new kind once it exists.
-- Stripe webhook side-effect: on `customer.created` / first purchase, set
-  `customer_accounts.stripe_customer_id` so bundles resolve via the join.
+- Backfill script: iterate Stripe customers → match by email → set
+  `stripe_customer_id` on pre-existing `customer_accounts` rows (one-shot).
 - Multi-tenant workspaces: `portal_workspaces` + per-workspace credentials.
 - Credential vault audit before any "paste-your-token" SKU is offered.

@@ -9,6 +9,7 @@ import { stripeRequest, verifyStripeSignature } from "./stripe-client.js";
 import { logger } from "../middleware/logger.js";
 import { runAudit, type AuditResult } from "../routes/audit.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 
 // ---------------------------------------------------------------------------
 // CreditScore product service.
@@ -457,12 +458,32 @@ export function creditscoreService(db: Db) {
       const session = event.data.object as {
         id: string;
         customer?: string;
+        customer_email?: string | null;
+        customer_details?: { email?: string | null } | null;
         subscription?: string;
         payment_intent?: string;
         metadata?: Record<string, string>;
       };
       if (session.metadata?.product === "creditscore") {
         await activateFromCheckout(session);
+      }
+      // Link Stripe customer to portal account — cross-cutting; runs for every
+      // checkout regardless of product. Wrapped in try/catch so a linker
+      // failure never rolls back product fulfillment.
+      const sessionEmail =
+        session.customer_details?.email || session.customer_email || null;
+      if (sessionEmail && session.customer) {
+        try {
+          await linkStripeCustomerToAccount(db, {
+            email: sessionEmail,
+            stripeCustomerId: session.customer,
+          });
+        } catch (err) {
+          logger.error(
+            { err, sessionId: session.id },
+            "creditscore: customer-account-linker failed (non-fatal)",
+          );
+        }
       }
     }
 

@@ -7,6 +7,7 @@ import {
 } from "@paperclipai/db";
 import { stripeRequest, verifyStripeSignature } from "./stripe-client.js";
 import { logger } from "../middleware/logger.js";
+import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 
 type CreditscoreTier = "report" | "starter" | "growth" | "pro";
 
@@ -257,11 +258,31 @@ export function bundleEntitlementsService(db: Db) {
       const session = event.data.object as {
         id: string;
         customer?: string;
+        customer_email?: string | null;
+        customer_details?: { email?: string | null } | null;
         subscription?: string;
         metadata?: Record<string, string>;
       };
       if (session.metadata?.product === "bundle") {
         await activateFromCheckout(session);
+      }
+      // Link Stripe customer to portal account — cross-cutting; runs for every
+      // checkout regardless of product. Wrapped in try/catch so a linker
+      // failure never rolls back product fulfillment.
+      const sessionEmail =
+        session.customer_details?.email || session.customer_email || null;
+      if (sessionEmail && session.customer) {
+        try {
+          await linkStripeCustomerToAccount(db, {
+            email: sessionEmail,
+            stripeCustomerId: session.customer,
+          });
+        } catch (err) {
+          logger.error(
+            { err, sessionId: session.id },
+            "bundles: customer-account-linker failed (non-fatal)",
+          );
+        }
       }
     }
 
