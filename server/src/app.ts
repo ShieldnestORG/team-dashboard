@@ -39,6 +39,7 @@ import {
 } from "./routes/directory-listings.js";
 import { bundleRoutes, bundleWebhookRouter } from "./routes/bundles.js";
 import { creditscoreRoutes, creditscoreWebhookRouter } from "./routes/creditscore.js";
+import { llmsTxtRoutes } from "./routes/llms-txt.js";
 import { houseAdsRoutes } from "./routes/house-ads.js";
 import { shopSharersRoutes } from "./routes/shop-sharers.js";
 import { contentRoutes } from "./routes/content.js";
@@ -287,6 +288,7 @@ export async function createApp(
   api.use("/directory-listings", directoryListingsRoutes(db));
   api.use("/bundles", bundleRoutes(db));
   api.use("/creditscore", creditscoreRoutes(db));
+  api.use("/llms-txt", llmsTxtRoutes(db));
   api.use("/house-ads", houseAdsRoutes(db, opts.storageService));
   api.use("/shop", shopSharersRoutes(db));
   api.use("/owned-sites", ownedSitesRoutes(db));

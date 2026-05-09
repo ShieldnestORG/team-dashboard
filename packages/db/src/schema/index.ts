@@ -158,3 +158,4 @@ export {
   CUSTOMER_CREDENTIAL_KINDS,
 } from "./customer_portal.js";
 export type { CustomerCredentialKind } from "./customer_portal.js";
+export { llmsTxtJobs, llmsTxtOutputs } from "./llms_txt.js";
