@@ -150,3 +150,11 @@ export type {
 export { tiktokAudits } from "./tiktok_audits.js";
 export type { TiktokAudit, NewTiktokAudit } from "./tiktok_audits.js";
 export type { ProfileSnapshot, RecentVideo, HookTiming } from "./tiktok_audits.js";
+export {
+  customerAccounts,
+  customerMagicLinks,
+  customerCredentials,
+  customerActionLog,
+  CUSTOMER_CREDENTIAL_KINDS,
+} from "./customer_portal.js";
+export type { CustomerCredentialKind } from "./customer_portal.js";
