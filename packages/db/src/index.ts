@@ -30,3 +30,9 @@ export {
   formatEmbeddedPostgresError,
 } from "./embedded-postgres-error.js";
 export * from "./schema/index.js";
+
+// Re-export drizzle-orm's `sql` template tag so consumers (especially scripts
+// in the workspace root) don't have to add a direct `drizzle-orm` dependency
+// just to write a raw query against the Db. This keeps `pnpm install` at root
+// minimal — we already pin drizzle-orm here.
+export { sql } from "drizzle-orm";
