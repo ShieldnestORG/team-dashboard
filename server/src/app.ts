@@ -85,6 +85,7 @@ import { xOauthRoutes } from "./routes/x-oauth.js";
 import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { socialsRoutes } from "./routes/socials.js";
 import { launchMonitorRoutes } from "./routes/launch-monitor.js";
+import { watchtowerRoutes } from "./routes/watchtower.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -128,6 +129,7 @@ import { startCreditscoreReportAgent } from "./services/creditscore-report-agent
 import { startCreditscoreContentAgent } from "./services/creditscore-content-agent-cron.js";
 import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
 import { startLaunchCommentMonitor } from "./services/launch-comment-monitor-cron.js";
+import { startWatchtowerCron } from "./services/watchtower-cron.js";
 import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cron.js";
 import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
@@ -307,6 +309,7 @@ export async function createApp(
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/socials", socialsRoutes(db));
   api.use("/launch-monitor", launchMonitorRoutes(db));
+  api.use("/watchtower", watchtowerRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
@@ -506,6 +509,14 @@ export async function createApp(
   if (process.env.LAUNCH_MONITOR_ENABLED === "true") {
     const LAUNCH_MONITOR_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
     startLaunchCommentMonitor(db, { companyId: LAUNCH_MONITOR_COMPANY_ID });
+  }
+  // Watchtower brand-mention monitor (v1) — Monday 09:00 UTC fan-out
+  // across active+weekly subscriptions. Gated OFF by default per CEO
+  // directive (2026-05-09 handoff): no live customer emails until the
+  // Stripe→customer_accounts linker ships AND the proper portal_magic_link
+  // Resend template is in place. Flip WATCHTOWER_ENABLED=true to start.
+  if (process.env.WATCHTOWER_ENABLED === "true") {
+    startWatchtowerCron(db);
   }
   // Rizz comment monitor (V1.1) — polls @coherencedaddy TikTok comments for
   // @-mentions and inserts 'mentioned' rows into tiktok_review_submissions.

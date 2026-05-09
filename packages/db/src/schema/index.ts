@@ -159,3 +159,16 @@ export {
 } from "./customer_portal.js";
 export type { CustomerCredentialKind } from "./customer_portal.js";
 export { llmsTxtJobs, llmsTxtOutputs } from "./llms_txt.js";
+export {
+  watchtowerSubscriptions,
+  watchtowerRuns,
+  watchtowerResults,
+} from "./watchtower.js";
+export type {
+  WatchtowerSubscription,
+  NewWatchtowerSubscription,
+  WatchtowerRun,
+  NewWatchtowerRun,
+  WatchtowerResult,
+  NewWatchtowerResult,
+} from "./watchtower.js";
