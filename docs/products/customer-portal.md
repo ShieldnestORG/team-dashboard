@@ -73,7 +73,7 @@ only `{id, kind, createdAt}`. No "show value" affordance exists.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/login` | none | Body `{email}`. Always returns `{ok: true}` (no enumeration). Stores a `customer_magic_links` row and dispatches the email via the existing `sendCreditscoreEmail` callback (Worker C will switch this to a dedicated `portal_magic_link` template). |
+| POST | `/login` | none | Body `{email}`. Always returns `{ok: true}` (no enumeration). Stores a `customer_magic_links` row and dispatches the email via `sendCreditscoreEmail` with `kind: "portal_magic_link"` (fields: `actionUrl`, `ttlMinutes`, `email`, `expiresAt`). Storefront template: `emails/portal-magic-link.tsx` in coherencedaddy-landing. |
 | GET | `/auth?token=…` | none | Consumes token, sets cookie, 302 to `${PORTAL_BASE_URL}/`. Failures redirect to `/auth?error=…`. |
 | POST | `/logout` | cookie | Clears cookie. |
 | GET | `/me` | cookie | Returns `{account, entitlements: {creditscore, bundles}}`. Joins on email for creditscore; on `stripe_customer_id` for bundles. |
@@ -152,9 +152,13 @@ See handoff doc §BLOCKER #2 for context.
 
 - Worker B: portal SPA at `app.coherencedaddy.com` (Vercel) consuming the
   routes above. Login form, credentials manager, Stripe portal launcher.
-- Worker C: dedicated `portal_magic_link` Resend template in
+- ~~Worker C: dedicated `portal_magic_link` Resend template in
   coherencedaddy-landing; team-dashboard switches `sendCreditscoreEmail` call
-  to the new kind once it exists.
+  to the new kind once it exists.~~ **SHIPPED (Blocker #3, 2026-05-09).**
+  Storefront PR: https://github.com/ShieldnestORG/coherencedaddy/pull/27
+  Backend PR: this PR (`feat/portal-use-magic-link-kind`).
+  Merge storefront PR first — backend PR depends on the new kind existing on
+  the storefront before it deploys.
 - Backfill script: iterate Stripe customers → match by email → set
   `stripe_customer_id` on pre-existing `customer_accounts` rows (one-shot).
 - Multi-tenant workspaces: `portal_workspaces` + per-workspace credentials.

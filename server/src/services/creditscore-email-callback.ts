@@ -18,6 +18,7 @@ import { logger } from "../middleware/logger.js";
 // ---------------------------------------------------------------------------
 
 export type CreditscoreEmailKind =
+  | "portal_magic_link"
   | "welcome_starter"
   | "welcome_growth"
   | "welcome_pro"
