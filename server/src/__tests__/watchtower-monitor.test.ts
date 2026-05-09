@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createDb,
+  customerAccounts,
   watchtowerResults,
   watchtowerRuns,
   watchtowerSubscriptions,
@@ -22,7 +23,11 @@ import {
   runSubscription,
 } from "../services/watchtower-monitor.js";
 import type { EngineAdapter } from "../services/watchtower-engines/index.js";
-import { runWeeklyWatchtowerJobs } from "../services/watchtower-cron.js";
+import {
+  maskEmail,
+  resolveWatchtowerRecipient,
+  runWeeklyWatchtowerJobs,
+} from "../services/watchtower-cron.js";
 
 const support = await getEmbeddedPostgresTestSupport();
 const describeDb = support.supported ? describe : describe.skip;
@@ -289,5 +294,145 @@ describeDb("runWeeklyWatchtowerJobs (cron handler filter)", () => {
     // sub matched (the active+weekly one) by counting errors.
     expect(summary.errors).toBe(1);
     expect(summary.processed).toBe(0);
+    expect(summary.skippedNoRecipient).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-account digest recipient resolution
+// ---------------------------------------------------------------------------
+
+describe("maskEmail", () => {
+  it("keeps the first two chars of the local-part and the full domain", () => {
+    expect(maskEmail("user@example.com")).toBe("us***@example.com");
+    expect(maskEmail("a@example.com")).toBe("a***@example.com");
+    expect(maskEmail("USER@Example.COM")).toBe("us***@example.com");
+  });
+  it("returns *** for malformed input", () => {
+    expect(maskEmail("not-an-email")).toBe("***");
+    expect(maskEmail("@example.com")).toBe("***");
+  });
+});
+
+describeDb("resolveWatchtowerRecipient", () => {
+  let db!: ReturnType<typeof createDb>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+
+  beforeAll(async () => {
+    tempDb = await startEmbeddedPostgresTestDatabase("watchtower-recipient-");
+    db = createDb(tempDb.connectionString);
+  }, 30_000);
+
+  afterEach(async () => {
+    await db.delete(watchtowerResults);
+    await db.delete(watchtowerRuns);
+    await db.delete(watchtowerSubscriptions);
+    await db.delete(customerAccounts);
+  });
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+  });
+
+  it("resolves to the linked customer_accounts.email (happy path)", async () => {
+    const accountId = randomUUID();
+    await db.insert(customerAccounts).values({
+      id: accountId,
+      email: "owner@example.com",
+      stripeCustomerId: "cus_test_resolved",
+    });
+    const subId = randomUUID();
+    await db.insert(watchtowerSubscriptions).values({
+      id: subId,
+      accountId,
+      brandName: "Brand",
+      prompts: ["q"],
+      status: "active",
+      frequency: "weekly",
+    });
+
+    const email = await resolveWatchtowerRecipient(db, {
+      id: subId,
+      accountId,
+    });
+    expect(email).toBe("owner@example.com");
+  });
+
+  it("returns null when subscription has no account_id (skip, do not leak to ops env)", async () => {
+    const subId = randomUUID();
+    await db.insert(watchtowerSubscriptions).values({
+      id: subId,
+      accountId: null,
+      brandName: "Brand",
+      prompts: ["q"],
+      status: "active",
+      frequency: "weekly",
+    });
+
+    const email = await resolveWatchtowerRecipient(db, {
+      id: subId,
+      accountId: null,
+    });
+    expect(email).toBeNull();
+  });
+
+  it("returns null when account_id points at a missing row (skip, do not leak)", async () => {
+    const orphanAccountId = randomUUID();
+    const subId = randomUUID();
+    await db.insert(watchtowerSubscriptions).values({
+      id: subId,
+      accountId: orphanAccountId,
+      brandName: "Brand",
+      prompts: ["q"],
+      status: "active",
+      frequency: "weekly",
+    });
+
+    const email = await resolveWatchtowerRecipient(db, {
+      id: subId,
+      accountId: orphanAccountId,
+    });
+    expect(email).toBeNull();
+  });
+
+  it("resolves correctly when multiple subscriptions share the same account", async () => {
+    const accountId = randomUUID();
+    await db.insert(customerAccounts).values({
+      id: accountId,
+      email: "shared@example.com",
+      stripeCustomerId: "cus_test_shared",
+    });
+
+    const subAId = randomUUID();
+    const subBId = randomUUID();
+    await db.insert(watchtowerSubscriptions).values([
+      {
+        id: subAId,
+        accountId,
+        brandName: "BrandA",
+        prompts: ["q"],
+        status: "active",
+        frequency: "weekly",
+      },
+      {
+        id: subBId,
+        accountId,
+        brandName: "BrandB",
+        prompts: ["q"],
+        status: "active",
+        frequency: "weekly",
+      },
+    ]);
+
+    const emailA = await resolveWatchtowerRecipient(db, {
+      id: subAId,
+      accountId,
+    });
+    const emailB = await resolveWatchtowerRecipient(db, {
+      id: subBId,
+      accountId,
+    });
+    expect(emailA).toBe("shared@example.com");
+    expect(emailB).toBe("shared@example.com");
   });
 });
