@@ -16,6 +16,13 @@ These variables are required for the project to function. **VPS** requires all v
 | `PAPERCLIP_PUBLIC_URL` | Yes | VPS | Public URL for auth callbacks |
 | `PAPERCLIP_ALLOWED_HOSTNAMES` | Yes | VPS | Allowed hostnames — comma-separated (includes `affiliates.coherencedaddy.com`) |
 | `AFFILIATE_JWT_SECRET` | Recommended | VPS | Dedicated signing secret for affiliate JWTs — falls back to `BETTER_AUTH_SECRET`. Rotate independently of admin auth. Generate: `openssl rand -hex 32` |
+| **Customer Portal** | | | |
+| `PORTAL_SESSION_SECRET` | Yes (when portal enabled) | VPS | HMAC-SHA256 signing key for the `cd_portal_session` cookie. Must be ≥32 chars; rotate quarterly. Generate: `openssl rand -hex 32`. Without it, every `/api/portal/*` session-required endpoint fails closed. |
+| `PORTAL_BASE_URL` | Optional | VPS | Public URL of the customer portal frontend (default: `https://app.coherencedaddy.com`). Used for magic-link emails and post-auth redirects. |
+| `PORTAL_MAGIC_LINK_TTL_MIN` | Optional | VPS | Magic-link TTL in minutes (default: 15, clamped 1–60). |
+| `PORTAL_COOKIE_DOMAIN` | Optional | VPS | Override the cookie `Domain=` attribute. Default: `.coherencedaddy.com`. Set to empty string in dev/test. |
+| `PORTAL_STRIPE_RETURN_URL` | Optional | VPS | URL Stripe sends users back to after the Billing Portal. Default: `${PORTAL_BASE_URL}/billing`. |
+| `PAPERCLIP_SECRETS_MASTER_KEY` | Yes (when portal credentials used) | VPS | 32-byte master key (hex/base64) used to encrypt `customer_credentials.encrypted_value` via AES-256-GCM. Same key as the company-secrets vault — rotating breaks all stored credentials. |
 | **API** | | | |
 | `PAPERCLIP_API_URL` | Yes | VPS | Backend API base URL |
 | `TEAM_DASHBOARD_COMPANY_ID` | Yes | VPS + Local | `8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy) |
