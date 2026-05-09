@@ -47,12 +47,24 @@ Brand-mention monitor. See [docs/products/watchtower.md](../products/watchtower.
 
 - **Stripe product name:** `Watchtower`
 - **Price:** $29 USD recurring monthly
-- **Price ID env var:** `WATCHTOWER_STRIPE_PRICE_ID`
+- **Price lookup_key:** `watchtower_monthly` (preferred resolution path)
+- **Price ID env var (fallback):** `WATCHTOWER_STRIPE_PRICE_ID`
+- **Webhook secret env var:** `STRIPE_WEBHOOK_SECRET_WATCHTOWER`
+  (falls back to global `STRIPE_WEBHOOK_SECRET` if unset)
+- **Webhook endpoint:** `POST /api/watchtower/webhook`
+- **Checkout endpoint:** `POST /api/watchtower/checkout`
+  Body: `{ brandName: string, domain: string, prompts: string[] (1-25), email: string, returnUrl?: string }`
 - **Customer-portal allowed actions (planned, follow-up):** cancel, pause (mapped to `watchtower_subscriptions.status='paused'`)
-- **Webhook events handled (planned, follow-up):**
-  - `checkout.session.completed` → INSERT `watchtower_subscriptions`
-  - `customer.subscription.updated` → mirror `status` to `active`/`paused`
-  - `customer.subscription.deleted` → set `status='cancelled'`
+- **Webhook events handled:**
+  - `checkout.session.completed` → INSERT (or UPDATE on replay) `watchtower_subscriptions`
+    + chains `linkStripeCustomerToAccount` for portal-auth
+  - `customer.subscription.updated` → mirror `status`:
+    `active|trialing → active`, `past_due|unpaid → past_due`,
+    `paused → paused`, `canceled|incomplete_expired → cancelled`
+  - `customer.subscription.deleted` → set `status='cancelled'` (row preserved for history)
+- **Backend handlers:** `handleWatchtowerCheckout`,
+  `handleWatchtowerSubscriptionUpdated`, `handleWatchtowerSubscriptionDeleted`
+  in `server/src/services/watchtower-stripe-handler.ts`. All idempotent.
 - **Fulfillment:** monthly bill triggers no immediate fulfillment;
   weekly cron `watchtower:weekly-runs` (Mon 09:00 UTC) does the work.
 

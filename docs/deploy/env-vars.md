@@ -113,6 +113,9 @@ These variables are required for the project to function. **VPS** requires all v
 | `CREDITSCORE_CANCEL_URL` | Optional | VPS | Abandon-checkout redirect (fallback: `freetools.coherencedaddy.com/creditscore-home?checkout=canceled`) |
 | `CREDITSCORE_CALLBACK_KEY` | Optional | VPS + coherencedaddy | HMAC shared secret for email callback from team-dashboard → storefront. If unset, emails are skipped. |
 | `CREDITSCORE_EMAIL_CALLBACK_URL` | Optional | VPS | Storefront endpoint that renders + sends via Resend (default: `https://freetools.coherencedaddy.com/api/email/creditscore`) |
+| `WATCHTOWER_STRIPE_PRICE_ID` | Optional | VPS | Stripe price ID for Watchtower ($29/mo). Fallback when `lookup_key=watchtower_monthly` resolution fails. |
+| `STRIPE_WEBHOOK_SECRET_WATCHTOWER` | Optional | VPS | Dedicated signing secret for Watchtower Stripe webhook. Falls back to `STRIPE_WEBHOOK_SECRET`. |
+| `WATCHTOWER_RETURN_URL` | Optional | VPS | Default storefront return URL for checkout success/cancel (overridden per-request via `returnUrl` body field; default: `https://coherencedaddy.com/watchtower`). |
 | `OLLAMA_URL` / `OLLAMA_API_KEY` / `OLLAMA_MODEL` | Yes | VPS | Ollama Cloud endpoint (`https://ollama.com/api`, default model `gemma4:31b-cloud`). Powers the Content Agent (AEO page drafting), SEO Engine, and other content pipelines. Self-hosted fallback runs on VPS1 Tailnet `http://100.67.128.51:11434` (gemma2:2b) for agent + KG workloads. |
 | `INTEL_BILLING_SUCCESS_URL` | Optional | VPS | Checkout success redirect |
 | `INTEL_BILLING_CANCEL_URL` | Optional | VPS | Checkout cancel redirect |

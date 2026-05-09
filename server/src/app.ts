@@ -86,6 +86,10 @@ import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { socialsRoutes } from "./routes/socials.js";
 import { launchMonitorRoutes } from "./routes/launch-monitor.js";
 import { watchtowerRoutes } from "./routes/watchtower.js";
+import {
+  watchtowerCheckoutRoutes,
+  watchtowerWebhookRouter,
+} from "./routes/watchtower-checkout.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -184,6 +188,7 @@ export async function createApp(
   app.use("/api/intel-billing", intelBillingWebhookRouter(db));
   app.use("/api/bundles", bundleWebhookRouter(db));
   app.use("/api/creditscore", creditscoreWebhookRouter(db));
+  app.use("/api/watchtower", watchtowerWebhookRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
@@ -311,6 +316,7 @@ export async function createApp(
   api.use("/socials", socialsRoutes(db));
   api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/watchtower", watchtowerRoutes(db));
+  api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
