@@ -237,3 +237,167 @@ Once you've:
 Write a closing report to the user with: branches merged, migrations applied, env vars set, smoke-test results, what's still TODO before announcing to customers (frontend portal app, 100 Agents dashboard).
 
 Good luck. The roadmap doc is the spec; this handoff is the runbook.
+
+---
+
+## ADDENDUM — Post-worker completion (2026-05-09, after dispatch)
+
+All three workers completed successfully. Below are the **actual** branches, commits, deltas from the original spec, and the must-fix items the orchestrator needs to handle before merge. This section overrides anything earlier in the doc that contradicts it.
+
+### Actual branches & commits (verified via `git branch -a` from dispatcher worktree)
+
+| Worker | Branch (use this) | Worktree path (locked) | Commits |
+|---|---|---|---|
+| A — Portal | `feat/customer-portal-mvp` | `.claude/worktrees/agent-ac6faffbe07de2ba1` | `6a003120`, `aeb456fe`, `f306810e`, `e6c84e87`, `333ebe98` |
+| B — llms.txt | `feat/llms-txt-generator` | `.claude/worktrees/agent-a8e6a395fb5c95844` | `a98533e5` |
+| C — Watchtower | `feat/watchtower-mention-monitor` | `.claude/worktrees/agent-a5067a6a0fc98147a` | `eab7a5c0`, `c9032b36`, `de7b9f82` |
+
+There are also stub branches `worktree-agent-*` from the worktree-isolation tool — **ignore them**. The `feat/*` branches are the source of truth.
+
+All three worktrees are **locked**. Unlock with `git worktree unlock <path>` only when you're ready to clean up.
+
+### Repo reality vs. dispatcher-spec (corrections)
+
+The dispatcher spec was written before doing a deep repo scan. Workers corrected as they went; you need to know the deltas:
+
+1. **This is a pnpm monorepo**, not a single-package repo. Packages: `@paperclipai/server`, `@paperclipai/plugin-sdk`, `@paperclipai/shared`, `@paperclipai/db`.
+2. **Migrations live at `packages/db/src/migrations/`**, not `server/migrations/`. All workers used the correct path.
+3. **Canonical typecheck** is `pnpm install && pnpm -r build && pnpm --filter @paperclipai/server typecheck`. The CLAUDE.md `npx tsc --noEmit --project server/tsconfig.json` works only AFTER `pnpm -r build` materializes internal package types. **Recommend updating CLAUDE.md** with the pnpm-filter form as the canonical command (file a follow-up).
+4. **Schema files** belong in `packages/db/src/schema/` with re-export from `schema/index.ts`. All workers followed this.
+
+### 🚨 BLOCKER #1 — Migration collision
+
+Both A and B picked `0107`:
+- `packages/db/src/migrations/0107_customer_portal.sql` (Worker A)
+- `packages/db/src/migrations/0107_llms_txt_generator.sql` (Worker B)
+- `packages/db/src/migrations/0109_watchtower.sql` (Worker C — smartly used 0109; 0108 is open)
+
+**Resolution:** rename Worker B's file to `0108_llms_txt_generator.sql` (lowest disruption — Worker A landed first chronologically and B's renumber doesn't break anything since nothing references it yet). Precedent: commit `7665c6ae`. Watch for any drizzle journal/manifest that lists migrations explicitly — update if present.
+
+Master HEAD on dispatch: `0106_creditscore_reports_raw_data.sql`. After integration: `0107_customer_portal.sql`, `0108_llms_txt_generator.sql`, `0109_watchtower.sql`.
+
+### 🚨 BLOCKER #2 — Stripe → customer_accounts linkage missing
+
+Worker A flagged this and it's real: **`customer_accounts.stripe_customer_id` is never populated by any webhook.** Consequences:
+- `POST /api/portal/stripe-portal` returns 400 always (no Stripe customer to look up)
+- `GET /api/portal/me` returns `bundles: []` because the bundle entitlements join on `stripe_customer_id`
+
+**Resolution:** add a follow-up task (do NOT block this batch on it) — the orchestrator's first follow-up worker is "Stripe webhook → portal account linker." Spec: when a `checkout.session.completed` or `customer.created` event fires, look up `customer_accounts` by email; if it exists, set `stripe_customer_id`; if it doesn't, create a row and set both. Idempotent.
+
+### 🚨 BLOCKER #3 — Magic-link Resend template misattribution
+
+Worker A's report says "Worker C will own the `portal_magic_link` Resend template" — **this was never in Worker C's spec and Worker C did not build it.** The portal currently reuses the `welcome_starter` template with `data.actionUrl` shoehorned in. Magic-link emails will technically deliver but render as a "welcome" email with a link button.
+
+**Resolution:** spawn a tiny follow-up to add a proper `portal_magic_link` template to the Resend template set in `coherencedaddy-landing` (per OWNERSHIP.md, email templates live in the storefront repo). Until then, the portal works for testing; do NOT announce to customers.
+
+### 🚨 BLOCKER #4 — The roadmap commit is not on any worker branch
+
+Each worker worktree branched from the dispatcher worktree's state at dispatch time, BEFORE the roadmap and handoff commits landed. Worker C explicitly noted: "the `geo-tactics-roadmap.md` referenced in the brief does not exist in the repo."
+
+The dispatcher commits (on branch `claude/distracted-kirch-39a1d0`):
+- `27d13878` — `docs/products/geo-tactics-roadmap.md`
+- `3260f925` — `docs/handoffs/2026-05-09-geo-tactics-execution.md`
+
+**Resolution:** the integration branch must include these commits too. Easiest path: integration branch off `claude/distracted-kirch-39a1d0` (which has them) rather than off master, then merge each `feat/*` in.
+
+### Engine-cost reality (Worker C)
+
+Watchtower at default 25 prompts × 4 engines = 100 calls/sub/week:
+- **~$0.06/sub/week, ~$0.25/sub/month** at $29/mo retail = ~99% gross margin
+- Even at 10× actual usage, >95% margin
+- This is a printing-money SKU at the unit-economics level. Bottleneck is acquisition, not COGS.
+
+Engine choices: ChatGPT `gpt-4o-mini`, Claude `claude-haiku-4-5` (12× cheaper than Sonnet), Perplexity `sonar`, Gemini `gemini-2.0-flash`. Each engine **skips with a warning** if its env var is missing — won't crash the run.
+
+### V1 limitations to disclose to customers
+
+Worker C correctly flagged that v1 mention/sentiment detection is naive:
+- **Mention detection = case-insensitive substring match.** False-positives on common-word brands ("Apple", "Notion"); false-negatives on paraphrased mentions.
+- **Sentiment = keyword bag.** `recommend/best/great/leading` → positive; `avoid/bad/poor/scam` → negative; else neutral.
+
+**Position v1 honestly.** The Watchtower product doc should say "v1 keyword detection — v2 will use a tiny Haiku classifier per response." Don't oversell. The roadmap §2 already commits to this honesty.
+
+### Test environment caveat
+
+Worker C's 5 DB-backed tests **skip locally** because the test environment doesn't have pgvector. They run in CI/prod. Same skip pattern as `issues-service.test.ts`. The orchestrator should verify CI runs them, not assume local skip = broken.
+
+### Cookie domain decision (Worker A flagged)
+
+Portal session cookie defaults to `Domain=.coherencedaddy.com`. If `app.coherencedaddy.com` is the only consumer, host-only cookie is tighter. **Recommend keeping `.coherencedaddy.com`** so the same session works across `app.*`, `creditscore.*`, and any future authenticated subdomains. Document this in the portal doc.
+
+### Stripe webhook consolidation (Workers A + B)
+
+Worker B added a `handleLlmsTxtCheckout` handler. Worker A added portal Stripe routes. **The orchestrator must verify both register cleanly** in the master Stripe webhook router. Test with `stripe listen --forward-to localhost:PORT/api/stripe/webhook`. Likely conflict zone if both touched the same dispatcher file.
+
+### Updated integration sequence (overrides §"Decision point" above)
+
+Recommended path is now firm — execute in this order:
+
+1. Branch `integration/geo-portal-stack` off `claude/distracted-kirch-39a1d0` (NOT master — see Blocker #4)
+2. Merge `feat/customer-portal-mvp` first (it's the prereq + has the most code)
+3. Merge `feat/llms-txt-generator` — **renumber its migration to `0108`** before merging
+4. Merge `feat/watchtower-mention-monitor`
+5. Resolve any Stripe webhook router conflicts
+6. Update structure diagram (`ui/src/pages/Structure.tsx` `DEFAULT_DIAGRAM` + persisted-structure API)
+7. Run typecheck gate: `pnpm install && pnpm -r build && pnpm --filter @paperclipai/server typecheck && (cd ui && npx tsc --noEmit)`
+8. Run tests: `pnpm -r test` (or repo's standard test script)
+9. Push integration branch, open one PR (or merge direct per CEO authorization)
+10. Apply migrations to prod Neon: `CREATE EXTENSION IF NOT EXISTS citext;` first, then `0107_customer_portal.sql`, `0108_llms_txt_generator.sql`, `0109_watchtower.sql`
+11. Set new env vars in VPS env file (see "Env vars consolidated" below)
+12. Restart backend service (PM2 / systemd — verify before assuming)
+13. Smoke test (see runbook section earlier in this doc)
+
+### Env vars consolidated (set ALL before redeploy)
+
+```
+# Worker A (Portal) — REQUIRED
+PORTAL_SESSION_SECRET=<openssl rand -hex 32>
+PORTAL_BASE_URL=https://app.coherencedaddy.com
+# Optional A
+PORTAL_MAGIC_LINK_TTL_MIN=15
+PORTAL_COOKIE_DOMAIN=.coherencedaddy.com
+PORTAL_STRIPE_RETURN_URL=https://app.coherencedaddy.com/billing
+# Already set in prod (reused by Worker A)
+PAPERCLIP_SECRETS_MASTER_KEY=<existing>
+
+# Worker C (Watchtower) — engine keys (each is optional; skip-with-warning if missing)
+OPENAI_API_KEY=<existing or new>
+ANTHROPIC_API_KEY=<existing>
+PERPLEXITY_API_KEY=<new>
+GEMINI_API_KEY=<new>
+WATCHTOWER_CLAUDE_MODEL=claude-haiku-4-5  # default; override only if needed
+WATCHTOWER_CALLBACK_KEY=<openssl rand -hex 24>
+WATCHTOWER_EMAIL_CALLBACK_URL=https://coherencedaddy.com/api/email/watchtower
+WATCHTOWER_DIGEST_EMAIL=<temporary single-recipient email until per-account is wired>
+INTERNAL_API_TOKEN=<existing or new — gates trigger-test endpoint>
+
+# Cron gate (CEO directive — keep cron OFF until customer-ready)
+WATCHTOWER_ENABLED=false
+```
+
+### Follow-up workers to spawn (in priority order)
+
+1. **Stripe webhook → `customer_accounts` linker** (Blocker #2 fix, ~half day)
+2. **`portal_magic_link` Resend template** in `coherencedaddy-landing` (Blocker #3 fix, ~1 hour)
+3. **Portal frontend Next.js app at `app.coherencedaddy.com`** (Worker A backend only — needs UI, ~6 routes, 2-3 days)
+4. **100 Agents dashboard MVP** for the 3 existing agent types (founding-cohort customers can't use what they bought, ~1 week)
+5. **Watchtower v2 detection** (Haiku classifier) — only after we have ≥10 paying customers and real noise data
+
+### Closing checklist for the orchestrator
+
+Before declaring this batch shipped:
+- [ ] Integration branch off `claude/distracted-kirch-39a1d0` with all 3 worker branches merged
+- [ ] Migration B renumbered `0107 → 0108`
+- [ ] Stripe webhook router conflicts resolved
+- [ ] Structure diagram updated (`Customer Portal`, `llms.txt Generator`, `Watchtower Monitor` services + `watchtower-weekly` cron + `app.coherencedaddy.com` frontend node)
+- [ ] `pnpm -r build && pnpm --filter @paperclipai/server typecheck` clean
+- [ ] `(cd ui && npx tsc --noEmit)` clean
+- [ ] PR opened or merged direct
+- [ ] `CREATE EXTENSION citext` applied to prod Neon
+- [ ] All 3 migrations applied
+- [ ] All env vars set on VPS
+- [ ] Backend redeployed
+- [ ] Smoke tests pass: portal login + me + (mocked) llms.txt generate + watchtower trigger-test
+- [ ] `WATCHTOWER_ENABLED=false` confirmed (no live customer emails until follow-up #2 ships)
+- [ ] User notified with closing report
+
