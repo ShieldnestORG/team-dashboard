@@ -13,7 +13,7 @@
 
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { watchtowerSubscriptions } from "@paperclipai/db";
+import { customerAccounts, watchtowerSubscriptions } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import { runSubscription } from "./watchtower-monitor.js";
 import {
@@ -29,6 +29,48 @@ export interface WatchtowerWeeklyRunsResult {
   processed: number;
   totalMentions: number;
   errors: number;
+  /** Subscriptions that ran but had no resolvable recipient — digest skipped to prevent leaking. */
+  skippedNoRecipient: number;
+}
+
+/**
+ * Mask an email for log output: `user@example.com` → `us***@example.com`.
+ * Keeps the domain intact for ops debugging without leaking the local-part.
+ */
+export function maskEmail(email: string): string {
+  const trimmed = email.trim().toLowerCase();
+  const at = trimmed.indexOf("@");
+  if (at <= 0) return "***";
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1);
+  const visible = local.slice(0, Math.min(2, local.length));
+  return `${visible}***@${domain}`;
+}
+
+/**
+ * Resolve the digest recipient email for a single subscription row.
+ *
+ * Join path: `watchtower_subscriptions.account_id` → `customer_accounts.id`
+ * → `customer_accounts.email`. Returns `null` when the FK is unset OR the
+ * account row is missing OR the email is empty. The cron treats `null` as
+ * "skip this subscription's digest" — we do NOT fall back to a shared ops
+ * env address, because that would leak Customer A's brand mentions to
+ * whoever owns the env (the leak this fix exists to prevent).
+ */
+export async function resolveWatchtowerRecipient(
+  db: Db,
+  subscription: { id: string; accountId: string | null },
+): Promise<string | null> {
+  if (!subscription.accountId) return null;
+
+  const [account] = await db
+    .select({ email: customerAccounts.email })
+    .from(customerAccounts)
+    .where(eq(customerAccounts.id, subscription.accountId));
+
+  const email = account?.email?.trim().toLowerCase();
+  if (!email) return null;
+  return email;
 }
 
 /**
@@ -51,6 +93,7 @@ export async function runWeeklyWatchtowerJobs(
   let processed = 0;
   let totalMentions = 0;
   let errors = 0;
+  let skippedNoRecipient = 0;
 
   let cursor = 0;
   const workers = Array.from({
@@ -65,7 +108,30 @@ export async function runWeeklyWatchtowerJobs(
         processed += 1;
         totalMentions += result.mentionCount;
 
-        await maybeSendDigest(sub.brandName, result, sub.createdAt);
+        const recipient = await resolveWatchtowerRecipient(db, sub);
+        if (!recipient) {
+          skippedNoRecipient += 1;
+          logger.warn(
+            {
+              subscriptionId: sub.id,
+              brand: sub.brandName,
+              accountId: sub.accountId,
+              action: "skipped-no-account",
+            },
+            "watchtower: digest skipped — no account/email resolvable for subscription (refusing to fall back to shared ops env to prevent cross-customer leak)",
+          );
+          continue;
+        }
+
+        await sendDigest(recipient, sub.brandName, result, sub.createdAt);
+        logger.info(
+          {
+            subscriptionId: sub.id,
+            recipientEmail: maskEmail(recipient),
+            action: "sent",
+          },
+          "watchtower: digest dispatched",
+        );
       } catch (err) {
         errors += 1;
         logger.error(
@@ -77,27 +143,15 @@ export async function runWeeklyWatchtowerJobs(
   });
   await Promise.all(workers);
 
-  return { processed, totalMentions, errors };
+  return { processed, totalMentions, errors, skippedNoRecipient };
 }
 
-async function maybeSendDigest(
+async function sendDigest(
+  to: string,
   brand: string,
   result: Awaited<ReturnType<typeof runSubscription>>,
   subscriptionCreatedAt: Date,
 ): Promise<void> {
-  // v1: accounts table isn't yet wired through Stripe → user lookup.
-  // Honor a single broadcast address (`WATCHTOWER_DIGEST_EMAIL`) so the
-  // operator gets every weekly digest until Worker A's portal lands the
-  // per-account email join.
-  const to = process.env.WATCHTOWER_DIGEST_EMAIL?.trim();
-  if (!to) {
-    logger.info(
-      { brand, runId: result.runId, mentions: result.mentionCount },
-      "watchtower: digest send skipped (WATCHTOWER_DIGEST_EMAIL unset)",
-    );
-    return;
-  }
-
   const summary = result.summary;
   const totalEngines = Object.keys(summary.byEngine).length;
   const portal = process.env.TEAM_DASHBOARD_PUBLIC_URL ?? "";

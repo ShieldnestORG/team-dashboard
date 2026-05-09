@@ -16,7 +16,7 @@ Stripe price ID lives in `docs/deploy/stripe-products.md`. Frequency `daily` is 
 - Every Monday 09:00 UTC the cron `watchtower:weekly-runs` selects every `status='active'` AND `frequency='weekly'` subscription and runs each prompt against each enabled engine.
 - One row per `(prompt, engine)` lands in `watchtower_results` with: `mentioned`, `sentiment`, `excerpt`, `raw_response` (capped 8 KB), `latency_ms`.
 - One `watchtower_runs` row aggregates the cycle and stores a JSONB summary used by the email digest (per-engine mention counts + top-3 excerpts).
-- A digest email is sent to `WATCHTOWER_DIGEST_EMAIL` (single broadcast address until per-account email lookup ships with Worker A's portal).
+- A digest email is sent to the recipient resolved from `watchtower_subscriptions.account_id` → `customer_accounts.email`. If no account is linked, the digest is **skipped with a warning** rather than falling back to a shared ops env address — preventing cross-customer leaks. Per-row send/skip outcomes are logged with the (masked) recipient and surface in the cron summary as `skippedNoRecipient`.
 
 ## v1 detection — DO NOT use these signals for marketing claims
 
@@ -71,7 +71,7 @@ Order-of-magnitude estimates at v1 model choices and ~600 max output tokens. Tre
 | `WATCHTOWER_CLAUDE_MODEL` | optional override | defaults to `claude-haiku-4-5` |
 | `WATCHTOWER_CALLBACK_KEY` | digest email HMAC | digest send is no-op'd with a warning |
 | `WATCHTOWER_EMAIL_CALLBACK_URL` | storefront receiver override | falls back to `https://freetools.coherencedaddy.com/api/email/watchtower` |
-| `WATCHTOWER_DIGEST_EMAIL` | single recipient v1 | digest is computed but not sent (logged) |
+| `WATCHTOWER_DIGEST_EMAIL` | (deprecated — no longer read) | n/a — recipient is now resolved per row via `customer_accounts.email` |
 | `INTERNAL_API_TOKEN` | `/runs/:id/trigger-test` route | route returns 503 |
 
 If **all four** engine keys are missing, `runSubscription()` throws `no engines enabled` — the cron's per-subscription error capture turns this into a logged error per row, not a process crash.
@@ -99,14 +99,14 @@ Mounted at `/api/watchtower` by `app.ts`. CRUD lives with Worker A's portal once
 
 ## Open follow-ups (post-v1)
 
-1. Per-account email lookup — replace `WATCHTOWER_DIGEST_EMAIL` broadcast with `subscription.account_id → user.email` join once Worker A wires the accounts table.
-2. v2 mention detection (Haiku one-shot classifier).
-3. v2 sentiment classifier.
-4. Daily-frequency cron (currently the schema accepts `'daily'` but no cron is wired).
-5. Storefront-side `/api/email/watchtower` Resend template (mirrors `lib/creditscore-email.ts`).
-6. Portal CRUD + dashboard read view (Worker A).
-7. Structure diagram update — register the watchtower service in `ui/src/pages/Structure.tsx` `DEFAULT_DIAGRAM`.
+1. v2 mention detection (Haiku one-shot classifier).
+2. v2 sentiment classifier.
+3. Daily-frequency cron (currently the schema accepts `'daily'` but no cron is wired).
+4. Storefront-side `/api/email/watchtower` Resend template (mirrors `lib/creditscore-email.ts`).
+5. Portal CRUD + dashboard read view (Worker A).
+6. Structure diagram update — register the watchtower service in `ui/src/pages/Structure.tsx` `DEFAULT_DIAGRAM`.
 
 ## Changelog
 
+- **2026-05-09** — Per-account digest recipient: replaced shared `WATCHTOWER_DIGEST_EMAIL` broadcast with a `account_id → customer_accounts.email` join. Subscriptions without a linked account are skipped (logged + counted in cron summary as `skippedNoRecipient`) rather than falling back to ops, to prevent cross-customer leaks.
 - **2026-05-09** — v1 initial. Migration 0109, 4 engine adapters, weekly cron, read-only API.
