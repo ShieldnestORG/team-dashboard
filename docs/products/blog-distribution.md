@@ -113,12 +113,12 @@ All blog crons are registered in `server/src/services/content-crons.ts::JOB_DEFS
 
 | Env var | Owner | Lives on | Notes |
 |---|---|---|---|
-| `CD_BLOG_API_URL` | team-dashboard | VPS1 | default: `https://www.coherencedaddy.com/api/blog/posts` |
-| `CD_BLOG_API_KEY` | team-dashboard | VPS1 | must match `BLOG_API_KEY` in `coherencedaddy` Vercel env |
-| `SN_BLOG_API_URL` | team-dashboard | VPS1 | set to `https://www.shieldnest.org/api/articles` (www form skips 307 hop) |
-| `SN_BLOG_API_KEY` | team-dashboard | VPS1 | must match `BLOG_API_KEY` in `shieldnest_landing_page` Vercel env |
-| `TOKNS_APP_BLOG_API_URL` | team-dashboard | VPS1 | default: `https://app.tokns.fi/api/articles` |
-| `TOKNS_APP_BLOG_API_KEY` | team-dashboard | VPS1 | must match `SN_ARTICLE_API_KEY` in `tokns` Vercel env |
+| `CD_BLOG_API_URL` | team-dashboard | VPS4 | default: `https://www.coherencedaddy.com/api/blog/posts` |
+| `CD_BLOG_API_KEY` | team-dashboard | VPS4 | must match `BLOG_API_KEY` in `coherencedaddy` Vercel env |
+| `SN_BLOG_API_URL` | team-dashboard | VPS4 | set to `https://www.shieldnest.org/api/articles` (www form skips 307 hop) |
+| `SN_BLOG_API_KEY` | team-dashboard | VPS4 | must match `BLOG_API_KEY` in `shieldnest_landing_page` Vercel env |
+| `TOKNS_APP_BLOG_API_URL` | team-dashboard | VPS4 | default: `https://app.tokns.fi/api/articles` |
+| `TOKNS_APP_BLOG_API_KEY` | team-dashboard | VPS4 | must match `SN_ARTICLE_API_KEY` in `tokns` Vercel env |
 | `DATABASE_URL` | shieldnest_landing_page | Vercel | Neon pooled connection — **same Neon DB as team-dashboard** (shares `blog_posts` table) |
 | `BLOG_API_KEY` | shieldnest_landing_page | Vercel | ingress auth for POST /api/articles |
 | `INDEXNOW_KEY` | shieldnest_landing_page | Vercel | IndexNow verification key. Key file: `public/<key>.txt` |

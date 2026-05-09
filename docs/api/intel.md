@@ -540,7 +540,7 @@ The search endpoint uses semantic vector search powered by BGE-M3 embeddings and
 
 **Embedding Model:** BGE-M3 (BAAI/bge-m3), producing 1024-dimensional dense vectors.
 
-**Embedding Service:** Self-hosted at `147.79.78.251:8000`. Accepts `POST /embed` with a JSON body `{ "texts": ["..."] }` and returns `{ "dense": [[...]] }`.
+**Embedding Service:** Self-hosted on VPS1 (`shield-llm`) over Tailnet at `http://100.67.128.51:8080` (HuggingFace TEI 1.6 CPU, no auth, Tailnet-only — NO public bind). Accepts `POST /embed` with a JSON body `{ "inputs": ["..."] }` and returns `{ "dense": [[...]] }`. (Pre-2026-05-09 host was VPS3 `147.79.78.251:8000` — that box is decommissioning.)
 
 **Storage:** Embeddings are stored in the `intel_reports.embedding` column as pgvector `vector(1024)` type, indexed with an IVFFlat index using cosine distance.
 
@@ -561,7 +561,7 @@ The search endpoint uses semantic vector search powered by BGE-M3 embeddings and
 | Variable          | Required         | Default                        | Description                                    |
 |-------------------|------------------|--------------------------------|------------------------------------------------|
 | `INTEL_INGEST_KEY`| Yes (for writes) | --                             | Shared secret for seed and ingest endpoints    |
-| `EMBED_URL`       | No               | `http://147.79.78.251:8000`     | BGE-M3 embedding service URL                   |
+| `EMBED_URL`       | No               | `http://100.67.128.51:8080`     | BGE-M3 embedding service URL (VPS1 Tailnet; was `http://147.79.78.251:8000` pre-2026-05-09) |
 | `EMBED_API_KEY`   | No               | --                             | API key for the embedding service (X-API-Key header) |
 | `GITHUB_TOKEN`    | No               | --                             | GitHub PAT; increases rate limit from 60 to 5000 req/hr |
 

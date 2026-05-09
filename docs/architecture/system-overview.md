@@ -61,7 +61,18 @@ All properties below are owned by the **ShieldnestORG** Vercel organization unle
 - **app.tokns.fi** — crypto dashboard (NFTs, swaps, staking, wallet tracking). Vercel project: `shieldnestorg/tokns`. Blog content surfaces as a **"News & Insights"** section at the bottom of `/dashboard` — **planned**, not yet live.
 - **TX Blockchain** (tx.org) — Cosmos SDK chain; ShieldNest runs a validator. Goal: #1 validator via tokns.fi delegation.
 - **Trustee DAO** (dao.nestd.xyz) — DAO governance platform on VPS4 (31.220.61.14)
-- **rollwithsolo.com / runatthebullets.com** — ShieldNest properties on VPS3 (147.79.78.251)
+- **rollwithsolo.com / runatthebullets.com** — ShieldNest properties; were on VPS3 (147.79.78.251) which is decommissioning post-2026-05-08 compromise. Migration target TBD.
+
+### Production VPS layout (post-2026-05-09 swap)
+
+After the 2026-05-08 XMRig compromise (Ollama RCE → cryptominer on VPS2 + VPS3), infra was consolidated to a 2-box pair with each box doing one job for blast-radius isolation:
+
+| Box | Role | Public bind | Tailnet |
+|---|---|---|---|
+| **VPS1** `shield-llm` (31.220.61.12) | LLM/scrape stack — Firecrawl `:3002`, BGE-M3 TEI `:8080`, Ollama `:11434` | None (port 22 only) | `100.67.128.51` |
+| **VPS4** `shield-main-1` (31.220.61.14) | team-dashboard backend (Express + nginx) for `api.coherencedaddy.com`, `affiliates.coherencedaddy.com`, `intel.coherencedaddy.com`; also Trustee DAO | 22 / 80 / 443 | `100.65.70.18` |
+
+All inter-VPS calls go over Tailscale mesh. No public bind for any LLM or DB service (rule). Container hardening (`cap_drop: [ALL]` + `no-new-privileges` + `read_only`) deployed across both boxes on 2026-05-09. See [docs/deploy/production.md](../deploy/production.md), [docs/deploy/docker.md](../deploy/docker.md), and [docs/deploy/tailscale-private-access.md](../deploy/tailscale-private-access.md).
 
 ### Blog Distribution
 

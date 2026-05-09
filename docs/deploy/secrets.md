@@ -81,3 +81,28 @@ Agent environment variables use secret references:
 ```
 
 The server resolves and decrypts these at runtime, injecting the real value into the agent process environment.
+
+## Proton SMTP Token Rotation
+
+Production alerting uses Proton Mail SMTP (`smtp.protonmail.ch:587`). The `SMTP_PASS` value is a 16-character Proton SMTP token issued from the Proton account (Settings → Email → SMTP), NOT the Proton account password — Proton blocks IMAP/SMTP password auth on the Mail Plus tier and only accepts an explicit SMTP token.
+
+### When to rotate
+
+- The SMTP server returns `535 5.7.8 auth failed` (the token has been revoked from Proton's side or was stale).
+- Any suspected leak of `.env.production` or `/etc/egress-watch.env`.
+- Routine: at least annually.
+
+### Where the token lives
+
+Two places must be kept in sync:
+
+| Location | File | Read by |
+|---|---|---|
+| VPS4 | `/opt/team-dashboard/.env.production` (`SMTP_PASS=...`) | team-dashboard alert system inside the Docker container |
+| VPS1 + VPS4 | `/etc/egress-watch.env` (mode 600 root:root, `SMTP_PASS=...`) | host-level `/usr/local/bin/egress-watch.sh` cron |
+
+After rotation, restart the team-dashboard container on VPS4 with `docker compose up -d` to re-read the env file. The egress-watch cron picks up the change on its next 5-minute tick.
+
+### Last rotation
+
+**2026-05-09** — prior token was returning `535 5.7.8 auth failed` from `smtp.protonmail.ch`. New token deployed to `/etc/egress-watch.env` on both boxes and tested end-to-end (alert email delivered to `nestd@pm.me` 20:57). Known follow-up: VPS4 `/opt/team-dashboard/.env.production` may still hold the old token — verify and reapply if so, then `docker compose up -d`.

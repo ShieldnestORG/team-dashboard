@@ -51,7 +51,22 @@ This document provides a mapping of critical files to their purpose within the s
 ## Infrastructure & Config
 - `vercel.json`: Vercel build config and `/api/*` rewrites.
 - `docker-compose.production.yml`: VPS backend Docker Compose template.
-- `.env.production`: VPS secrets (located at `/opt/team-dashboard/`).
+- `.env.production`: VPS secrets (located at `/opt/team-dashboard/` on VPS4).
+
+## Host-Level (NOT in this repo, but operationally critical)
+
+These files live on the production VPSs (VPS1 = `shield-llm`, VPS4 = `shield-main-1`), NOT in the team-dashboard repo. Listed here so an operator looking for "what runs on our infra" can find them.
+
+- `/etc/egress-watch.env` (mode 600 root:root, both boxes): Proton SMTP creds + thresholds for the egress watcher.
+- `/usr/local/bin/egress-watch.sh` (mode 750 root:root, both boxes): every-5-min RX/TX + load15 sampler with Proton SMTP alert. Logs to `/var/log/egress-watch/YYYY-MM-DD.log`.
+- `/usr/local/bin/egress-daily-summary.sh` (mode 750 root:root, both boxes): 23:55 daily roll-up email + 30-day log pruning.
+- `/etc/cron.d/egress-watch` (mode 644 root:root, both boxes): `*/5 * * * *` watcher + `55 23 * * *` summary.
+- `/var/lib/egress-watch/last-alert` (both boxes): cooldown timestamp file, prevents alert flooding.
+- `/usr/local/bin/docker-cleanup.sh` (both boxes): Sundays 3am — prunes containers/images/build cache.
+- `/opt/firecrawl/docker-compose.yml` (VPS1): Firecrawl stack, hardened 2026-05-09 (per-service cap_drop matrix in `docs/deploy/docker.md`).
+- `/opt/bge-m3/docker-compose.yml` (VPS1): BGE-M3 TEI stack, hardened 2026-05-09.
+- `/opt/ollama/docker-compose.yml` (VPS1): Ollama stack, hardened 2026-05-09.
+- `/opt/team-dashboard/docker-compose.yml` (VPS4): team-dashboard backend, hardened 2026-05-09.
 
 ## Plugins
 - `packages/plugins/plugin-discord/src/worker.ts`: Discord bot worker.

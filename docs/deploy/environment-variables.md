@@ -84,8 +84,10 @@ Both are optional — backends auto-enable when their API key is set.
 |----------|---------|-------------|
 | `INTEL_INGEST_KEY` | (none) | Auth for intel data ingestion API |
 | `GITHUB_TOKEN` | (none) | GitHub API access for intel GitHub source |
-| `EMBED_URL` | `http://147.79.78.251:8000` | BGE-M3 vector embedding service |
-| `EMBED_API_KEY` | (none) | Embedding service auth key |
+| `EMBED_URL` | `http://100.67.128.51:8080` | BGE-M3 vector embedding service over Tailnet (VPS1 `shield-llm`). Pre-2026-05-09 default was `http://147.79.78.251:8000` (VPS3) — that box is decommissioning. |
+| `EMBED_API_KEY` | (none) | Embedding service auth key (self-hosted instance has no auth currently) |
+| `FIRECRAWL_URL` | `http://100.67.128.51:3002` | Self-hosted Firecrawl over Tailnet (VPS1 `shield-llm`) |
+| `FIRECRAWL_API_KEY` | `self-hosted` | Auth string for self-hosted Firecrawl (`USE_DB_AUTHENTICATION=false`) |
 
 ## Site Metrics Integration
 
@@ -124,12 +126,12 @@ All optional — publishers auto-enable when their credentials are set.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMTP_HOST` | (none) | SMTP server hostname (e.g. `smtp.protonmail.ch`) |
-| `SMTP_PORT` | (none) | SMTP port (e.g. `587`) |
-| `SMTP_USER` | (none) | SMTP username |
-| `SMTP_PASS` | (none) | SMTP password |
-| `ALERT_EMAIL_TO` | (none) | Alert recipient email |
-| `ALERT_EMAIL_FROM` | (none) | Alert sender email |
+| `SMTP_HOST` | (none) | SMTP server hostname (production: `smtp.protonmail.ch`) |
+| `SMTP_PORT` | (none) | SMTP port (production: `587`, STARTTLS) |
+| `SMTP_USER` | (none) | SMTP username (Proton Mail address, e.g. `info@coherencedaddy.com`) |
+| `SMTP_PASS` | (none) | 16-character Proton SMTP token — NOT the account password. Rotate when `535 5.7.8 auth failed` appears in logs (last rotated 2026-05-09). The host-level `egress-watch.sh` cron on VPS1+VPS4 reads SMTP creds from `/etc/egress-watch.env`; keep both in sync after rotation. |
+| `ALERT_EMAIL_TO` | (none) | Alert recipient email (production: `nestd@pm.me`) |
+| `ALERT_EMAIL_FROM` | (none) | Alert sender email (production: `info@coherencedaddy.com`, must equal `SMTP_USER`) |
 
 ## Deployment Checklist
 
