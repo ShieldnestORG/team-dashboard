@@ -150,3 +150,16 @@ export type {
 export { tiktokAudits } from "./tiktok_audits.js";
 export type { TiktokAudit, NewTiktokAudit } from "./tiktok_audits.js";
 export type { ProfileSnapshot, RecentVideo, HookTiming } from "./tiktok_audits.js";
+export {
+  watchtowerSubscriptions,
+  watchtowerRuns,
+  watchtowerResults,
+} from "./watchtower.js";
+export type {
+  WatchtowerSubscription,
+  NewWatchtowerSubscription,
+  WatchtowerRun,
+  NewWatchtowerRun,
+  WatchtowerResult,
+  NewWatchtowerResult,
+} from "./watchtower.js";
