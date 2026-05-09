@@ -79,7 +79,7 @@ const LIGHT_THEME_VARS = {
 
 const DEFAULT_DIAGRAM = `graph TB
   %% ═══════════════════════════════════════════════════════
-  %% ECOSYSTEM OVERVIEW — Last audited 2026-04-23. Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue. 2026-04-23: Storefront email-capture wiring shipped (coherencedaddy-landing@a9ae317 — components/shop/share-capture.tsx → POST /api/shop/sharers → redirect /shop/share?code=<code>); blog article ad migrated to unified <AdSlot> component (landing@6698bd2) — house-ads becomes live no-fill fallback once blog-article slot's providers flip to ['adsense','house']. Diagram edges wired: CDShop → ShopSharersRoutes, CD → HouseAdsRoutes, ShopSharersSvc -.→ AffiliatesDB on approve. 2026-04-26: Sidebar consolidation — /socials becomes tabbed shell for Content, Analytics, Twitter, Discord, YouTube, Marketing Pushes, House Ads, Auto-Reply. Old top-level routes (/content-review, /content-analytics, /twitter, /discord, /youtube, /marketing-pushes, /house-ads, /auto-reply) now redirect to /socials/<tab>. Sidebar collapses 9 entries to 1 ("Socials & Content"). 2026-04-27: Launch Comment Monitor — HN/Reddit/dev.to comment poller + Haiku classifier + suggest-reply queue at /socials/launch-monitor.
+  %% ECOSYSTEM OVERVIEW — Last audited 2026-05-09. 2026-05-09: GEO Customer Stack landed — Customer Portal Service (magic-link auth + per-account credentials at /api/portal), llms.txt Generator Service ($19 one-shot at /api/llms-txt), Watchtower brand-mention monitor service ($29/mo at /api/watchtower, weekly cron Mon 09:00 UTC, gated by WATCHTOWER_ENABLED=false until follow-ups #1+#2 ship), and the app.coherencedaddy.com frontend node (placeholder — backend only this batch). 2026-04-23 audit notes: Intact: CreditScore agent fleet (auditor 6h + cipher/core/forge/sage monthly review queues, sage weekly for Pro); Bundles; Owned Utility-Site Network. Added 2026-04-22: House Ads service (/api/house-ads + /house-ads admin UI) — pre-AdSense filler, also the no-fill fallback once AdSense approves. Added 2026-04-22: Shop Sharers (/api/shop + /shop-sharers admin UI) — email capture on shop.coherencedaddy.com mints referral code + QR + share link; opt-in affiliate promotion queue. 2026-04-23: Storefront email-capture wiring shipped (coherencedaddy-landing@a9ae317 — components/shop/share-capture.tsx → POST /api/shop/sharers → redirect /shop/share?code=<code>); blog article ad migrated to unified <AdSlot> component (landing@6698bd2) — house-ads becomes live no-fill fallback once blog-article slot's providers flip to ['adsense','house']. Diagram edges wired: CDShop → ShopSharersRoutes, CD → HouseAdsRoutes, ShopSharersSvc -.→ AffiliatesDB on approve. 2026-04-26: Sidebar consolidation — /socials becomes tabbed shell for Content, Analytics, Twitter, Discord, YouTube, Marketing Pushes, House Ads, Auto-Reply. Old top-level routes (/content-review, /content-analytics, /twitter, /discord, /youtube, /marketing-pushes, /house-ads, /auto-reply) now redirect to /socials/<tab>. Sidebar collapses 9 entries to 1 ("Socials & Content"). 2026-04-27: Launch Comment Monitor — HN/Reddit/dev.to comment poller + Haiku classifier + suggest-reply queue at /socials/launch-monitor.
   %% ═══════════════════════════════════════════════════════
 
   subgraph Ecosystem["Coherence Daddy Ecosystem"]
@@ -406,6 +406,22 @@ const DEFAULT_DIAGRAM = `graph TB
         BundleStripeWebhook(["/api/bundles/webhook"])
         BundlePlansDB[("bundle_plans — AEO Starter/Growth/Scale + All-Inclusive")]
         BundleSubsDB[("bundle_subscriptions")]
+      end
+
+      subgraph GeoCustomerStack["GEO Customer Stack — landed 2026-05-09"]
+        direction TB
+        PortalSvc(["Customer Portal Service — magic-link auth + per-account credentials (AES-256-GCM)"])
+        PortalRoutes(["/api/portal — login, auth, me, credentials, stripe-portal"])
+        PortalAccountsDB[("customer_accounts + magic_links + credentials + action_log")]
+        PortalAppFrontend(["app.coherencedaddy.com — portal UI (follow-up — backend only this batch)"]):::readyNode
+        LlmsTxtSvc(["llms.txt Generator Service — sitemap crawl + BGE-M3 + AEO build (one-shot $19)"])
+        LlmsTxtRoutes(["/api/llms-txt — generate, jobs/:id, status"])
+        LlmsTxtJobsDB[("llms_txt_jobs + llms_txt_outputs")]
+        WatchtowerSvc(["Watchtower Service — 4-engine brand-mention monitor ($29/mo, gated by WATCHTOWER_ENABLED)"])
+        WatchtowerRoutes(["/api/watchtower — subscriptions, runs, results, trigger-test"])
+        WatchtowerCron{{"watchtower:weekly-runs — Mon 09:00 UTC (gated)"}}
+        WatchtowerEngines(["Engines — ChatGPT (gpt-4o-mini), Claude (haiku-4-5), Perplexity (sonar), Gemini (2.0-flash)"])
+        WatchtowerSubsDB[("watchtower_subscriptions + runs + results")]
       end
 
       subgraph OwnedSitesNet["Owned Utility-Site Network"]
@@ -803,6 +819,26 @@ const DEFAULT_DIAGRAM = `graph TB
   BundleSvc --> StripeAPI
   BundleStripeWebhook --> BundleSvc
   BundleSvc -->|"resolves creditscore tier"| CSSubsDB
+
+  %% GEO Customer Stack flows (landed 2026-05-09)
+  PortalRoutes --> PortalSvc
+  PortalSvc --> PortalAccountsDB
+  PortalSvc -->|"magic-link emails"| EmailTemplatesSvc
+  PortalSvc -->|"billing-portal sessions"| StripeAPI
+  PortalAppFrontend -.->|"/api/portal/*"| PortalRoutes
+  LlmsTxtRoutes --> LlmsTxtSvc
+  LlmsTxtSvc --> LlmsTxtJobsDB
+  LlmsTxtSvc --> Embeddings
+  LlmsTxtSvc -->|"sitemap crawl"| FirecrawlSvc
+  LlmsTxtSvc -.->|"Stripe checkout (pending router)"| StripeAPI
+  WatchtowerRoutes --> WatchtowerSvc
+  WatchtowerSvc --> WatchtowerSubsDB
+  WatchtowerSvc --> WatchtowerEngines
+  WatchtowerEngines --> AnthropicAPI
+  WatchtowerEngines --> GeminiAPI
+  WatchtowerEngines -->|"OpenAI"| ExtAPIs
+  WatchtowerCron --> WatchtowerSvc
+  WatchtowerSvc -.->|"Stripe sub events (pending)"| StripeAPI
 
   %% Partner flows
   PartnerSvc --> PartnerDB
