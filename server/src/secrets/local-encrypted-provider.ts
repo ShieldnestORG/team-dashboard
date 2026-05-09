@@ -4,7 +4,11 @@ import path from "node:path";
 import type { SecretProviderModule, StoredSecretVersionMaterial } from "./types.js";
 import { badRequest } from "../errors.js";
 
-interface LocalEncryptedMaterial extends StoredSecretVersionMaterial {
+// Exported envelope shape so other services (customer-portal, etc.) can reuse
+// the same AES-256-GCM scheme without rolling their own crypto. The
+// `scheme` discriminator lets us evolve to v2 later (e.g. KMS-backed) without
+// breaking existing rows.
+export interface LocalEncryptedMaterial extends StoredSecretVersionMaterial {
   scheme: "local_encrypted_v1";
   iv: string;
   tag: string;
@@ -76,7 +80,11 @@ function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function encryptValue(masterKey: Buffer, value: string): LocalEncryptedMaterial {
+export function loadLocalEncryptionKey(): Buffer {
+  return loadOrCreateMasterKey();
+}
+
+export function encryptValue(masterKey: Buffer, value: string): LocalEncryptedMaterial {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", masterKey, iv);
   const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
@@ -89,7 +97,7 @@ function encryptValue(masterKey: Buffer, value: string): LocalEncryptedMaterial 
   };
 }
 
-function decryptValue(masterKey: Buffer, material: LocalEncryptedMaterial): string {
+export function decryptValue(masterKey: Buffer, material: LocalEncryptedMaterial): string {
   const iv = Buffer.from(material.iv, "base64");
   const tag = Buffer.from(material.tag, "base64");
   const ciphertext = Buffer.from(material.ciphertext, "base64");
@@ -99,7 +107,9 @@ function decryptValue(masterKey: Buffer, material: LocalEncryptedMaterial): stri
   return plain.toString("utf8");
 }
 
-function asLocalEncryptedMaterial(value: StoredSecretVersionMaterial): LocalEncryptedMaterial {
+export function asLocalEncryptedMaterial(
+  value: StoredSecretVersionMaterial | Record<string, unknown>,
+): LocalEncryptedMaterial {
   if (
     value &&
     typeof value === "object" &&
