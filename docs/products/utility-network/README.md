@@ -1,9 +1,16 @@
 # Utility Site Network
 
 Portfolio of small, focused utility sites (single-tool or small-tool clusters:
-generators, calculators, converters) hosted on Hostinger VPS3, monetized via
-display ads, with minimal textual brand linking back to coherencedaddy.com and
-tokns.fi for LLM/brand referencing.
+generators, calculators, converters), monetized via display ads, with minimal
+textual brand linking back to coherencedaddy.com and tokns.fi for LLM/brand
+referencing.
+
+> **Hosting status (post-2026-05-09 swap):** original plan called for VPS3
+> nginx multi-site hosting; VPS3 is decommissioning (post-XMRig compromise),
+> so the site-hosting target needs to be re-picked. Likely candidates: a new
+> small Hostinger box, Cloudflare Pages, or Vercel free tier per site.
+> The team-dashboard aggregation layer (Phase 2 below) is unaffected — it
+> only ingests GA4/AdSense metrics regardless of where the sites live.
 
 ## Goals
 
@@ -16,14 +23,15 @@ tokns.fi for LLM/brand referencing.
 ## Architecture
 
 ```
-VPS2 (168.231.127.180) — Research + Content
-  Firecrawl SERP scraping + Ollama (Gemma 4 31B) article generation.
+VPS1 (31.220.61.12, Tailnet 100.67.128.51) — Research + Content
+  Firecrawl :3002 (Tailnet-only) + Ollama Cloud (gemma4:31b-cloud) for article generation.
 
-VPS3 (147.79.78.251) — Site hosting
-  nginx multi-site, static HTML + vanilla JS per domain. One reusable template
-  repo (`coherence-utility-template`) cloned per site with distinct branding.
+[TBD — Site hosting]
+  Original plan: VPS3 nginx multi-site. Post-2026-05-08 compromise, target
+  needs to be re-picked. Static HTML + vanilla JS per domain remains the
+  format. Template repo `coherence-utility-template` (lives outside team-dashboard).
 
-VPS1 (31.220.61.12) — Team-dashboard aggregation
+VPS4 (31.220.61.14) — Team-dashboard aggregation
   `owned_sites` + `owned_site_metrics` tables.
   `/owned-sites` UI page (portfolio view).
   `hostinger-crons.ts` fetches GA4 + AdSense every 6h.
@@ -34,10 +42,10 @@ VPS1 (31.220.61.12) — Team-dashboard aggregation
 - [x] **Phase 2** — team-dashboard aggregation layer (schema, service, cron,
   routes, UI). Sync stubs return `_credentials_not_configured` until GA4 /
   AdSense OAuth are provisioned in `company_secrets`.
-- [ ] **Phase 0** — niche research pipeline (Firecrawl + Ollama on VPS2).
+- [ ] **Phase 0** — niche research pipeline (Firecrawl on VPS1 Tailnet + Ollama Cloud).
   Output: `niche-shortlist.md` in this directory.
 - [ ] **Phase 1** — template repo `coherence-utility-template` (lives outside
-  team-dashboard). Builds to `dist/`, deploys via `rsync` to VPS3.
+  team-dashboard). Builds to `dist/`, deploys via `rsync` to TBD host (originally VPS3, now re-picking — see note above).
 - [ ] **Phase 3** — AdSense approval, launch, Ezoic/Mediavine upgrade path.
 
 ## Cross-linking policy
