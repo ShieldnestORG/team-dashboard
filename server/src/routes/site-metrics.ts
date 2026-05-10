@@ -22,6 +22,23 @@ const referrerSchema = z.object({
   count: z.number().int().nonnegative(),
 });
 
+const productRevenueRowSchema = z.object({
+  source: z.enum(["printify", "woo", "reservation"]),
+  product_id: z.string().min(1),
+  product_title: z.string(),
+  units: z.number().int().nonnegative(),
+  gross_cents: z.number().int().nonnegative(),
+  net_cents: z.number().int().nonnegative(),
+  period_start: z.string().refine(
+    (v) => !Number.isNaN(Date.parse(v)),
+    { message: "period_start must be a valid ISO 8601 string" },
+  ),
+  period_end: z.string().refine(
+    (v) => !Number.isNaN(Date.parse(v)),
+    { message: "period_end must be a valid ISO 8601 string" },
+  ),
+});
+
 const ingestBodySchema = z.object({
   siteId: z.string().min(1),
   metrics: z.object({
@@ -31,6 +48,7 @@ const ingestBodySchema = z.object({
     subscribers: z.number().int().nonnegative().optional(),
     directoryClicks: z.number().int().nonnegative().optional(),
     topReferrers: z.array(referrerSchema).optional(),
+    productRevenue: z.array(productRevenueRowSchema).optional(),
     period: z.enum(["hourly", "daily", "weekly"]),
     timestamp: z.string().refine(
       (v) => !Number.isNaN(Date.parse(v)),
