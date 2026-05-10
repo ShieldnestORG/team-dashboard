@@ -18,7 +18,9 @@
 import { createHmac } from "node:crypto";
 import { logger } from "../middleware/logger.js";
 
-export type WatchtowerEmailKind = "watchtower_weekly_digest";
+export type WatchtowerEmailKind =
+  | "watchtower_weekly_digest"
+  | "answer_check_report";
 
 export interface WatchtowerWeeklyDigestData {
   brand: string;
@@ -33,6 +35,22 @@ export interface WatchtowerWeeklyDigestData {
     excerpt: string;
   }>;
   reportUrl: string;
+}
+
+export interface AnswerCheckReportData {
+  brand: string;
+  domain: string | null;
+  prompt: string;
+  mentionCount: number;
+  enginesUsed: string[];
+  perEngine: Array<{
+    engine: string;
+    ok: boolean;
+    mentioned: boolean;
+    sentiment: string;
+    excerpt: string | null;
+  }>;
+  upgradeUrl: string;
 }
 
 export interface SendArgs<TData> {
@@ -57,9 +75,19 @@ function callbackEndpoint(): string | null {
   return "https://freetools.coherencedaddy.com/api/email/watchtower";
 }
 
+export async function sendAnswerCheckReport(
+  args: SendArgs<AnswerCheckReportData>,
+): Promise<void> {
+  return postEnvelope(args);
+}
+
 export async function sendWatchtowerDigest(
   args: SendArgs<WatchtowerWeeklyDigestData>,
 ): Promise<void> {
+  return postEnvelope(args);
+}
+
+async function postEnvelope<T>(args: SendArgs<T>): Promise<void> {
   const secret = process.env.WATCHTOWER_CALLBACK_KEY?.trim();
   const endpoint = callbackEndpoint();
 

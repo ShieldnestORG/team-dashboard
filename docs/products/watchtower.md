@@ -86,18 +86,54 @@ Mounted at `/api/watchtower` by `app.ts`. CRUD lives with Worker A's portal once
 | `GET /runs/:id` | One run + every per-result row |
 | `POST /runs/:id/trigger-test` | INTERNAL — runs the subscription whose id is in the path. Gated on `X-Internal-Token` header matching `INTERNAL_API_TOKEN` env. Dev/QA helper. |
 
+## Free-tool wedge (`/api/public/answer-check/*`)
+
+Funnel-top single-prompt brand-mention check. Lives at
+`coherencedaddy.com/tools/answer-check` (storefront) → proxies via
+`vercel.json` rewrite to team-dashboard's public, unauthenticated routes.
+No subscription required. Each visitor's run is persisted to a new
+`answer_check_runs` table; email + upsell-click attribution flow into the
+same row.
+
+| Route | Purpose | Rate limit |
+|---|---|---|
+| `POST /run` | Run one prompt across all enabled engines, persist a row, return per-engine results | 5 per IP per 24h (in-memory bucket, identical pattern to `/api/public/audit`) |
+| `POST /email` | Attach an email to an existing run + dispatch the HTML report via the storefront Resend template `answer_check_report` | global only |
+| `POST /click` | Stamp `upsell_clicked_at` on the run row when the visitor clicks the $29 Watchtower CTA | global only |
+
+Reuses the engine adapters and `detectMention()` directly via the new
+`runPromptOneShot()` export in `services/watchtower-monitor.ts`. Cost per
+free-tool call is ~$0.001–0.002 (one prompt × four engines), and the IP
+rate limit caps daily exposure per visitor at ~$0.01.
+
+The keyword-targeted public surface for the paid product lives at
+`coherencedaddy.com/tools/watchtower` (signup form + Stripe checkout
+handoff + competitor comparison table). Both pages were sized against
+the May 2026 SERP/competitor research (see commit message of the wedge
+PR for the source list).
+
 ## Files
 
 - Migrations: `packages/db/src/migrations/0109_watchtower.sql`,
-  `packages/db/src/migrations/0111_watchtower_stripe_columns.sql`
-- Drizzle schema: `packages/db/src/schema/watchtower.ts`
+  `packages/db/src/migrations/0111_watchtower_stripe_columns.sql`,
+  `packages/db/src/migrations/0112_answer_check.sql`
+- Drizzle schema: `packages/db/src/schema/watchtower.ts`,
+  `packages/db/src/schema/answer_check.ts`
 - Service: `server/src/services/watchtower-monitor.ts`
+  (exports `runPromptOneShot()` + `runSubscription()`)
+- Free-tool service: `server/src/services/answer-check.ts`
 - Engine adapters: `server/src/services/watchtower-engines/*.ts`
 - Cron: `server/src/services/watchtower-cron.ts`
 - Read-only routes: `server/src/routes/watchtower.ts`
 - Checkout + webhook: `server/src/routes/watchtower-checkout.ts`
+- Free-tool routes: `server/src/routes/answer-check.ts`
 - Stripe handlers: `server/src/services/watchtower-stripe-handler.ts`
 - Email callback: `server/src/services/watchtower-email-callback.ts`
+  (kinds: `watchtower_weekly_digest`, `answer_check_report`)
+- Storefront pages (separate repo `coherencedaddy-landing`):
+  `app/tools/answer-check/page.tsx` + `components/tools/AnswerCheckTool.tsx`,
+  `app/tools/watchtower/page.tsx` + `components/tools/WatchtowerSignup.tsx`,
+  `app/api/email/watchtower/route.ts`, `lib/watchtower-email.ts`
 - Tests: `server/src/__tests__/watchtower-monitor.test.ts`,
   `watchtower-engines.test.ts`, `watchtower-stripe-handler.test.ts`
 
@@ -112,6 +148,19 @@ Mounted at `/api/watchtower` by `app.ts`. CRUD lives with Worker A's portal once
 
 ## Changelog
 
+- **2026-05-09** — Free-tool wedge shipped. Migration 0112 (`answer_check_runs`).
+  New `runPromptOneShot()` kernel extracted from `runSubscription()` (no DB
+  required). New `POST /api/public/answer-check/{run,email,click}` routes
+  with 5-per-IP-per-day rate limit. Storefront pages
+  `/tools/answer-check` (free single-prompt check) and `/tools/watchtower`
+  (signup + Stripe checkout handoff + competitor comparison table) shipped
+  to `coherencedaddy-landing`. Email callback extended with
+  `answer_check_report` kind; storefront handler at
+  `/api/email/watchtower` mounts both digest and answer-check templates
+  via shared HMAC. Built off May 2026 SERP/competitor research:
+  Profound $99 ChatGPT-only, Otterly Lite $29 with Gemini paywall,
+  Watchtower $29 with all 4 engines × 25 prompts is the genuinely
+  uncontested slot.
 - **2026-05-09** — Per-account digest recipient: replaced shared `WATCHTOWER_DIGEST_EMAIL` broadcast with a `account_id → customer_accounts.email` join. Subscriptions without a linked account are skipped (logged + counted in cron summary as `skippedNoRecipient`) rather than falling back to ops, to prevent cross-customer leaks.
 - **2026-05-09** — v1 initial. Migration 0109, 4 engine adapters, weekly cron, read-only API.
 - **2026-05-09** — Stripe checkout + webhook + provisioning. Migration 0111
