@@ -38,6 +38,28 @@ POST /api/companies/:companyId/site-metrics/ingest
       { "source": "google.com", "count": 300 },
       { "source": "twitter.com", "count": 50 }
     ],
+    "productRevenue": [
+      {
+        "source": "printify",
+        "product_id": "69ffc2b259e22ced910c76ad",
+        "product_title": "Emotionally Expensive Crop Tee",
+        "units": 3,
+        "gross_cents": 8700,
+        "net_cents": 8447,
+        "period_start": "2026-04-30T06:00:00Z",
+        "period_end": "2026-05-01T06:00:00Z"
+      },
+      {
+        "source": "reservation",
+        "product_id": "69ed2bc348930bafe4041fd7",
+        "product_title": "Ringer Tee - Retro Heart",
+        "units": 12,
+        "gross_cents": 4800,
+        "net_cents": 4302,
+        "period_start": "2026-04-30T06:00:00Z",
+        "period_end": "2026-05-01T06:00:00Z"
+      }
+    ],
     "period": "daily",
     "timestamp": "2026-04-01T06:00:00Z"
   }
@@ -55,6 +77,7 @@ POST /api/companies/:companyId/site-metrics/ingest
 | `metrics.subscribers` | number | No | Active subscriber count |
 | `metrics.directoryClicks` | number | No | Directory click count |
 | `metrics.topReferrers` | array | No | Top traffic sources |
+| `metrics.productRevenue` | array | No | Per-product revenue rows. Each row: `{ source: "printify" \| "woo" \| "reservation", product_id, product_title, units, gross_cents, net_cents, period_start, period_end }`. Coherencedaddy aggregates from `product_sales` (Printify + Woo sales) + `shop_reservations` ($4 deposit holds). `net_cents` for reservations subtracts an estimated Stripe fee (`gross * 0.029 + 30¢ × units`); for printify/woo it equals `gross_cents` since fee data isn't tracked at sale-record time. UI surface (per-product chart) is future work — field is currently accepted, validated, and stored verbatim. |
 | `metrics.period` | string | Yes | `hourly`, `daily`, or `weekly` |
 | `metrics.timestamp` | string | Yes | ISO 8601 timestamp |
 
