@@ -6,7 +6,7 @@ Internal API for managing the AEO Partner Network -- referral partners, service 
 
 Authenticated endpoints require board-level session authentication. The public redirect endpoint (`/api/go`) requires no authentication and is designed for embedding in content and marketing materials.
 
-**Base URL (production):** `https://31.220.61.12:3200/api/partners`
+**Base URL (production):** `https://31.220.61.14:3200/api/partners`
 
 **Base URL (local dev):** `http://localhost:3100/api/partners`
 
@@ -403,7 +403,7 @@ Redirect to a partner's website. Logs the click in the `partner_clicks` table wi
 **Example URL:**
 
 ```
-https://31.220.61.12:3200/api/go/acme-consulting?src=blog&cid=post-123
+https://31.220.61.14:3200/api/go/acme-consulting?src=blog&cid=post-123
 ```
 
 **Response:** `302 Found` redirect to the partner's `website` URL.

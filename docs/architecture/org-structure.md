@@ -77,7 +77,7 @@ graph TB
     S_SHOP -.->|link-out checkout| HOST
 
     %% ── Control plane (this repo) ───────────────────────────────
-    subgraph TD["team-dashboard (this repo) — 31.220.61.12:3200"]
+    subgraph TD["team-dashboard (this repo) — 31.220.61.14:3200"]
         ADMIN["Admin control plane\n(agents · intel · content · pricing · Stripe · crons)"]
     end
 

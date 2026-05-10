@@ -107,7 +107,7 @@ coherencedaddy.com    tokns.fi    yourarchi.com
        └──── POST /site-metrics/ingest ──┘
                           │
                   Team Dashboard VPS
-                  (31.220.61.12:3200)
+                  (31.220.61.14:3200)
                           │
               ┌───────────┴───────────┐
               │  Agents query via     │

@@ -78,6 +78,9 @@ Any structural change must update the company structure diagram.
 - **Required**: Update persisted structure via API, update fallback `DEFAULT_DIAGRAM` in `ui/src/pages/Structure.tsx`, and include a dated changelog summary.
 - See: [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md)
 
+## Pre-deploy (mandatory)
+**Always run `./scripts/predeploy.sh` first**, or `dig +short api.coherencedaddy.com` and confirm `31.220.61.14`. Team-dashboard runs on **VPS4 (`.14`)**, not VPS1 (`.12`). See [VPS Cheat Sheet](docs/deploy/vps-cheat-sheet.md) for the full domain → VPS map and the trap log. A 2026-05-09 deploy lost ~30 min by SSHing to the wrong VPS — the predeploy script exists to make this impossible to repeat.
+
 ## Build & Run
 ```bash
 # UI dev server (port 5173)
@@ -102,6 +105,7 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Cron Inventory](docs/operations/cron-inventory.md) — Scheduled jobs and ownership.
 - [Key Files Reference](docs/operations/key-files.md) — Critical file mapping.
 - [Branch Safety](docs/guides/branch-safety.md) — Concurrent session rules.
+- [VPS Cheat Sheet](docs/deploy/vps-cheat-sheet.md) — **One-page. Read before any SSH or deploy.** Which VPS does what + the pre-deploy `dig` check.
 - [Production Guide](docs/deploy/production.md) — VPS and Docker cleanup.
 - [Environment Variables](docs/deploy/env-vars.md) — Full variable reference.
 - [Stripe Runbook](docs/deploy/stripe-runbook.md) — Account inventory, full webhook + product audit, two-account gotcha, standard ops (add product, add webhook, rotate key). **Read before any Stripe operation.**
