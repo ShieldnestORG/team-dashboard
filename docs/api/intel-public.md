@@ -2,7 +2,7 @@
 
 All endpoints below are unauthenticated and intended for use by the public directory at coherencedaddy.com/directory.
 
-**Base URL (production):** `https://31.220.61.12:3200/api/intel` (proxied via Vercel rewrites)
+**Base URL (production):** `https://31.220.61.14:3200/api/intel` (proxied via Vercel rewrites)
 
 **Base URL (local dev):** `http://localhost:3100/api/intel`
 

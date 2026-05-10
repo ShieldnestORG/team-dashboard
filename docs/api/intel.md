@@ -570,7 +570,7 @@ The search endpoint uses semantic vector search powered by BGE-M3 embeddings and
 ## Architecture
 
 ```
-coherencedaddy.com         Vercel rewrites          VPS (31.220.61.12)
+coherencedaddy.com         Vercel rewrites          VPS (31.220.61.14)
 /api/intel/*          -->  vercel.json proxy   -->  Express.js :3200
                                                       |
                                                       +--> PostgreSQL (Neon)

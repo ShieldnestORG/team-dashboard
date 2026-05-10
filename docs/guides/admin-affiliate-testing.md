@@ -157,7 +157,7 @@ Step-by-step walkthrough for the Coherence Daddy team to test, verify, and demo 
 Since you likely won't run a real Stripe checkout in testing, simulate it directly in the database:
 
 ```bash
-ssh root@31.220.61.12 'docker exec -i $(docker ps -q | head -1) sh -c "cd /app && node -e \"
+ssh root@31.220.61.14 'docker exec -i $(docker ps -q | head -1) sh -c "cd /app && node -e \"
 const { db } = await import('./server/dist/app.js');
 // Or use psql directly:
 \""'
@@ -165,7 +165,7 @@ const { db } = await import('./server/dist/app.js');
 
 **Simpler — use psql directly:**
 ```bash
-ssh root@31.220.61.12 'docker exec -i $(docker ps -q | head -1) sh -c "
+ssh root@31.220.61.14 'docker exec -i $(docker ps -q | head -1) sh -c "
   DATABASE_URL=\$(grep DATABASE_URL /app/.env.production | cut -d= -f2-)
   psql \$DATABASE_URL -c \"
     UPDATE partner_companies
@@ -202,7 +202,7 @@ Trigger the cron manually from the system crons admin page or via API:
 
 Or trigger via curl from VPS:
 ```bash
-ssh root@31.220.61.12 'curl -s -X POST http://localhost:3200/api/crons/run \
+ssh root@31.220.61.14 'curl -s -X POST http://localhost:3200/api/crons/run \
   -H "Content-Type: application/json" \
   -d "{\"jobName\":\"affiliate:pending-digest\"}" \
   -H "Cookie: your-admin-session-cookie"'

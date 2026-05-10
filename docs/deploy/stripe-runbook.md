@@ -51,7 +51,7 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 ## Env var contract — what each var does, where it must be set
 
-VPS = `/opt/team-dashboard/.env.production` on VPS4 (31.220.61.12).
+VPS = `/opt/team-dashboard/.env.production` on **VPS4 (`31.220.61.14`)** — NOT VPS1 (`.12`). Always confirm with `dig +short api.coherencedaddy.com` before SSHing.
 Vercel = the public storefront's Vercel project env settings.
 
 | Var | Where | Status (2026-05-09) | What it does |

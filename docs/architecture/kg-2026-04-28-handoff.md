@@ -68,7 +68,7 @@ Nexus runs every 3 hours. After 1–2 ticks under the new code:
 VPS1 was on `fix/yt-caption-sync` with 10+ in-flight YT commits ([`b2391d15`](https://github.com/ShieldnestORG/team-dashboard/commits/b2391d15)). Branch is safely on origin (SHA matches), nothing lost. To put YT work back into production:
 
 ```bash
-ssh root@31.220.61.12 'cd /opt/team-dashboard/repo && git checkout fix/yt-caption-sync && git pull && cd /opt/team-dashboard && docker compose build && docker compose up -d'
+ssh root@31.220.61.14 'cd /opt/team-dashboard/repo && git checkout fix/yt-caption-sync && git pull && cd /opt/team-dashboard && docker compose build && docker compose up -d'
 ```
 
 Note: this will revert the KG fixes too if `fix/yt-caption-sync` hasn't been rebased on master. Either rebase YT onto master first, or merge YT into master, before re-deploying.
@@ -147,7 +147,7 @@ Miss either → pause Nexus, freeze Weaver, keep schema dormant. Set a calendar 
 - `kg-cleanup-dry-run.ts` — H1–H5 heuristic cleanup with bucketed action recommendations
 
 ### Infrastructure
-- VPS1 (team-dashboard backend): `31.220.61.12`. Deploy: `ssh root@31.220.61.12 'cd /opt/team-dashboard/repo && git pull && cd /opt/team-dashboard && docker compose build && docker compose up -d'`
+- VPS1 (team-dashboard backend): `31.220.61.12`. Deploy: `ssh root@31.220.61.14 'cd /opt/team-dashboard/repo && git pull && cd /opt/team-dashboard && docker compose build && docker compose up -d'`
 - Neon Postgres (prod): `DATABASE_URL` in `.env`, host `ep-shiny-pine-amwqhmr1-pooler.c-5.us-east-1.aws.neon.tech`
 - Ollama: Cloud free tier (`ollama.com`) for KG agents — see [`reference_ollama_routing.md`](../../../.claude/projects/-Users-exe-Downloads-Claude-team-dashboard/memory/reference_ollama_routing.md)
 
