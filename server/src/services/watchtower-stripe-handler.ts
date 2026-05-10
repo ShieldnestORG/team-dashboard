@@ -134,6 +134,24 @@ export async function handleWatchtowerCheckout(
     );
   }
 
+  // Resolve account_id BEFORE the upsert so the subscription row points at
+  // the customer_accounts row from creation. This is what watchtower-cron's
+  // resolveWatchtowerRecipient() joins on to find the digest recipient — if
+  // we leave account_id NULL the cron fail-closes and skips the digest,
+  // meaning a paid customer would silently receive nothing.
+  let accountId: string | null = null;
+  if (email && stripeCustomerId) {
+    try {
+      const linked = await linkStripeCustomerToAccount(db, { email, stripeCustomerId });
+      accountId = linked?.accountId ?? null;
+    } catch (err) {
+      logger.error(
+        { err, sessionId: session.id, email, stripeCustomerId },
+        "watchtower-stripe-handler: customer-account-linker failed (non-fatal) — subscription will be inserted with account_id=NULL and digest will skip until manually relinked",
+      );
+    }
+  }
+
   // Idempotency: look up by stripe_subscription_id first. If a row already
   // exists (event replay), update non-identity fields and return early.
   const existing = await db
@@ -153,6 +171,7 @@ export async function handleWatchtowerCheckout(
         prompts,
         stripeCustomerId,
         email,
+        accountId,
       })
       .where(eq(watchtowerSubscriptions.id, existing[0].id))
       .returning({ id: watchtowerSubscriptions.id });
@@ -170,22 +189,10 @@ export async function handleWatchtowerCheckout(
         stripeCustomerId,
         stripeSubscriptionId,
         email,
+        accountId,
       })
       .returning({ id: watchtowerSubscriptions.id });
     result = { subscriptionId: row!.id, created: true };
-  }
-
-  // Cross-cutting linker. Wrapped so a failure here never rolls back the
-  // subscription insert above (mirrors the pattern in creditscore.ts).
-  if (email && stripeCustomerId) {
-    try {
-      await linkStripeCustomerToAccount(db, { email, stripeCustomerId });
-    } catch (err) {
-      logger.error(
-        { err, sessionId: session.id, email, stripeCustomerId },
-        "watchtower-stripe-handler: customer-account-linker failed (non-fatal)",
-      );
-    }
   }
 
   logger.info(

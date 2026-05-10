@@ -191,6 +191,10 @@ describe("handleWatchtowerCheckout", () => {
       stripeCustomerId: "cus_ABC",
       stripeSubscriptionId: "sub_ABC",
       email: "buyer@example.com",
+      // account_id MUST be set from the linker so watchtower-cron's
+      // resolveWatchtowerRecipient() can find the digest recipient.
+      // Leaving it NULL = paid customer, no email, silent churn.
+      accountId: "acc-1",
     });
 
     expect(linkSpy).toHaveBeenCalledTimes(1);
