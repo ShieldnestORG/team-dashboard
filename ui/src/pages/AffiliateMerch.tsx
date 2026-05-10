@@ -221,7 +221,7 @@ export function AffiliateMerch() {
                         setSizeOrVariant("");
                       }}
                       disabled={submitLoading}
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                      className="w-full rounded-lg border border-border px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                     >
                       <option value="">Select item…</option>
                       {ITEM_OPTIONS.map((opt) => (
@@ -244,7 +244,7 @@ export function AffiliateMerch() {
                         onChange={(e) => setSizeOrVariant(e.target.value)}
                         placeholder="S / M / L / XL / 2XL"
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                       />
                     </div>
                   )}
@@ -263,7 +263,7 @@ export function AffiliateMerch() {
                         value={address.name}
                         onChange={(e) => updateAddress("name", e.target.value)}
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                       />
                     </div>
                     <div>
@@ -276,7 +276,7 @@ export function AffiliateMerch() {
                         value={address.street1}
                         onChange={(e) => updateAddress("street1", e.target.value)}
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                       />
                     </div>
                     <div>
@@ -288,7 +288,7 @@ export function AffiliateMerch() {
                         value={address.street2 ?? ""}
                         onChange={(e) => updateAddress("street2", e.target.value)}
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                       />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -302,7 +302,7 @@ export function AffiliateMerch() {
                           value={address.city}
                           onChange={(e) => updateAddress("city", e.target.value)}
                           disabled={submitLoading}
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                         />
                       </div>
                       <div>
@@ -315,7 +315,7 @@ export function AffiliateMerch() {
                           value={address.region}
                           onChange={(e) => updateAddress("region", e.target.value)}
                           disabled={submitLoading}
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                         />
                       </div>
                     </div>
@@ -330,7 +330,7 @@ export function AffiliateMerch() {
                           value={address.postalCode}
                           onChange={(e) => updateAddress("postalCode", e.target.value)}
                           disabled={submitLoading}
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                         />
                       </div>
                       <div>
@@ -345,7 +345,7 @@ export function AffiliateMerch() {
                           disabled={submitLoading}
                           maxLength={2}
                           placeholder="US"
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                          className="w-full rounded-lg border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
                         />
                       </div>
                     </div>
@@ -362,7 +362,7 @@ export function AffiliateMerch() {
                     <button
                       type="submit"
                       disabled={submitLoading || !itemType}
-                      className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+                      className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
                     >
                       {submitLoading ? "Submitting…" : "Submit Request"}
                     </button>

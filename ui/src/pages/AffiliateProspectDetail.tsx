@@ -17,7 +17,7 @@ type Tab = (typeof TABS)[number];
 const ONBOARDING_BADGE: Record<string, { label: string; className: string }> = {
   none: { label: "Queued", className: "bg-muted text-muted-foreground border-border" },
   scraping: { label: "Scanning", className: "bg-blue-100 text-blue-700 border-blue-200" },
-  analyzing: { label: "Analyzing", className: "bg-[#ff876d]/15 text-[#ff876d] border-[#ff876d]/30" },
+  analyzing: { label: "Analyzing", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
   complete: { label: "Ready", className: "bg-green-500/15 text-green-500 border-green-500/30" },
   failed: { label: "Failed", className: "bg-destructive/15 text-destructive border-destructive/30" },
 };
@@ -87,7 +87,7 @@ function OverviewTab({
                 href={prospect.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#ff876d] hover:underline flex items-center gap-1"
+                className="text-[#FF6B4A] hover:underline flex items-center gap-1"
               >
                 {prospect.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                 <ExternalLink className="h-3 w-3" />
@@ -141,7 +141,7 @@ function OverviewTab({
               type="button"
               onClick={onRetry}
               disabled={retrying}
-              className="px-4 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+              className="px-4 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
             >
               {retrying ? "Retrying…" : "Retry analysis"}
             </button>
@@ -187,7 +187,7 @@ function CompetitorsTab({ prospect }: { prospect: AffiliateProspect }) {
             href={c.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-xs text-[#ff876d] hover:underline"
+            className="block text-xs text-[#FF6B4A] hover:underline"
           >
             {c.url.replace(/^https?:\/\//, "")}
           </a>
@@ -242,7 +242,7 @@ function NotesTab({ prospect }: { prospect: AffiliateProspect }) {
             onChange={(e) => setAffiliateNotes(e.target.value)}
             rows={5}
             placeholder="Add your notes here..."
-            className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] resize-none"
+            className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] resize-none"
           />
         </div>
         <div>
@@ -257,14 +257,14 @@ function NotesTab({ prospect }: { prospect: AffiliateProspect }) {
             onChange={(e) => setStoreNotes(e.target.value)}
             rows={5}
             placeholder="Add notes about what the owner wants..."
-            className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] resize-none"
+            className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] resize-none"
           />
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleSave}
             disabled={saving || !isDirty}
-            className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+            className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
           >
             {saving ? "Saving..." : "Save Notes"}
           </button>
@@ -323,7 +323,7 @@ function UpdatesTab({ prospect }: { prospect: AffiliateProspect }) {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d]"
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A]"
             />
           </div>
           <div>
@@ -333,7 +333,7 @@ function UpdatesTab({ prospect }: { prospect: AffiliateProspect }) {
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="City, State"
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d]"
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A]"
             />
           </div>
           <div>
@@ -343,14 +343,14 @@ function UpdatesTab({ prospect }: { prospect: AffiliateProspect }) {
               value={website}
               onChange={(e) => setWebsite(e.target.value)}
               placeholder="https://example.com"
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d]"
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A]"
             />
           </div>
           <div className="flex items-center gap-3">
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+              className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>
@@ -442,7 +442,7 @@ export function AffiliateProspectDetail() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <p className="text-destructive mb-3">{error ?? "Prospect not found."}</p>
-          <a href="/dashboard" className="text-sm text-[#ff876d] hover:underline">
+          <a href="/dashboard" className="text-sm text-[#FF6B4A] hover:underline">
             Back to Dashboard
           </a>
         </div>
@@ -474,7 +474,7 @@ export function AffiliateProspectDetail() {
               href={prospect.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-[#ff876d] mt-0.5 transition-colors"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-[#FF6B4A] mt-0.5 transition-colors"
             >
               <Globe className="h-3 w-3" />
               {prospect.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
@@ -494,7 +494,7 @@ export function AffiliateProspectDetail() {
                 onClick={() => setActiveTab(tab)}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab
-                    ? "border-[#ff876d] text-[#ff876d]"
+                    ? "border-[#FF6B4A] text-[#FF6B4A]"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
