@@ -115,7 +115,7 @@ The `vercel.json` at the repo root configures:
 - Install: `pnpm install --frozen-lockfile`
 - Build: `pnpm --filter @paperclipai/shared build && pnpm --filter @paperclipai/ui build && mv ui/dist dist`
 - Output: `dist` (moved from `ui/dist` post-build)
-- API rewrites: `/api/*` proxied to VPS at `31.220.61.12:3200`
+- API rewrites: `/api/*` proxied to VPS at `31.220.61.14:3200`
 - SPA fallback: all non-API routes serve `index.html`
 
 Push to master triggers auto-deploy.
@@ -168,7 +168,7 @@ External properties (coherencedaddy.com, tokns.fi, etc.) report analytics to the
 ### How It Works
 
 ```
-coherencedaddy.com              VPS Backend (31.220.61.12:3200)
+coherencedaddy.com              VPS Backend (31.220.61.14:3200)
 ┌──────────────────┐     POST   ┌──────────────────────────────┐
 │ Vercel Cron      │───────────▶│ /api/companies/:id/          │
 │ daily 6am UTC    │  metrics   │   site-metrics/ingest        │
@@ -194,7 +194,7 @@ The coherencedaddy repo has:
 - `vercel.json` — daily cron at 6am UTC
 
 Env vars required on Vercel (coherencedaddy project):
-- `TEAM_DASHBOARD_URL` — VPS backend URL (e.g., `http://31.220.61.12:3200`)
+- `TEAM_DASHBOARD_URL` — VPS backend URL (e.g., `http://31.220.61.14:3200`)
 - `TEAM_DASHBOARD_METRICS_KEY` — must match `SITE_METRICS_KEY` on VPS
 - `TEAM_DASHBOARD_COMPANY_ID` — the company UUID
 
