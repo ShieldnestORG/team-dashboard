@@ -114,6 +114,83 @@ export interface RunSummary {
   skippedEngines: string[];
 }
 
+export interface PerEngineOutput {
+  engine: string;
+  ok: boolean;
+  error?: string;
+  mentioned: boolean;
+  sentiment: Sentiment;
+  excerpt: string | null;
+  text: string;
+  latencyMs: number;
+}
+
+export interface OneShotResult {
+  brandName: string;
+  domain: string | null;
+  prompt: string;
+  perEngine: PerEngineOutput[];
+  enginesUsed: string[];
+  skippedEngines: string[];
+  mentionCount: number;
+}
+
+/**
+ * Run a single (brand, domain, prompt) triple against every enabled engine
+ * adapter and return per-engine detection outcomes. Pure transport — no DB,
+ * no subscription row required. Powers both `runSubscription` (looped per
+ * prompt) and the public `/api/answer-check/run` free-tool endpoint.
+ *
+ * Throws iff zero engines are enabled (no API keys configured).
+ */
+export async function runPromptOneShot(
+  input: { brandName: string; domain: string | null; prompt: string },
+  opts: RunSubscriptionOpts = {},
+): Promise<OneShotResult> {
+  const adapters = opts.engines ?? ALL_ENGINES;
+  const enabledAdapters = adapters.filter((a) => a.enabled());
+  const skippedEngines = adapters
+    .filter((a) => !a.enabled())
+    .map((a) => a.id);
+
+  if (enabledAdapters.length === 0) {
+    throw new Error(
+      "watchtower: no engines enabled — set at least one of OPENAI_API_KEY/ANTHROPIC_API_KEY/PERPLEXITY_API_KEY/GEMINI_API_KEY",
+    );
+  }
+
+  const perEngine = await Promise.all(
+    enabledAdapters.map(async (adapter): Promise<PerEngineOutput> => {
+      const resp = await adapter.query({ prompt: input.prompt });
+      const detection = detectMention(
+        resp.text,
+        input.brandName,
+        input.domain,
+      );
+      return {
+        engine: adapter.id,
+        ok: resp.ok,
+        error: resp.error,
+        mentioned: detection.mentioned,
+        sentiment: detection.sentiment,
+        excerpt: detection.excerpt,
+        text: resp.text,
+        latencyMs: resp.latencyMs,
+      };
+    }),
+  );
+
+  return {
+    brandName: input.brandName,
+    domain: input.domain,
+    prompt: input.prompt,
+    perEngine,
+    enginesUsed: enabledAdapters.map((a) => a.id),
+    skippedEngines,
+    mentionCount: perEngine.filter((p) => p.mentioned).length,
+  };
+}
+
 export interface RunResult {
   runId: string;
   mentionCount: number;

@@ -115,7 +115,12 @@ These variables are required for the project to function. **VPS** requires all v
 | `CREDITSCORE_EMAIL_CALLBACK_URL` | Optional | VPS | Storefront endpoint that renders + sends via Resend (default: `https://freetools.coherencedaddy.com/api/email/creditscore`) |
 | `WATCHTOWER_STRIPE_PRICE_ID` | Optional | VPS | Stripe price ID for Watchtower ($29/mo). Fallback when `lookup_key=watchtower_monthly` resolution fails. |
 | `STRIPE_WEBHOOK_SECRET_WATCHTOWER` | Optional | VPS | Dedicated signing secret for Watchtower Stripe webhook. Falls back to `STRIPE_WEBHOOK_SECRET`. |
-| `WATCHTOWER_RETURN_URL` | Optional | VPS | Default storefront return URL for checkout success/cancel (overridden per-request via `returnUrl` body field; default: `https://coherencedaddy.com/watchtower`). |
+| `WATCHTOWER_RETURN_URL` | Optional | VPS | Legacy single-URL knob (used as both success + cancel base when set). Prefer `WATCHTOWER_SUCCESS_URL` / `WATCHTOWER_CANCEL_URL` below. |
+| `WATCHTOWER_SUCCESS_URL` | Optional | VPS | Stripe success_url base. Default: `https://app.coherencedaddy.com/dashboard` (customer portal — surfaces the new entitlement + Watchtower cross-sell shelf). |
+| `WATCHTOWER_CANCEL_URL` | Optional | VPS | Stripe cancel_url base. Default: `https://coherencedaddy.com/tools/watchtower` (storefront signup page — bounced visitors land back where they were). |
+| `WATCHTOWER_CHECKOUT_PUBLIC_URL` | Optional | VPS | URL embedded in `/api/public/answer-check/run` rate-limit error responses. Default: `https://coherencedaddy.com/tools/watchtower#pricing`. |
+| `WATCHTOWER_CALLBACK_KEY` | Required for emails | VPS + Vercel (storefront) | HMAC shared secret signing `POST /api/email/watchtower` envelopes. Required for the answer-check report email + the weekly digest. If unset, both emails are no-op'd with a warning. |
+| `WATCHTOWER_EMAIL_CALLBACK_URL` | Optional | VPS | Storefront endpoint that handles both `answer_check_report` and `watchtower_weekly_digest` Resend dispatch (default: `https://freetools.coherencedaddy.com/api/email/watchtower` — 301-redirects to coherencedaddy.com). |
 | `OLLAMA_URL` / `OLLAMA_API_KEY` / `OLLAMA_MODEL` | Yes | VPS | Ollama Cloud endpoint (`https://ollama.com/api`, default model `gemma4:31b-cloud`). Powers the Content Agent (AEO page drafting), SEO Engine, and other content pipelines. Self-hosted fallback runs on VPS1 Tailnet `http://100.67.128.51:11434` (gemma2:2b) for agent + KG workloads. |
 | `INTEL_BILLING_SUCCESS_URL` | Optional | VPS | Checkout success redirect |
 | `INTEL_BILLING_CANCEL_URL` | Optional | VPS | Checkout cancel redirect |

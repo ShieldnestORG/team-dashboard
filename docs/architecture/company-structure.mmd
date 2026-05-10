@@ -344,6 +344,9 @@ graph TB
         WatchtowerCron{{"watchtower:weekly-runs — Mon 09:00 UTC (gated)"}}
         WatchtowerEngines(["Engines — ChatGPT (gpt-4o-mini), Claude (haiku-4-5), Perplexity (sonar), Gemini (2.0-flash)"])
         WatchtowerSubsDB[("watchtower_subscriptions + runs + results")]
+        AnswerCheckSvc(["Answer-Check Service — free single-prompt brand-mention check (funnel-top wedge for Watchtower)"])
+        AnswerCheckRoutes(["/api/public/answer-check — run, email, click (5/IP/day)"])
+        AnswerCheckDB[("answer_check_runs")]
         PortalAgentsRoutes(["/api/portal/agents — feed, items/:kind/:id, approve, reject"])
         AgentsDashboard(["100 Agents Dashboard — customer feed + approval queue (3 agent types)"])
       end
@@ -763,6 +766,10 @@ graph TB
   WatchtowerEngines -->|"OpenAI"| ExtAPIs
   WatchtowerCron --> WatchtowerSvc
   WatchtowerSvc -.->|"Stripe sub events (pending)"| StripeAPI
+  AnswerCheckRoutes --> AnswerCheckSvc
+  AnswerCheckSvc --> AnswerCheckDB
+  AnswerCheckSvc -->|"runPromptOneShot()"| WatchtowerEngines
+  AnswerCheckSvc -.->|"upsell click → POST /api/watchtower/checkout"| WatchtowerRoutes
   PortalAgentsRoutes -->|"agent items"| CSContentDraftsDB
   PortalAgentsRoutes -->|"agent items"| CSSchemaImplsDB
   PortalAgentsRoutes -->|"agent items"| CSCompetitorDB

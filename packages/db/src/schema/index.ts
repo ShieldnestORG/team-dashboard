@@ -172,3 +172,5 @@ export type {
   WatchtowerResult,
   NewWatchtowerResult,
 } from "./watchtower.js";
+export { answerCheckRuns } from "./answer_check.js";
+export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

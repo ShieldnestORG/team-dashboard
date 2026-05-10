@@ -105,6 +105,7 @@ import {
 } from "./routes/affiliate-engagement.js";
 import { startComplianceScanCron } from "./services/compliance-scanner.js";
 import { auditRoutes } from "./routes/audit.js";
+import { answerCheckRoutes } from "./routes/answer-check.js";
 import { partnerGoRoutes } from "./routes/partner-go.js";
 import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
 import { agentOpsRoutes } from "./routes/agent-ops.js";
@@ -406,6 +407,7 @@ export async function createApp(
   app.use("/api/portal/agents", portalAgentsRoutes(db));
   // Public AEO audit — no auth required
   app.use("/api/public", auditRoutes());
+  app.use("/api/public", answerCheckRoutes(db));
   // Sitemap + robots — unauthenticated, for search engine crawlers
   app.use("/", sitemapRoutes(db));
 

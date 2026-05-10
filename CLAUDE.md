@@ -104,6 +104,8 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Branch Safety](docs/guides/branch-safety.md) — Concurrent session rules.
 - [Production Guide](docs/deploy/production.md) — VPS and Docker cleanup.
 - [Environment Variables](docs/deploy/env-vars.md) — Full variable reference.
+- [Stripe Runbook](docs/deploy/stripe-runbook.md) — Account inventory, full webhook + product audit, two-account gotcha, standard ops (add product, add webhook, rotate key). **Read before any Stripe operation.**
+- [Stripe Products](docs/deploy/stripe-products.md) — Per-product spec (price IDs, webhook events, fulfillment behavior).
 - [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md) — Mermaid maintenance.
 - [Blog Distribution](docs/products/blog-distribution.md) — Target surfaces, cron → target map, current wiring status.
 - [Socials Hub](docs/products/socials-hub.md) — Unified `/socials` view: account registry + automation mirror + release calendar.

@@ -9,6 +9,7 @@ import {
   customerActionLog,
   customerCredentials,
   customerMagicLinks,
+  watchtowerSubscriptions,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
 import type { CustomerCredentialKind } from "@paperclipai/db";
@@ -160,6 +161,12 @@ function envelopeFromString(stored: string): LocalEncryptedMaterial {
 export interface CustomerEntitlements {
   creditscore: { tier: string; status: string } | null;
   bundles: Array<{ slug: string | null; status: string; bundlePlanId: string }>;
+  watchtower: {
+    status: string;
+    brandName: string;
+    domain: string | null;
+    subscriptionId: string;
+  } | null;
 }
 
 export interface AccountWithEntitlements {
@@ -369,6 +376,49 @@ export function customerPortalService(db: Db) {
       }
     }
 
+    // Watchtower: matched on email first (set at checkout time), then by
+    // stripe_customer_id when the customer-account-linker has fired. We
+    // surface only the most recent active subscription — multi-brand seats
+    // are a future SKU.
+    let watchtower: CustomerEntitlements["watchtower"] = null;
+    const wtRows = await db
+      .select({
+        id: watchtowerSubscriptions.id,
+        status: watchtowerSubscriptions.status,
+        brandName: watchtowerSubscriptions.brandName,
+        domain: watchtowerSubscriptions.domain,
+        createdAt: watchtowerSubscriptions.createdAt,
+      })
+      .from(watchtowerSubscriptions)
+      .where(
+        and(
+          or(
+            sql`LOWER(${watchtowerSubscriptions.email}) = ${email}`,
+            account.stripeCustomerId
+              ? eq(
+                  watchtowerSubscriptions.stripeCustomerId,
+                  account.stripeCustomerId,
+                )
+              : sql`false`,
+          ),
+          or(
+            eq(watchtowerSubscriptions.status, "active"),
+            eq(watchtowerSubscriptions.status, "past_due"),
+          ),
+        ),
+      )
+      .orderBy(desc(watchtowerSubscriptions.createdAt))
+      .limit(1);
+    if (wtRows.length) {
+      const row = wtRows[0];
+      watchtower = {
+        subscriptionId: row.id,
+        status: row.status,
+        brandName: row.brandName,
+        domain: row.domain,
+      };
+    }
+
     return {
       account: {
         id: account.id,
@@ -377,7 +427,7 @@ export function customerPortalService(db: Db) {
         createdAt: account.createdAt,
         lastLoginAt: account.lastLoginAt,
       },
-      entitlements: { creditscore, bundles },
+      entitlements: { creditscore, bundles, watchtower },
     };
   }
 
