@@ -1,5 +1,7 @@
 # Production Deployment — Team Dashboard
 
+> **⚠️ Pre-deploy sanity check.** Always run `dig +short api.coherencedaddy.com` first and confirm `31.220.61.14`. Team-dashboard runs on **VPS4 (`.14`)**, NOT VPS1 (`.12`). VPS1 hosts the LLM/scrape stack only and never serves any `*.coherencedaddy.com` HTTP traffic. SSHing to `.12` and running `docker compose up` against the team-dashboard repo there will appear to succeed but won't affect production. (Cost ~30 min on 2026-05-09.)
+
 ## Deployment Architecture (post-2026-05-09 swap)
 
 ```
