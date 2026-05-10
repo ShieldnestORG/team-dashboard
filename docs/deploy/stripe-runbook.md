@@ -66,11 +66,11 @@ Vercel = the public storefront's Vercel project env settings.
 | `WATCHTOWER_STRIPE_PRICE_ID` | VPS | ⛔ deliberately unset | Watchtower resolves by lookup_key first — this env var is only the fallback. Leaving unset keeps the lookup_key path canonical. |
 | `WATCHTOWER_ENABLED` | VPS | ⚠️ **`false` — must flip to `true` to launch** | Master gate on the Watchtower service + cron. When false, the cron skips and the checkout endpoint returns 503. |
 | `WATCHTOWER_SUCCESS_URL` | VPS | (default in code) | Default success_url base for Stripe checkout. Falls back to `https://app.coherencedaddy.com/dashboard` (customer portal). |
-| `WATCHTOWER_CANCEL_URL` | VPS | (default in code) | Default cancel_url base. Falls back to `https://coherencedaddy.com/tools/watchtower`. |
+| `WATCHTOWER_CANCEL_URL` | VPS | (default in code) | Default cancel_url base. Falls back to `https://coherencedaddy.com/watchtower-home`. |
 | `WATCHTOWER_RETURN_URL` | VPS | (legacy) | Single-URL knob for both success + cancel — only used when SUCCESS_URL/CANCEL_URL are unset. Don't set this for new deployments. |
 | `WATCHTOWER_CALLBACK_KEY` | VPS + Vercel (storefront) | ✅ set on VPS | HMAC shared secret signing `/api/email/watchtower` envelopes (digest + answer-check report). **Must match on both ends or emails fail signature.** Verify the same value is in the Vercel storefront's env. |
 | `WATCHTOWER_EMAIL_CALLBACK_URL` | VPS | ✅ set | Storefront receiver for HMAC-signed email envelopes (default falls back to the freetools.* alias which 301-redirects to coherencedaddy.com). |
-| `WATCHTOWER_CHECKOUT_PUBLIC_URL` | VPS | (default in code) | URL embedded in 429 rate-limit responses for `/api/public/answer-check/run`. Falls back to `coherencedaddy.com/tools/watchtower#pricing`. |
+| `WATCHTOWER_CHECKOUT_PUBLIC_URL` | VPS | (default in code) | URL embedded in 429 rate-limit responses for `/api/public/answer-check/run`. Falls back to `coherencedaddy.com/watchtower-home#pricing`. |
 
 ## Standard operations
 

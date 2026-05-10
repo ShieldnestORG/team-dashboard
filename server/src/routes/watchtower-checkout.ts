@@ -169,7 +169,7 @@ export function watchtowerCheckoutRoutes(db: Db): Router {
       process.env.WATCHTOWER_CANCEL_URL
       || returnUrl
       || process.env.WATCHTOWER_RETURN_URL
-      || "https://coherencedaddy.com/tools/watchtower";
+      || "https://coherencedaddy.com/watchtower-home";
     const successSep = successBase.includes("?") ? "&" : "?";
     const cancelSep = cancelBase.includes("?") ? "&" : "?";
     const successUrl = `${successBase}${successSep}status=success&session_id={CHECKOUT_SESSION_ID}&product=watchtower`;

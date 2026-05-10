@@ -107,7 +107,7 @@ free-tool call is ~$0.001–0.002 (one prompt × four engines), and the IP
 rate limit caps daily exposure per visitor at ~$0.01.
 
 The keyword-targeted public surface for the paid product lives at
-`coherencedaddy.com/tools/watchtower` (signup form + Stripe checkout
+`coherencedaddy.com/watchtower-home` (signup form + Stripe checkout
 handoff + competitor comparison table). Both pages were sized against
 the May 2026 SERP/competitor research (see commit message of the wedge
 PR for the source list).
@@ -131,9 +131,10 @@ PR for the source list).
 - Email callback: `server/src/services/watchtower-email-callback.ts`
   (kinds: `watchtower_weekly_digest`, `answer_check_report`)
 - Storefront pages (separate repo `coherencedaddy-landing`):
-  `app/tools/answer-check/page.tsx` + `components/tools/AnswerCheckTool.tsx`,
-  `app/tools/watchtower/page.tsx` + `components/tools/WatchtowerSignup.tsx`,
-  `app/api/email/watchtower/route.ts`, `lib/watchtower-email.ts`
+  - `app/tools/answer-check/page.tsx` + `components/tools/AnswerCheckTool.tsx` — free single-prompt wedge tool (kept under /tools because it IS a free utility)
+  - `app/watchtower-home/page.tsx` + `components/tools/WatchtowerSignup.tsx` — paid product landing + signup form (canonical surface)
+  - `app/tools/watchtower/page.tsx` — 301 redirect to `/watchtower-home` (preserves any links shared during the brief 2026-05-09 launch window)
+  - `app/api/email/watchtower/route.ts`, `lib/watchtower-email.ts`
 - Tests: `server/src/__tests__/watchtower-monitor.test.ts`,
   `watchtower-engines.test.ts`, `watchtower-stripe-handler.test.ts`
 
@@ -167,9 +168,9 @@ PR for the source list).
   New `runPromptOneShot()` kernel extracted from `runSubscription()` (no DB
   required). New `POST /api/public/answer-check/{run,email,click}` routes
   with 5-per-IP-per-day rate limit. Storefront pages
-  `/tools/answer-check` (free single-prompt check) and `/tools/watchtower`
-  (signup + Stripe checkout handoff + competitor comparison table) shipped
-  to `coherencedaddy-landing`. Email callback extended with
+  `/tools/answer-check` (free single-prompt check) and `/watchtower-home`
+  (signup + Stripe checkout handoff + competitor comparison table; promoted
+  out of `/tools/*` after launch) shipped to `coherencedaddy-landing`. Email callback extended with
   `answer_check_report` kind; storefront handler at
   `/api/email/watchtower` mounts both digest and answer-check templates
   via shared HMAC. Built off May 2026 SERP/competitor research:
