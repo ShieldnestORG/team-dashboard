@@ -88,14 +88,18 @@ Mounted at `/api/watchtower` by `app.ts`. CRUD lives with Worker A's portal once
 
 ## Files
 
-- Migration: `packages/db/src/migrations/0109_watchtower.sql`
+- Migrations: `packages/db/src/migrations/0109_watchtower.sql`,
+  `packages/db/src/migrations/0111_watchtower_stripe_columns.sql`
 - Drizzle schema: `packages/db/src/schema/watchtower.ts`
 - Service: `server/src/services/watchtower-monitor.ts`
 - Engine adapters: `server/src/services/watchtower-engines/*.ts`
 - Cron: `server/src/services/watchtower-cron.ts`
-- Routes: `server/src/routes/watchtower.ts`
+- Read-only routes: `server/src/routes/watchtower.ts`
+- Checkout + webhook: `server/src/routes/watchtower-checkout.ts`
+- Stripe handlers: `server/src/services/watchtower-stripe-handler.ts`
 - Email callback: `server/src/services/watchtower-email-callback.ts`
-- Tests: `server/src/__tests__/watchtower-monitor.test.ts`, `watchtower-engines.test.ts`
+- Tests: `server/src/__tests__/watchtower-monitor.test.ts`,
+  `watchtower-engines.test.ts`, `watchtower-stripe-handler.test.ts`
 
 ## Open follow-ups (post-v1)
 
@@ -110,3 +114,11 @@ Mounted at `/api/watchtower` by `app.ts`. CRUD lives with Worker A's portal once
 
 - **2026-05-09** — Per-account digest recipient: replaced shared `WATCHTOWER_DIGEST_EMAIL` broadcast with a `account_id → customer_accounts.email` join. Subscriptions without a linked account are skipped (logged + counted in cron summary as `skippedNoRecipient`) rather than falling back to ops, to prevent cross-customer leaks.
 - **2026-05-09** — v1 initial. Migration 0109, 4 engine adapters, weekly cron, read-only API.
+- **2026-05-09** — Stripe checkout + webhook + provisioning. Migration 0111
+  (adds `stripe_customer_id`, `plan`, `email`; loosens status CHECK to allow
+  `past_due`). New `POST /api/watchtower/checkout` route (lookup_key + env
+  fallback price resolution) and `POST /api/watchtower/webhook` handler
+  covering `checkout.session.completed`,
+  `customer.subscription.updated`, and `customer.subscription.deleted`.
+  All handlers idempotent. Customer-account-linker is chained on checkout
+  so portal-auth can later resolve the customer.

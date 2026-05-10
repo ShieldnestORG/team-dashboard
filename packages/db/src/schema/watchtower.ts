@@ -32,9 +32,16 @@ export const watchtowerSubscriptions = pgTable("watchtower_subscriptions", {
   domain: text("domain"),
   // string[] of prompts to monitor.
   prompts: jsonb("prompts").notNull(),
-  // active | paused | cancelled
+  // active | paused | past_due | cancelled
   status: text("status").notNull().default("active"),
+  stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
+  // Stable plan key — currently single-tier 'watchtower_monthly'.
+  // Reserved space for a future daily upsell tier.
+  plan: text("plan").notNull().default("watchtower_monthly"),
+  // Captured at checkout. Digest recipient fallback until per-account
+  // email lookup ships (see docs/products/watchtower.md follow-up #1).
+  email: text("email"),
   // weekly | daily — v1 ships weekly only; the daily cadence is reserved
   // for an upsell tier and not yet wired into a cron.
   frequency: text("frequency").notNull().default("weekly"),
