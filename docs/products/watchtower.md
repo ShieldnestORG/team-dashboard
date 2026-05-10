@@ -148,6 +148,21 @@ PR for the source list).
 
 ## Changelog
 
+- **2026-05-09** — ✅ Live Stripe Product + Price created on Coherence
+  Daddy account `acct_1TJQywQvkbvTR7Og`:
+  `prod_UUNfgdeWldCIQS` / `price_1TVOu6QvkbvTR7Og3xrx0GsG` (lookup_key
+  `watchtower_monthly`, $29.00/mo USD). Backend resolves by lookup_key
+  automatically — no env var update required. First-dollar revenue
+  path is now unblocked; flipping `WATCHTOWER_ENABLED=true` is the
+  remaining gate.
+- **2026-05-09** — Post-checkout flow points at the customer portal
+  (`app.coherencedaddy.com/dashboard`) instead of the storefront, so the
+  new entitlement renders inside the portal's Active Entitlements card
+  AND the visitor sees the Watchtower cross-sell shelf (CreditScore
+  Growth $149/mo, 100 Agents $199/mo, Wikidata + Crunchbase entity
+  service $499 one-time). New env vars `WATCHTOWER_SUCCESS_URL` and
+  `WATCHTOWER_CANCEL_URL` override per-side; legacy `WATCHTOWER_RETURN_URL`
+  still works as a unified fallback.
 - **2026-05-09** — Free-tool wedge shipped. Migration 0112 (`answer_check_runs`).
   New `runPromptOneShot()` kernel extracted from `runSubscription()` (no DB
   required). New `POST /api/public/answer-check/{run,email,click}` routes
