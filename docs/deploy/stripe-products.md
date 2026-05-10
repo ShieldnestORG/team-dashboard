@@ -63,7 +63,7 @@ Brand-mention monitor. See [docs/products/watchtower.md](../products/watchtower.
 - **Post-checkout flow:** success → `https://app.coherencedaddy.com/dashboard?status=success&session_id=…&product=watchtower`
   (customer portal — surfaces the new entitlement and the cross-sell
   shelf with CreditScore Growth / 100 Agents / Wikidata-Crunchbase entity
-  service). Cancel → `https://coherencedaddy.com/tools/watchtower?status=cancelled`
+  service). Cancel → `https://coherencedaddy.com/watchtower-home?status=cancelled`
   (storefront signup form — preserves their inputs). Override either via
   `WATCHTOWER_SUCCESS_URL` / `WATCHTOWER_CANCEL_URL`.
 - **Webhook secret env var:** `STRIPE_WEBHOOK_SECRET_WATCHTOWER`
