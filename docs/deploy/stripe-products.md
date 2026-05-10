@@ -19,7 +19,7 @@
 | Product | Plan / Price | Stripe price ID | Recurring | Owner | Code references |
 |---|---|---|---|---|---|
 | llms.txt generator | $19 one-time | _pending — see lookup_key_ | one-time | llms-txt-generator | `server/src/services/llms-txt-generator.ts` |
-| Watchtower | $29/mo | _pending — set in env_ | monthly | watchtower | `server/src/services/watchtower-monitor.ts`, `server/src/services/watchtower-cron.ts` |
+| Watchtower | $29/mo | _pending — create via `scripts/setup-watchtower-stripe-product.ts` (needs `products:write` key); set in env after creation_ | monthly | watchtower | `server/src/services/watchtower-monitor.ts`, `server/src/services/watchtower-cron.ts` |
 
 ## llms.txt generator — $19 one-time
 
@@ -49,6 +49,19 @@ Brand-mention monitor. See [docs/products/watchtower.md](../products/watchtower.
 - **Price:** $29 USD recurring monthly
 - **Price lookup_key:** `watchtower_monthly` (preferred resolution path)
 - **Price ID env var (fallback):** `WATCHTOWER_STRIPE_PRICE_ID`
+- **Status (2026-05-09):** Live Product + Price not yet created. The
+  one-shot script `scripts/setup-watchtower-stripe-product.ts` creates
+  both with `lookup_key=watchtower_monthly`; needs a Stripe key with
+  `prices:write` + `products:write` (the prod restricted key
+  `rk_live_*` does NOT have these scopes — use a full secret key, or
+  upgrade the restricted key's scopes in Stripe Dashboard → Developers
+  → API keys for the one-shot run).
+- **Post-checkout flow:** success → `https://app.coherencedaddy.com/dashboard?status=success&session_id=…&product=watchtower`
+  (customer portal — surfaces the new entitlement and the cross-sell
+  shelf with CreditScore Growth / 100 Agents / Wikidata-Crunchbase entity
+  service). Cancel → `https://coherencedaddy.com/tools/watchtower?status=cancelled`
+  (storefront signup form — preserves their inputs). Override either via
+  `WATCHTOWER_SUCCESS_URL` / `WATCHTOWER_CANCEL_URL`.
 - **Webhook secret env var:** `STRIPE_WEBHOOK_SECRET_WATCHTOWER`
   (falls back to global `STRIPE_WEBHOOK_SECRET` if unset)
 - **Webhook endpoint:** `POST /api/watchtower/webhook`

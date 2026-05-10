@@ -154,15 +154,26 @@ export function watchtowerCheckoutRoutes(db: Db): Router {
       return;
     }
 
-    // Build success/cancel URLs. Storefront passes returnUrl when present;
-    // otherwise we anchor to the public storefront's watchtower page.
-    const baseReturn =
+    // Success → customer portal so the new entitlement renders + upsells
+    // are visible. Cancel → back to the storefront signup page so a
+    // bounced checkout doesn't dump the visitor into a logged-out portal.
+    // Caller can override either via the body's returnUrl (legacy) or the
+    // env vars; we keep the legacy single-URL knob behavior for backwards
+    // compat (used as a unified base when explicitly set).
+    const successBase =
       returnUrl
+      || process.env.WATCHTOWER_SUCCESS_URL
       || process.env.WATCHTOWER_RETURN_URL
-      || "https://coherencedaddy.com/watchtower";
-    const sep = baseReturn.includes("?") ? "&" : "?";
-    const successUrl = `${baseReturn}${sep}status=success&session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${baseReturn}${sep}status=cancelled`;
+      || "https://app.coherencedaddy.com/dashboard";
+    const cancelBase =
+      process.env.WATCHTOWER_CANCEL_URL
+      || returnUrl
+      || process.env.WATCHTOWER_RETURN_URL
+      || "https://coherencedaddy.com/tools/watchtower";
+    const successSep = successBase.includes("?") ? "&" : "?";
+    const cancelSep = cancelBase.includes("?") ? "&" : "?";
+    const successUrl = `${successBase}${successSep}status=success&session_id={CHECKOUT_SESSION_ID}&product=watchtower`;
+    const cancelUrl = `${cancelBase}${cancelSep}status=cancelled`;
 
     try {
       const priceId = await resolveWatchtowerPriceId();
