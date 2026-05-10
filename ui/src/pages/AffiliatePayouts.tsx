@@ -2,18 +2,15 @@ import { useEffect, useState } from "react";
 import {
   affiliatesApi,
   getAffiliateToken,
-  clearAffiliateToken,
   type Payout,
 } from "@/api/affiliates";
+import { AffiliateNav } from "@/components/AffiliateNav";
+import { CDPage, EditorialCard, LabelCaps, Mono } from "@/components/cd/CDPrimitives";
+import { CD, FONT_MONO, formatDollars } from "@/lib/cdDesign";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatDollars(cents: number): string {
-  const dollars = (cents || 0) / 100;
-  return `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 function formatBatchMonth(batchMonth: string): string {
   // 'YYYY-MM'
@@ -43,33 +40,53 @@ function methodLabel(method: string): string {
   return METHOD_LABELS[method] ?? method;
 }
 
-const STATUS_PILL: Record<string, { label: string; className: string }> = {
+const STATUS_PILL: Record<string, { label: string; bg: string; fg: string; border: string }> = {
   scheduled: {
     label: "Scheduled",
-    className: "bg-violet-500/15 text-violet-500 border-violet-500/30",
+    bg: "rgba(255,255,255,0.04)",
+    fg: CD.ink,
+    border: CD.borderStrong,
   },
   sent: {
     label: "Sent",
-    className: "bg-blue-500/15 text-blue-500 border-blue-500/30",
+    bg: "rgba(255,107,74,0.10)",
+    fg: CD.accent,
+    border: "rgba(255,107,74,0.35)",
   },
   paid: {
     label: "Paid",
-    className: "bg-green-500/15 text-green-500 border-green-500/30",
+    bg: "rgba(74,157,124,0.10)",
+    fg: CD.success,
+    border: "rgba(74,157,124,0.35)",
   },
   failed: {
     label: "Failed",
-    className: "bg-red-500/15 text-red-500 border-red-500/30",
+    bg: "rgba(217,67,67,0.10)",
+    fg: CD.danger,
+    border: "rgba(217,67,67,0.35)",
   },
 };
 
 function StatusPill({ status }: { status: string }) {
   const cfg = STATUS_PILL[status] ?? {
     label: status,
-    className: "bg-muted text-muted-foreground border-border",
+    bg: "rgba(255,255,255,0.04)",
+    fg: CD.muted,
+    border: CD.border,
   };
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${cfg.className}`}
+      className="inline-flex items-center px-2 py-0.5"
+      style={{
+        fontFamily: FONT_MONO,
+        fontSize: "0.625rem",
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        backgroundColor: cfg.bg,
+        color: cfg.fg,
+        border: `1px solid ${cfg.border}`,
+        borderRadius: 4,
+      }}
     >
       {cfg.label}
     </span>
@@ -99,106 +116,152 @@ export function AffiliatePayouts() {
       .finally(() => setLoading(false));
   }, []);
 
-  function handleLogout() {
-    clearAffiliateToken();
-    window.location.href = "/";
-  }
+  const totalPaidCents = payouts
+    .filter((p) => p.status === "paid")
+    .reduce((sum, p) => sum + (p.amountCents || 0), 0);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs text-muted-foreground">
-              <a href="/dashboard" className="hover:text-foreground transition-colors">← Dashboard</a>
-            </p>
-            <h1 className="text-lg font-bold text-foreground">Payouts</h1>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Log Out
-          </button>
-        </div>
-      </header>
+    <CDPage>
+      <AffiliateNav active="/payouts" subtitle="Affiliate" title="Payouts" />
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-5">
-        {loading ? (
-          <div className="rounded-xl border border-border bg-card py-12 text-center">
-            <p className="text-muted-foreground text-sm">Loading…</p>
+      <main className="mx-auto w-full max-w-[1200px] px-6 py-10 space-y-6">
+        {/* Lifetime paid header card */}
+        {!loading && !error && payouts.length > 0 && (
+          <div
+            className="flex flex-wrap items-baseline gap-8 px-1 py-3"
+            style={{ borderBottom: `1px solid ${CD.border}` }}
+          >
+            <div>
+              <LabelCaps>Lifetime paid</LabelCaps>
+              <p
+                className="mt-1"
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: "clamp(1.5rem,3vw,2.25rem)",
+                  fontWeight: 600,
+                  letterSpacing: "-0.02em",
+                  color: CD.success,
+                  fontVariantNumeric: "tabular-nums",
+                  lineHeight: 1.05,
+                }}
+              >
+                {formatDollars(totalPaidCents)}
+              </p>
+            </div>
+            <div>
+              <LabelCaps>Payouts</LabelCaps>
+              <p
+                className="mt-1"
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: "1.25rem",
+                  fontWeight: 600,
+                  color: CD.ink,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {payouts.length}
+              </p>
+            </div>
           </div>
+        )}
+
+        {loading ? (
+          <EditorialCard className="py-12 text-center">
+            <LabelCaps>Loading payouts…</LabelCaps>
+          </EditorialCard>
         ) : error ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <div
+            className="p-4 text-sm"
+            style={{
+              backgroundColor: "rgba(217,67,67,0.08)",
+              border: `1px solid rgba(217,67,67,0.35)`,
+              color: CD.danger,
+              borderRadius: 10,
+            }}
+          >
             {error}
           </div>
         ) : payouts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card py-16 text-center">
-            <p className="text-sm text-muted-foreground">
+          <EditorialCard className="py-16 text-center" style={{ borderStyle: "dashed" }}>
+            <LabelCaps color={CD.accent}>No payouts yet</LabelCaps>
+            <p className="mt-3 text-sm" style={{ color: CD.muted }}>
               Your first payout will appear here once you hit $50 in approved commissions.
             </p>
-          </div>
+          </EditorialCard>
         ) : (
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <EditorialCard style={{ overflow: "hidden" }}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Month</th>
-                    <th className="px-4 py-3 font-medium text-right">Amount</th>
-                    <th className="px-4 py-3 font-medium hidden sm:table-cell text-right">Commissions</th>
-                    <th className="px-4 py-3 font-medium hidden md:table-cell">Method</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium hidden lg:table-cell">Reference</th>
-                    <th className="px-4 py-3 font-medium hidden lg:table-cell whitespace-nowrap">Paid</th>
+                  <tr style={{ borderBottom: `1px solid ${CD.border}`, textAlign: "left" }}>
+                    <th className="px-4 py-3"><LabelCaps>Month</LabelCaps></th>
+                    <th className="px-4 py-3 text-right"><LabelCaps>Amount</LabelCaps></th>
+                    <th className="px-4 py-3 hidden sm:table-cell text-right"><LabelCaps>Commissions</LabelCaps></th>
+                    <th className="px-4 py-3 hidden md:table-cell"><LabelCaps>Method</LabelCaps></th>
+                    <th className="px-4 py-3"><LabelCaps>Status</LabelCaps></th>
+                    <th className="px-4 py-3 hidden lg:table-cell"><LabelCaps>Reference</LabelCaps></th>
+                    <th className="px-4 py-3 hidden lg:table-cell whitespace-nowrap"><LabelCaps>Paid</LabelCaps></th>
                   </tr>
                 </thead>
                 <tbody>
                   {payouts.map((p) => (
                     <tr
                       key={p.id}
-                      className="border-b border-border last:border-0 hover:bg-background transition-colors"
+                      style={{ borderBottom: `1px solid ${CD.border}` }}
                     >
                       <td className="px-4 py-3">
-                        <p className="font-medium text-foreground">{formatBatchMonth(p.batchMonth)}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Scheduled {formatShortDate(p.scheduledFor)}
+                        <p className="font-medium" style={{ color: CD.ink }}>
+                          {formatBatchMonth(p.batchMonth)}
                         </p>
+                        <Mono style={{ color: CD.muted, fontSize: "0.6875rem" }}>
+                          Scheduled {formatShortDate(p.scheduledFor)}
+                        </Mono>
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-foreground whitespace-nowrap">
-                        {formatDollars(p.amountCents)}
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <Mono style={{ color: CD.ink, fontWeight: 600 }}>
+                          {formatDollars(p.amountCents)}
+                        </Mono>
                       </td>
-                      <td className="px-4 py-3 hidden sm:table-cell text-right text-xs text-muted-foreground">
-                        {p.commissionCount}
+                      <td className="px-4 py-3 hidden sm:table-cell text-right">
+                        <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                          {p.commissionCount}
+                        </Mono>
                       </td>
-                      <td className="px-4 py-3 hidden md:table-cell text-xs text-muted-foreground">
-                        {methodLabel(p.method)}
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <span style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                          {methodLabel(p.method)}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <StatusPill status={p.status} />
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
                         {p.externalId ? (
-                          <span className="font-mono text-xs text-muted-foreground" title={p.externalId}>
-                            {p.externalId.length > 18
-                              ? `${p.externalId.slice(0, 10)}…${p.externalId.slice(-4)}`
-                              : p.externalId}
-                          </span>
+                          <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                            <span title={p.externalId}>
+                              {p.externalId.length > 18
+                                ? `${p.externalId.slice(0, 10)}…${p.externalId.slice(-4)}`
+                                : p.externalId}
+                            </span>
+                          </Mono>
                         ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
+                          <span style={{ color: CD.muted, fontSize: "0.75rem" }}>—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 hidden lg:table-cell text-xs text-muted-foreground whitespace-nowrap">
-                        {formatShortDate(p.paidAt)}
+                      <td className="px-4 py-3 hidden lg:table-cell whitespace-nowrap">
+                        <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                          {formatShortDate(p.paidAt)}
+                        </Mono>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </EditorialCard>
         )}
       </main>
-    </div>
+    </CDPage>
   );
 }
