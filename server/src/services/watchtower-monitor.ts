@@ -155,7 +155,7 @@ export async function runPromptOneShot(
 
   if (enabledAdapters.length === 0) {
     throw new Error(
-      "watchtower: no engines enabled — set at least one of OPENAI_API_KEY/ANTHROPIC_API_KEY/PERPLEXITY_API_KEY/GEMINI_API_KEY",
+      "watchtower: no engines enabled — set at least one of WATCHTOWER_OPENAI_API_KEY/WATCHTOWER_ANTHROPIC_API_KEY/WATCHTOWER_PERPLEXITY_API_KEY/WATCHTOWER_GEMINI_API_KEY/WATCHTOWER_GROK_API_KEY",
     );
   }
 
@@ -253,7 +253,7 @@ export async function runSubscription(
 
   if (enabledAdapters.length === 0) {
     throw new Error(
-      "watchtower: no engines enabled — set at least one of OPENAI_API_KEY/ANTHROPIC_API_KEY/PERPLEXITY_API_KEY/GEMINI_API_KEY",
+      "watchtower: no engines enabled — set at least one of WATCHTOWER_OPENAI_API_KEY/WATCHTOWER_ANTHROPIC_API_KEY/WATCHTOWER_PERPLEXITY_API_KEY/WATCHTOWER_GEMINI_API_KEY/WATCHTOWER_GROK_API_KEY",
     );
   }
 

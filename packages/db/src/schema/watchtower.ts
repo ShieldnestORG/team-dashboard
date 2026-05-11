@@ -15,7 +15,7 @@ import {
 // Companion to coherencedaddy.com's storefront. A row in
 // `watchtower_subscriptions` is one (brand, prompts[]) bundle. The weekly
 // cron (`watchtower:weekly-runs`) replays each prompt against each engine
-// (chatgpt | claude | perplexity | gemini) and records a row per result.
+// (chatgpt | claude | perplexity | gemini | grok) and records a row per result.
 //
 // v1 mention detection is naive (substring of brand or domain) and v1
 // sentiment is a tiny keyword bag — see docs/products/watchtower.md and
@@ -81,7 +81,7 @@ export const watchtowerResults = pgTable(
       .notNull()
       .references(() => watchtowerRuns.id, { onDelete: "cascade" }),
     prompt: text("prompt").notNull(),
-    // chatgpt | claude | perplexity | gemini
+    // chatgpt | claude | perplexity | gemini | grok
     engine: text("engine").notNull(),
     mentioned: boolean("mentioned").notNull(),
     // positive | neutral | negative | unknown — see service for v1 rules

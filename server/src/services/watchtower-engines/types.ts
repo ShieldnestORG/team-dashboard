@@ -7,7 +7,7 @@
 // transport.
 // ---------------------------------------------------------------------------
 
-export type EngineId = "chatgpt" | "claude" | "perplexity" | "gemini";
+export type EngineId = "chatgpt" | "claude" | "perplexity" | "gemini" | "grok";
 
 export interface EngineQuery {
   prompt: string;

@@ -11,7 +11,7 @@
 // Reuses the existing fetch() pattern from launch-comment-monitor (no
 // shared SDK client elsewhere in the repo as of this commit).
 //
-// Env: ANTHROPIC_API_KEY required.
+// Env: WATCHTOWER_ANTHROPIC_API_KEY required.
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
@@ -25,11 +25,11 @@ export const claudeAdapter: EngineAdapter = {
   id: "claude",
 
   enabled(): boolean {
-    return !!process.env.ANTHROPIC_API_KEY?.trim();
+    return !!process.env.WATCHTOWER_ANTHROPIC_API_KEY?.trim();
   },
 
   async query(q: EngineQuery): Promise<EngineResponse> {
-    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+    const apiKey = process.env.WATCHTOWER_ANTHROPIC_API_KEY?.trim();
     const model = process.env.WATCHTOWER_CLAUDE_MODEL?.trim() || DEFAULT_MODEL;
     const start = Date.now();
 
@@ -38,7 +38,7 @@ export const claudeAdapter: EngineAdapter = {
         text: "",
         latencyMs: 0,
         ok: false,
-        error: "ANTHROPIC_API_KEY missing",
+        error: "WATCHTOWER_ANTHROPIC_API_KEY missing",
       };
     }
 
