@@ -10,9 +10,11 @@
 //                          $29 Watchtower upsell CTA
 //
 // Cost guardrail: this is a public, unauthenticated endpoint. Each call
-// fans out to ALL four engines once (~4 LLM calls). The per-IP rate limit
-// is enforced upstream in the route. Engine-level errors are captured
-// per-row, never bubbled, so a flaky Gemini key doesn't 500 the whole tool.
+// fans out to ALL five engines once (~5 LLM calls, ~$0.007–0.008 per call;
+// Grok dominates the total). At ~5 requests/day per visitor that's ~$0.04
+// daily exposure. The per-IP rate limit is enforced upstream in the route.
+// Engine-level errors are captured per-row, never bubbled, so a flaky
+// Gemini key doesn't 500 the whole tool.
 // ---------------------------------------------------------------------------
 
 import { eq } from "drizzle-orm";

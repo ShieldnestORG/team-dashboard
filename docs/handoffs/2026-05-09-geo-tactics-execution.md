@@ -55,7 +55,7 @@ Workers A, B, C cover items 1–3. Item 4 should be folded into integration.
 ### Worker C — Watchtower Brand-Mention Monitor v1
 - **Branch:** `feat/watchtower-mention-monitor`
 - **Worktree:** isolated
-- **Scope:** migrations (`watchtower_subscriptions`, `watchtower_runs`, `watchtower_results`), service `watchtower-monitor.ts`, engine adapters (ChatGPT, Claude, Perplexity, Gemini), weekly cron, routes `/api/watchtower/*`, Stripe $29/mo product config doc, email digest template, tests
+- **Scope:** migrations (`watchtower_subscriptions`, `watchtower_runs`, `watchtower_results`), service `watchtower-monitor.ts`, engine adapters (ChatGPT, Claude, Perplexity, Gemini, Grok), weekly cron, routes `/api/watchtower/*`, Stripe $29/mo product config doc, email digest template, tests
 - **Plug-in point:** read-only token-URL routes in v1; portal-CRUD wraps after Worker A
 
 ---
@@ -314,9 +314,9 @@ The dispatcher commits (on branch `claude/distracted-kirch-39a1d0`):
 
 ### Engine-cost reality (Worker C)
 
-Watchtower at default 25 prompts × 4 engines = 100 calls/sub/week:
-- **~$0.06/sub/week, ~$0.25/sub/month** at $29/mo retail = ~99% gross margin
-- Even at 10× actual usage, >95% margin
+Watchtower at default 25 prompts × 5 engines = 125 calls/sub/week:
+- **~$0.21/sub/week, ~$0.85/sub/month** at $29/mo retail = ~97% gross margin
+- Even at 10× actual usage, >70% margin
 - This is a printing-money SKU at the unit-economics level. Bottleneck is acquisition, not COGS.
 
 Engine choices: ChatGPT `gpt-4o-mini`, Claude `claude-haiku-4-5` (12× cheaper than Sonnet), Perplexity `sonar`, Gemini `gemini-2.0-flash`. Each engine **skips with a warning** if its env var is missing — won't crash the run.
@@ -373,10 +373,12 @@ PORTAL_STRIPE_RETURN_URL=https://app.coherencedaddy.com/billing
 PAPERCLIP_SECRETS_MASTER_KEY=<existing>
 
 # Worker C (Watchtower) — engine keys (each is optional; skip-with-warning if missing)
-OPENAI_API_KEY=<existing or new>
-ANTHROPIC_API_KEY=<existing>
-PERPLEXITY_API_KEY=<new>
-GEMINI_API_KEY=<new>
+# Renamed 2026-05-11: product-scoped WATCHTOWER_ prefix so credentials don't
+# overlap with Codex/content-agent OpenAI+Anthropic keys.
+WATCHTOWER_OPENAI_API_KEY=<existing or new>
+WATCHTOWER_ANTHROPIC_API_KEY=<existing>
+WATCHTOWER_PERPLEXITY_API_KEY=<new>
+WATCHTOWER_GEMINI_API_KEY=<new>
 WATCHTOWER_CLAUDE_MODEL=claude-haiku-4-5  # default; override only if needed
 WATCHTOWER_CALLBACK_KEY=<openssl rand -hex 24>
 WATCHTOWER_EMAIL_CALLBACK_URL=https://coherencedaddy.com/api/email/watchtower

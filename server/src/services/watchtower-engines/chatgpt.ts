@@ -3,7 +3,7 @@
 //
 // Model: gpt-4o-mini (cost-optimized; v1 doesn't need Responses API or
 // browsing — we just want what the model says about the brand).
-// Env: OPENAI_API_KEY required.
+// Env: WATCHTOWER_OPENAI_API_KEY required.
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
@@ -17,18 +17,18 @@ export const chatgptAdapter: EngineAdapter = {
   id: "chatgpt",
 
   enabled(): boolean {
-    return !!process.env.OPENAI_API_KEY?.trim();
+    return !!process.env.WATCHTOWER_OPENAI_API_KEY?.trim();
   },
 
   async query(q: EngineQuery): Promise<EngineResponse> {
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    const apiKey = process.env.WATCHTOWER_OPENAI_API_KEY?.trim();
     const start = Date.now();
     if (!apiKey) {
       return {
         text: "",
         latencyMs: 0,
         ok: false,
-        error: "OPENAI_API_KEY missing",
+        error: "WATCHTOWER_OPENAI_API_KEY missing",
       };
     }
 

@@ -12,7 +12,7 @@ import {
 // answer-check — free single-prompt brand-mention check tool.
 //
 // Funnel-top wedge for the paid Watchtower product. Visitor types one
-// prompt, we run it against all four engines once, render the result,
+// prompt, we run it against all five engines once, render the result,
 // then optionally capture an email for a fuller report. Unlike
 // watchtower_subscriptions, there is no recurring obligation; each row
 // is one anonymous (or email-gated) one-shot run.

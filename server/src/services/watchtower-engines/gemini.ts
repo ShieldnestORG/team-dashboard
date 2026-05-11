@@ -2,7 +2,7 @@
 // Watchtower engine adapter — Gemini.
 //
 // Model: gemini-2.0-flash. Uses the v1beta `generateContent` REST API.
-// Env: GEMINI_API_KEY OPTIONAL — if missing, the adapter reports
+// Env: WATCHTOWER_GEMINI_API_KEY OPTIONAL — if missing, the adapter reports
 // `enabled() === false` and the watchtower-monitor skips it without
 // crashing the run (this is the documented "skip with warning" path).
 // ---------------------------------------------------------------------------
@@ -21,11 +21,11 @@ export const geminiAdapter: EngineAdapter = {
   id: "gemini",
 
   enabled(): boolean {
-    return !!process.env.GEMINI_API_KEY?.trim();
+    return !!process.env.WATCHTOWER_GEMINI_API_KEY?.trim();
   },
 
   async query(q: EngineQuery): Promise<EngineResponse> {
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    const apiKey = process.env.WATCHTOWER_GEMINI_API_KEY?.trim();
     const start = Date.now();
 
     if (!apiKey) {
@@ -33,7 +33,7 @@ export const geminiAdapter: EngineAdapter = {
         text: "",
         latencyMs: 0,
         ok: false,
-        error: "GEMINI_API_KEY missing",
+        error: "WATCHTOWER_GEMINI_API_KEY missing",
       };
     }
 

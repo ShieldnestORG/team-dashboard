@@ -1,12 +1,12 @@
 # Watchtower — Brand Mention Monitor (v1)
 
-> The cheap, in-house alternative to Profound / Peec ($300–$1,500/mo SaaS) for tracking how AI answer engines (ChatGPT, Claude, Perplexity, Gemini) talk about a brand. v1 = the smallest thing that's useful. Not a marketing-claims product yet.
+> The cheap, in-house alternative to Profound / Peec ($300–$1,500/mo SaaS) for tracking how AI answer engines (ChatGPT, Claude, Perplexity, Gemini, Grok) talk about a brand. v1 = the smallest thing that's useful. Not a marketing-claims product yet.
 
 ## Pricing
 
 | Plan | Price | Cadence | Engines | Prompt cap | Surfaces |
 |---|---|---|---|---|---|
-| **Watchtower** | **$29 / month** recurring | Weekly | All four (chatgpt, claude, perplexity, gemini) | 25 prompts (system hard-cap 50) | Weekly digest email + read-only run viewer at `/api/watchtower/runs/:id` |
+| **Watchtower** | **$29 / month** recurring | Weekly | All five (chatgpt, claude, perplexity, gemini, grok) | 25 prompts (system hard-cap 50) | Weekly digest email + read-only run viewer at `/api/watchtower/runs/:id` |
 
 Stripe price ID lives in `docs/deploy/stripe-products.md`. Frequency `daily` is reserved for a future upsell tier — no cron is wired for it in v1.
 
@@ -43,38 +43,42 @@ Two design decisions deliberately trade fidelity for shipping speed; both are fl
 ## Prompt cap rationale
 
 - **Default 25** prompts/subscription. Most operators don't have more than ~10 distinct buyer-intent queries; 25 is the SaaS-norm sweet spot.
-- **Hard ceiling 50.** Enforced in `services/watchtower-monitor.ts` (`HARD_PROMPT_CEILING`). Per `CLAUDE.md` cost protection — a runaway prompt list at 50 × 4 engines = 200 LLM calls per subscription per run; at the math below that's still under $0.05/run, but we want the budget brake to be deliberate.
+- **Hard ceiling 50.** Enforced in `services/watchtower-monitor.ts` (`HARD_PROMPT_CEILING`). Per `CLAUDE.md` cost protection — a runaway prompt list at 50 × 5 engines = 250 LLM calls per subscription per run; at the math below that's still under $0.05/run, but we want the budget brake to be deliberate.
 
-## Cost per run (default 25 prompts × 4 engines = 100 calls)
+## Cost per run (default 25 prompts × 5 engines = 125 calls)
 
 Order-of-magnitude estimates at v1 model choices and ~600 max output tokens. Treat as ceiling — most prompts return less.
 
 | Engine | Model | Per-call ~cost | 25 prompts/week | Notes |
 |---|---|---|---|---|
-| ChatGPT | gpt-4o-mini | ~$0.0003 | ~$0.0075 | Cheapest of the four |
+| ChatGPT | gpt-4o-mini | ~$0.0003 | ~$0.0075 | Cheapest of the five for billed tiers |
 | Claude | claude-haiku-4-5 | ~$0.001 | ~$0.025 | Override via `WATCHTOWER_CLAUDE_MODEL` if quality needs Sonnet |
 | Perplexity | sonar | ~$0.001 | ~$0.025 | Includes citation overhead |
 | Gemini | gemini-2.0-flash | ~$0.00015 | ~$0.004 | Skipped if `GEMINI_API_KEY` unset |
-| **Total / week** | | | **≈ $0.06** | |
-| **Total / month** | | | **≈ $0.25** | |
+| Grok | grok-2-1212 | ~$0.006 | ~$0.15 | xAI; OpenAI-compatible API — dominates per-run cost |
+| **Total / week** | | | **≈ $0.21** | |
+| **Total / month** | | | **≈ $0.85** | |
 
-**Margin on $29 retail:** ~99%. Even with 10× actual token usage we stay >95% gross margin, which is why this product exists.
+**Margin on $29 retail:** ~97%. Even with 10× actual token usage we stay >70% gross margin, which is why this product exists.
 
 ## Env vars (which engines are gated on what)
 
+All engine keys are **product-scoped with the `WATCHTOWER_` prefix** so credentials don't leak between products (Codex Local, content agents, etc. that read the un-prefixed names are independent — give Watchtower its own accounts).
+
 | Var | Required for | If missing |
 |---|---|---|
-| `OPENAI_API_KEY` | ChatGPT engine | Adapter `enabled()` returns false → engine skipped, single warning log per run |
-| `ANTHROPIC_API_KEY` | Claude engine | Same skip-with-warning behavior |
-| `PERPLEXITY_API_KEY` | Perplexity engine | Same |
-| `GEMINI_API_KEY` | Gemini engine | Same — explicitly mandated to skip-not-crash by the spec |
+| `WATCHTOWER_OPENAI_API_KEY` | ChatGPT engine | Adapter `enabled()` returns false → engine skipped, single warning log per run |
+| `WATCHTOWER_ANTHROPIC_API_KEY` | Claude engine | Same skip-with-warning behavior |
+| `WATCHTOWER_PERPLEXITY_API_KEY` | Perplexity engine | Same |
+| `WATCHTOWER_GEMINI_API_KEY` | Gemini engine | Same — explicitly mandated to skip-not-crash by the spec |
+| `WATCHTOWER_GROK_API_KEY` | Grok engine | Same skip-with-warning behavior |
 | `WATCHTOWER_CLAUDE_MODEL` | optional override | defaults to `claude-haiku-4-5` |
 | `WATCHTOWER_CALLBACK_KEY` | digest email HMAC | digest send is no-op'd with a warning |
 | `WATCHTOWER_EMAIL_CALLBACK_URL` | storefront receiver override | falls back to `https://freetools.coherencedaddy.com/api/email/watchtower` |
 | `WATCHTOWER_DIGEST_EMAIL` | (deprecated — no longer read) | n/a — recipient is now resolved per row via `customer_accounts.email` |
 | `INTERNAL_API_TOKEN` | `/runs/:id/trigger-test` route | route returns 503 |
 
-If **all four** engine keys are missing, `runSubscription()` throws `no engines enabled` — the cron's per-subscription error capture turns this into a logged error per row, not a process crash.
+If **all five** engine keys are missing, `runSubscription()` throws `no engines enabled` — the cron's per-subscription error capture turns this into a logged error per row, not a process crash.
 
 ## API surface (read-only in v1)
 
@@ -103,7 +107,7 @@ same row.
 
 Reuses the engine adapters and `detectMention()` directly via the new
 `runPromptOneShot()` export in `services/watchtower-monitor.ts`. Cost per
-free-tool call is ~$0.001–0.002 (one prompt × four engines), and the IP
+free-tool call is ~$0.007–0.008 (one prompt × five engines), and the IP
 rate limit caps daily exposure per visitor at ~$0.01.
 
 The keyword-targeted public surface for the paid product lives at
@@ -149,6 +153,7 @@ PR for the source list).
 
 ## Changelog
 
+- **2026-05-11** — Added Grok (xAI) as the 5th engine. New adapter `server/src/services/watchtower-engines/grok.ts` (model `grok-2-1212`, env `WATCHTOWER_GROK_API_KEY`). Engine env vars in the same batch were renamed to the `WATCHTOWER_` namespace (e.g. `OPENAI_API_KEY` → `WATCHTOWER_OPENAI_API_KEY`) so Watchtower credentials are isolated from Codex Local / content-agent / visual-backend keys. Cost per sub/mo: $0.25 → $0.85 (margin 99% → 97%, still healthy).
 - **2026-05-09** — ✅ Live Stripe Product + Price created on Coherence
   Daddy account `acct_1TJQywQvkbvTR7Og`:
   `prod_UUNfgdeWldCIQS` / `price_1TVOu6QvkbvTR7Og3xrx0GsG` (lookup_key
@@ -175,7 +180,7 @@ PR for the source list).
   `/api/email/watchtower` mounts both digest and answer-check templates
   via shared HMAC. Built off May 2026 SERP/competitor research:
   Profound $99 ChatGPT-only, Otterly Lite $29 with Gemini paywall,
-  Watchtower $29 with all 4 engines × 25 prompts is the genuinely
+  Watchtower $29 with all 5 engines × 25 prompts is the genuinely
   uncontested slot.
 - **2026-05-09** — Per-account digest recipient: replaced shared `WATCHTOWER_DIGEST_EMAIL` broadcast with a `account_id → customer_accounts.email` join. Subscriptions without a linked account are skipped (logged + counted in cron summary as `skippedNoRecipient`) rather than falling back to ops, to prevent cross-customer leaks.
 - **2026-05-09** — v1 initial. Migration 0109, 4 engine adapters, weekly cron, read-only API.

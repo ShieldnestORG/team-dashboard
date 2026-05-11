@@ -1,40 +1,41 @@
 // ---------------------------------------------------------------------------
-// Watchtower engine adapter — Perplexity.
+// Watchtower engine adapter — Grok (xAI).
 //
-// Model: `sonar` — Perplexity's cheapest answer-engine model. We use chat
-// completions API (OpenAI-compatible) at api.perplexity.ai.
-// Env: WATCHTOWER_PERPLEXITY_API_KEY required.
+// Model: grok-2-1212 (xAI's cheap flagship; v1 doesn't need live search or
+// vision — we just want what the model says about the brand).
+// Env: WATCHTOWER_GROK_API_KEY required.
+// API: OpenAI-compatible chat/completions surface, so the request/response
+// shape mirrors the chatgpt adapter exactly.
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
-const PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/chat/completions";
-const MODEL = "sonar";
+const XAI_ENDPOINT = "https://api.x.ai/v1/chat/completions";
+const MODEL = "grok-2-1212";
 const TIMEOUT_MS = 30_000;
 
-export const perplexityAdapter: EngineAdapter = {
-  id: "perplexity",
+export const grokAdapter: EngineAdapter = {
+  id: "grok",
 
   enabled(): boolean {
-    return !!process.env.WATCHTOWER_PERPLEXITY_API_KEY?.trim();
+    return !!process.env.WATCHTOWER_GROK_API_KEY?.trim();
   },
 
   async query(q: EngineQuery): Promise<EngineResponse> {
-    const apiKey = process.env.WATCHTOWER_PERPLEXITY_API_KEY?.trim();
+    const apiKey = process.env.WATCHTOWER_GROK_API_KEY?.trim();
     const start = Date.now();
-
     if (!apiKey) {
       return {
         text: "",
         latencyMs: 0,
         ok: false,
-        error: "WATCHTOWER_PERPLEXITY_API_KEY missing",
+        error: "WATCHTOWER_GROK_API_KEY missing",
       };
     }
 
     try {
-      const res = await fetch(PERPLEXITY_ENDPOINT, {
+      const res = await fetch(XAI_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -43,6 +44,8 @@ export const perplexityAdapter: EngineAdapter = {
         body: JSON.stringify({
           model: MODEL,
           messages: [{ role: "user", content: q.prompt }],
+          // Keep it short — Watchtower only needs enough text to substring-
+          // match a brand and capture a snippet.
           max_tokens: 600,
           temperature: 0.2,
         }),
@@ -55,7 +58,7 @@ export const perplexityAdapter: EngineAdapter = {
         const errText = await res.text().catch(() => "");
         logger.warn(
           { status: res.status, err: errText.slice(0, 200) },
-          "watchtower:perplexity non-2xx",
+          "watchtower:grok non-2xx",
         );
         return {
           text: "",
@@ -73,7 +76,7 @@ export const perplexityAdapter: EngineAdapter = {
     } catch (err) {
       const latencyMs = Date.now() - start;
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn({ err: message }, "watchtower:perplexity threw");
+      logger.warn({ err: message }, "watchtower:grok threw");
       return { text: "", latencyMs, ok: false, error: message };
     }
   },
