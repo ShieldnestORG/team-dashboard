@@ -58,6 +58,12 @@ export function portalBaseUrl(): string {
   return process.env.PORTAL_BASE_URL?.trim() || "https://app.coherencedaddy.com";
 }
 
+function portalApiBaseUrl(): string {
+  return (
+    process.env.PAPERCLIP_PUBLIC_URL?.trim() || "https://api.coherencedaddy.com"
+  );
+}
+
 function sessionSecret(): string {
   const s = process.env.PORTAL_SESSION_SECRET?.trim();
   if (!s || s.length < MIN_SECRET_LENGTH) {
@@ -214,7 +220,10 @@ export function customerPortalService(db: Db) {
       expiresAt,
     });
 
-    const url = `${portalBaseUrl()}/auth?token=${encodeURIComponent(token)}`;
+    // Point at the backend's token-consumption endpoint, not the SPA. The
+    // backend sets the session cookie and 302s to the SPA on success, or to
+    // `${portalBaseUrl()}/auth?error=...` on failure.
+    const url = `${portalApiBaseUrl()}/api/portal/auth?token=${encodeURIComponent(token)}`;
     // Email delivery lives in coherencedaddy-landing per docs/OWNERSHIP.md.
     // We invoke the existing creditscore-email callback channel — the
     // storefront recognizes the kind and renders the right Resend template.
