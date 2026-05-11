@@ -1,5 +1,10 @@
 import { Link } from "@/lib/router";
 
+// AffiliateAdminTabs sits inside the team-dashboard admin shell (not the
+// affiliate-facing chrome), so it stays inside the dashboard's design system —
+// but the active accent is unified with the affiliate-facing surfaces:
+// Rizz Coral (#FF6B4A) instead of the off-key peachy (#ff876d).
+
 type TabKey =
   | "affiliates"
   | "leads"
@@ -34,18 +39,28 @@ const TABS: Tab[] = [
 export function AffiliateAdminTabs({ active }: { active: TabKey }) {
   return (
     <div className="border-b border-border">
-      <nav className="flex items-center gap-1 -mb-px overflow-x-auto" aria-label="Affiliate admin sections">
+      <nav
+        className="flex items-center gap-1 -mb-px overflow-x-auto"
+        aria-label="Affiliate admin sections"
+      >
         {TABS.map((tab) => {
           const isActive = tab.key === active;
           return (
             <Link
               key={tab.key}
               to={tab.href}
-              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+              className={`px-3 py-2 border-b-2 transition-colors whitespace-nowrap ${
                 isActive
-                  ? "border-[#ff876d] text-[#ff876d]"
+                  ? "border-[#FF6B4A] text-[#FF6B4A]"
                   : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
               }`}
+              style={{
+                fontFamily:
+                  '"Geist Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace',
+                fontSize: "0.6875rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
             >
               {tab.label}
             </Link>

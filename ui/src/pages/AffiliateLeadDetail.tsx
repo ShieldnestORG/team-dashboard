@@ -15,8 +15,8 @@ const PIPELINE_STAGE_LABELS: Record<string, { label: string; className: string }
   draft: { label: "Draft", className: "bg-muted text-muted-foreground border-border" },
   submitted: { label: "Submitted", className: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
   under_review: { label: "Under Review", className: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
-  contacted: { label: "Contacted", className: "bg-[#ff876d]/15 text-[#ff876d] border-[#ff876d]/30" },
-  qualified: { label: "Qualified", className: "bg-[#ff876d]/15 text-[#ff876d] border-[#ff876d]/30" },
+  contacted: { label: "Contacted", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
+  qualified: { label: "Qualified", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
   demo_booked: { label: "Demo Booked", className: "bg-purple-500/15 text-purple-500 border-purple-500/30" },
   proposal: { label: "Proposal Sent", className: "bg-purple-500/15 text-purple-500 border-purple-500/30" },
   negotiation: { label: "In Negotiation", className: "bg-purple-500/15 text-purple-500 border-purple-500/30" },
@@ -179,7 +179,7 @@ export function AffiliateLeadDetail() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <p className="text-destructive mb-3">{error ?? "Lead not found."}</p>
-          <a href="/dashboard" className="text-sm text-[#ff876d] hover:underline">
+          <a href="/dashboard" className="text-sm text-[#FF6B4A] hover:underline">
             Back to Dashboard
           </a>
         </div>
@@ -223,7 +223,7 @@ export function AffiliateLeadDetail() {
                 href={lead.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#ff876d] hover:underline break-all"
+                className="text-[#FF6B4A] hover:underline break-all"
               >
                 {lead.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
               </a>

@@ -6,6 +6,16 @@ import {
   type PromoPostSubmission,
 } from "@/api/affiliates";
 import { AffiliateNav } from "@/components/AffiliateNav";
+import {
+  CDPage,
+  EditorialCard,
+  BrutalistCard,
+  LabelCaps,
+  Mono,
+  Cascade,
+  CDPrimaryButton,
+} from "@/components/cd/CDPrimitives";
+import { CD, FONT_MONO } from "@/lib/cdDesign";
 
 function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -15,17 +25,54 @@ function formatShortDate(iso: string): string {
   });
 }
 
-function statusClass(status: string): string {
+function statusPalette(status: string): { fg: string; bg: string; border: string } {
   switch (status) {
     case "live":
-      return "bg-green-500/15 text-green-500 border-green-500/30";
+      return {
+        fg: CD.success,
+        bg: "rgba(74,157,124,0.10)",
+        border: "rgba(74,157,124,0.35)",
+      };
     case "ended":
-      return "bg-muted text-muted-foreground border-border";
+      return {
+        fg: CD.muted,
+        bg: "rgba(255,255,255,0.04)",
+        border: CD.border,
+      };
     case "draft":
-      return "bg-yellow-500/15 text-yellow-500 border-yellow-500/30";
+      return {
+        fg: CD.accent,
+        bg: "rgba(255,107,74,0.08)",
+        border: "rgba(255,107,74,0.30)",
+      };
     default:
-      return "bg-muted text-muted-foreground border-border";
+      return {
+        fg: CD.muted,
+        bg: "rgba(255,255,255,0.04)",
+        border: CD.border,
+      };
   }
+}
+
+function StatusChip({ status }: { status: string }) {
+  const p = statusPalette(status);
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5"
+      style={{
+        fontFamily: FONT_MONO,
+        fontSize: "0.625rem",
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        color: p.fg,
+        backgroundColor: p.bg,
+        border: `1px solid ${p.border}`,
+        borderRadius: 4,
+      }}
+    >
+      {status}
+    </span>
+  );
 }
 
 export function AffiliatePromo() {
@@ -77,7 +124,6 @@ export function AffiliatePromo() {
     [campaigns],
   );
 
-  // When a campaign is selected, prefill hashtag for convenience.
   function handleCampaignChange(id: string) {
     setSelectedCampaignId(id);
     const campaign = liveCampaigns.find((c) => c.id === id);
@@ -100,10 +146,7 @@ export function AffiliatePromo() {
       setPostUrl("");
       setHashtagUsed("");
       setSelectedCampaignId("");
-      // Refresh submission history.
-      const fresh = await affiliatesApi
-        .listPromoPosts()
-        .catch(() => posts);
+      const fresh = await affiliatesApi.listPromoPosts().catch(() => posts);
       setPosts(fresh);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit post");
@@ -112,58 +155,113 @@ export function AffiliatePromo() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AffiliateNav active="/promo" subtitle="Affiliate Program" title="Promo Campaigns" />
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    backgroundColor: "rgba(255,255,255,0.03)",
+    border: `1px solid ${CD.border}`,
+    borderRadius: 8,
+    padding: "10px 12px",
+    color: CD.ink,
+    fontSize: "0.875rem",
+    outline: "none",
+    fontFamily: "inherit",
+  };
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+  return (
+    <CDPage>
+      <AffiliateNav active="/promo" subtitle="Affiliate" title="Promo Campaigns" />
+
+      <main className="mx-auto w-full max-w-[1200px] px-6 py-10 space-y-8">
         {loading ? (
-          <div className="rounded-xl border border-border bg-card py-12 text-center">
-            <p className="text-muted-foreground text-sm">Loading…</p>
-          </div>
+          <EditorialCard className="py-12 text-center">
+            <LabelCaps>Loading campaigns…</LabelCaps>
+          </EditorialCard>
         ) : error ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <div
+            className="p-4 text-sm"
+            style={{
+              backgroundColor: "rgba(217,67,67,0.08)",
+              border: `1px solid rgba(217,67,67,0.35)`,
+              color: CD.danger,
+              borderRadius: 10,
+            }}
+          >
             {error}
           </div>
         ) : (
           <>
             {/* Live campaigns */}
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold text-foreground">Live campaigns</h2>
+            <section className="space-y-4">
+              <div className="flex items-baseline justify-between">
+                <LabelCaps color={CD.accent}>Live campaigns</LabelCaps>
+                <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                  {liveCampaigns.length} running
+                </Mono>
+              </div>
               {liveCampaigns.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center">
-                  <p className="text-sm text-muted-foreground">
+                <EditorialCard className="py-12 text-center" style={{ borderStyle: "dashed" }}>
+                  <p className="text-sm" style={{ color: CD.muted }}>
                     No campaigns are live right now. Check back soon.
                   </p>
-                </div>
+                </EditorialCard>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {liveCampaigns.map((c) => (
-                    <article
-                      key={c.id}
-                      className="rounded-xl border border-[#ff876d]/30 bg-card p-5 space-y-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-base font-bold text-foreground">{c.name}</h3>
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusClass(c.status)}`}
-                        >
-                          {c.status}
-                        </span>
-                      </div>
-                      <p className="text-sm text-[#ff876d] font-mono">#{c.hashtag.replace(/^#/, "")}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatShortDate(c.startAt)} – {formatShortDate(c.endAt)}
-                      </p>
-                      {c.giveawayPrize && (
-                        <p className="text-xs text-foreground">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#ff876d]/15 text-[#ff876d] border border-[#ff876d]/30 mr-1">
-                            Giveaway
-                          </span>
-                          {c.giveawayPrize}
-                        </p>
-                      )}
-                    </article>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {liveCampaigns.map((c, i) => (
+                    <Cascade key={c.id} index={i}>
+                      <BrutalistCard
+                        fill={CD.surface}
+                        borderColor={CD.ink}
+                        showScanLines={false}
+                      >
+                        <div className="space-y-3 px-5 py-5">
+                          <div className="flex items-center justify-between gap-2">
+                            <LabelCaps color={CD.accent}>{c.name}</LabelCaps>
+                            <StatusChip status={c.status} />
+                          </div>
+                          <p
+                            style={{
+                              fontFamily: FONT_MONO,
+                              fontSize: "1.5rem",
+                              fontWeight: 600,
+                              color: CD.accent,
+                              letterSpacing: "-0.01em",
+                            }}
+                          >
+                            #{c.hashtag.replace(/^#/, "")}
+                          </p>
+                          <p>
+                            <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                              {formatShortDate(c.startAt)} — {formatShortDate(c.endAt)}
+                            </Mono>
+                          </p>
+                          {c.giveawayPrize && (
+                            <div
+                              className="flex items-start gap-2 pt-2"
+                              style={{ borderTop: `1px solid ${CD.border}` }}
+                            >
+                              <span
+                                style={{
+                                  fontFamily: FONT_MONO,
+                                  fontSize: "0.5625rem",
+                                  letterSpacing: "0.14em",
+                                  textTransform: "uppercase",
+                                  color: CD.accent,
+                                  border: `1px solid rgba(255,107,74,0.40)`,
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                  marginTop: 2,
+                                }}
+                              >
+                                Giveaway
+                              </span>
+                              <span className="text-sm" style={{ color: CD.ink }}>
+                                {c.giveawayPrize}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </BrutalistCard>
+                    </Cascade>
                   ))}
                 </div>
               )}
@@ -171,19 +269,21 @@ export function AffiliatePromo() {
 
             {/* Submission form */}
             {liveCampaigns.length > 0 && (
-              <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <h2 className="text-base font-semibold text-foreground">Submit a post</h2>
+              <EditorialCard className="p-6 space-y-4">
+                <LabelCaps color={CD.accent}>Submit a post</LabelCaps>
+                <p className="text-sm" style={{ color: CD.muted }}>
+                  Drop a public link to your post. We'll check the hashtag and credit your account.
+                </p>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      Campaign
-                    </label>
+                    <LabelCaps as="div">Campaign</LabelCaps>
                     <select
                       required
                       value={selectedCampaignId}
                       onChange={(e) => handleCampaignChange(e.target.value)}
                       disabled={submitLoading}
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                      className="mt-1.5 disabled:opacity-60"
+                      style={inputStyle}
                     >
                       <option value="">Select a campaign…</option>
                       {liveCampaigns.map((c) => (
@@ -194,23 +294,20 @@ export function AffiliatePromo() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      Post URL
-                    </label>
+                    <LabelCaps as="div">Post URL</LabelCaps>
                     <input
                       type="url"
                       required
                       value={postUrl}
                       onChange={(e) => setPostUrl(e.target.value)}
-                      placeholder="https://instagram.com/p/..."
+                      placeholder="https://instagram.com/p/…"
                       disabled={submitLoading}
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                      className="mt-1.5 disabled:opacity-60"
+                      style={inputStyle}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      Hashtag used
-                    </label>
+                    <LabelCaps as="div">Hashtag used</LabelCaps>
                     <input
                       type="text"
                       required
@@ -218,17 +315,18 @@ export function AffiliatePromo() {
                       onChange={(e) => setHashtagUsed(e.target.value)}
                       placeholder="#coherencedaddy"
                       disabled={submitLoading}
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                      className="mt-1.5 disabled:opacity-60"
+                      style={{ ...inputStyle, fontFamily: FONT_MONO }}
                     />
                   </div>
                   {submitError && (
-                    <p className="text-xs text-destructive">{submitError}</p>
+                    <p className="text-xs" style={{ color: CD.danger }}>{submitError}</p>
                   )}
                   {submitSuccess && (
-                    <p className="text-xs text-green-600">{submitSuccess}</p>
+                    <p className="text-xs" style={{ color: CD.success }}>{submitSuccess}</p>
                   )}
                   <div className="flex justify-end">
-                    <button
+                    <CDPrimaryButton
                       type="submit"
                       disabled={
                         submitLoading ||
@@ -236,35 +334,35 @@ export function AffiliatePromo() {
                         !postUrl.trim() ||
                         !hashtagUsed.trim()
                       }
-                      className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
                     >
                       {submitLoading ? "Submitting…" : "Submit Post"}
-                    </button>
+                    </CDPrimaryButton>
                   </div>
                 </form>
-              </section>
+              </EditorialCard>
             )}
 
             {/* Giveaway entries */}
             {giveawayCampaigns.length > 0 && (
-              <section className="space-y-3">
-                <h2 className="text-base font-semibold text-foreground">
-                  Giveaway entries
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <section className="space-y-4">
+                <LabelCaps>Giveaway entries</LabelCaps>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {giveawayCampaigns.map((c) => (
                     <div
                       key={`g-${c.id}`}
-                      className="rounded-xl border border-[#ff876d]/40 bg-[#ff876d]/5 p-4"
+                      className="p-4"
+                      style={{
+                        backgroundColor: "rgba(255,107,74,0.06)",
+                        border: `1px solid rgba(255,107,74,0.35)`,
+                        borderRadius: 10,
+                      }}
                     >
-                      <p className="text-xs uppercase tracking-wide text-[#ff876d] font-semibold">
-                        Eligible
-                      </p>
-                      <p className="text-sm font-semibold text-foreground mt-0.5">
+                      <LabelCaps color={CD.accent}>Eligible</LabelCaps>
+                      <p className="mt-1 text-sm font-semibold" style={{ color: CD.ink }}>
                         {c.name}
                       </p>
                       {c.giveawayPrize && (
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="mt-1 text-xs" style={{ color: CD.muted }}>
                           Prize: {c.giveawayPrize}
                         </p>
                       )}
@@ -275,68 +373,76 @@ export function AffiliatePromo() {
             )}
 
             {/* Submission history */}
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold text-foreground">Your submissions</h2>
+            <section className="space-y-4">
+              <LabelCaps>Your submissions</LabelCaps>
               {posts.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center">
-                  <p className="text-sm text-muted-foreground">
+                <EditorialCard className="py-12 text-center" style={{ borderStyle: "dashed" }}>
+                  <p className="text-sm" style={{ color: CD.muted }}>
                     You haven't submitted any posts yet.
                   </p>
-                </div>
+                </EditorialCard>
               ) : (
-                <div className="bg-card rounded-xl border border-border overflow-hidden">
+                <EditorialCard style={{ overflow: "hidden" }}>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                          <th className="px-4 py-3 font-medium">Submitted</th>
-                          <th className="px-4 py-3 font-medium">Campaign</th>
-                          <th className="px-4 py-3 font-medium">Hashtag</th>
-                          <th className="px-4 py-3 font-medium">Post</th>
-                          <th className="px-4 py-3 font-medium">Status</th>
+                        <tr style={{ borderBottom: `1px solid ${CD.border}`, textAlign: "left" }}>
+                          <th className="px-4 py-3"><LabelCaps>Submitted</LabelCaps></th>
+                          <th className="px-4 py-3"><LabelCaps>Campaign</LabelCaps></th>
+                          <th className="px-4 py-3"><LabelCaps>Hashtag</LabelCaps></th>
+                          <th className="px-4 py-3"><LabelCaps>Post</LabelCaps></th>
+                          <th className="px-4 py-3"><LabelCaps>Status</LabelCaps></th>
                         </tr>
                       </thead>
                       <tbody>
                         {posts.map((p) => (
                           <tr
                             key={p.id}
-                            className="border-b border-border last:border-0 hover:bg-background transition-colors"
+                            style={{ borderBottom: `1px solid ${CD.border}` }}
                           >
-                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                              {formatShortDate(p.createdAt)}
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                                {formatShortDate(p.createdAt)}
+                              </Mono>
                             </td>
-                            <td className="px-4 py-3 text-sm text-foreground">
+                            <td className="px-4 py-3 text-sm" style={{ color: CD.ink }}>
                               {p.campaignName ?? p.campaignId}
                             </td>
-                            <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
-                              #{p.hashtagUsed.replace(/^#/, "")}
+                            <td className="px-4 py-3">
+                              <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                                #{p.hashtagUsed.replace(/^#/, "")}
+                              </Mono>
                             </td>
                             <td className="px-4 py-3">
                               <a
                                 href={p.postUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-xs text-[#ff876d] hover:text-[#ff876d]/90 font-medium"
+                                style={{
+                                  fontFamily: FONT_MONO,
+                                  fontSize: "0.6875rem",
+                                  letterSpacing: "0.14em",
+                                  textTransform: "uppercase",
+                                  color: CD.accent,
+                                }}
                               >
                                 View →
                               </a>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border bg-muted text-muted-foreground border-border">
-                                {p.status ?? "pending"}
-                              </span>
+                              <StatusChip status={p.status ?? "pending"} />
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </div>
+                </EditorialCard>
               )}
             </section>
           </>
         )}
       </main>
-    </div>
+    </CDPage>
   );
 }

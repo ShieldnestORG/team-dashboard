@@ -84,7 +84,7 @@ export function AffiliateLearnGuide() {
           <h1 className="text-2xl font-bold">Guide not found</h1>
           <a
             href="/learn"
-            className="inline-flex items-center gap-1.5 text-sm text-[#ff876d] hover:text-[#ff876d]/90 font-medium"
+            className="inline-flex items-center gap-1.5 text-sm text-[#FF6B4A] hover:text-[#FF6B4A]/90 font-medium"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Learn
@@ -110,7 +110,7 @@ export function AffiliateLearnGuide() {
               <p className="text-xs text-muted-foreground truncate">Affiliate Program · Learn</p>
               <h1 className="text-lg font-bold text-foreground truncate">{guide.title}</h1>
             </div>
-            <a href="/" className="text-sm text-[#ff876d] font-medium whitespace-nowrap">
+            <a href="/" className="text-sm text-[#FF6B4A] font-medium whitespace-nowrap">
               Apply &rarr;
             </a>
           </div>
@@ -163,7 +163,7 @@ function GuideHeader({
   return (
     <header className="space-y-3">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest">
-        <span className="text-[#ff876d]">0{sectionOrder}</span>
+        <span className="text-[#FF6B4A]">0{sectionOrder}</span>
         <span className="text-muted-foreground">·</span>
         <span className="text-muted-foreground">{sectionLabel}</span>
       </div>
@@ -194,7 +194,7 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
       <div className="h-1 w-full rounded-full overflow-hidden bg-border">
         <div
           className="h-full rounded-full transition-all duration-300"
-          style={{ width: `${pct}%`, background: "#ff876d" }}
+          style={{ width: `${pct}%`, background: "#FF6B4A" }}
         />
       </div>
     </div>
@@ -220,7 +220,7 @@ function StepView({ step }: { step: GuideStep }) {
 
       <div className="space-y-4">
         <div className="space-y-2">
-          <span className="inline-block text-[10px] font-mono uppercase tracking-[0.2em] text-[#ff876d]">
+          <span className="inline-block text-[10px] font-mono uppercase tracking-[0.2em] text-[#FF6B4A]">
             {step.eyebrow}
           </span>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-[1.05] text-foreground">
@@ -294,7 +294,7 @@ function Callout({ callout }: { callout: GuideCallout }) {
     },
     example: {
       Icon: Quote,
-      color: "#ff876d",
+      color: "#FF6B4A",
       bg: "rgba(255,135,109,0.08)",
       border: "rgba(255,135,109,0.3)",
       label: "Example",
@@ -344,7 +344,7 @@ function StepNav({
             className="h-1.5 rounded-full transition-all"
             style={{
               width: i === idx ? 20 : 6,
-              background: i === idx ? "#ff876d" : i < idx ? "rgba(255,135,109,0.4)" : "rgba(255,255,255,0.12)",
+              background: i === idx ? "#FF6B4A" : i < idx ? "rgba(255,135,109,0.4)" : "rgba(255,255,255,0.12)",
             }}
           />
         ))}
@@ -365,7 +365,7 @@ function StepNav({
           type="button"
           onClick={onNext}
           className="group inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold shadow-lg shadow-black/20 transition-all hover:shadow-xl hover:shadow-black/30 hover:-translate-y-px"
-          style={{ background: "#ff876d", color: "#18181B" }}
+          style={{ background: "#FF6B4A", color: "#18181B" }}
         >
           {isLast ? "Finish" : "Next"}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -407,12 +407,12 @@ function FinishedPanel({ guide, onRestart }: { guide: LearnGuide; onRestart: () 
             <a
               key={g.slug}
               href={`/learn/${g.slug}`}
-              className="group flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-all hover:border-[#ff876d]/40"
+              className="group flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-all hover:border-[#FF6B4A]/40"
             >
-              <span className="text-sm font-medium text-foreground group-hover:text-[#ff876d] transition-colors line-clamp-2">
+              <span className="text-sm font-medium text-foreground group-hover:text-[#FF6B4A] transition-colors line-clamp-2">
                 {g.title}
               </span>
-              <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-[#ff876d] transition-colors" />
+              <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-[#FF6B4A] transition-colors" />
             </a>
           ))}
         </div>
@@ -430,7 +430,7 @@ function FinishedPanel({ guide, onRestart }: { guide: LearnGuide; onRestart: () 
         <a
           href="/learn"
           className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold"
-          style={{ background: "#ff876d", color: "#18181B" }}
+          style={{ background: "#FF6B4A", color: "#18181B" }}
         >
           All guides
         </a>

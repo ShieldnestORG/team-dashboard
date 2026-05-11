@@ -16,7 +16,7 @@ import {
   type TierResponse,
 } from "@/api/affiliates";
 import { AffiliateNav } from "@/components/AffiliateNav";
-import { formatTierName, tierColorFor } from "@/lib/affiliateTiers";
+import { formatTierName } from "@/lib/affiliateTiers";
 import {
   Dialog,
   DialogContent,
@@ -24,19 +24,41 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  CDPage,
+  BrutalistCard,
+  EditorialCard,
+  LabelCaps,
+  Mono,
+  Cascade,
+  CDPrimaryButton,
+} from "@/components/cd/CDPrimitives";
+import { CD, FONT_MONO, formatDollars } from "@/lib/cdDesign";
 
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  none: { label: "Queued", className: "bg-muted text-muted-foreground border-border" },
-  scraping: { label: "Scanning", className: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
-  analyzing: { label: "Analyzing", className: "bg-[#ff876d]/15 text-[#ff876d] border-[#ff876d]/30" },
-  complete: { label: "Ready", className: "bg-green-500/15 text-green-500 border-green-500/30" },
-  failed: { label: "Failed", className: "bg-destructive/15 text-destructive border-destructive/30" },
+const STATUS_BADGE: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  none:      { label: "Queued",    bg: "rgba(255,255,255,0.04)", text: CD.muted,   border: CD.border },
+  scraping:  { label: "Scanning",  bg: "rgba(255,255,255,0.04)", text: CD.ink,     border: CD.borderStrong },
+  analyzing: { label: "Analyzing", bg: "rgba(255,107,74,0.10)",  text: CD.accent,  border: "rgba(255,107,74,0.35)" },
+  complete:  { label: "Ready",     bg: "rgba(74,157,124,0.10)",  text: CD.success, border: "rgba(74,157,124,0.35)" },
+  failed:    { label: "Failed",    bg: "rgba(217,67,67,0.10)",   text: CD.danger,  border: "rgba(217,67,67,0.35)" },
 };
 
 function OnboardingBadge({ status }: { status: string }) {
   const cfg = STATUS_BADGE[status] ?? STATUS_BADGE.none;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${cfg.className}`}>
+    <span
+      className="inline-flex items-center px-2 py-0.5"
+      style={{
+        backgroundColor: cfg.bg,
+        color: cfg.text,
+        border: `1px solid ${cfg.border}`,
+        borderRadius: 4,
+        fontFamily: FONT_MONO,
+        fontSize: "0.625rem",
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+      }}
+    >
       {cfg.label}
     </span>
   );
@@ -93,11 +115,6 @@ const POLICY_STEPS: { title: string; body: string }[] = [
     body: "The first valid qualified submission usually wins ownership. Duplicates and edge cases are reviewed by admin.",
   },
 ];
-
-function formatDollars(cents: number): string {
-  const dollars = (cents || 0) / 100;
-  return `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 function todayIsoDate(): string {
   const d = new Date();
@@ -181,13 +198,8 @@ export function AffiliateDashboard() {
       })
       .finally(() => setLoading(false));
 
-    // Phase 4 widgets — load in parallel, failures are silent (endpoints may
-    // not yet be deployed at the moment we're built by Agent C).
     affiliatesApi.getTier().then(setTier).catch(() => undefined);
-    affiliatesApi
-      .getLeaderboard("month")
-      .then(setLeaderboard)
-      .catch(() => undefined);
+    affiliatesApi.getLeaderboard("month").then(setLeaderboard).catch(() => undefined);
     affiliatesApi
       .listPromoCampaigns()
       .then((r) => setPromoCampaigns(r.campaigns))
@@ -267,7 +279,6 @@ export function AffiliateDashboard() {
     setSubmitLoading(true);
     setSubmitError(null);
     try {
-      // Build optional payload. If nothing optional is set, send only { website }.
       const options: SubmitProspectOptions = {};
       if (showLeadContext && firstTouchStatus) {
         options.firstTouchStatus = firstTouchStatus;
@@ -303,22 +314,32 @@ export function AffiliateDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
+      <CDPage>
+        <div className="flex items-center justify-center" style={{ minHeight: "100dvh" }}>
+          <LabelCaps>Loading dashboard…</LabelCaps>
+        </div>
+      </CDPage>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <p className="text-destructive mb-4">{error}</p>
-          <button onClick={handleLogout} className="text-sm text-muted-foreground hover:text-muted-foreground">
-            Log out
-          </button>
+      <CDPage>
+        <div className="flex items-center justify-center px-6" style={{ minHeight: "100dvh" }}>
+          <div className="max-w-md text-center">
+            <p className="mb-4" style={{ color: CD.danger }}>{error}</p>
+            <button
+              onClick={handleLogout}
+              className="text-sm transition-colors"
+              style={{ color: CD.muted }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = CD.ink)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
+            >
+              Log out
+            </button>
+          </div>
         </div>
-      </div>
+      </CDPage>
     );
   }
 
@@ -326,133 +347,336 @@ export function AffiliateDashboard() {
 
   if (affiliate.status === "pending") {
     const appliedDate = new Date(affiliate.createdAt).toLocaleDateString("en-US", {
-      year: "numeric", month: "long", day: "numeric",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
     return (
-      <div className="min-h-screen bg-background flex flex-col">
-        {/* Minimal header */}
-        <header className="bg-card border-b border-border">
-          <div className="max-w-lg mx-auto px-6 py-4 flex items-center justify-between">
-            <span className="font-bold text-foreground">Coherence Daddy</span>
+      <CDPage>
+        <header
+          className="sticky top-0 z-20 backdrop-blur-md"
+          style={{
+            backgroundColor: "rgba(14,14,16,0.85)",
+            borderBottom: `1px solid ${CD.border}`,
+          }}
+        >
+          <div className="mx-auto flex max-w-lg items-center justify-between px-6 py-4">
+            <span className="font-semibold" style={{ color: CD.ink, letterSpacing: "-0.02em" }}>
+              Coherence Daddy
+            </span>
             <button
               onClick={handleLogout}
-              className="text-sm text-muted-foreground hover:text-muted-foreground"
+              style={{
+                fontFamily: FONT_MONO,
+                fontSize: "0.6875rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: CD.muted,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
             >
               Log out
             </button>
           </div>
         </header>
-        {/* Holding content */}
-        <div className="flex-1 flex items-center justify-center px-6">
-          <div className="text-center max-w-md">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#ff876d]/10 border border-[#ff876d]/30 mb-6">
-              <span className="text-2xl">⏳</span>
-            </div>
-            <h1 className="text-2xl font-bold text-foreground mb-3">Application Under Review</h1>
-            <p className="text-muted-foreground mb-2">
-              Your application is being reviewed by our team. We typically respond within 1–2 business days.
+        <div className="flex flex-1 items-center justify-center px-6 py-20">
+          <div className="max-w-md text-center">
+            <LabelCaps color={CD.accent}>Application Under Review</LabelCaps>
+            <h1
+              className="mt-4 text-3xl font-bold"
+              style={{ letterSpacing: "-0.03em", color: CD.ink }}
+            >
+              We're reviewing your application.
+            </h1>
+            <p className="mt-4 text-base leading-relaxed" style={{ color: CD.muted }}>
+              Our team typically responds within 1–2 business days. We'll email you the
+              moment you're approved.
             </p>
-            <p className="text-xs text-muted-foreground mb-8">Applied on {appliedDate}</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="mt-6" style={{ color: CD.mutedSoft, fontFamily: FONT_MONO, fontSize: "0.75rem" }}>
+              Applied {appliedDate}
+            </p>
+            <p className="mt-6 text-sm" style={{ color: CD.muted }}>
               Questions?{" "}
               <a
                 href="mailto:info@coherencedaddy.com"
-                className="text-[#ff876d] hover:text-[#ff876d] font-medium"
+                style={{ color: CD.accent }}
+                className="font-medium underline-offset-4 hover:underline"
               >
                 info@coherencedaddy.com
               </a>
             </p>
           </div>
         </div>
-      </div>
+      </CDPage>
     );
   }
 
   const liveCampaign = promoCampaigns.find((c) => c.status === "live") ?? null;
-  const tierColor = tierColorFor(tier?.current.name);
   const leaderboardTop5 = (leaderboard?.top ?? []).slice(0, 5);
   const meInTop5 = leaderboard?.me
     ? leaderboardTop5.some((r) => r.rank === leaderboard.me?.rank)
     : false;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
+    <CDPage>
       <AffiliateNav
         active="/dashboard"
-        subtitle="Affiliate Dashboard"
-        title={`Welcome, ${affiliate.name}`}
+        subtitle="Affiliate"
+        title={affiliate.name}
         trailing={
-          <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-[#ff876d]/20 text-[#ff876d] border border-[#ff876d]/30">
+          <span
+            className="hidden sm:inline-flex items-center gap-2 px-2.5 py-1"
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: "0.6875rem",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: CD.accent,
+              border: `1px solid rgba(255,107,74,0.35)`,
+              backgroundColor: "rgba(255,107,74,0.08)",
+              borderRadius: 9999,
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 9999,
+                backgroundColor: CD.accent,
+              }}
+            />
             {(parseFloat(affiliate.commissionRate) * 100).toFixed(0)}% commission
           </span>
         }
       />
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
-        {/* Promo banner — only shown when a campaign is live */}
+      <main className="mx-auto w-full max-w-[1200px] px-6 py-10 space-y-8">
+        {/* Promo banner */}
         {liveCampaign && (
-          <a
-            href="/promo"
-            className="block rounded-xl border border-[#ff876d]/40 bg-[#ff876d]/10 p-4 hover:bg-[#ff876d]/15 transition-colors"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[#ff876d] font-semibold">
-                  Live campaign
-                </p>
-                <p className="text-base font-bold text-foreground">
-                  {liveCampaign.name}
-                  <span className="ml-2 text-sm text-[#ff876d] font-mono">
-                    #{liveCampaign.hashtag.replace(/^#/, "")}
-                  </span>
-                </p>
-                {liveCampaign.giveawayPrize && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Giveaway: {liveCampaign.giveawayPrize}
+          <Cascade index={0}>
+            <a
+              href="/promo"
+              className="block transition-colors"
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                backgroundColor: "rgba(255,107,74,0.06)",
+                border: `1px solid rgba(255,107,74,0.35)`,
+                borderRadius: 12,
+                padding: "16px 20px",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,107,74,0.12)")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,107,74,0.06)")}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <LabelCaps color={CD.accent}>Live campaign</LabelCaps>
+                  <p className="mt-1 text-base font-semibold" style={{ color: CD.ink }}>
+                    {liveCampaign.name}
+                    <Mono style={{ marginLeft: 8, color: CD.accent }}>
+                      #{liveCampaign.hashtag.replace(/^#/, "")}
+                    </Mono>
                   </p>
-                )}
+                  {liveCampaign.giveawayPrize && (
+                    <p className="mt-1 text-xs" style={{ color: CD.muted }}>
+                      Giveaway: {liveCampaign.giveawayPrize}
+                    </p>
+                  )}
+                </div>
+                <span
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: "0.6875rem",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: CD.accent,
+                  }}
+                >
+                  Submit post →
+                </span>
               </div>
-              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-[#ff876d] text-white">
-                Submit post →
-              </span>
-            </div>
-          </a>
+            </a>
+          </Cascade>
         )}
 
-        {/* Phase 4 top widgets — tier + leaderboard preview */}
-        {(tier || leaderboardTop5.length > 0) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Tier card */}
-            {tier && (
-              <section
-                className={`rounded-xl border p-5 space-y-3 ${tierColor.border} ${tierColor.bg}`}
+        {/* Hero brutalist stat block — lifetime, pending, paid */}
+        <Cascade index={1}>
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {/* Lifetime — flagship coral tile with ScanLines */}
+            <BrutalistCard
+              fill={CD.accent}
+              borderColor={CD.ink}
+              scanLineColor={CD.canvas}
+              scanLineOpacity={0.14}
+              style={{ minHeight: 168 }}
+            >
+              <a
+                href="/payouts"
+                className="block px-6 py-6"
+                style={{ color: CD.canvas, textDecoration: "none" }}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${tierColor.badge}`}
-                    >
-                      {formatTierName(tier.current.name)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {(tier.current.commissionRate * 100).toFixed(0)}% commission
-                    </span>
-                  </div>
-                  <a
-                    href="/tiers"
-                    className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]/90"
-                  >
-                    View ladder →
-                  </a>
-                </div>
+                <LabelCaps color={CD.canvas}>Lifetime earnings</LabelCaps>
+                <p
+                  className="mt-3"
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: "clamp(2rem,4vw,2.75rem)",
+                    fontWeight: 600,
+                    letterSpacing: "-0.02em",
+                    fontVariantNumeric: "tabular-nums",
+                    color: CD.canvas,
+                    lineHeight: 1.05,
+                  }}
+                >
+                  {formatDollars(lifetimeCents)}
+                </p>
+                <p
+                  className="mt-3"
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: "0.6875rem",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: CD.canvas,
+                    opacity: 0.7,
+                  }}
+                >
+                  {(parseFloat(affiliate.commissionRate) * 100).toFixed(0)}% of every recurring deal
+                </p>
+              </a>
+            </BrutalistCard>
 
-                {tier.next ? (
-                  <>
-                    <p className="text-xs text-muted-foreground">
-                      Progress to {formatTierName(tier.next.name)}
-                    </p>
-                    <div className="space-y-2">
+            {/* Pending */}
+            <BrutalistCard fill={CD.surface} borderColor={CD.ink} showScanLines={false}>
+              <a
+                href="/earnings?status=pending_activation"
+                className="block px-6 py-6"
+                style={{ color: CD.ink, textDecoration: "none" }}
+              >
+                <LabelCaps color={CD.accent}>Pending</LabelCaps>
+                <p
+                  className="mt-3"
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: "clamp(1.5rem,3vw,2.25rem)",
+                    fontWeight: 600,
+                    letterSpacing: "-0.02em",
+                    fontVariantNumeric: "tabular-nums",
+                    color: CD.accent,
+                    lineHeight: 1.05,
+                  }}
+                >
+                  {formatDollars(pendingCents)}
+                </p>
+                <p className="mt-3 text-xs" style={{ color: CD.muted }}>
+                  Activates when clients hit their first paid month.
+                </p>
+              </a>
+            </BrutalistCard>
+
+            {/* Paid */}
+            <BrutalistCard fill={CD.surface} borderColor={CD.ink} showScanLines={false}>
+              <a
+                href="/earnings?status=paid"
+                className="block px-6 py-6"
+                style={{ color: CD.ink, textDecoration: "none" }}
+              >
+                <LabelCaps color={CD.success}>Paid</LabelCaps>
+                <p
+                  className="mt-3"
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: "clamp(1.5rem,3vw,2.25rem)",
+                    fontWeight: 600,
+                    letterSpacing: "-0.02em",
+                    fontVariantNumeric: "tabular-nums",
+                    color: CD.success,
+                    lineHeight: 1.05,
+                  }}
+                >
+                  {formatDollars(paidCents)}
+                </p>
+                <p className="mt-3 text-xs" style={{ color: CD.muted }}>
+                  Already wired to your account.
+                </p>
+              </a>
+            </BrutalistCard>
+          </section>
+        </Cascade>
+
+        {/* Secondary stat strip */}
+        <Cascade index={2}>
+          <section
+            className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+            style={{
+              borderTop: `1px solid ${CD.border}`,
+              borderBottom: `1px solid ${CD.border}`,
+              padding: "20px 0",
+            }}
+          >
+            <StatCell label="Prospects" value={prospectCount.toString()} accent={false} />
+            <StatCell
+              label="Converted"
+              value={convertedCount.toString()}
+              accent={false}
+              color={CD.success}
+            />
+            <a href="/earnings?status=approved" className="block hover:opacity-90 transition-opacity">
+              <StatCell label="Approved" value={formatDollars(approvedCents)} accent={false} mono />
+            </a>
+            <a href="/earnings?status=scheduled_for_payout" className="block hover:opacity-90 transition-opacity">
+              <StatCell label="Scheduled" value={formatDollars(scheduledCents)} accent={false} mono />
+            </a>
+          </section>
+        </Cascade>
+
+        {/* Phase 4 widgets — tier + leaderboard */}
+        {(tier || leaderboardTop5.length > 0) && (
+          <Cascade index={3}>
+            <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {tier && (
+                <EditorialCard className="p-5" style={{ position: "relative" }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-baseline gap-3">
+                      <span
+                        style={{
+                          fontFamily: FONT_MONO,
+                          fontSize: "0.6875rem",
+                          letterSpacing: "0.14em",
+                          textTransform: "uppercase",
+                          color: CD.accent,
+                          backgroundColor: "rgba(255,107,74,0.08)",
+                          border: `1px solid rgba(255,107,74,0.35)`,
+                          padding: "3px 8px",
+                          borderRadius: 4,
+                        }}
+                      >
+                        {formatTierName(tier.current.name)}
+                      </span>
+                      <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                        {(tier.current.commissionRate * 100).toFixed(0)}% commission
+                      </Mono>
+                    </div>
+                    <a
+                      href="/tiers"
+                      style={{
+                        fontFamily: FONT_MONO,
+                        fontSize: "0.6875rem",
+                        letterSpacing: "0.14em",
+                        textTransform: "uppercase",
+                        color: CD.accent,
+                      }}
+                    >
+                      Ladder →
+                    </a>
+                  </div>
+
+                  {tier.next ? (
+                    <div className="mt-5 space-y-4">
+                      <LabelCaps>Progress to {formatTierName(tier.next.name)}</LabelCaps>
                       {(() => {
                         const lifetimePct = Math.min(
                           1,
@@ -460,22 +684,12 @@ export function AffiliateDashboard() {
                             Math.max(1, tier.next.minLifetimeCents),
                         );
                         return (
-                          <div>
-                            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-                              <span>Lifetime</span>
-                              <span>
-                                ${(tier.progress.lifetimeCents / 100).toLocaleString("en-US")}
-                                {" / "}
-                                ${(tier.next.minLifetimeCents / 100).toLocaleString("en-US")}
-                              </span>
-                            </div>
-                            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                              <div
-                                className="h-full bg-[#ff876d]"
-                                style={{ width: `${(lifetimePct * 100).toFixed(1)}%` }}
-                              />
-                            </div>
-                          </div>
+                          <ProgressRow
+                            label="Lifetime"
+                            current={`$${(tier.progress.lifetimeCents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+                            target={`$${(tier.next.minLifetimeCents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+                            pct={lifetimePct}
+                          />
                         );
                       })()}
                       {(() => {
@@ -485,273 +699,333 @@ export function AffiliateDashboard() {
                             Math.max(1, tier.next.minActivePartners),
                         );
                         return (
-                          <div>
-                            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-                              <span>Active partners</span>
-                              <span>
-                                {tier.progress.activePartners} /{" "}
-                                {tier.next.minActivePartners}
-                              </span>
-                            </div>
-                            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                              <div
-                                className="h-full bg-[#ff876d]"
-                                style={{ width: `${(partnersPct * 100).toFixed(1)}%` }}
-                              />
-                            </div>
-                          </div>
+                          <ProgressRow
+                            label="Active partners"
+                            current={tier.progress.activePartners.toString()}
+                            target={tier.next.minActivePartners.toString()}
+                            pct={partnersPct}
+                          />
                         );
                       })()}
                     </div>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    You're at the top tier. Nice.
-                  </p>
-                )}
+                  ) : (
+                    <p className="mt-5 text-sm" style={{ color: CD.muted }}>
+                      You're at the top tier. Nice.
+                    </p>
+                  )}
 
-                {tier.current.perks.length > 0 && (
-                  <ul className="space-y-1 text-xs text-foreground pt-1">
-                    {tier.current.perks.slice(0, 3).map((perk) => (
-                      <li key={perk} className="flex items-start gap-2">
-                        <span
-                          className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-[#ff876d]"
-                          aria-hidden="true"
-                        />
-                        <span>{perk}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            )}
-
-            {/* Leaderboard preview */}
-            {leaderboardTop5.length > 0 && (
-              <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    This month's top 5
-                  </h3>
-                  <a
-                    href="/leaderboard"
-                    className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]/90"
-                  >
-                    Full board →
-                  </a>
-                </div>
-                <ol className="space-y-1.5">
-                  {leaderboardTop5.map((row) => {
-                    const isMe = leaderboard?.me?.rank === row.rank;
-                    return (
-                      <li
-                        key={`${row.rank}-${row.affiliateId}`}
-                        className={`flex items-center justify-between gap-2 text-sm px-2 py-1 rounded-md ${
-                          isMe ? "bg-[#ff876d]/10" : ""
-                        }`}
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs font-semibold text-muted-foreground w-6">
-                            #{row.rank}
-                          </span>
+                  {tier.current.perks.length > 0 && (
+                    <ul className="mt-5 space-y-1.5 text-sm" style={{ color: CD.ink }}>
+                      {tier.current.perks.slice(0, 3).map((perk) => (
+                        <li key={perk} className="flex items-start gap-2">
                           <span
-                            className={`truncate ${
-                              isMe ? "text-[#ff876d] font-semibold" : "text-foreground"
-                            }`}
-                          >
-                            {row.name}
-                            {isMe && (
-                              <span className="ml-2 text-[10px] uppercase tracking-wide">
-                                You
-                              </span>
-                            )}
+                            aria-hidden="true"
+                            style={{
+                              marginTop: 8,
+                              width: 4,
+                              height: 4,
+                              borderRadius: 9999,
+                              backgroundColor: CD.accent,
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span>{perk}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </EditorialCard>
+              )}
+
+              {leaderboardTop5.length > 0 && (
+                <EditorialCard className="p-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <LabelCaps>Top 5 this month</LabelCaps>
+                    <a
+                      href="/leaderboard"
+                      style={{
+                        fontFamily: FONT_MONO,
+                        fontSize: "0.6875rem",
+                        letterSpacing: "0.14em",
+                        textTransform: "uppercase",
+                        color: CD.accent,
+                      }}
+                    >
+                      Full board →
+                    </a>
+                  </div>
+                  <ol className="mt-4 space-y-1">
+                    {leaderboardTop5.map((row) => {
+                      const isMe = leaderboard?.me?.rank === row.rank;
+                      return (
+                        <li
+                          key={`${row.rank}-${row.affiliateId}`}
+                          className="flex items-center justify-between gap-2 px-2 py-1.5"
+                          style={{
+                            backgroundColor: isMe ? "rgba(255,107,74,0.08)" : "transparent",
+                            border: isMe ? `1px solid rgba(255,107,74,0.25)` : "1px solid transparent",
+                            borderRadius: 6,
+                          }}
+                        >
+                          <span className="flex min-w-0 items-baseline gap-3">
+                            <Mono style={{ color: CD.muted, fontSize: "0.75rem", width: 28 }}>
+                              #{row.rank}
+                            </Mono>
+                            <span
+                              className="truncate text-sm"
+                              style={{ color: isMe ? CD.accent : CD.ink, fontWeight: isMe ? 600 : 500 }}
+                            >
+                              {row.name}
+                              {isMe && (
+                                <span
+                                  className="ml-2"
+                                  style={{
+                                    fontFamily: FONT_MONO,
+                                    fontSize: "0.625rem",
+                                    letterSpacing: "0.14em",
+                                    textTransform: "uppercase",
+                                    color: CD.accent,
+                                  }}
+                                >
+                                  You
+                                </span>
+                              )}
+                            </span>
                           </span>
-                        </span>
-                        <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                          ${(row.score / 100).toLocaleString("en-US", {
-                            maximumFractionDigits: 0,
-                          })}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ol>
-                {leaderboard?.me && !meInTop5 && (
-                  <p className="text-xs text-muted-foreground pt-1 border-t border-border">
-                    You're ranked{" "}
-                    <span className="font-semibold text-[#ff876d]">
-                      #{leaderboard.me.rank}
-                    </span>
-                    .
-                  </p>
-                )}
-              </section>
-            )}
-          </div>
+                          <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                            ${(row.score / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          </Mono>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {leaderboard?.me && !meInTop5 && (
+                    <p
+                      className="mt-3 pt-3 text-xs"
+                      style={{ color: CD.muted, borderTop: `1px solid ${CD.border}` }}
+                    >
+                      You're ranked{" "}
+                      <span style={{ color: CD.accent, fontWeight: 600 }}>
+                        #{leaderboard.me.rank}
+                      </span>
+                      .
+                    </p>
+                  )}
+                </EditorialCard>
+              )}
+            </section>
+          </Cascade>
         )}
 
-        {/* Program rules replay — visible once the affiliate has accepted */}
+        {/* Program rules replay */}
         {affiliate.policyAcceptedAt && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card/50 px-4 py-2.5">
-            <p className="text-xs text-muted-foreground">
-              Program rules accepted {new Date(affiliate.policyAcceptedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
+          <div
+            className="flex items-center justify-between gap-3 px-4 py-2.5"
+            style={{
+              backgroundColor: "rgba(255,255,255,0.02)",
+              border: `1px solid ${CD.border}`,
+              borderRadius: 10,
+            }}
+          >
+            <p className="text-xs" style={{ color: CD.muted }}>
+              Program rules accepted{" "}
+              {new Date(affiliate.policyAcceptedAt).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+              .
             </p>
             <button
               type="button"
               onClick={openPolicyReplay}
-              className="text-xs font-medium text-[#FF6B4A] hover:text-[#FF6B4A]/80 whitespace-nowrap"
+              style={{
+                fontFamily: FONT_MONO,
+                fontSize: "0.6875rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: CD.accent,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
             >
-              Review program rules →
+              Review rules →
             </button>
           </div>
         )}
 
-        {/* Action Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <button
-            onClick={() => document.getElementById("prospects")?.scrollIntoView({ behavior: "smooth" })}
-            className="rounded-xl border border-border bg-card p-6 text-left hover:border-[#ff876d]/40 hover:shadow-sm transition-all"
-          >
-            <p className="text-lg font-bold text-foreground">Go to Dashboard</p>
-            <p className="text-sm text-muted-foreground mt-1">View your submitted prospects and their status.</p>
-          </button>
-          <button
-            onClick={handleOpenNewClient}
-            className="rounded-xl border border-[#ff876d]/60 bg-[#ff876d]/10 p-6 text-left hover:bg-[#ff876d]/20 hover:shadow-sm transition-all"
-          >
-            <p className="text-lg font-bold text-[#ff876d]">New Client</p>
-            <p className="text-sm text-[#ff876d] mt-1">Submit a new business lead to earn commission.</p>
-          </button>
-        </div>
-
-        {/* Lead stats */}
-        <div className="flex flex-wrap gap-6 text-sm">
-          <div>
-            <span className="font-bold text-2xl text-foreground">{prospectCount}</span>
-            <span className="text-muted-foreground ml-2">Prospects</span>
-          </div>
-          <div>
-            <span className="font-bold text-2xl text-green-600">{convertedCount}</span>
-            <span className="text-muted-foreground ml-2">Converted</span>
-          </div>
-        </div>
-
-        {/* Earnings buckets */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-foreground">Earnings</h2>
-            <a
-              href="/earnings"
-              className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]/90"
+        {/* Primary action — submit a lead */}
+        <Cascade index={4}>
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <button
+              onClick={handleOpenNewClient}
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                textAlign: "left",
+                padding: "24px 24px",
+                background: CD.surface,
+                border: `2px solid ${CD.ink}`,
+                borderRadius: 0,
+                cursor: "pointer",
+                color: CD.ink,
+                fontFamily: "inherit",
+                transition: "transform 180ms",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-1px)")}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
             >
-              View all →
-            </a>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <a
-              href="/earnings?status=pending_activation"
-              className="rounded-xl border border-border bg-card p-4 hover:border-[#ff876d]/40 transition-colors"
+              <LabelCaps color={CD.accent}>+ New client</LabelCaps>
+              <p className="mt-2 text-lg font-semibold" style={{ color: CD.ink }}>
+                Submit a new business lead
+              </p>
+              <p className="mt-1 text-sm" style={{ color: CD.muted }}>
+                Drop a website. We scrape, analyze, and start the intel profile in 30–60 seconds.
+              </p>
+            </button>
+            <button
+              onClick={() =>
+                document.getElementById("prospects")?.scrollIntoView({ behavior: "smooth" })
+              }
+              className="text-left"
+              style={{
+                padding: "24px 24px",
+                background: "rgba(255,255,255,0.025)",
+                border: `1px solid ${CD.border}`,
+                borderRadius: 16,
+                cursor: "pointer",
+                color: CD.ink,
+                fontFamily: "inherit",
+                transition: "background-color 180ms, border-color 180ms",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)";
+                e.currentTarget.style.borderColor = CD.borderStrong;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.025)";
+                e.currentTarget.style.borderColor = CD.border;
+              }}
             >
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pending</p>
-              <p className="mt-1 text-xl font-bold text-[#ff876d]">{formatDollars(pendingCents)}</p>
-            </a>
-            <a
-              href="/earnings?status=approved"
-              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Approved</p>
-              <p className="mt-1 text-xl font-bold text-foreground">{formatDollars(approvedCents)}</p>
-            </a>
-            <a
-              href="/earnings?status=scheduled_for_payout"
-              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Scheduled</p>
-              <p className="mt-1 text-xl font-bold text-foreground">{formatDollars(scheduledCents)}</p>
-            </a>
-            <a
-              href="/earnings?status=paid"
-              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Paid</p>
-              <p className="mt-1 text-xl font-bold text-green-500">{formatDollars(paidCents)}</p>
-            </a>
-            <a
-              href="/payouts"
-              className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Lifetime</p>
-              <p className="mt-1 text-xl font-bold text-foreground">{formatDollars(lifetimeCents)}</p>
-            </a>
-          </div>
-        </section>
+              <LabelCaps>Your pipeline</LabelCaps>
+              <p className="mt-2 text-lg font-semibold" style={{ color: CD.ink }}>
+                View submitted prospects
+              </p>
+              <p className="mt-1 text-sm" style={{ color: CD.muted }}>
+                Track scraping, analysis, and conversion status for every lead you've sent.
+              </p>
+            </button>
+          </section>
+        </Cascade>
 
         {/* Prospects List */}
-        <section id="prospects" className="space-y-3">
-          <h2 className="text-base font-semibold text-foreground">Your Prospects</h2>
+        <section id="prospects" className="space-y-4 pt-2">
+          <div className="flex items-end justify-between gap-3">
+            <LabelCaps>Your prospects</LabelCaps>
+            <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+              {prospectCount} total
+            </Mono>
+          </div>
           {prospects.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center">
-              <p className="text-muted-foreground text-sm">No prospects yet.</p>
+            <EditorialCard className="py-12 text-center" style={{ borderStyle: "dashed" }}>
+              <p className="text-sm" style={{ color: CD.muted }}>No prospects yet.</p>
               <button
                 onClick={handleOpenNewClient}
-                className="mt-3 text-sm text-[#ff876d] hover:text-[#ff876d] font-medium"
+                className="mt-3 text-sm font-medium underline-offset-4 hover:underline"
+                style={{ color: CD.accent, background: "transparent", border: "none", cursor: "pointer" }}
               >
-                Submit your first client
+                Submit your first client →
               </button>
-            </div>
+            </EditorialCard>
           ) : (
-            <div className="bg-card rounded-xl border border-border overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Business</th>
-                    <th className="px-4 py-3 font-medium hidden sm:table-cell">Status</th>
-                    <th className="px-4 py-3 font-medium hidden md:table-cell">Submitted</th>
-                    <th className="px-4 py-3 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {prospects.map((p) => (
-                    <tr key={p.id} className="border-b last:border-0 hover:bg-background transition-colors">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-foreground">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">{p.industry}</p>
-                      </td>
-                      <td className="px-4 py-3 hidden sm:table-cell">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <OnboardingBadge status={p.onboardingStatus} />
-                          {p.isPaying && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border bg-green-500/15 text-green-500 border-green-500/30">
-                              Converted
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground hidden md:table-cell">
-                        {new Date(p.createdAt).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <a
-                          href={`/prospects/${p.slug}`}
-                          className="text-xs font-medium text-[#ff876d] hover:text-[#ff876d]"
-                        >
-                          View
-                        </a>
-                      </td>
+            <EditorialCard style={{ overflow: "hidden" }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${CD.border}`, textAlign: "left" }}>
+                      <th className="px-4 py-3">
+                        <LabelCaps>Business</LabelCaps>
+                      </th>
+                      <th className="px-4 py-3 hidden sm:table-cell">
+                        <LabelCaps>Status</LabelCaps>
+                      </th>
+                      <th className="px-4 py-3 hidden md:table-cell">
+                        <LabelCaps>Submitted</LabelCaps>
+                      </th>
+                      <th className="px-4 py-3 text-right">
+                        <LabelCaps>Action</LabelCaps>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {prospects.map((p) => (
+                      <tr
+                        key={p.id}
+                        className="transition-colors"
+                        style={{ borderBottom: `1px solid ${CD.border}` }}
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-medium" style={{ color: CD.ink }}>{p.name}</p>
+                          <p className="text-xs" style={{ color: CD.muted }}>{p.industry}</p>
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <OnboardingBadge status={p.onboardingStatus} />
+                            {p.isPaying && (
+                              <span
+                                style={{
+                                  fontFamily: FONT_MONO,
+                                  fontSize: "0.625rem",
+                                  letterSpacing: "0.12em",
+                                  textTransform: "uppercase",
+                                  color: CD.success,
+                                  backgroundColor: "rgba(74,157,124,0.10)",
+                                  border: `1px solid rgba(74,157,124,0.35)`,
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                }}
+                              >
+                                Converted
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                            {new Date(p.createdAt).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </Mono>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <a
+                            href={`/prospects/${p.slug}`}
+                            style={{
+                              fontFamily: FONT_MONO,
+                              fontSize: "0.6875rem",
+                              letterSpacing: "0.14em",
+                              textTransform: "uppercase",
+                              color: CD.accent,
+                            }}
+                          >
+                            View →
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </EditorialCard>
           )}
         </section>
       </main>
 
-      {/* New Client Modal */}
+      {/* New Client Modal — preserved logic, light CD reskin */}
       <Dialog
         open={showModal}
         onOpenChange={(open) => {
@@ -766,7 +1040,9 @@ export function AffiliateDashboard() {
           </DialogHeader>
           <form onSubmit={handleSubmitProspect} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Business Website</label>
+              <label className="mb-1.5 block" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                Business website
+              </label>
               <input
                 type="url"
                 required
@@ -774,104 +1050,139 @@ export function AffiliateDashboard() {
                 onChange={(e) => setProspectUrl(e.target.value)}
                 placeholder="https://clientwebsite.com"
                 disabled={submitLoading}
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none disabled:opacity-60"
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.03)",
+                  borderColor: CD.border,
+                  color: CD.ink,
+                }}
               />
               {submitLoading && (
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  Analyzing website... this can take 30–60 seconds.
+                <p className="mt-1.5 text-xs" style={{ color: CD.muted }}>
+                  Analyzing website… this can take 30–60 seconds.
                 </p>
               )}
               {submitError && (
-                <p className="text-xs text-destructive mt-1.5">{submitError}</p>
+                <p className="mt-1.5 text-xs" style={{ color: CD.danger }}>{submitError}</p>
               )}
             </div>
 
             {/* Optional: lead context */}
-            <div className="rounded-lg border border-border">
+            <div style={{ border: `1px solid ${CD.border}`, borderRadius: 10 }}>
               <button
                 type="button"
                 onClick={() => setShowLeadContext((v) => !v)}
                 disabled={submitLoading}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+                className="flex w-full items-center justify-between px-3 py-2 disabled:opacity-60"
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: "0.6875rem",
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: CD.muted,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                }}
                 aria-expanded={showLeadContext}
               >
                 <span>Tell us about this lead (optional)</span>
-                <span className="text-muted-foreground" aria-hidden="true">
-                  {showLeadContext ? "−" : "+"}
-                </span>
+                <span aria-hidden="true">{showLeadContext ? "−" : "+"}</span>
               </button>
               {showLeadContext && (
-                <div className="px-3 pb-3 pt-1 space-y-4 border-t border-border">
-                  {/* Already spoken with owner? */}
+                <div
+                  className="space-y-4 px-3 pb-3 pt-1"
+                  style={{ borderTop: `1px solid ${CD.border}` }}
+                >
                   <div>
-                    <p className="text-[11px] font-medium text-muted-foreground mb-1.5">
+                    <p className="mb-1.5" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
                       Have you already spoken with the owner?
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {(["yes", "no"] as const).map((opt) => (
-                        <label
-                          key={opt}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs cursor-pointer transition-colors ${
-                            firstTouchStatus === opt
-                              ? "bg-[#ff876d]/10 text-[#ff876d] border-[#ff876d]/40"
-                              : "bg-card text-foreground border-border hover:border-border"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="firstTouchStatus"
-                            value={opt}
-                            checked={firstTouchStatus === opt}
-                            onChange={() => setFirstTouchStatus(opt)}
-                            disabled={submitLoading}
-                            className="sr-only"
-                          />
-                          <span className="font-medium capitalize">{opt}</span>
-                        </label>
-                      ))}
+                      {(["yes", "no"] as const).map((opt) => {
+                        const active = firstTouchStatus === opt;
+                        return (
+                          <label
+                            key={opt}
+                            className="flex cursor-pointer items-center gap-1.5 px-3 py-1 text-xs"
+                            style={{
+                              backgroundColor: active ? "rgba(255,107,74,0.10)" : "transparent",
+                              color: active ? CD.accent : CD.ink,
+                              border: `1px solid ${active ? "rgba(255,107,74,0.40)" : CD.border}`,
+                              borderRadius: 9999,
+                              fontWeight: 500,
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="firstTouchStatus"
+                              value={opt}
+                              checked={active}
+                              onChange={() => setFirstTouchStatus(opt)}
+                              disabled={submitLoading}
+                              className="sr-only"
+                            />
+                            {opt}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {firstTouchStatus === "yes" && (
-                    <div className="space-y-3 pl-5 border-l-2 border-border">
-                      {/* Warmth */}
+                    <div className="space-y-3 pl-5" style={{ borderLeft: `2px solid ${CD.border}` }}>
                       <div>
-                        <p className="text-[11px] font-medium text-muted-foreground mb-1.5">Relationship</p>
+                        <p className="mb-1.5" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                          Relationship
+                        </p>
                         <div className="flex flex-wrap gap-2">
-                          {WARMTH_OPTIONS.map((opt) => (
-                            <label
-                              key={opt.value}
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] cursor-pointer transition-colors ${
-                                warmth === opt.value
-                                  ? "bg-[#ff876d]/10 text-[#ff876d] border-[#ff876d]/40"
-                                  : "bg-card text-muted-foreground border-border hover:border-border"
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name="warmth"
-                                value={opt.value}
-                                checked={warmth === opt.value}
-                                onChange={() => setWarmth(opt.value)}
-                                disabled={submitLoading}
-                                className="sr-only"
-                              />
-                              <span className="font-medium">{opt.label}</span>
-                              <span className="text-muted-foreground">· {opt.hint}</span>
-                            </label>
-                          ))}
+                          {WARMTH_OPTIONS.map((opt) => {
+                            const active = warmth === opt.value;
+                            return (
+                              <label
+                                key={opt.value}
+                                className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1 text-[11px]"
+                                style={{
+                                  backgroundColor: active ? "rgba(255,107,74,0.10)" : "transparent",
+                                  color: active ? CD.accent : CD.muted,
+                                  border: `1px solid ${active ? "rgba(255,107,74,0.40)" : CD.border}`,
+                                  borderRadius: 9999,
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name="warmth"
+                                  value={opt.value}
+                                  checked={active}
+                                  onChange={() => setWarmth(opt.value)}
+                                  disabled={submitLoading}
+                                  className="sr-only"
+                                />
+                                <span className="font-medium">{opt.label}</span>
+                                <span style={{ color: CD.muted }}>· {opt.hint}</span>
+                              </label>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      {/* Touch type + date */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="block text-[11px] font-medium text-muted-foreground mb-1">How you touched base</label>
+                          <label className="mb-1 block" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                            How you touched base
+                          </label>
                           <select
                             value={touchType}
                             onChange={(e) => setTouchType(e.target.value as FirstTouchType | "")}
                             disabled={submitLoading}
-                            className="w-full rounded-md border border-border px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                            className="w-full px-2.5 py-1.5 text-xs focus:outline-none disabled:opacity-60"
+                            style={{
+                              backgroundColor: "rgba(255,255,255,0.03)",
+                              border: `1px solid ${CD.border}`,
+                              color: CD.ink,
+                              borderRadius: 6,
+                            }}
                           >
                             <option value="">Select…</option>
                             {TOUCH_TYPE_OPTIONS.map((opt) => (
@@ -880,21 +1191,30 @@ export function AffiliateDashboard() {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-medium text-muted-foreground mb-1">When</label>
+                          <label className="mb-1 block" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                            When
+                          </label>
                           <input
                             type="date"
                             max={todayIsoDate()}
                             value={touchDate}
                             onChange={(e) => setTouchDate(e.target.value)}
                             disabled={submitLoading}
-                            className="w-full rounded-md border border-border px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60"
+                            className="w-full px-2.5 py-1.5 text-xs focus:outline-none disabled:opacity-60"
+                            style={{
+                              backgroundColor: "rgba(255,255,255,0.03)",
+                              border: `1px solid ${CD.border}`,
+                              color: CD.ink,
+                              borderRadius: 6,
+                            }}
                           />
                         </div>
                       </div>
 
-                      {/* Notes */}
                       <div>
-                        <label className="block text-[11px] font-medium text-muted-foreground mb-1">Short note (optional)</label>
+                        <label className="mb-1 block" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                          Short note (optional)
+                        </label>
                         <textarea
                           value={touchNotes}
                           onChange={(e) => setTouchNotes(e.target.value.slice(0, 500))}
@@ -902,50 +1222,80 @@ export function AffiliateDashboard() {
                           rows={2}
                           maxLength={500}
                           placeholder="Anything useful about the conversation…"
-                          className="w-full rounded-md border border-border px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-[#ff876d] disabled:opacity-60 resize-none"
+                          className="w-full resize-none px-2.5 py-1.5 text-xs focus:outline-none disabled:opacity-60"
+                          style={{
+                            backgroundColor: "rgba(255,255,255,0.03)",
+                            border: `1px solid ${CD.border}`,
+                            color: CD.ink,
+                            borderRadius: 6,
+                          }}
                         />
-                        <p className="text-[10px] text-muted-foreground mt-0.5 text-right">{touchNotes.length}/500</p>
+                        <p className="mt-0.5 text-right" style={{ color: CD.muted, fontFamily: FONT_MONO, fontSize: "0.625rem" }}>
+                          {touchNotes.length}/500
+                        </p>
                       </div>
                     </div>
                   )}
 
-                  {/* Close preference */}
                   <div>
-                    <p className="text-[11px] font-medium text-muted-foreground mb-1.5">Who closes?</p>
+                    <p className="mb-1.5" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                      Who closes?
+                    </p>
                     <div className="space-y-1.5">
-                      {CLOSE_PATH_OPTIONS.map((opt) => (
-                        <label
-                          key={opt.value}
-                          className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs cursor-pointer transition-colors ${
-                            closePref === opt.value
-                              ? "bg-[#ff876d]/10 text-[#ff876d] border-[#ff876d]/40"
-                              : "bg-card text-foreground border-border hover:border-border"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="closePreference"
-                            value={opt.value}
-                            checked={closePref === opt.value}
-                            onChange={() => setClosePref(opt.value)}
-                            disabled={submitLoading}
-                            className="mt-0.5 h-3.5 w-3.5 border-border text-[#ff876d] focus:ring-[#ff876d]"
-                          />
-                          <span className="flex-1">
-                            <span className="flex items-center gap-1.5">
-                              <span>{opt.label}</span>
-                              {opt.recommended && (
-                                <span className="inline-flex items-center px-1.5 py-0 rounded-full text-[9px] font-semibold uppercase tracking-wide bg-[#ff876d]/20 text-[#ff876d] border border-[#ff876d]/40">
-                                  Recommended
+                      {CLOSE_PATH_OPTIONS.map((opt) => {
+                        const active = closePref === opt.value;
+                        return (
+                          <label
+                            key={opt.value}
+                            className="flex cursor-pointer items-start gap-2 px-2.5 py-1.5 text-xs"
+                            style={{
+                              backgroundColor: active ? "rgba(255,107,74,0.10)" : "transparent",
+                              color: active ? CD.accent : CD.ink,
+                              border: `1px solid ${active ? "rgba(255,107,74,0.40)" : CD.border}`,
+                              borderRadius: 6,
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="closePreference"
+                              value={opt.value}
+                              checked={active}
+                              onChange={() => setClosePref(opt.value)}
+                              disabled={submitLoading}
+                              className="mt-0.5 h-3.5 w-3.5"
+                              style={{ accentColor: CD.accent }}
+                            />
+                            <span className="flex-1">
+                              <span className="flex items-center gap-1.5">
+                                <span>{opt.label}</span>
+                                {opt.recommended && (
+                                  <span
+                                    style={{
+                                      fontFamily: FONT_MONO,
+                                      fontSize: "0.5625rem",
+                                      letterSpacing: "0.14em",
+                                      textTransform: "uppercase",
+                                      color: CD.accent,
+                                      backgroundColor: "rgba(255,107,74,0.12)",
+                                      border: `1px solid rgba(255,107,74,0.40)`,
+                                      padding: "1px 6px",
+                                      borderRadius: 9999,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    Recommended
+                                  </span>
+                                )}
+                              </span>
+                              {opt.helper && (
+                                <span className="mt-0.5 block" style={{ color: CD.accent, opacity: 0.85, fontSize: "0.625rem" }}>
+                                  {opt.helper}
                                 </span>
                               )}
                             </span>
-                            {opt.helper && (
-                              <span className="block text-[10px] text-[#ff876d] mt-0.5">{opt.helper}</span>
-                            )}
-                          </span>
-                        </label>
-                      ))}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -957,23 +1307,20 @@ export function AffiliateDashboard() {
                 type="button"
                 onClick={() => { setShowModal(false); resetProspectForm(); }}
                 disabled={submitLoading}
-                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-60"
+                className="px-4 py-2 text-sm disabled:opacity-60"
+                style={{ color: CD.muted, background: "transparent", border: "none", cursor: "pointer" }}
               >
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={submitLoading || !prospectUrl.trim()}
-                className="px-5 py-2 rounded-lg bg-[#ff876d] hover:bg-[#ff876d]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
-              >
-                {submitLoading ? "Analyzing website..." : "Lock it In"}
-              </button>
+              <CDPrimaryButton type="submit" disabled={submitLoading || !prospectUrl.trim()}>
+                {submitLoading ? "Analyzing website…" : "Lock it in"}
+              </CDPrimaryButton>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Policy Acceptance Modal — blocking on first view, dismissible on replay */}
+      {/* Policy Acceptance Modal — preserved logic */}
       <Dialog
         open={showPolicyModal}
         onOpenChange={(open) => {
@@ -997,32 +1344,32 @@ export function AffiliateDashboard() {
             </DialogTitle>
           </DialogHeader>
 
-          {/* Progress bars — current step fills over 10 seconds */}
-          <div className="flex items-center gap-1.5 mt-1">
+          <div className="mt-1 flex items-center gap-1.5">
             {POLICY_STEPS.map((_, i) => {
               const fill = i < policyStep ? 1 : i === policyStep ? policyProgress : 0;
               return (
                 <span
                   key={i}
-                  className="h-1 flex-1 rounded-full bg-muted overflow-hidden"
+                  className="h-1 flex-1 overflow-hidden"
+                  style={{ backgroundColor: CD.border, borderRadius: 9999 }}
                 >
                   <span
-                    className="block h-full bg-[#FF6B4A] origin-left"
-                    style={{ transform: `scaleX(${fill})` }}
+                    className="block h-full origin-left"
+                    style={{ backgroundColor: CD.accent, transform: `scaleX(${fill})` }}
                   />
                 </span>
               );
             })}
           </div>
 
-          <div className="min-h-[200px] space-y-4 text-base text-foreground">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <div className="min-h-[200px] space-y-4 text-base">
+            <LabelCaps>
               Rule {policyStep + 1} of {POLICY_STEPS.length}
-            </p>
-            <h3 className="text-xl font-semibold text-foreground">
+            </LabelCaps>
+            <h3 className="text-xl font-semibold" style={{ color: CD.ink }}>
               {POLICY_STEPS[policyStep].title}
             </h3>
-            <p className="leading-relaxed text-muted-foreground">
+            <p className="leading-relaxed" style={{ color: CD.muted }}>
               {POLICY_STEPS[policyStep].body}
             </p>
 
@@ -1032,7 +1379,13 @@ export function AffiliateDashboard() {
                   href="/program-rules"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-[#FF6B4A] hover:text-[#FF6B4A]/90 font-medium"
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: "0.6875rem",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: CD.accent,
+                  }}
                 >
                   Read full program rules →
                 </a>
@@ -1040,18 +1393,19 @@ export function AffiliateDashboard() {
             )}
 
             {policyError && (
-              <p className="text-xs text-destructive">{policyError}</p>
+              <p className="text-xs" style={{ color: CD.danger }}>{policyError}</p>
             )}
           </div>
 
-          <DialogFooter className="sm:justify-between items-center">
+          <DialogFooter className="items-center sm:justify-between">
             <div className="flex items-center gap-4">
               {!policyReplay && (
                 <button
                   type="button"
                   onClick={handleLogout}
                   disabled={policyLoading}
-                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                  className="text-xs disabled:opacity-60"
+                  style={{ color: CD.muted, background: "transparent", border: "none", cursor: "pointer" }}
                 >
                   Log out
                 </button>
@@ -1061,7 +1415,8 @@ export function AffiliateDashboard() {
                   type="button"
                   onClick={() => setPolicyStep((s) => Math.max(0, s - 1))}
                   disabled={policyLoading}
-                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                  className="text-xs disabled:opacity-60"
+                  style={{ color: CD.muted, background: "transparent", border: "none", cursor: "pointer" }}
                 >
                   ← Back
                 </button>
@@ -1072,7 +1427,7 @@ export function AffiliateDashboard() {
               const secondsLeft = Math.ceil((1 - policyProgress) * 10);
               const isFinal = policyStep === POLICY_STEPS.length - 1;
               return (
-                <button
+                <CDPrimaryButton
                   type="button"
                   onClick={() => {
                     if (!canProceed) return;
@@ -1083,23 +1438,99 @@ export function AffiliateDashboard() {
                     }
                   }}
                   disabled={policyLoading || !canProceed}
-                  className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors min-w-[10rem]"
+                  style={{ minWidth: "10rem", opacity: canProceed ? 1 : 0.5 }}
                 >
                   {!canProceed
                     ? `Keep reading… ${secondsLeft}s`
                     : isFinal
                     ? policyLoading
-                      ? "Saving..."
+                      ? "Saving…"
                       : policyReplay
                       ? "Done"
                       : "I understand and agree"
                     : "Next →"}
-                </button>
+                </CDPrimaryButton>
               );
             })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </CDPage>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StatCell({
+  label,
+  value,
+  accent,
+  color,
+  mono,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  color?: string;
+  mono?: boolean;
+}) {
+  const v = color ?? (accent ? CD.accent : CD.ink);
+  return (
+    <div>
+      <LabelCaps>{label}</LabelCaps>
+      <p
+        className="mt-1.5"
+        style={{
+          fontFamily: mono ? FONT_MONO : "inherit",
+          fontSize: "1.5rem",
+          fontWeight: 600,
+          letterSpacing: "-0.01em",
+          fontVariantNumeric: "tabular-nums",
+          color: v,
+          lineHeight: 1.1,
+        }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ProgressRow({
+  label,
+  current,
+  target,
+  pct,
+}: {
+  label: string;
+  current: string;
+  target: string;
+  pct: number;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-xs" style={{ color: CD.muted }}>{label}</span>
+        <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+          {current} / {target}
+        </Mono>
+      </div>
+      <div
+        className="h-1.5 w-full overflow-hidden"
+        style={{ backgroundColor: CD.border, borderRadius: 9999 }}
+      >
+        <div
+          className="h-full"
+          style={{
+            width: `${(pct * 100).toFixed(1)}%`,
+            backgroundColor: CD.accent,
+            borderRadius: 9999,
+            transition: "width 480ms cubic-bezier(0.22,0.61,0.36,1)",
+          }}
+        />
+      </div>
     </div>
   );
 }

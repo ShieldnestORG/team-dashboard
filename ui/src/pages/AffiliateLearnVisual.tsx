@@ -1,6 +1,6 @@
 import type { Visual } from "@/content/affiliate-learn";
 
-const ACCENT = "#ff876d";
+const ACCENT = "#FF6B4A";
 const INK = "rgba(255,255,255,0.92)";
 const MUTED = "rgba(255,255,255,0.55)";
 const SURFACE = "rgba(255,255,255,0.04)";
