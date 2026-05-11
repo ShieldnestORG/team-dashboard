@@ -55,6 +55,7 @@ type StripeProduct = {
   id: string;
   name: string;
   active: boolean;
+  description?: string | null;
 };
 
 function envSecret(): string {
@@ -129,6 +130,25 @@ async function findExistingProductByName(
   return out.data.find((p) => p.active && p.name === PRODUCT_NAME) ?? null;
 }
 
+async function getProduct(
+  secret: string,
+  productId: string,
+): Promise<StripeProduct> {
+  return stripeFetch<StripeProduct>(secret, "GET", `/products/${productId}`);
+}
+
+async function syncProductDescription(
+  secret: string,
+  productId: string,
+  currentDescription: string | null | undefined,
+): Promise<boolean> {
+  if ((currentDescription ?? "") === PRODUCT_DESCRIPTION) return false;
+  await stripeFetch<StripeProduct>(secret, "POST", `/products/${productId}`, {
+    description: PRODUCT_DESCRIPTION,
+  });
+  return true;
+}
+
 async function createProduct(secret: string): Promise<StripeProduct> {
   return stripeFetch<StripeProduct>(secret, "POST", "/products", {
     name: PRODUCT_NAME,
@@ -162,6 +182,17 @@ async function main() {
   if (existing) {
     const productId =
       typeof existing.product === "string" ? existing.product : existing.product.id;
+
+    // Sync description on the existing product. The price + lookup_key
+    // never change once set; the product description CAN drift over time
+    // (e.g. engine count, copy edits). Idempotent: no-op if already in sync.
+    const product = await getProduct(secret, productId);
+    const descriptionUpdated = await syncProductDescription(
+      secret,
+      productId,
+      product.description,
+    );
+
     process.stdout.write(
       JSON.stringify(
         {
@@ -172,6 +203,8 @@ async function main() {
           currency: existing.currency,
           interval: existing.recurring?.interval ?? null,
           created: false,
+          descriptionUpdated,
+          description: PRODUCT_DESCRIPTION,
         },
         null,
         2,
