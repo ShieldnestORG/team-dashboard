@@ -306,7 +306,7 @@ async function login(app: ReturnType<typeof buildApp>, state: State, email: stri
     consumedAt: null,
     createdAt: new Date(),
   });
-  const authRes = await request(app).get(`/api/portal/auth?token=tok-${email}`);
+  const authRes = await request(app).post(`/api/portal/auth?token=tok-${email}`);
   const setCookieHeader = authRes.headers["set-cookie"];
   const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
   const sessionCookie = cookies

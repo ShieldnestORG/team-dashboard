@@ -87,6 +87,82 @@ interface AuthedRequest extends Request {
   customerAccountId: string;
 }
 
+function htmlEscape(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => {
+    switch (c) {
+      case "&": return "&amp;";
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case '"': return "&quot;";
+      case "'": return "&#39;";
+      default: return c;
+    }
+  });
+}
+
+function renderAuthInterstitial(token: string): string {
+  // Token goes into the form's action URL, never into HTML body text. It's
+  // url-encoded and the action attribute is double-quoted, so the html-
+  // escaped value is safe. Form posts to the same path → POST consumes.
+  const safeToken = htmlEscape(encodeURIComponent(token));
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Sign in — Coherence Daddy</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: #0a0a0a;
+    color: #f5f5f5;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  main { max-width: 420px; text-align: center; }
+  .brand {
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #f97316;
+    margin-bottom: 24px;
+  }
+  h1 { font-size: 24px; margin: 0 0 12px; font-weight: 600; }
+  p { color: #a1a1aa; margin: 0 0 28px; }
+  button {
+    appearance: none;
+    border: 0;
+    background: #f97316;
+    color: #0a0a0a;
+    font: inherit;
+    font-weight: 600;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover { background: #fb923c; }
+  .fineprint { margin-top: 24px; font-size: 12px; color: #71717a; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">Coherence Daddy</div>
+  <h1>Sign in to your account</h1>
+  <p>Click below to complete sign-in. This link is single-use and expires shortly.</p>
+  <form method="POST" action="/api/portal/auth?token=${safeToken}">
+    <button type="submit">Sign in</button>
+  </form>
+  <div class="fineprint">If you didn't request this, you can safely ignore the email.</div>
+</main>
+</body>
+</html>`;
+}
+
 export function portalRoutes(db: Db): Router {
   const router = Router();
   const svc = customerPortalService(db);
@@ -122,8 +198,50 @@ export function portalRoutes(db: Db): Router {
     res.status(200).json({ ok: true });
   });
 
-  // -- Auth: consume token + set cookie + 302 ---------------------------------
+  // -- Auth: two-step magic-link consume --------------------------------------
+  //
+  // GET is read-only: it previews the token state and renders a confirm-to-
+  // sign-in interstitial. POST actually consumes the token and sets the
+  // session cookie. This defeats inbox-side link scanners (Proton, AV,
+  // Slack/Discord unfurls, etc.) that auto-fetch GET URLs and would otherwise
+  // burn the single-use token before the recipient clicks.
+  //
+  // Don't fold these back into a single GET — that's the bug we're fixing.
+
   router.get("/auth", async (req: Request, res: Response) => {
+    const tokenParam = req.query.token;
+    const token = typeof tokenParam === "string" ? tokenParam : "";
+    if (!token) {
+      res.redirect(302, `${portalBaseUrl()}/auth?error=missing_token`);
+      return;
+    }
+    let status: "ok" | "missing" | "expired" | "consumed";
+    try {
+      status = await svc.previewMagicLink(token);
+    } catch (err) {
+      logger.error({ err }, "portal/auth: previewMagicLink failed");
+      res.redirect(302, `${portalBaseUrl()}/auth?error=server_error`);
+      return;
+    }
+    if (status !== "ok") {
+      // Uniform error code — don't let callers distinguish missing vs
+      // consumed vs expired (token-existence oracle).
+      res.redirect(302, `${portalBaseUrl()}/auth?error=invalid_or_expired`);
+      return;
+    }
+    res
+      .status(200)
+      .setHeader("Content-Type", "text/html; charset=utf-8")
+      // Tell intermediaries not to cache or prefetch deeper.
+      .setHeader("Cache-Control", "no-store")
+      .setHeader("Referrer-Policy", "no-referrer")
+      .send(renderAuthInterstitial(token));
+  });
+
+  router.post("/auth", async (req: Request, res: Response) => {
+    // Token travels in the query string (the form's action URL preserves it).
+    // No body parser dependency, and we keep the consume path identical to
+    // the email-link target — only the HTTP method differs.
     const tokenParam = req.query.token;
     const token = typeof tokenParam === "string" ? tokenParam : "";
     if (!token) {

@@ -227,12 +227,11 @@ describe("portal routes", () => {
     expect(state.links).toHaveLength(0);
   });
 
-  it("GET /auth consumes a token, sets a cookie, and 302s", async () => {
+  it("GET /auth previews a valid token without consuming it (interstitial)", async () => {
     const state: State = { links: [], accounts: [], actionLog: [] };
     const db = makeDb(state);
     const app = buildApp(db);
 
-    // Seed a valid link directly.
     state.links.push({
       token: "tok-abc",
       email: "alice@example.com",
@@ -242,25 +241,79 @@ describe("portal routes", () => {
     });
 
     const res = await request(app).get("/api/portal/auth?token=tok-abc");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/html/);
+    expect(res.text).toContain('action="/api/portal/auth?token=tok-abc"');
+    expect(res.text).toContain('method="POST"');
+    // CRITICAL: GET must NOT consume the token — that's the whole point of
+    // the two-step flow (inbox/AV scanners follow GETs).
+    expect(state.links[0].consumedAt).toBeNull();
+    expect(state.accounts).toHaveLength(0);
+  });
+
+  it("POST /auth consumes the token, sets a cookie, and 302s", async () => {
+    const state: State = { links: [], accounts: [], actionLog: [] };
+    const db = makeDb(state);
+    const app = buildApp(db);
+
+    state.links.push({
+      token: "tok-abc",
+      email: "alice@example.com",
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      consumedAt: null,
+      createdAt: new Date(),
+    });
+
+    const res = await request(app).post("/api/portal/auth?token=tok-abc");
     expect(res.status).toBe(302);
     expect(res.headers["location"]).toBe("https://app.test.local/");
     const setCookie = res.headers["set-cookie"];
     const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
-    expect(cookies.some((c) => typeof c === "string" && c.startsWith(`${PORTAL_SESSION_COOKIE}=`))).toBe(
-      true,
-    );
-    // Magic link is now consumed.
+    expect(
+      cookies.some((c) => typeof c === "string" && c.startsWith(`${PORTAL_SESSION_COOKIE}=`)),
+    ).toBe(true);
     expect(state.links[0].consumedAt).not.toBeNull();
-    // Account row was created.
     expect(state.accounts).toHaveLength(1);
   });
 
-  it("GET /auth with an invalid token redirects with error param", async () => {
+  it("GET /auth with an unknown token redirects with error param", async () => {
     const state: State = { links: [], accounts: [], actionLog: [] };
     const app = buildApp(makeDb(state));
     const res = await request(app).get("/api/portal/auth?token=does-not-exist");
     expect(res.status).toBe(302);
     expect(res.headers["location"]).toContain("error=invalid_or_expired");
+  });
+
+  it("GET /auth with a consumed token redirects with the same uniform error", async () => {
+    const state: State = { links: [], accounts: [], actionLog: [] };
+    const app = buildApp(makeDb(state));
+    state.links.push({
+      token: "tok-used",
+      email: "alice@example.com",
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      consumedAt: new Date(),
+      createdAt: new Date(),
+    });
+    const res = await request(app).get("/api/portal/auth?token=tok-used");
+    expect(res.status).toBe(302);
+    // Uniform error — no token-existence oracle.
+    expect(res.headers["location"]).toContain("error=invalid_or_expired");
+  });
+
+  it("POST /auth a second time fails (single-use)", async () => {
+    const state: State = { links: [], accounts: [], actionLog: [] };
+    const app = buildApp(makeDb(state));
+    state.links.push({
+      token: "tok-once",
+      email: "alice@example.com",
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      consumedAt: null,
+      createdAt: new Date(),
+    });
+    const first = await request(app).post("/api/portal/auth?token=tok-once");
+    expect(first.headers["location"]).toBe("https://app.test.local/");
+    const second = await request(app).post("/api/portal/auth?token=tok-once");
+    expect(second.headers["location"]).toContain("error=invalid_or_expired");
   });
 
   it("GET /me returns 401 without a cookie", async () => {
@@ -283,7 +336,7 @@ describe("portal routes", () => {
       consumedAt: null,
       createdAt: new Date(),
     });
-    const auth = await request(app).get("/api/portal/auth?token=tok-zzz");
+    const auth = await request(app).post("/api/portal/auth?token=tok-zzz");
     const setCookieHeader = auth.headers["set-cookie"];
     const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
     const sessionCookie = cookies
