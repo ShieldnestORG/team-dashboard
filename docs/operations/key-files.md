@@ -27,6 +27,7 @@ This document provides a mapping of critical files to their purpose within the s
 - `server/src/services/relationship-extractor.ts`: Ollama triple extraction for the Knowledge Graph.
 - `server/src/services/graph-query.ts`: Recursive CTE traversal and hybrid vector search.
 - `server/src/services/agent-memory.ts`: Structured fact storage per agent.
+- `server/src/services/comment-knowledge-extractor.ts`: Ollama extraction of operational triples (lives_at / owned_by / blocks / do_not / etc.) from agent-authored issue_comments into agent_memory. Owned by Recall; runs every 5 min. Includes contradiction-decay on conflicting (subject, predicate) rows.
 - `server/src/services/intel-billing.ts`: Intel paid tier management and Stripe integration.
 
 ## Visual & Video Pipeline

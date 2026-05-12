@@ -54,10 +54,10 @@ All content cron jobs below are mirrored into `social_automations` (linked to `s
 - **Discord Plugin (2 jobs)**: Ticket cleanup and daily stats.
 - **Twitter Plugin (4 jobs)**: Post-dispatcher (2m), engagement-cycle (30m), queue-cleanup (6h), analytics-rollup (daily).
 - **Moltbook Plugin (3 jobs)**: Content-dispatcher (5m), heartbeat (30m), daily-cleanup (midnight).
-- **Knowledge Graph (9 jobs)**: 
+- **Knowledge Graph (10 jobs)**:
   - Nexus Extraction (2 jobs)
   - Weaver Curation (3 jobs)
-  - Recall Memory (3 jobs)
+  - Recall Memory (4 jobs) — includes `memory:extract-comments` (every 5 min), Ollama-driven extraction of operational triples from agent-authored `issue_comments` into `agent_memory` under `agent_name='recall'`. Predicate set: `lives_at`, `owned_by`, `depends_on`, `blocks`, `causes`, `breaks`, `replaces`, `deprecated_by`, `requires`, `do_not`, `learned_that`. Decays confidence by 0.15 on existing rows that share `(subject, predicate)` but disagree on `object` (stigmergic contradiction signal). Source: `server/src/services/comment-knowledge-extractor.ts`.
   - Oracle Cache (1 job)
 
 For a full mapping of which agent owns which specific cron, refer to:
