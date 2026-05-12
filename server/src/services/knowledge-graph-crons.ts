@@ -1,9 +1,9 @@
 /**
- * Knowledge Graph Cron Jobs — 9 jobs across 4 agents (Nexus, Weaver, Recall, Oracle).
+ * Knowledge Graph Cron Jobs — 10 jobs across 4 agents (Nexus, Weaver, Recall, Oracle).
  *
  * Nexus: extract relationships, embed tags
  * Weaver: deduplicate tags, prune edges, stats
- * Recall: expire memories, compact, embed
+ * Recall: expire memories, compact, embed, extract operational triples from comments
  * Oracle: warm cache
  */
 
@@ -13,6 +13,7 @@ import { registerCronJob } from "./cron-registry.js";
 import { relationshipExtractorService } from "./relationship-extractor.js";
 import { graphQueryService } from "./graph-query.js";
 import { agentMemoryService } from "./agent-memory.js";
+import { commentKnowledgeExtractorService } from "./comment-knowledge-extractor.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,7 @@ export function startKnowledgeGraphCrons(db: Db): void {
   const extractor = relationshipExtractorService(db);
   const graph = graphQueryService(db);
   const memory = agentMemoryService(db);
+  const commentExtractor = commentKnowledgeExtractorService(db);
 
   // Nexus jobs
   registerCronJob({
@@ -247,6 +249,13 @@ export function startKnowledgeGraphCrons(db: Db): void {
     sourceFile: "knowledge-graph-crons.ts",
     handler: () => memory.embedUnembedded(100),
   });
+  registerCronJob({
+    jobName: "memory:extract-comments",
+    schedule: "*/5 * * * *",
+    ownerAgent: "recall",
+    sourceFile: "knowledge-graph-crons.ts",
+    handler: () => commentExtractor.extractFromComments(50),
+  });
 
   // Oracle jobs
   registerCronJob({
@@ -257,5 +266,5 @@ export function startKnowledgeGraphCrons(db: Db): void {
     handler: () => warmGraphCache(db),
   });
 
-  logger.info({ count: 9 }, "Knowledge graph cron jobs registered");
+  logger.info({ count: 10 }, "Knowledge graph cron jobs registered");
 }
