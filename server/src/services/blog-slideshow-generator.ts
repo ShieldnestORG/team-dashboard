@@ -8,8 +8,12 @@
  * Flow: topic → Ollama script → AI slide HTML → self-contained slideshow HTML
  */
 
+import type { Db } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { callOllamaChat } from "./ollama-client.js";
+import { recordEvent } from "./causal-events.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 import { buildSlidesFromScriptAI, buildSlidesFromScript, type Slide } from "./youtube/presentation-renderer.js";
 import {
   type SlideTemplate,
@@ -331,31 +335,68 @@ ${baseCss}
 export async function generateSlideshowBlog(
   topic: string,
   templateName: "coherencedaddy" | "tx" = "coherencedaddy",
+  db?: Db,
 ): Promise<{ html: string; title: string; slideCount: number }> {
   const template = getTemplate(templateName);
 
-  logger.info({ topic, template: templateName }, "Generating slideshow blog script");
-  const script = await buildBlogScript(topic, template);
-
-  logger.info({ title: script.title, sections: script.mainContent.sections.length }, "Building slides from script");
-  let slides: Slide[];
+  const runStartedAt = Date.now();
+  const runEntityId = crypto.randomUUID();
+  const runEvtId = db
+    ? await recordEvent(db, {
+        kind: "agent.slideshow.run.started",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        payload: { topic: topic.slice(0, 200), template: templateName },
+      })
+    : "";
+  let runOk = false;
   try {
-    slides = await buildSlidesFromScriptAI(script, template);
-  } catch (err) {
-    logger.warn({ err }, "AI slide generation failed, falling back to static");
-    slides = buildSlidesFromScript(script, template);
+    logger.info({ topic, template: templateName }, "Generating slideshow blog script");
+    const script = await buildBlogScript(topic, template);
+
+    logger.info({ title: script.title, sections: script.mainContent.sections.length }, "Building slides from script");
+    let slides: Slide[];
+    try {
+      slides = await buildSlidesFromScriptAI(script, template);
+    } catch (err) {
+      logger.warn({ err }, "AI slide generation failed, falling back to static");
+      slides = buildSlidesFromScript(script, template);
+    }
+
+    if (slides.length === 0) {
+      throw new Error("No slides generated");
+    }
+
+    if (db) {
+      for (let i = 0; i < slides.length; i += 1) {
+        await recordEvent(db, {
+          kind: "agent.slideshow.slide.generated",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: runEntityId,
+          causedBy: runEvtId ? [runEvtId] : [],
+          payload: { slideIndex: i, title: script.title },
+        });
+      }
+    }
+
+    logger.info({ slideCount: slides.length }, "Assembling slideshow HTML");
+    const html = assembleSlideshowHtml(slides, template);
+
+    runOk = true;
+    return {
+      html,
+      title: script.title,
+      slideCount: slides.length,
+    };
+  } finally {
+    if (db) {
+      await recordEvent(db, {
+        kind: "agent.slideshow.run.completed",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { ok: runOk, durationMs: Date.now() - runStartedAt },
+      });
+    }
   }
-
-  if (slides.length === 0) {
-    throw new Error("No slides generated");
-  }
-
-  logger.info({ slideCount: slides.length }, "Assembling slideshow HTML");
-  const html = assembleSlideshowHtml(slides, template);
-
-  return {
-    html,
-    title: script.title,
-    slideCount: slides.length,
-  };
 }

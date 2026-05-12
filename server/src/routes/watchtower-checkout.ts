@@ -31,7 +31,10 @@ import {
   handleWatchtowerSubscriptionUpdated,
   handleWatchtowerSubscriptionDeleted,
 } from "../services/watchtower-stripe-handler.js";
+import { recordEvent } from "../services/causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // PRD-default cap; the schema's HARD_PROMPT_CEILING (50) is a separate
 // runtime backstop, NOT what the public route enforces.
@@ -216,6 +219,8 @@ export function watchtowerCheckoutRoutes(db: Db): Router {
 interface StripeEvent {
   id: string;
   type: string;
+  livemode?: boolean;
+  api_version?: string;
   data: { object: Record<string, unknown> };
 }
 
@@ -280,6 +285,18 @@ export async function dispatchWatchtowerEvent(
   db: Db,
   event: StripeEvent,
 ): Promise<void> {
+  const webhookEvtId = await recordEvent(db, {
+    kind: "webhook.stripe.received",
+    companyId: TEAM_DASHBOARD_COMPANY_ID,
+    entityId: event.id,
+    payload: {
+      stripeEventType: event.type,
+      stripeEventId: event.id,
+      livemode: event.livemode,
+      apiVersion: event.api_version,
+    },
+  });
+
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as {
       id: string;
@@ -289,20 +306,80 @@ export async function dispatchWatchtowerEvent(
       customer_details?: { email?: string | null } | null;
       subscription?: string | null;
     };
-    if (session.metadata?.product !== "watchtower") return;
+    if (session.metadata?.product !== "watchtower") {
+      await recordEvent(db, {
+        kind: "webhook.stripe.handled",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: event.id,
+        causedBy: [webhookEvtId],
+        payload: {
+          stripeEventType: event.type,
+          skipped: true,
+          reason: "not watchtower product",
+        },
+      });
+      return;
+    }
     await handleWatchtowerCheckout(db, session);
+    if (session.subscription) {
+      await recordEvent(db, {
+        kind: "watchtower.subscription.created",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: session.subscription,
+        causedBy: [webhookEvtId],
+        payload: {
+          sessionId: session.id,
+          customerId: session.customer,
+          subscriptionId: session.subscription,
+        },
+      });
+    }
+    await recordEvent(db, {
+      kind: "webhook.stripe.handled",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: event.id,
+      causedBy: [webhookEvtId],
+      payload: {
+        stripeEventType: event.type,
+        sessionId: session.id,
+        customerId: session.customer,
+        subscriptionId: session.subscription,
+      },
+    });
     return;
   }
 
   if (event.type === "customer.subscription.updated") {
     const sub = event.data.object as { id: string; status: string };
     await handleWatchtowerSubscriptionUpdated(db, sub);
+    await recordEvent(db, {
+      kind: "webhook.stripe.handled",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: event.id,
+      causedBy: [webhookEvtId],
+      payload: {
+        stripeEventType: event.type,
+        subscriptionId: sub.id,
+        status: sub.status,
+      },
+    });
     return;
   }
 
   if (event.type === "customer.subscription.deleted") {
     const sub = event.data.object as { id: string; status: string };
     await handleWatchtowerSubscriptionDeleted(db, sub);
+    await recordEvent(db, {
+      kind: "webhook.stripe.handled",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: event.id,
+      causedBy: [webhookEvtId],
+      payload: {
+        stripeEventType: event.type,
+        subscriptionId: sub.id,
+        status: sub.status,
+      },
+    });
     return;
   }
 

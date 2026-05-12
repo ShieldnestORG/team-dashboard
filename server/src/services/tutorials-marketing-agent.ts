@@ -27,6 +27,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { marketingDrafts } from "@paperclipai/db";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
 import {
   assertCanWrite,
@@ -222,19 +223,52 @@ export function tutorialsMarketingAgent(db: Db) {
     ownerAgentId: string;
     tasks: ScribeTaskInput[];
   }): Promise<{ generated: number; skipped: number }> {
+    const scribeEntityId = crypto.randomUUID();
+    const scribeId = await recordEvent(db, {
+      kind: "agent.scribe.run.started",
+      companyId: opts.companyId,
+      entityId: scribeEntityId,
+      payload: { taskCount: opts.tasks.length },
+    });
     let generated = 0;
     let skipped = 0;
+    const platforms = new Set<string>();
     for (const t of opts.tasks) {
       try {
         const out = await draftFromTask(t);
-        if (out.draftId) generated += 1;
-        else skipped += 1;
+        if (out.draftId) {
+          generated += 1;
+          platforms.add(t.channel);
+          await recordEvent(db, {
+            kind: "agent.scribe.draft.generated",
+            companyId: opts.companyId,
+            entityId: scribeEntityId,
+            causedBy: scribeId ? [scribeId] : [],
+            payload: {
+              platform: t.channel,
+              tutorialSlug: t.source.canonicalUrl ?? t.source.title,
+              draftLength: t.source.body.length,
+            },
+          });
+        } else {
+          skipped += 1;
+        }
       } catch (err) {
         logger.error({ err, channel: t.channel }, "tutorials-marketing-agent: task failed");
         skipped += 1;
       }
     }
     logger.info({ generated, skipped }, "tutorials:marketing-drafts — cycle complete");
+    await recordEvent(db, {
+      kind: "agent.scribe.run.completed",
+      companyId: opts.companyId,
+      entityId: scribeEntityId,
+      causedBy: scribeId ? [scribeId] : [],
+      payload: {
+        platforms: Array.from(platforms),
+        totalDrafts: generated,
+      },
+    });
     return { generated, skipped };
   }
 

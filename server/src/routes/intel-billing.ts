@@ -132,7 +132,10 @@ export function intelBillingWebhookRouter(db: Db) {
       }
       try {
         const event = JSON.parse(rawBody.toString("utf8")) as {
+          id: string;
           type: string;
+          livemode?: boolean;
+          api_version?: string;
           data: { object: Record<string, unknown> };
         };
         await svc.handleWebhookEvent(event);

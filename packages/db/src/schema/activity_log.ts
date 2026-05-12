@@ -16,11 +16,14 @@ export const activityLog = pgTable(
     agentId: uuid("agent_id").references(() => agents.id),
     runId: uuid("run_id").references(() => heartbeatRuns.id),
     details: jsonb("details").$type<Record<string, unknown>>(),
+    eventKind: text("event_kind"),
+    causedBy: uuid("caused_by").array(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     companyCreatedIdx: index("activity_log_company_created_idx").on(table.companyId, table.createdAt),
     runIdIdx: index("activity_log_run_id_idx").on(table.runId),
     entityIdx: index("activity_log_entity_type_id_idx").on(table.entityType, table.entityId),
+    eventKindIdx: index("activity_log_event_kind_created_idx").on(table.eventKind, table.createdAt),
   }),
 );

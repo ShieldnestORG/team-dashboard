@@ -10,6 +10,9 @@ import { logger } from "../middleware/logger.js";
 import { runAudit, type AuditResult } from "../routes/audit.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
+import { recordEvent } from "./causal-events.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // ---------------------------------------------------------------------------
 // CreditScore product service.
@@ -450,9 +453,24 @@ export function creditscoreService(db: Db) {
     }
 
     const event = JSON.parse(rawBody.toString("utf8")) as {
+      id: string;
       type: string;
+      livemode?: boolean;
+      api_version?: string;
       data: { object: Record<string, unknown> };
     };
+
+    const webhookEvtId = await recordEvent(db, {
+      kind: "webhook.stripe.received",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: event.id,
+      payload: {
+        stripeEventType: event.type,
+        stripeEventId: event.id,
+        livemode: event.livemode,
+        apiVersion: event.api_version,
+      },
+    });
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as {
@@ -466,6 +484,19 @@ export function creditscoreService(db: Db) {
       };
       if (session.metadata?.product === "creditscore") {
         await activateFromCheckout(session);
+        if (session.subscription) {
+          await recordEvent(db, {
+            kind: "creditscore.subscription.created",
+            companyId: TEAM_DASHBOARD_COMPANY_ID,
+            entityId: session.subscription,
+            causedBy: [webhookEvtId],
+            payload: {
+              sessionId: session.id,
+              customerId: session.customer,
+              subscriptionId: session.subscription,
+            },
+          });
+        }
       }
       // Link Stripe customer to portal account — cross-cutting; runs for every
       // checkout regardless of product. Wrapped in try/catch so a linker
@@ -485,6 +516,19 @@ export function creditscoreService(db: Db) {
           );
         }
       }
+      await recordEvent(db, {
+        kind: "webhook.stripe.handled",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: event.id,
+        causedBy: [webhookEvtId],
+        payload: {
+          stripeEventType: event.type,
+          sessionId: session.id,
+          customerId: session.customer,
+          subscriptionId: session.subscription,
+          product: session.metadata?.product,
+        },
+      });
     }
 
     if (event.type === "invoice.paid") {
@@ -508,6 +552,18 @@ export function creditscoreService(db: Db) {
           })
           .where(eq(creditscoreSubscriptions.stripeSubscriptionId, invoice.subscription));
       }
+      await recordEvent(db, {
+        kind: "webhook.stripe.handled",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: event.id,
+        causedBy: [webhookEvtId],
+        payload: {
+          stripeEventType: event.type,
+          subscriptionId: invoice.subscription,
+          periodStart: invoice.period_start,
+          periodEnd: invoice.period_end,
+        },
+      });
     }
 
     if (event.type === "customer.subscription.updated") {
@@ -532,6 +588,17 @@ export function creditscoreService(db: Db) {
           updatedAt: new Date(),
         })
         .where(eq(creditscoreSubscriptions.stripeSubscriptionId, sub.id));
+      await recordEvent(db, {
+        kind: "webhook.stripe.handled",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: event.id,
+        causedBy: [webhookEvtId],
+        payload: {
+          stripeEventType: event.type,
+          subscriptionId: sub.id,
+          status: mappedStatus,
+        },
+      });
     }
 
     if (event.type === "customer.subscription.deleted") {
@@ -540,6 +607,16 @@ export function creditscoreService(db: Db) {
         .update(creditscoreSubscriptions)
         .set({ status: "canceled", canceledAt: new Date(), updatedAt: new Date() })
         .where(eq(creditscoreSubscriptions.stripeSubscriptionId, sub.id));
+      await recordEvent(db, {
+        kind: "webhook.stripe.handled",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: event.id,
+        causedBy: [webhookEvtId],
+        payload: {
+          stripeEventType: event.type,
+          subscriptionId: sub.id,
+        },
+      });
     }
 
     return { received: true, handled: true, type: event.type };

@@ -10,6 +10,9 @@ import {
 import { sendTransactional } from "./email-templates.js";
 import { logger } from "../middleware/logger.js";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
+import { recordEvent } from "./causal-events.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // ---------------------------------------------------------------------------
 // Stripe REST client (fetch-based, no npm dependency)
@@ -301,8 +304,26 @@ export function intelBillingService(db: Db) {
       .where(eq(intelCustomers.stripeSubscriptionId, stripeSubscriptionId));
   }
 
-  async function handleWebhookEvent(event: { type: string; data: { object: Record<string, unknown> } }) {
+  async function handleWebhookEvent(event: {
+    id?: string;
+    type: string;
+    livemode?: boolean;
+    api_version?: string;
+    data: { object: Record<string, unknown> };
+  }) {
     const obj = event.data.object;
+    const eventId = event.id ?? "evt_unknown";
+    const webhookEvtId = await recordEvent(db, {
+      kind: "webhook.stripe.received",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: eventId,
+      payload: {
+        stripeEventType: event.type,
+        stripeEventId: eventId,
+        livemode: event.livemode,
+        apiVersion: event.api_version,
+      },
+    });
     switch (event.type) {
       case "checkout.session.completed": {
         const checkoutSession = obj as Parameters<typeof provisionFromCheckout>[0];
@@ -327,6 +348,31 @@ export function intelBillingService(db: Db) {
             );
           }
         }
+        if (checkoutSession.subscription) {
+          await recordEvent(db, {
+            kind: "intel.subscription.created",
+            companyId: TEAM_DASHBOARD_COMPANY_ID,
+            entityId: checkoutSession.subscription,
+            causedBy: [webhookEvtId],
+            payload: {
+              sessionId: checkoutSession.id,
+              customerId: checkoutSession.customer,
+              subscriptionId: checkoutSession.subscription,
+            },
+          });
+        }
+        await recordEvent(db, {
+          kind: "webhook.stripe.handled",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: eventId,
+          causedBy: [webhookEvtId],
+          payload: {
+            stripeEventType: event.type,
+            sessionId: checkoutSession.id,
+            customerId: checkoutSession.customer,
+            subscriptionId: checkoutSession.subscription,
+          },
+        });
         break;
       }
       case "invoice.payment_succeeded": {
@@ -334,20 +380,66 @@ export function intelBillingService(db: Db) {
         if (inv.subscription && inv.period_end) {
           await extendPeriod(inv.subscription, new Date(inv.period_end * 1000));
         }
+        await recordEvent(db, {
+          kind: "webhook.stripe.handled",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: eventId,
+          causedBy: [webhookEvtId],
+          payload: {
+            stripeEventType: event.type,
+            subscriptionId: inv.subscription,
+            periodEnd: inv.period_end,
+          },
+        });
         break;
       }
       case "customer.subscription.deleted":
       case "customer.subscription.updated": {
-        const sub = obj as { customer?: string; status?: string };
+        const sub = obj as { id?: string; customer?: string; status?: string };
         if (sub.customer && sub.status) {
           await markStatus(sub.customer, sub.status);
         }
+        await recordEvent(db, {
+          kind: "webhook.stripe.handled",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: eventId,
+          causedBy: [webhookEvtId],
+          payload: {
+            stripeEventType: event.type,
+            subscriptionId: sub.id,
+            customerId: sub.customer,
+            status: sub.status,
+          },
+        });
         break;
       }
       case "invoice.payment_failed": {
         const inv = obj as { customer?: string };
         if (inv.customer) await markStatus(inv.customer, "past_due");
+        await recordEvent(db, {
+          kind: "webhook.stripe.handled",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: eventId,
+          causedBy: [webhookEvtId],
+          payload: {
+            stripeEventType: event.type,
+            customerId: inv.customer,
+          },
+        });
         break;
+      }
+      default: {
+        await recordEvent(db, {
+          kind: "webhook.stripe.handled",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: eventId,
+          causedBy: [webhookEvtId],
+          payload: {
+            stripeEventType: event.type,
+            skipped: true,
+            reason: "unhandled event type",
+          },
+        });
       }
     }
   }

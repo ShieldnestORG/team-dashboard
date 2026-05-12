@@ -26,7 +26,10 @@ import {
   getRulesByCategory,
   selfCheckContent,
 } from "./aeo-seo-playbook.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // Claude API Configuration
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
@@ -190,6 +193,16 @@ export function creditscoreContentAgent(db: Db) {
     subscriptionId: string,
     opts: { cycleTag?: string; now?: Date } = {},
   ): Promise<{ generated: number; skipped: number; reason?: string }> {
+    const runStartedAt = Date.now();
+    const runEntityId = crypto.randomUUID();
+    const runEvtId = await recordEvent(db, {
+      kind: "agent.creditscore-content.run.started",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      payload: { subscriptionId, cycleTag: opts.cycleTag },
+    });
+    let runOk = false;
+    try {
     const [sub] = await db
       .select()
       .from(creditscoreSubscriptions)
@@ -265,10 +278,24 @@ export function creditscoreContentAgent(db: Db) {
         priorTitles,
       });
 
+      const callId = await recordEvent(db, {
+        kind: "agent.creditscore-content.llm.called",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { model: ANTHROPIC_MODEL, promptLength: prompt.length },
+      });
       const raw = await askClaude(
         "You are Cipher, a technical writer specializing in AEO (AI Engine Optimization). Return ONLY a fenced JSON object, no prose before or after.",
         prompt,
       );
+      await recordEvent(db, {
+        kind: "agent.creditscore-content.llm.responded",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: callId ? [callId] : [],
+        payload: { ok: raw != null, responseLength: raw?.length ?? 0 },
+      });
       if (!raw) {
         skipped += 1;
         continue;
@@ -319,7 +346,17 @@ export function creditscoreContentAgent(db: Db) {
       generated += 1;
     }
 
+    runOk = true;
     return { generated, skipped };
+    } finally {
+      await recordEvent(db, {
+        kind: "agent.creditscore-content.run.completed",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { ok: runOk, durationMs: Date.now() - runStartedAt },
+      });
+    }
   }
 
   async function runMonthlyDraftCycle(): Promise<{ generated: number; skipped: number }> {

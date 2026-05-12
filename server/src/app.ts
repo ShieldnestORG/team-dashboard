@@ -117,6 +117,8 @@ import { startYouTubeCrons } from "./services/youtube/yt-crons.js";
 import { initVpsMonitor } from "./services/vps-monitor.js";
 import { knowledgeGraphRoutes } from "./routes/knowledge-graph.js";
 import { agentMemoryRoutes } from "./routes/agent-memory.js";
+import { causalEventsRoutes } from "./routes/causal-events.js";
+import { eventConstraintsRoutes } from "./routes/event-constraints.js";
 import { startKnowledgeGraphCrons } from "./services/knowledge-graph-crons.js";
 import { repoUpdateRoutes } from "./routes/repo-updates.js";
 import { automationHealthRoutes } from "./routes/automation-health.js";
@@ -135,6 +137,7 @@ import { startCreditscoreContentAgent } from "./services/creditscore-content-age
 import { startTutorialsMarketingAgent } from "./services/tutorials-marketing-agent-cron.js";
 import { startLaunchCommentMonitor } from "./services/launch-comment-monitor-cron.js";
 import { startWatchtowerCron } from "./services/watchtower-cron.js";
+import { startCausalConstraintsCron } from "./services/causal-constraints-cron.js";
 import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cron.js";
 import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
@@ -325,6 +328,8 @@ export async function createApp(
   api.use("/partners/:slug/site", partnerSiteRoutes(db));
   api.use("/knowledge-graph", knowledgeGraphRoutes(db));
   api.use("/agent-memory", agentMemoryRoutes(db));
+  api.use("/causal-events", causalEventsRoutes(db));
+  api.use("/event-constraints", eventConstraintsRoutes(db));
   api.use("/repo-updates", repoUpdateRoutes(db));
   api.use("/automation-health", automationHealthRoutes(db));
   api.use("/firecrawl/admin", firecrawlAdminRoutes(db));
@@ -529,6 +534,11 @@ export async function createApp(
   if (process.env.WATCHTOWER_ENABLED === "true") {
     startWatchtowerCron(db);
   }
+  // Causal-constraint checker — RAPIDE-style observer that verifies every
+  // `pattern.of` event in activity_log is followed within maxLagMs by a
+  // matching `pattern.require` child. Always on (cheap NOT EXISTS query
+  // every 5 min); per-constraint enable lives in the event_constraints row.
+  startCausalConstraintsCron(db);
   // Rizz comment monitor (V1.1) — polls @coherencedaddy TikTok comments for
   // @-mentions and inserts 'mentioned' rows into tiktok_review_submissions.
   // Default off (week-1 manual mode); flip the env to true OR toggle the

@@ -27,6 +27,8 @@ import {
   CheckSquare,
   Gauge,
   Share2,
+  GitFork,
+  ShieldAlert,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -125,6 +127,8 @@ export function Sidebar() {
 
         <SidebarSection label="Company">
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
+          <SidebarNavItem to="/causal-events" label="Causal Events" icon={GitFork} />
+          <SidebarNavItem to="/event-constraints" label="Event Constraints" icon={ShieldAlert} />
           <SidebarNavItem to="/agent-ops" label="Agent Ops" icon={Radar} />
           <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
           <SidebarNavItem to="/approvals" label="Approvals" icon={CheckSquare} />

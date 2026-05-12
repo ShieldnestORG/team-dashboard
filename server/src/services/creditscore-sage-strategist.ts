@@ -23,7 +23,10 @@ import {
 import { callOllamaChat, OLLAMA_MODEL } from "./ollama-client.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
 import { getAllRules } from "./aeo-seo-playbook.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // Exported for unit testing.
 export function isoWeekTag(d: Date): string {
@@ -214,6 +217,17 @@ export function creditscoreSageStrategist(db: Db) {
     subscriptionId: string,
     opts: { now?: Date } = {},
   ): Promise<{ generated: boolean; reason?: string }> {
+    const runStartedAt = Date.now();
+    const runEntityId = crypto.randomUUID();
+    const runEvtId = await recordEvent(db, {
+      kind: "agent.sage-strategist.run.started",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      payload: { subscriptionId },
+    });
+    let runOk = false;
+    let generatedOk = false;
+    try {
     const [sub] = await db
       .select()
       .from(creditscoreSubscriptions)
@@ -251,7 +265,21 @@ export function creditscoreSageStrategist(db: Db) {
       schemas: ctx.schemaImplRows,
     });
 
+    const callId = await recordEvent(db, {
+      kind: "agent.sage-strategist.llm.called",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      causedBy: runEvtId ? [runEvtId] : [],
+      payload: { model: OLLAMA_MODEL, weekTag, promptLength: prompt.length },
+    });
     const output = await askOllama(prompt);
+    await recordEvent(db, {
+      kind: "agent.sage-strategist.llm.responded",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      causedBy: callId ? [callId] : [],
+      payload: { ok: output != null },
+    });
     if (!output) {
       await db.insert(creditscoreStrategyDocs).values({
         subscriptionId: sub.id,
@@ -298,7 +326,18 @@ export function creditscoreSageStrategist(db: Db) {
       .set({ status: "delivered", deliveredAt: new Date(), updatedAt: new Date() })
       .where(eq(creditscoreStrategyDocs.id, row!.id));
 
+    generatedOk = true;
+    runOk = true;
     return { generated: true };
+    } finally {
+      await recordEvent(db, {
+        kind: "agent.sage-strategist.run.completed",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { ok: runOk, generated: generatedOk, durationMs: Date.now() - runStartedAt },
+      });
+    }
   }
 
   async function runWeeklyCycle(): Promise<{ generated: number; skipped: number }> {

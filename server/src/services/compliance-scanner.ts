@@ -33,6 +33,9 @@ import {
 } from "./email-templates.js";
 import { registerCronJob } from "./cron-registry.js";
 import { callOllamaChat } from "./ollama-client.js";
+import { recordEvent } from "./causal-events.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -198,6 +201,14 @@ export async function scanAffiliateText(
   const { affiliateId, leadId, source, text } = input;
   if (!text || text.trim().length === 0) return { violations: 0 };
 
+  const scanStartedAt = Date.now();
+  const scanEvtId = await recordEvent(db, {
+    kind: "agent.compliance.scan.started",
+    companyId: TEAM_DASHBOARD_COMPANY_ID,
+    entityId: affiliateId,
+    payload: { affiliateId, leadId: leadId ?? null, source, textLength: text.length },
+  });
+
   let violationCount = 0;
 
   for (const rule of PATTERNS) {
@@ -236,6 +247,21 @@ export async function scanAffiliateText(
       });
       violationCount += 1;
 
+      await recordEvent(db, {
+        kind: "agent.compliance.violation.flagged",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: affiliateId,
+        causedBy: scanEvtId ? [scanEvtId] : [],
+        payload: {
+          affiliateId,
+          leadId: leadId ?? null,
+          source,
+          ruleCode: rule.rule,
+          severity: rule.severity,
+          backend,
+        },
+      });
+
       // Email admin — template owner is the email-templates author. Cast the
       // template name so this compiles before that template lands.
       const adminEmail =
@@ -263,6 +289,19 @@ export async function scanAffiliateText(
       );
     }
   }
+
+  await recordEvent(db, {
+    kind: "agent.compliance.scan.completed",
+    companyId: TEAM_DASHBOARD_COMPANY_ID,
+    entityId: affiliateId,
+    causedBy: scanEvtId ? [scanEvtId] : [],
+    payload: {
+      affiliateId,
+      source,
+      violations: violationCount,
+      durationMs: Date.now() - scanStartedAt,
+    },
+  });
 
   return { violations: violationCount };
 }
