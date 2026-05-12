@@ -252,6 +252,29 @@ export function customerPortalService(db: Db) {
     return { token, expiresAt };
   }
 
+  // Read-only check used by the GET interstitial. Returning the state
+  // separately from `consumeMagicLink` lets us render a confirm-to-sign-in
+  // page without burning the single-use token to email/AV link scanners that
+  // auto-fetch URLs in inboxes. The actual consume happens on POST.
+  // All non-ok states map to the same caller-visible error to avoid leaking
+  // whether a token existed at all.
+  async function previewMagicLink(
+    tokenRaw: string,
+  ): Promise<"ok" | "missing" | "expired" | "consumed"> {
+    const token = (tokenRaw ?? "").trim();
+    if (!token) return "missing";
+    const rows = await db
+      .select()
+      .from(customerMagicLinks)
+      .where(eq(customerMagicLinks.token, token))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return "missing";
+    if (row.consumedAt) return "consumed";
+    if (row.expiresAt.getTime() <= Date.now()) return "expired";
+    return "ok";
+  }
+
   async function consumeMagicLink(tokenRaw: string): Promise<ConsumedLink | null> {
     const token = (tokenRaw ?? "").trim();
     if (!token) return null;
@@ -597,6 +620,7 @@ export function customerPortalService(db: Db) {
 
   return {
     createMagicLink,
+    previewMagicLink,
     consumeMagicLink,
     issueSession,
     verifySession,
