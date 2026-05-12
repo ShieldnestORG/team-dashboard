@@ -296,6 +296,6 @@ describe("portal routes", () => {
       .set("Cookie", sessionCookie as string);
     expect(me.status).toBe(200);
     expect(me.body.account.email).toBe("bob@example.com");
-    expect(me.body.entitlements).toEqual({ creditscore: null, bundles: [] });
+    expect(me.body.entitlements).toEqual({ creditscore: null, bundles: [], watchtower: null });
   });
 });
