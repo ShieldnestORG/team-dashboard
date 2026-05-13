@@ -37,6 +37,25 @@ CREATE INDEX IF NOT EXISTS activity_log_event_kind_created_idx
   ON activity_log(event_kind, created_at DESC)
   WHERE event_kind IS NOT NULL;
 
+-- INDEX SIZE NOTE
+-- activity_log is high-volume (every agent run, every webhook, every plugin
+-- event). A GIN index over a uuid[] column has overhead roughly proportional
+-- to the *total number of array elements* across all rows that have
+-- caused_by IS NOT NULL — typical row writes 1–4 parent ids, so expect the
+-- index to be in the same order of magnitude as the column itself.
+--
+-- Order-of-magnitude estimate: at ~10k caused_by-populated rows/day × 2
+-- avg parents × 16 bytes (uuid) + GIN posting tree overhead ≈ a few MB/day
+-- index growth. Healthy for now.
+--
+-- FALLBACK IF GROWTH GETS PROBLEMATIC: this index only powers the
+-- descendant-traversal query in `services/routes/causal-events.ts` (the
+-- `caused_by @> ARRAY[$id]::uuid[]` containment lookup, 3 hops). It is NOT
+-- on the hot write path of recordEvent / logActivity. Drop with:
+--   DROP INDEX CONCURRENTLY activity_log_caused_by_gin_idx;
+-- Descendant lookups will then become full scans of recent activity_log
+-- rows (still survivable for the /causal-events UI's 3-hop walk, just
+-- slower). The partial WHERE clause means the index ignores legacy rows.
 CREATE INDEX IF NOT EXISTS activity_log_caused_by_gin_idx
   ON activity_log USING GIN (caused_by)
   WHERE caused_by IS NOT NULL;
