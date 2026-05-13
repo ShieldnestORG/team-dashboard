@@ -1,5 +1,6 @@
 import type { Db } from "@paperclipai/db";
 import { logActivity } from "./activity-log.js";
+import { logger } from "../middleware/logger.js";
 
 /**
  * Causal-event recorder (PyRapide / RAPIDE-inspired).
@@ -54,9 +55,40 @@ export interface RecordEventInput {
   actorId?: string;
 }
 
+/**
+ * Master kill switch for causal-event recording. When set to "false" (case
+ * insensitive), `recordEvent` becomes a no-op that returns "" without touching
+ * the DB. Default is enabled — set `CAUSAL_EVENTS_ENABLED=false` in env to
+ * disable in an emergency (e.g. caused_by column writes misbehaving).
+ */
+function causalEventsEnabled(): boolean {
+  const raw = process.env.CAUSAL_EVENTS_ENABLED;
+  if (raw === undefined || raw === null || raw === "") return true;
+  return raw.toLowerCase() !== "false" && raw !== "0";
+}
+
 export async function recordEvent(db: Db, input: RecordEventInput): Promise<string> {
-  const firstSegment = input.kind.split(".")[0] ?? "system";
+  if (!causalEventsEnabled()) return "";
+  // Compute the fallback actor namespace inside the try in case `input.kind`
+  // is missing or non-string — split() on undefined would throw and we must
+  // not let it escape.
   try {
+    if (!input.kind || typeof input.kind !== "string") {
+      // Missing kind is a programming error in the caller, but we still must
+      // never break observed code. Log warn and bail.
+      logger.warn({ input }, "recordEvent: missing or invalid `kind`");
+      return "";
+    }
+    const firstSegment = input.kind.split(".")[0] ?? "system";
+    // Defensive: normalize causedBy outside the insert call so an exotic input
+    // (non-array, contains non-string) can't poison the array marshalling.
+    let causedBy: string[] | null = null;
+    if (Array.isArray(input.causedBy) && input.causedBy.length > 0) {
+      const filtered = input.causedBy.filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      );
+      causedBy = filtered.length > 0 ? filtered : null;
+    }
     return await logActivity(db, {
       companyId: input.companyId,
       actorType: input.actorType ?? "system",
@@ -68,11 +100,16 @@ export async function recordEvent(db: Db, input: RecordEventInput): Promise<stri
       runId: input.runId ?? null,
       details: input.payload ?? null,
       eventKind: input.kind,
-      causedBy: input.causedBy && input.causedBy.length > 0 ? input.causedBy : null,
+      causedBy,
     });
-  } catch (_err) {
-    // Swallow — observability must not break observed code. The logActivity
-    // layer already logs failures via pino.
+  } catch (err) {
+    // Swallow — observability must not break observed code. Log a warn so we
+    // can find it in pino if the failure is systematic.
+    try {
+      logger.warn({ err, kind: input?.kind }, "recordEvent failed");
+    } catch {
+      // even logging shouldn't be allowed to throw out of here
+    }
     return "";
   }
 }

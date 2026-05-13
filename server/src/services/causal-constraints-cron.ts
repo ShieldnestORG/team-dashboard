@@ -220,9 +220,28 @@ export async function runCausalConstraintCheck(
 }
 
 /**
+ * Whether the constraint-check cron is enabled. Default is enabled in prod;
+ * set `CAUSAL_CONSTRAINTS_ENABLED=false` in env to disable scheduling (e.g. if
+ * the check query is misbehaving and we need to stop writing
+ * `causal.constraint.violated` events into activity_log).
+ */
+function causalConstraintsEnabled(): boolean {
+  const raw = process.env.CAUSAL_CONSTRAINTS_ENABLED;
+  if (raw === undefined || raw === null || raw === "") return true;
+  return raw.toLowerCase() !== "false" && raw !== "0";
+}
+
+/**
  * Register the cron + seed defaults. Call from app boot.
  */
 export function startCausalConstraintsCron(db: Db): void {
+  if (!causalConstraintsEnabled()) {
+    logger.warn(
+      "causal: CAUSAL_CONSTRAINTS_ENABLED=false — skipping cron + default seed",
+    );
+    return;
+  }
+
   // Fire-and-forget seed; logged inside. Don't await — boot must not block.
   void seedDefaultEventConstraints(db).catch((err) => {
     logger.error({ err }, "causal: seed default constraints failed");
