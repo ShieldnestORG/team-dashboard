@@ -59,8 +59,9 @@
       "picomatch": ">=4.0.4",
       "path-to-regexp": ">=8.4.0",
       "lodash-es": ">=4.18.0",
-      "kysely": ">=0.28.12",
-      "fast-xml-parser": ">=5.5.7",
+      "kysely": ">=0.28.17",
+      "fast-xml-parser": ">=5.7.0",
+      "fast-uri": ">=3.1.2",
       "defu": ">=6.1.5"
     },
     "auditConfig": {
