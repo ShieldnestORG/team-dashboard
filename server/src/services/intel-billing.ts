@@ -304,6 +304,12 @@ export function intelBillingService(db: Db) {
       .where(eq(intelCustomers.stripeSubscriptionId, stripeSubscriptionId));
   }
 
+  // Stripe-webhook safety contract: every `recordEvent` call inside this
+  // function relies on recordEvent's own internal swallow (returns "" on any
+  // throw). A failed observability write must never trigger a non-2xx
+  // response that makes Stripe retry an already-fulfilled checkout. Do NOT
+  // wrap recordEvent calls in additional try/catch — that hides the swallow
+  // contract.
   async function handleWebhookEvent(event: {
     id?: string;
     type: string;

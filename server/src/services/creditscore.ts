@@ -443,6 +443,11 @@ export function creditscoreService(db: Db) {
     }
   }
 
+  // Stripe-webhook safety contract: every `recordEvent` call below relies on
+  // recordEvent's own internal try/catch (returns "" on any throw). A failed
+  // observability write must never bubble out as a non-2xx response — Stripe
+  // would retry an already-fulfilled checkout. Do NOT wrap recordEvent calls
+  // in additional try/catch.
   async function handleWebhook(rawBody: Buffer, signature: string | undefined) {
     const secret = process.env.STRIPE_WEBHOOK_SECRET_CREDITSCORE;
     if (!secret) {

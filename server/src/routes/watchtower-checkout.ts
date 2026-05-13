@@ -280,6 +280,12 @@ export function watchtowerWebhookRouter(db: Db): Router {
  *
  * Exported for unit testing without spinning up a full Express app /
  * mocking signature verification.
+ *
+ * Stripe-webhook safety contract: every `recordEvent` call below is allowed
+ * to fail silently — `recordEvent` itself catches all throws (DB error,
+ * serialization, etc.) and returns "". A bad observability layer must never
+ * cause Stripe to retry a real fulfillment, so we deliberately do NOT wrap
+ * these calls in extra try/catch. The internal swallow is the contract.
  */
 export async function dispatchWatchtowerEvent(
   db: Db,
