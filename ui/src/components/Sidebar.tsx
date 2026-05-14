@@ -135,6 +135,7 @@ export function Sidebar() {
           <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
           <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={Database} />
+          <SidebarNavItem to="/watchtower" label="Watchtower" icon={Radar} />
           <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />

@@ -12,11 +12,20 @@
 //                                          returns the new runId.
 //                                          Gated on INTERNAL_API_TOKEN.
 //
+// Auth on the two GETs:
+//   - board actors (admin UI) bypass the ownership check.
+//   - everyone else MUST present a valid `cd_portal_session` cookie AND
+//     the subscription must belong to the session's account_id. Anonymous
+//     callers and cross-account callers both get 401/403. This closes a
+//     latent issue (pre-Phase-1) where any UUID gave back the prompts,
+//     stripe customer id, and raw engine responses for any subscription.
+//
 // Write/CRUD endpoints (subscription create/update/cancel) are owned by
-// Worker A's portal — the Stripe webhook + portal-auth path lands there.
-// Don't add them here.
+// the customer portal — Stripe webhook + portal-auth path lands in
+// services/watchtower-stripe-handler.ts. Don't add them here.
 // ---------------------------------------------------------------------------
 
+import type { Request, Response } from "express";
 import { Router } from "express";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -26,10 +35,59 @@ import {
   watchtowerResults,
 } from "@paperclipai/db";
 import { runSubscription } from "../services/watchtower-monitor.js";
+import {
+  PORTAL_SESSION_COOKIE,
+  customerPortalService,
+} from "../services/customer-portal.js";
 import { logger } from "../middleware/logger.js";
+
+function parsePortalCookie(req: Request): string | null {
+  const header = req.headers["cookie"];
+  if (typeof header !== "string") return null;
+  for (const raw of header.split(/;\s*/)) {
+    const eq = raw.indexOf("=");
+    if (eq <= 0) continue;
+    const k = raw.slice(0, eq).trim();
+    if (k === PORTAL_SESSION_COOKIE) {
+      try {
+        return decodeURIComponent(raw.slice(eq + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
 
 export function watchtowerRoutes(db: Db) {
   const router = Router();
+  const portal = customerPortalService(db);
+
+  /**
+   * Returns true if the caller is allowed to read the subscription.
+   * Writes the appropriate error status to `res` and returns false otherwise.
+   * Board actors bypass the ownership check; everyone else must hold a
+   * portal session for the same account_id as the subscription.
+   */
+  function authorizeSubscriptionRead(
+    req: Request,
+    res: Response,
+    subscriptionAccountId: string | null,
+  ): boolean {
+    if (req.actor?.type === "board") return true;
+
+    const cookie = parsePortalCookie(req);
+    const session = portal.verifySession(cookie);
+    if (!session) {
+      res.status(401).json({ error: "unauthenticated" });
+      return false;
+    }
+    if (!subscriptionAccountId || session.accountId !== subscriptionAccountId) {
+      res.status(403).json({ error: "forbidden" });
+      return false;
+    }
+    return true;
+  }
 
   // -------------------- GET /subscriptions/:id --------------------
   router.get("/subscriptions/:id", async (req, res) => {
@@ -40,6 +98,7 @@ export function watchtowerRoutes(db: Db) {
       .where(eq(watchtowerSubscriptions.id, id));
 
     if (!sub) return res.status(404).json({ error: "not_found" });
+    if (!authorizeSubscriptionRead(req, res, sub.accountId ?? null)) return;
 
     const recentRuns = await db
       .select({
@@ -67,6 +126,14 @@ export function watchtowerRoutes(db: Db) {
       .where(eq(watchtowerRuns.id, id));
 
     if (!run) return res.status(404).json({ error: "not_found" });
+
+    // Look up the owning subscription so we can enforce ownership.
+    const [owningSub] = await db
+      .select({ accountId: watchtowerSubscriptions.accountId })
+      .from(watchtowerSubscriptions)
+      .where(eq(watchtowerSubscriptions.id, run.subscriptionId));
+
+    if (!authorizeSubscriptionRead(req, res, owningSub?.accountId ?? null)) return;
 
     const results = await db
       .select()

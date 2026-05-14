@@ -90,6 +90,7 @@ import {
   watchtowerCheckoutRoutes,
   watchtowerWebhookRouter,
 } from "./routes/watchtower-checkout.js";
+import { watchtowerAdminRoutes } from "./routes/watchtower-admin.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -143,6 +144,7 @@ import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { portalRoutes } from "./routes/portal.js";
 import { portalAgentsRoutes } from "./routes/portal-agents.js";
+import { portalUpsellRoutes } from "./routes/portal-upsell.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -318,6 +320,7 @@ export async function createApp(
   api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/watchtower", watchtowerRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
+  api.use("/watchtower-admin", watchtowerAdminRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
@@ -405,6 +408,8 @@ export async function createApp(
   app.use("/api/portal", portalRoutes(db));
   // 100 Agents customer feed + approval queue — mounted under /api/portal/agents.
   app.use("/api/portal/agents", portalAgentsRoutes(db));
+  // Contextual upsell cards for logged-in portal users — mounted under /api/portal.
+  app.use("/api/portal", portalUpsellRoutes(db));
   // Public AEO audit — no auth required
   app.use("/api/public", auditRoutes());
   app.use("/api/public", answerCheckRoutes(db));

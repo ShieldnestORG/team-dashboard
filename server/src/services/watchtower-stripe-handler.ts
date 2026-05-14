@@ -41,6 +41,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { watchtowerSubscriptions } from "@paperclipai/db";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
+import { logActivity } from "./activity-log.js";
 import { logger } from "../middleware/logger.js";
 
 // HARD upper bound enforced at insert time to prevent a malformed metadata
@@ -48,6 +49,33 @@ import { logger } from "../middleware/logger.js";
 // the PRD-default cap of 25; this is the runtime backstop and matches
 // HARD_PROMPT_CEILING in services/watchtower-monitor.ts.
 const HARD_PROMPT_CEILING_INSERT = 50;
+
+const COMPANY_ID =
+  process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+async function logWatchtowerActivity(
+  db: Db,
+  action: string,
+  subscriptionId: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await logActivity(db, {
+      companyId: COMPANY_ID,
+      actorType: "system",
+      actorId: "watchtower_stripe_webhook",
+      action,
+      entityType: "watchtower_subscription",
+      entityId: subscriptionId,
+      details,
+    });
+  } catch (err) {
+    logger.error(
+      { err, action, subscriptionId },
+      "watchtower-stripe-handler: activity log failed (non-fatal)",
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Type shapes — narrow Stripe event objects to just what we touch.
@@ -208,6 +236,24 @@ export async function handleWatchtowerCheckout(
     "watchtower-stripe-handler: checkout processed",
   );
 
+  await logWatchtowerActivity(
+    db,
+    result.created
+      ? "watchtower.subscription.created"
+      : "watchtower.subscription.checkout_replayed",
+    result.subscriptionId,
+    {
+      stripeSessionId: session.id,
+      stripeSubscriptionId,
+      stripeCustomerId,
+      brandName,
+      domain,
+      email,
+      accountId,
+      promptCount: prompts.length,
+    },
+  );
+
   return result;
 }
 
@@ -269,6 +315,18 @@ export async function handleWatchtowerSubscriptionUpdated(
       { stripeSubscriptionId: sub.id, status, matched: updated.length },
       "watchtower-stripe-handler: subscription.updated → status mirrored",
     );
+    for (const row of updated) {
+      await logWatchtowerActivity(
+        db,
+        `watchtower.subscription.status.${status}`,
+        row.id,
+        {
+          stripeSubscriptionId: sub.id,
+          stripeStatus: sub.status,
+          mappedStatus: status,
+        },
+      );
+    }
   }
   return { matched: updated.length, status };
 }
@@ -297,6 +355,14 @@ export async function handleWatchtowerSubscriptionDeleted(
       { stripeSubscriptionId: sub.id, matched: updated.length },
       "watchtower-stripe-handler: subscription.deleted → status=cancelled",
     );
+    for (const row of updated) {
+      await logWatchtowerActivity(
+        db,
+        "watchtower.subscription.cancelled",
+        row.id,
+        { stripeSubscriptionId: sub.id, stripeStatus: sub.status },
+      );
+    }
   }
   return { matched: updated.length };
 }

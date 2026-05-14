@@ -154,17 +154,20 @@ export function watchtowerCheckoutRoutes(db: Db): Router {
       return;
     }
 
-    // Success → customer portal so the new entitlement renders + upsells
-    // are visible. Cancel → back to the storefront signup page so a
-    // bounced checkout doesn't dump the visitor into a logged-out portal.
-    // Caller can override either via the body's returnUrl (legacy) or the
-    // env vars; we keep the legacy single-URL knob behavior for backwards
-    // compat (used as a unified base when explicitly set).
+    // Success → the Watchtower page in the portal (not the generic dashboard)
+    // so a fresh buyer lands directly on the product they paid for. The
+    // page renders a sample preview until the first real run, and the
+    // contextual upsell shelf surfaces companion products. Cancel → back
+    // to the storefront signup page so a bounced checkout doesn't dump
+    // the visitor into a logged-out portal. Caller can override either
+    // via the body's returnUrl (legacy) or the env vars; we keep the
+    // legacy single-URL knob for backwards compat (used as a unified base
+    // when explicitly set).
     const successBase =
       returnUrl
       || process.env.WATCHTOWER_SUCCESS_URL
       || process.env.WATCHTOWER_RETURN_URL
-      || "https://app.coherencedaddy.com/dashboard";
+      || "https://app.coherencedaddy.com/watchtower";
     const cancelBase =
       process.env.WATCHTOWER_CANCEL_URL
       || returnUrl
