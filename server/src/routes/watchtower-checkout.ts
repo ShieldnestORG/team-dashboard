@@ -172,7 +172,11 @@ export function watchtowerCheckoutRoutes(db: Db): Router {
       process.env.WATCHTOWER_CANCEL_URL
       || returnUrl
       || process.env.WATCHTOWER_RETURN_URL
-      || "https://coherencedaddy.com/watchtower-home";
+      // The storefront signup page lives at /watchtower. The old default
+      // ("/watchtower-home") 404s — a bounced checkout would land the
+      // visitor on a dead page. Verified live 2026-05-14: /watchtower → 200,
+      // /watchtower-home → 404.
+      || "https://coherencedaddy.com/watchtower";
     const successSep = successBase.includes("?") ? "&" : "?";
     const cancelSep = cancelBase.includes("?") ? "&" : "?";
     const successUrl = `${successBase}${successSep}status=success&session_id={CHECKOUT_SESSION_ID}&product=watchtower`;
