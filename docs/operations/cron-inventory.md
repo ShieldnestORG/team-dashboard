@@ -59,6 +59,7 @@ All content cron jobs below are mirrored into `social_automations` (linked to `s
   - Weaver Curation (3 jobs)
   - Recall Memory (4 jobs) — includes `memory:extract-comments` (every 5 min), Ollama-driven extraction of operational triples from agent-authored `issue_comments` into `agent_memory` under `agent_name='recall'`. Predicate set: `lives_at`, `owned_by`, `depends_on`, `blocks`, `causes`, `breaks`, `replaces`, `deprecated_by`, `requires`, `do_not`, `learned_that`. Decays confidence by 0.15 on existing rows that share `(subject, predicate)` but disagree on `object` (stigmergic contradiction signal). Source: `server/src/services/comment-knowledge-extractor.ts`.
   - Oracle Cache (1 job)
+- **Causal Events (1 job)**: `causal-constraints:check` (every 5 min) walks `event_constraints` table and emits `causal.constraint.violated` events for activity_log rows that violate declared "every X must produce Y within Nms" patterns. Owner: `causal`. Source: `server/src/services/causal-constraints-cron.ts`. Skipped at boot when `CAUSAL_CONSTRAINTS_ENABLED=false`. See [docs/operations/causal-events.md](causal-events.md).
 
 For a full mapping of which agent owns which specific cron, refer to:
 `docs/guides/agent-cron-ownership.md`

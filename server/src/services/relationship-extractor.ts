@@ -9,7 +9,10 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { knowledgeTags, companyRelationships } from "@paperclipai/db";
 import { callOllamaGenerate } from "./ollama-client.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -267,6 +270,17 @@ export function relationshipExtractorService(db: Db) {
     async extractFromReports(limit = 50): Promise<ExtractionResult> {
       const result: ExtractionResult = { reportsProcessed: 0, triplesExtracted: 0, tagsCreated: 0, errors: 0 };
 
+      const runStartedAt = Date.now();
+      const runEntityId = crypto.randomUUID();
+      const runEvtId = await recordEvent(db, {
+        kind: "agent.relationship-extractor.run.started",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        payload: { limit },
+      });
+      let runOk = false;
+      try {
+
       const processedIds = await getProcessedIds();
 
       // Fetch recent reports not yet processed
@@ -339,6 +353,18 @@ export function relationshipExtractorService(db: Db) {
               `);
 
               result.triplesExtracted++;
+              await recordEvent(db, {
+                kind: "agent.relationship-extractor.triple.extracted",
+                companyId: TEAM_DASHBOARD_COMPANY_ID,
+                entityId: runEntityId,
+                causedBy: runEvtId ? [runEvtId] : [],
+                payload: {
+                  source: source.id,
+                  relationship: triple.relationship,
+                  target: target.id,
+                  confidence: triple.confidence,
+                },
+              });
             } catch (err) {
               logger.warn({ err, triple }, "Relationship extractor: failed to upsert triple");
               result.errors++;
@@ -357,7 +383,23 @@ export function relationshipExtractorService(db: Db) {
       await recordProcessed(batchIds);
 
       logger.info(result, "Relationship extractor: batch complete");
+      runOk = true;
       return result;
+      } finally {
+        await recordEvent(db, {
+          kind: "agent.relationship-extractor.run.completed",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: runEntityId,
+          causedBy: runEvtId ? [runEvtId] : [],
+          payload: {
+            ok: runOk,
+            durationMs: Date.now() - runStartedAt,
+            reportsProcessed: result.reportsProcessed,
+            triplesExtracted: result.triplesExtracted,
+            errors: result.errors,
+          },
+        });
+      }
     },
 
     /** Embed knowledge tags that don't have embeddings yet. */

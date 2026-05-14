@@ -26,6 +26,7 @@ import type { Db } from "@paperclipai/db";
 import { cityIntelligence } from "@paperclipai/db";
 import type { CityItem, CityRawSource } from "@paperclipai/db";
 import { callOllamaGenerate } from "./ollama-client.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID =
@@ -620,6 +621,16 @@ export async function collectCity(
 
   logger.info({ slug, city: q.city }, "city-collector: starting");
 
+  const runEntityId = crypto.randomUUID();
+  const runEvtId = await recordEvent(db, {
+    kind: "agent.city-collector.run.started",
+    companyId: COMPANY_ID,
+    entityId: runEntityId,
+    payload: { slug, city: q.city, region: q.region ?? null },
+  });
+  let runOk = false;
+  let runMentionCount = 0;
+
   // Mark row as running (insert-or-update with status=running)
   await db
     .insert(cityIntelligence)
@@ -672,6 +683,20 @@ export async function collectCity(
     const durationMs = Date.now() - started;
     const freshUntil = new Date(Date.now() + FRESHNESS_DAYS * 24 * 60 * 60 * 1000);
 
+    await recordEvent(db, {
+      kind: "agent.city-collector.city.processed",
+      companyId: COMPANY_ID,
+      entityId: runEntityId,
+      causedBy: runEvtId ? [runEvtId] : [],
+      payload: {
+        slug,
+        topSearches: bucketed.topSearches.length,
+        serviceDemand: bucketed.serviceDemand.length,
+        trendingTopics: bucketed.trendingTopics.length,
+      },
+    });
+    runMentionCount = bucketed.topSearches.length + bucketed.serviceDemand.length + bucketed.trendingTopics.length;
+
     await db
       .update(cityIntelligence)
       .set({
@@ -700,6 +725,7 @@ export async function collectCity(
       "city-collector: complete",
     );
 
+    runOk = true;
     return {
       slug,
       status: "ready",
@@ -734,6 +760,14 @@ export async function collectCity(
       durationMs: Date.now() - started,
       error: errorMsg,
     };
+  } finally {
+    await recordEvent(db, {
+      kind: "agent.city-collector.run.completed",
+      companyId: COMPANY_ID,
+      entityId: runEntityId,
+      causedBy: runEvtId ? [runEvtId] : [],
+      payload: { ok: runOk, slug, durationMs: Date.now() - started, itemCount: runMentionCount },
+    });
   }
 }
 

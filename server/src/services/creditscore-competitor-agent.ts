@@ -17,7 +17,10 @@ import {
   creditscoreSubscriptions,
 } from "@paperclipai/db";
 import { runAudit, type AuditResult } from "../routes/audit.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 const COMPETITORS_PER_TIER: Record<string, number> = {
   growth: 3,
@@ -82,6 +85,18 @@ export function creditscoreCompetitorAgent(db: Db) {
     subscriptionId: string,
     opts: { cycleTag?: string; now?: Date } = {},
   ): Promise<{ scanned: number; skipped: number; reason?: string }> {
+    const runStartedAt = Date.now();
+    const runEntityId = crypto.randomUUID();
+    const runEvtId = await recordEvent(db, {
+      kind: "agent.creditscore-competitor.run.started",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      payload: { subscriptionId, cycleTag: opts.cycleTag },
+    });
+    let runOk = false;
+    let scannedCount = 0;
+    let skippedCount = 0;
+    try {
     const [sub] = await db
       .select()
       .from(creditscoreSubscriptions)
@@ -151,7 +166,21 @@ export function creditscoreCompetitorAgent(db: Db) {
         })
         .returning({ id: creditscoreCompetitorScans.id });
 
+      const callId = await recordEvent(db, {
+        kind: "agent.creditscore-competitor.perplexity.called",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { competitorDomain, customerDomain: sub.domain },
+      });
       const result = await auditOnce(competitorUrl);
+      await recordEvent(db, {
+        kind: "agent.creditscore-competitor.perplexity.responded",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: callId ? [callId] : [],
+        payload: { ok: result != null, competitorDomain, competitorScore: result?.score ?? null },
+      });
       if (!result) {
         await db
           .update(creditscoreCompetitorScans)
@@ -180,7 +209,19 @@ export function creditscoreCompetitorAgent(db: Db) {
       scanned += 1;
     }
 
+    scannedCount = scanned;
+    skippedCount = skipped;
+    runOk = true;
     return { scanned, skipped };
+    } finally {
+      await recordEvent(db, {
+        kind: "agent.creditscore-competitor.run.completed",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { ok: runOk, scanned: scannedCount, skipped: skippedCount, durationMs: Date.now() - runStartedAt },
+      });
+    }
   }
 
   async function runMonthlyCompetitorCycle(): Promise<{ scanned: number; skipped: number }> {

@@ -20,7 +20,10 @@ import {
   sendWatchtowerDigest,
   type WatchtowerWeeklyDigestData,
 } from "./watchtower-email-callback.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 const WEEKLY_SCHEDULE = "0 9 * * 1"; // Monday 09:00 UTC
 const FANOUT_CONCURRENCY = 5;
@@ -80,6 +83,15 @@ export async function resolveWatchtowerRecipient(
 export async function runWeeklyWatchtowerJobs(
   db: Db,
 ): Promise<WatchtowerWeeklyRunsResult> {
+  const tickStartedAt = Date.now();
+  const tickEntityId = crypto.randomUUID();
+  const tickId = await recordEvent(db, {
+    kind: "cron.watchtower-weekly.tick.started",
+    companyId: TEAM_DASHBOARD_COMPANY_ID,
+    entityId: tickEntityId,
+    payload: {},
+  });
+
   const subs = await db
     .select()
     .from(watchtowerSubscriptions)
@@ -107,6 +119,14 @@ export async function runWeeklyWatchtowerJobs(
         const result = await runSubscription(db, sub.id);
         processed += 1;
         totalMentions += result.mentionCount;
+
+        await recordEvent(db, {
+          kind: "cron.watchtower-weekly.subscription.processed",
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          entityId: tickEntityId,
+          causedBy: tickId ? [tickId] : [],
+          payload: { subscriptionId: sub.id, mentionCount: result.mentionCount },
+        });
 
         const recipient = await resolveWatchtowerRecipient(db, sub);
         if (!recipient) {
@@ -143,7 +163,15 @@ export async function runWeeklyWatchtowerJobs(
   });
   await Promise.all(workers);
 
-  return { processed, totalMentions, errors, skippedNoRecipient };
+  const summary = { processed, totalMentions, errors, skippedNoRecipient };
+  await recordEvent(db, {
+    kind: "cron.watchtower-weekly.tick.completed",
+    companyId: TEAM_DASHBOARD_COMPANY_ID,
+    entityId: tickEntityId,
+    causedBy: tickId ? [tickId] : [],
+    payload: { ...summary, durationMs: Date.now() - tickStartedAt },
+  });
+  return summary;
 }
 
 async function sendDigest(

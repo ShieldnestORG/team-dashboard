@@ -31,6 +31,8 @@ import {
   type AnswerCheckReportData,
 } from "./watchtower-email-callback.js";
 
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
 export interface RunAnswerCheckInput {
   brandName: string;
   domain: string | null;
@@ -61,11 +63,14 @@ export async function runAnswerCheck(
   db: Db,
   input: RunAnswerCheckInput,
 ): Promise<AnswerCheckRunResponse> {
-  const result: OneShotResult = await runPromptOneShot({
-    brandName: input.brandName,
-    domain: input.domain,
-    prompt: input.prompt,
-  });
+  const result: OneShotResult = await runPromptOneShot(
+    {
+      brandName: input.brandName,
+      domain: input.domain,
+      prompt: input.prompt,
+    },
+    { db, companyId: TEAM_DASHBOARD_COMPANY_ID },
+  );
 
   const [row] = await db
     .insert(answerCheckRuns)

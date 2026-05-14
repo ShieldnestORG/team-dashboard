@@ -32,9 +32,13 @@ export interface LogActivityInput {
   agentId?: string | null;
   runId?: string | null;
   details?: Record<string, unknown> | null;
+  // Causal-event modeling (PyRapide-style). Optional on logActivity so
+  // legacy callers stay untouched; populated by recordEvent() below.
+  eventKind?: string | null;
+  causedBy?: string[] | null;
 }
 
-export async function logActivity(db: Db, input: LogActivityInput) {
+export async function logActivity(db: Db, input: LogActivityInput): Promise<string> {
   const currentUserRedactionOptions = {
     enabled: (await instanceSettingsService(db).getGeneral()).censorUsernameInLogs,
   };
@@ -42,7 +46,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
   const redactedDetails = sanitizedDetails
     ? redactCurrentUserValue(sanitizedDetails, currentUserRedactionOptions)
     : null;
-  await db.insert(activityLog).values({
+  const [inserted] = await db.insert(activityLog).values({
     companyId: input.companyId,
     actorType: input.actorType,
     actorId: input.actorId,
@@ -52,7 +56,9 @@ export async function logActivity(db: Db, input: LogActivityInput) {
     agentId: input.agentId ?? null,
     runId: input.runId ?? null,
     details: redactedDetails,
-  });
+    eventKind: input.eventKind ?? null,
+    causedBy: input.causedBy ?? null,
+  }).returning({ id: activityLog.id });
 
   publishLiveEvent({
     companyId: input.companyId,
@@ -91,4 +97,6 @@ export async function logActivity(db: Db, input: LogActivityInput) {
       }
     }).catch(() => {});
   }
+
+  return inserted?.id ?? "";
 }

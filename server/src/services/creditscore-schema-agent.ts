@@ -23,7 +23,10 @@ import {
   getRulesByCategory,
   selfCheckJsonLd,
 } from "./aeo-seo-playbook.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 const IMPLS_PER_TIER: Record<string, number> = {
   growth: 1,
@@ -140,6 +143,18 @@ export function creditscoreSchemaAgent(db: Db) {
     subscriptionId: string,
     opts: { cycleTag?: string; now?: Date } = {},
   ): Promise<{ generated: number; skipped: number; reason?: string }> {
+    const runStartedAt = Date.now();
+    const runEntityId = crypto.randomUUID();
+    const runEvtId = await recordEvent(db, {
+      kind: "agent.creditscore-schema.run.started",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      payload: { subscriptionId, cycleTag: opts.cycleTag },
+    });
+    let runOk = false;
+    let genCount = 0;
+    let skipCount = 0;
+    try {
     const [sub] = await db
       .select()
       .from(creditscoreSubscriptions)
@@ -204,7 +219,21 @@ export function creditscoreSchemaAgent(db: Db) {
         brandContext,
       });
 
+      const callId = await recordEvent(db, {
+        kind: "agent.creditscore-schema.llm.called",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { model: OLLAMA_MODEL, schemaType, promptLength: prompt.length },
+      });
       const jsonLd = await askOllamaForSchema(prompt);
+      await recordEvent(db, {
+        kind: "agent.creditscore-schema.llm.responded",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: callId ? [callId] : [],
+        payload: { ok: jsonLd != null, schemaType },
+      });
       if (!jsonLd) {
         skipped += 1;
         continue;
@@ -244,7 +273,19 @@ export function creditscoreSchemaAgent(db: Db) {
       generated += 1;
     }
 
+    genCount = generated;
+    skipCount = skipped;
+    runOk = true;
     return { generated, skipped };
+    } finally {
+      await recordEvent(db, {
+        kind: "agent.creditscore-schema.run.completed",
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        entityId: runEntityId,
+        causedBy: runEvtId ? [runEvtId] : [],
+        payload: { ok: runOk, generated: genCount, skipped: skipCount, durationMs: Date.now() - runStartedAt },
+      });
+    }
   }
 
   async function runMonthlySchemaCycle(): Promise<{ generated: number; skipped: number }> {

@@ -16,7 +16,10 @@ import type { Db } from "@paperclipai/db";
 import { creditscoreReports, creditscoreSubscriptions } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
+
+const TEAM_DASHBOARD_COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 interface RecommendationShape {
   priority: "high" | "medium" | "low";
@@ -42,6 +45,18 @@ export function extractTopRecommendation(resultJson: unknown): RecommendationSha
 }
 
 async function runFixPriorityDigest(db: Db): Promise<void> {
+  const runStartedAt = Date.now();
+  const runEntityId = crypto.randomUUID();
+  const runEvtId = await recordEvent(db, {
+    kind: "agent.creditscore-report.run.started",
+    companyId: TEAM_DASHBOARD_COMPANY_ID,
+    entityId: runEntityId,
+    payload: {},
+  });
+  let runOk = false;
+  let sentTotal = 0;
+  let skippedTotal = 0;
+  try {
   const subs = await db
     .select({
       id: creditscoreSubscriptions.id,
@@ -96,6 +111,13 @@ async function runFixPriorityDigest(db: Db): Promise<void> {
       continue;
     }
 
+    const sendId = await recordEvent(db, {
+      kind: "agent.creditscore-report.email.sent",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      causedBy: runEvtId ? [runEvtId] : [],
+      payload: { subscriptionId: sub.id, domain: sub.domain, tier: sub.tier },
+    });
     void sendCreditscoreEmail({
       kind: "fix_priority_monthly",
       to: sub.email,
@@ -108,14 +130,33 @@ async function runFixPriorityDigest(db: Db): Promise<void> {
       },
       messageId: `fix-priority-${sub.id}-${new Date().toISOString().slice(0, 7)}`,
     });
+    await recordEvent(db, {
+      kind: "agent.creditscore-report.email.queued",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      causedBy: sendId ? [sendId] : [],
+      payload: { subscriptionId: sub.id },
+    });
 
     sent += 1;
   }
 
+  sentTotal = sent;
+  skippedTotal = skipped;
+  runOk = true;
   logger.info(
     { sent, skipped, considered: subs.length },
     "creditscore:fix-priority-digest — cycle complete",
   );
+  } finally {
+    await recordEvent(db, {
+      kind: "agent.creditscore-report.run.completed",
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      entityId: runEntityId,
+      causedBy: runEvtId ? [runEvtId] : [],
+      payload: { ok: runOk, sent: sentTotal, skipped: skippedTotal, durationMs: Date.now() - runStartedAt },
+    });
+  }
 }
 
 export function startCreditscoreReportAgent(db: Db): void {

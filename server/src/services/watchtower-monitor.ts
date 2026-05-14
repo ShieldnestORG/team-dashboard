@@ -31,6 +31,7 @@ import {
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { ALL_ENGINES, type EngineAdapter } from "./watchtower-engines/index.js";
+import { recordEvent } from "./causal-events.js";
 
 // Hard ceiling per CLAUDE.md cost protection. A subscription's prompt_cap
 // can be set lower (default 25) but never higher than this.
@@ -159,9 +160,51 @@ export async function runPromptOneShot(
     );
   }
 
+  const instrumentDb = opts.db;
+  const instrumentCompanyId = opts.companyId;
+  const instrument = !!(instrumentDb && instrumentCompanyId);
+  const oneshotEntityId = crypto.randomUUID();
+  let oneshotId = "";
+  if (instrument) {
+    oneshotId = await recordEvent(instrumentDb!, {
+      kind: "watchtower.oneshot.started",
+      companyId: instrumentCompanyId!,
+      entityId: oneshotEntityId,
+      payload: {
+        brandName: input.brandName,
+        domain: input.domain,
+        engines: enabledAdapters.map((a) => a.id),
+      },
+    });
+  }
+
   const perEngine = await Promise.all(
     enabledAdapters.map(async (adapter): Promise<PerEngineOutput> => {
+      let sentId = "";
+      if (instrument) {
+        sentId = await recordEvent(instrumentDb!, {
+          kind: "watchtower.query.sent",
+          companyId: instrumentCompanyId!,
+          entityId: oneshotEntityId,
+          causedBy: oneshotId ? [oneshotId] : [],
+          payload: { engine: adapter.id, prompt: input.prompt },
+        });
+      }
       const resp = await adapter.query({ prompt: input.prompt });
+      if (instrument) {
+        await recordEvent(instrumentDb!, {
+          kind: "watchtower.query.response",
+          companyId: instrumentCompanyId!,
+          entityId: oneshotEntityId,
+          causedBy: sentId ? [sentId] : [],
+          payload: {
+            engine: adapter.id,
+            latencyMs: resp.latencyMs,
+            ok: resp.ok,
+            error: resp.error ?? null,
+          },
+        });
+      }
       const detection = detectMention(
         resp.text,
         input.brandName,
@@ -180,7 +223,7 @@ export async function runPromptOneShot(
     }),
   );
 
-  return {
+  const result: OneShotResult = {
     brandName: input.brandName,
     domain: input.domain,
     prompt: input.prompt,
@@ -189,6 +232,21 @@ export async function runPromptOneShot(
     skippedEngines,
     mentionCount: perEngine.filter((p) => p.mentioned).length,
   };
+
+  if (instrument) {
+    await recordEvent(instrumentDb!, {
+      kind: "watchtower.oneshot.completed",
+      companyId: instrumentCompanyId!,
+      entityId: oneshotEntityId,
+      causedBy: oneshotId ? [oneshotId] : [],
+      payload: {
+        mentionCount: result.mentionCount,
+        enginesUsed: result.enginesUsed,
+      },
+    });
+  }
+
+  return result;
 }
 
 export interface RunResult {
@@ -201,6 +259,10 @@ export interface RunResult {
 export interface RunSubscriptionOpts {
   /** Override the engine list — used by tests to inject a single mock. */
   engines?: ReadonlyArray<EngineAdapter>;
+  /** When provided, runPromptOneShot emits causal events scoped to this company. */
+  companyId?: string;
+  /** Optional Db handle required to record causal events from runPromptOneShot. */
+  db?: Db;
 }
 
 /**
@@ -264,6 +326,19 @@ export async function runSubscription(
     );
   }
 
+  const eventCompanyId = sub.accountId ?? subscriptionId;
+  const runEventId = await recordEvent(db, {
+    kind: "watchtower.run.started",
+    companyId: eventCompanyId,
+    entityId: subscriptionId,
+    payload: {
+      subscriptionId,
+      brandName: sub.brandName,
+      promptCount: prompts.length,
+      engines: enabledAdapters.map((a) => a.id),
+    },
+  });
+
   // Build the work list (prompt, adapter) pairs and execute with bounded
   // concurrency. A 25-prompt × 3-engine subscription is 75 calls; at
   // concurrency 4 that's ~20s wall-clock at 1s/call.
@@ -282,6 +357,7 @@ export async function runSubscription(
   };
 
   const outputs: CellOutput[] = [];
+  const respIds: string[] = [];
   const concurrency = 4;
   let cursor = 0;
 
@@ -291,7 +367,27 @@ export async function runSubscription(
         const idx = cursor++;
         if (idx >= cells.length) return;
         const { prompt, adapter } = cells[idx]!;
+        const sentId = await recordEvent(db, {
+          kind: "watchtower.query.sent",
+          companyId: eventCompanyId,
+          entityId: subscriptionId,
+          causedBy: [runEventId],
+          payload: { engine: adapter.id, prompt },
+        });
         const resp = await adapter.query({ prompt });
+        const respId = await recordEvent(db, {
+          kind: "watchtower.query.response",
+          companyId: eventCompanyId,
+          entityId: subscriptionId,
+          causedBy: [sentId],
+          payload: {
+            engine: adapter.id,
+            latencyMs: resp.latencyMs,
+            ok: resp.ok,
+            error: resp.error ?? null,
+          },
+        });
+        respIds.push(respId);
         const detection = detectMention(resp.text, sub.brandName, sub.domain);
         outputs.push({
           prompt,
@@ -308,6 +404,7 @@ export async function runSubscription(
   // Persist a run row first so we have an FK target, then bulk-insert
   // results. Done in a single transaction so a partial run never leaves
   // an orphan run row with zero results.
+  let persistedId = "";
   const result = await db.transaction(async (tx) => {
     const enginesUsed = enabledAdapters.map((a) => a.id);
     const mentionCount = outputs.filter((o) => o.detection.mentioned).length;
@@ -346,12 +443,37 @@ export async function runSubscription(
       );
     }
 
+    persistedId = await recordEvent(db, {
+      kind: "watchtower.results.persisted",
+      companyId: eventCompanyId,
+      entityId: subscriptionId,
+      causedBy: respIds,
+      payload: {
+        runId: runRow.id,
+        mentionCount,
+        totalPrompts: prompts.length,
+      },
+    });
+
     return {
       runId: runRow.id,
       mentionCount,
       totalPrompts: prompts.length,
       summary,
     };
+  });
+
+  await recordEvent(db, {
+    kind: "watchtower.run.completed",
+    companyId: eventCompanyId,
+    entityId: subscriptionId,
+    causedBy: [persistedId],
+    payload: {
+      subscriptionId,
+      runId: result.runId,
+      mentionCount: result.mentionCount,
+      totalPrompts: result.totalPrompts,
+    },
   });
 
   return result;

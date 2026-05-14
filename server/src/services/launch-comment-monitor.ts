@@ -18,6 +18,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { commentReplies, launchTrackedItems } from "@paperclipai/db";
+import { recordEvent } from "./causal-events.js";
 import { logger } from "../middleware/logger.js";
 
 // Hard-coded confidence threshold — at or above this we attach a suggested
@@ -399,6 +400,16 @@ export interface PollResult {
 }
 
 export async function pollAllPlatforms(db: Db, companyId: string): Promise<PollResult[]> {
+  const pollEntityId = crypto.randomUUID();
+  const pollId = await recordEvent(db, {
+    kind: "agent.launch-monitor.poll.started",
+    companyId,
+    entityId: pollEntityId,
+    payload: {},
+  });
+  let processedCount = 0;
+  let classifiedCount = 0;
+  let queuedCount = 0;
   const now = new Date();
   const items = await db
     .select()
@@ -441,7 +452,21 @@ export async function pollAllPlatforms(db: Db, companyId: string): Promise<PollR
     for (const c of raw) {
       // Skip if we've already seen this external_comment_id (unique index will
       // also enforce this — onConflictDoNothing keeps us idempotent).
+      processedCount += 1;
       const cls = await classifyComment(c.body);
+      await recordEvent(db, {
+        kind: "agent.launch-monitor.comment.classified",
+        companyId,
+        entityId: pollEntityId,
+        causedBy: pollId ? [pollId] : [],
+        payload: {
+          source: item.platform,
+          classification: cls.patternId,
+          confidence: cls.confidence,
+          commentId: c.externalCommentId,
+        },
+      });
+      classifiedCount += 1;
       const status =
         cls.patternId && cls.suggestedReply
           ? "pending"
@@ -468,6 +493,7 @@ export async function pollAllPlatforms(db: Db, companyId: string): Promise<PollR
       if (rows[0]?.id) {
         newRowIds.push(rows[0].id);
         inserted += 1;
+        queuedCount += 1;
       }
     }
 
@@ -484,6 +510,18 @@ export async function pollAllPlatforms(db: Db, companyId: string): Promise<PollR
       newRowIds,
     });
   }
+
+  await recordEvent(db, {
+    kind: "agent.launch-monitor.poll.completed",
+    companyId,
+    entityId: pollEntityId,
+    causedBy: pollId ? [pollId] : [],
+    payload: {
+      processed: processedCount,
+      classified: classifiedCount,
+      queued: queuedCount,
+    },
+  });
 
   return results;
 }

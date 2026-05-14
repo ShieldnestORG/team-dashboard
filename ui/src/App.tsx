@@ -22,6 +22,8 @@ import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { Costs } from "./pages/Costs";
 import { Activity } from "./pages/Activity";
+import { CausalEvents } from "./pages/CausalEvents";
+import { EventConstraints } from "./pages/EventConstraints";
 import { Inbox } from "./pages/Inbox";
 import { CompanySettings } from "./pages/CompanySettings";
 import { CompanySkills } from "./pages/CompanySkills";
@@ -225,6 +227,8 @@ function boardRoutes() {
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
+      <Route path="causal-events" element={<CausalEvents />} />
+      <Route path="event-constraints" element={<EventConstraints />} />
       <Route path="socials" element={<SocialsContentLayout />}>
         <Route index element={<SocialsLayout />} />
         <Route path="content" element={<ContentReview />} />
