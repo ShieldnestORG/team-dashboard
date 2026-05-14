@@ -38,9 +38,17 @@ PostgreSQL (managed)                       VPS2 168.231.127.180 — handed off, 
 
 ## Updating the Backend
 
+Always run `./scripts/predeploy.sh` first — it verifies the deploy target
+and prints the exact command below (prune tail included).
+
 ```bash
 ssh root@31.220.61.14 'cd /opt/team-dashboard/repo && git pull && cd /opt/team-dashboard && docker compose build && docker compose up -d && docker image prune -f && docker container prune -f && docker builder prune -f'
 ```
+
+The trailing `docker … prune -f` calls are not optional — omitting them
+leaves dangling images + build cache on the box until the Sunday 3am cron
+sweeps them (see "Automated Cleanup" below). `predeploy.sh` now emits the
+full command with the prune tail so a copy-paste deploy stays clean.
 
 LLM/scrape stack updates (VPS1):
 
