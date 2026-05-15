@@ -7,6 +7,15 @@
 // deferring to a Phase 2 decision. Keep this constraint in `eligibility(...)`
 // when adding new cards.
 //
+// Audit V2 blocker #4 cross-sell rule: when result-derived triggers DO ship,
+// they MUST NOT fire across a Watchtower prompt-version boundary. A prompt
+// change resets the comparison baseline (see watchtower_prompt_versions +
+// watchtower_runs.prompt_version_id, migration 0115). Concretely, the
+// eligibility check should look up the latest run's prompt_version_id and the
+// earliest run's prompt_version_id within the comparison window; if they
+// differ, suppress the result-derived trigger. Today this is vacuously safe
+// because the only signals here are tenure + entitlement.
+//
 // The catalog is hard-coded here because (a) it's small, (b) we want PR
 // review on every change, and (c) the eligibility predicates need code. When
 // the catalog crosses ~15 entries or starts needing per-customer overrides,

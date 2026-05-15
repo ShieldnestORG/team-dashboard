@@ -39,7 +39,7 @@
 
 import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { watchtowerSubscriptions } from "@paperclipai/db";
+import { watchtowerSubscriptions, watchtowerPromptVersions } from "@paperclipai/db";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 import { logActivity } from "./activity-log.js";
 import { logger } from "../middleware/logger.js";
@@ -221,6 +221,25 @@ export async function handleWatchtowerCheckout(
       })
       .returning({ id: watchtowerSubscriptions.id });
     result = { subscriptionId: row!.id, created: true };
+
+    // Mint version 1 alongside the subscription so every run from day 1
+    // has a non-null prompt_version_id. Non-fatal — the migration 0115
+    // backfill also covers subscriptions that lack a version row, so
+    // a failure here just means the first run's version is filled by
+    // the next edit (or stays NULL = "legacy" until then).
+    try {
+      await db.insert(watchtowerPromptVersions).values({
+        subscriptionId: row!.id,
+        prompts,
+        createdByActorType: "system",
+        createdByActorLabel: "watchtower_stripe_webhook",
+      });
+    } catch (err) {
+      logger.error(
+        { err, subscriptionId: row!.id },
+        "watchtower-stripe-handler: initial prompt-version insert failed (non-fatal — backfill covers)",
+      );
+    }
   }
 
   logger.info(

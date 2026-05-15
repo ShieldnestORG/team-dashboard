@@ -40,8 +40,10 @@ import {
   watchtowerSubscriptions,
   watchtowerRuns,
   watchtowerResults,
+  watchtowerPromptVersions,
 } from "@paperclipai/db";
 import {
+  HARD_PROMPT_CEILING,
   checkManualRunCaps,
   runSubscription,
 } from "../services/watchtower-monitor.js";
@@ -118,13 +120,177 @@ export function watchtowerRoutes(db: Db) {
         totalPrompts: watchtowerRuns.totalPrompts,
         mentionCount: watchtowerRuns.mentionCount,
         summary: watchtowerRuns.summary,
+        promptVersionId: watchtowerRuns.promptVersionId,
       })
       .from(watchtowerRuns)
       .where(eq(watchtowerRuns.subscriptionId, id))
       .orderBy(desc(watchtowerRuns.runAt))
       .limit(4);
 
-    return res.json({ subscription: sub, recentRuns });
+    // Active (most-recent) prompt version. The portal renders the
+    // comparison-reset banner when the latest run's prompt_version_id
+    // differs from the previous run's; it also needs the version's
+    // createdAt to label the banner ("Prompts changed on <date>").
+    const [latestVersion] = await db
+      .select({
+        id: watchtowerPromptVersions.id,
+        createdAt: watchtowerPromptVersions.createdAt,
+      })
+      .from(watchtowerPromptVersions)
+      .where(eq(watchtowerPromptVersions.subscriptionId, id))
+      .orderBy(desc(watchtowerPromptVersions.createdAt))
+      .limit(1);
+
+    return res.json({
+      subscription: sub,
+      recentRuns,
+      latestVersion: latestVersion ?? null,
+    });
+  });
+
+  // -------------------- PATCH /subscriptions/:id/prompts --------------------
+  // Customer-edit endpoint for the prompt list. On success this both:
+  //   (a) inserts a new immutable row in `watchtower_prompt_versions`
+  //   (b) overwrites `watchtower_subscriptions.prompts`
+  // The subscription's `prompts` column remains the source of truth for
+  // the next scheduled run; the version row is the audit/comparison log.
+  router.patch("/subscriptions/:id/prompts", async (req, res) => {
+    const id = req.params.id as string;
+    const [sub] = await db
+      .select()
+      .from(watchtowerSubscriptions)
+      .where(eq(watchtowerSubscriptions.id, id));
+
+    if (!sub) return res.status(404).json({ error: "not_found" });
+    if (!authorizeSubscriptionRead(req, res, sub.accountId ?? null)) return;
+
+    const body = req.body as { prompts?: unknown } | undefined;
+    const incoming = body?.prompts;
+
+    if (!Array.isArray(incoming)) {
+      return res.status(422).json({
+        error: "invalid_prompts",
+        detail: "prompts must be an array of strings",
+      });
+    }
+
+    // Validate each entry: non-empty trimmed string, 1-500 chars.
+    const cleaned: string[] = [];
+    for (const entry of incoming) {
+      if (typeof entry !== "string") {
+        return res.status(422).json({
+          error: "invalid_prompts",
+          detail: "every prompt must be a string",
+        });
+      }
+      const trimmed = entry.trim();
+      if (trimmed.length === 0) {
+        return res.status(422).json({
+          error: "invalid_prompts",
+          detail: "prompts cannot be empty or whitespace-only",
+        });
+      }
+      if (trimmed.length > 500) {
+        return res.status(422).json({
+          error: "invalid_prompts",
+          detail: "each prompt must be 500 characters or fewer",
+        });
+      }
+      cleaned.push(trimmed);
+    }
+
+    // Deduplicate case-sensitively (case-fold dedupe would surprise users
+    // who deliberately submit "Stripe" vs "stripe" to test casing).
+    const seen = new Set<string>();
+    const deduped: string[] = [];
+    for (const p of cleaned) {
+      if (!seen.has(p)) {
+        seen.add(p);
+        deduped.push(p);
+      }
+    }
+
+    if (deduped.length === 0) {
+      return res.status(422).json({
+        error: "invalid_prompts",
+        detail: "at least one prompt is required",
+      });
+    }
+
+    // Plan cap: take the subscription's per-row cap, never above the
+    // system-wide hard ceiling. Mirrors the rule in runSubscription.
+    const effectiveCap = Math.min(
+      Math.max(1, sub.promptCap ?? 25),
+      HARD_PROMPT_CEILING,
+    );
+    if (deduped.length > effectiveCap) {
+      return res.status(422).json({
+        error: "prompts_over_cap",
+        detail: `too many prompts (${deduped.length}); plan cap is ${effectiveCap}`,
+      });
+    }
+
+    // Actor attribution: board actors get their actor id; portal users
+    // get a "portal" type with the session's accountId (we don't have a
+    // single canonical actor table for portal users, so we record the
+    // accountId as the actor id).
+    let actorId: string | null = null;
+    let actorType: string;
+    let actorLabel: string | null = null;
+    if (req.actor?.type === "board") {
+      // userId here is a string id (may not be a UUID), so we record it
+      // as the label and leave actorId null to satisfy the UUID column.
+      actorType = "board";
+      actorLabel = req.actor.userId ?? null;
+    } else {
+      const session = portal.verifySession(parsePortalCookie(req));
+      // authorizeSubscriptionRead above already verified session non-null
+      // for non-board callers, so the ?. fallback is defensive only.
+      actorId = session?.accountId ?? null;
+      actorType = "portal";
+    }
+
+    // Transaction: insert the new version row and overwrite the
+    // subscription's prompts in one shot so a partial failure doesn't
+    // leave the two out of sync.
+    let versionId: string;
+    try {
+      versionId = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(watchtowerPromptVersions)
+          .values({
+            subscriptionId: id,
+            prompts: deduped,
+            createdByActorId: actorId ?? undefined,
+            createdByActorType: actorType,
+            createdByActorLabel: actorLabel ?? undefined,
+          })
+          .returning({ id: watchtowerPromptVersions.id });
+
+        if (!row) throw new Error("failed to insert prompt version");
+
+        await tx
+          .update(watchtowerSubscriptions)
+          .set({ prompts: deduped })
+          .where(eq(watchtowerSubscriptions.id, id));
+
+        return row.id;
+      });
+    } catch (err) {
+      logger.error(
+        { err, subscriptionId: id },
+        "watchtower: prompt edit transaction failed",
+      );
+      return res
+        .status(500)
+        .json({ error: "internal_error", detail: "could not save prompts" });
+    }
+
+    return res.json({
+      ok: true,
+      versionId,
+      promptCount: deduped.length,
+    });
   });
 
   // -------------------- GET /runs/:id --------------------

@@ -168,6 +168,7 @@ export {
   watchtowerSubscriptions,
   watchtowerRuns,
   watchtowerResults,
+  watchtowerPromptVersions,
 } from "./watchtower.js";
 export type {
   WatchtowerSubscription,
@@ -176,6 +177,8 @@ export type {
   NewWatchtowerRun,
   WatchtowerResult,
   NewWatchtowerResult,
+  WatchtowerPromptVersion,
+  NewWatchtowerPromptVersion,
 } from "./watchtower.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

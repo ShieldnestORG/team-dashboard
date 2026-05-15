@@ -22,12 +22,13 @@
 // are flagged as v1-quality in docs/products/watchtower.md.
 // ---------------------------------------------------------------------------
 
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   watchtowerSubscriptions,
   watchtowerRuns,
   watchtowerResults,
+  watchtowerPromptVersions,
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { ALL_ENGINES, type EngineAdapter } from "./watchtower-engines/index.js";
@@ -210,6 +211,12 @@ export interface RunSubscriptionOpts {
    * the internal /trigger-test helper passes "test" so QA runs don't.
    */
   trigger?: RunTrigger;
+  /**
+   * Override the prompt_version_id pinned on the run row. Tests use this
+   * to bypass the active-version lookup; production callers should leave
+   * it undefined so the helper resolves the latest version.
+   */
+  promptVersionId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +322,27 @@ export async function checkManualRunCaps(
 }
 
 /**
+ * Returns the id of the most recent `watchtower_prompt_versions` row for
+ * a subscription, or null if none exist (legacy subscription with no
+ * version history yet — the migration 0115 backfill closes this for all
+ * pre-existing subs, but the helper is defensive in case a brand-new
+ * subscription is created via a code path that hasn't been wired to
+ * mint version 1).
+ */
+export async function getActivePromptVersionId(
+  db: Db,
+  subscriptionId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ id: watchtowerPromptVersions.id })
+    .from(watchtowerPromptVersions)
+    .where(eq(watchtowerPromptVersions.subscriptionId, subscriptionId))
+    .orderBy(desc(watchtowerPromptVersions.createdAt))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
  * Run a single subscription end-to-end: fetch row → fan out across engines
  * × prompts → persist results + a run summary. Concurrency is controlled
  * within the function (4-wide per subscription).
@@ -416,6 +444,23 @@ export async function runSubscription(
   );
   await Promise.all(workers);
 
+  // Resolve the active prompt version BEFORE opening the transaction so a
+  // missing version row only logs a warn and doesn't roll back the run.
+  // Tests can override via opts.promptVersionId to pin a specific id (or
+  // explicit null to assert legacy behavior).
+  let promptVersionId: string | null;
+  if (opts.promptVersionId !== undefined) {
+    promptVersionId = opts.promptVersionId;
+  } else {
+    promptVersionId = await getActivePromptVersionId(db, subscriptionId);
+    if (!promptVersionId) {
+      logger.warn(
+        { subscriptionId },
+        "watchtower: no prompt version row found; run will be inserted with prompt_version_id=NULL (treated as legacy by the portal UI)",
+      );
+    }
+  }
+
   // Persist a run row first so we have an FK target, then bulk-insert
   // results. Done in a single transaction so a partial run never leaves
   // an orphan run row with zero results.
@@ -434,6 +479,7 @@ export async function runSubscription(
         totalPrompts: prompts.length,
         mentionCount,
         summary,
+        promptVersionId,
       })
       .returning({ id: watchtowerRuns.id });
 
