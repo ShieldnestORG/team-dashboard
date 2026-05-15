@@ -35,6 +35,56 @@ export interface WatchtowerWeeklyDigestData {
     excerpt: string;
   }>;
   reportUrl: string;
+  /**
+   * UTM-tagged portal deep-link to this run's dashboard view. Rendered as
+   * the primary footer CTA. See `buildDashboardRunUrl`.
+   */
+  dashboardUrl: string;
+  /**
+   * UTM-tagged portal billing page link. Rendered as a small footer link
+   * ("Manage subscription") to reduce churn-via-buried-cancel.
+   */
+  manageSubscriptionUrl: string;
+  // TODO(stream-f): when Agent E ships the `watchtower_prompt_versions`
+  // table (PR pending), add an optional `promptVersionChange` field here
+  // and inline a "prompt set changed since last run" notice in the
+  // template. Skipped now to avoid blocking on that schema.
+}
+
+// ---------------------------------------------------------------------------
+// Portal URL helpers (UTM-tagged)
+//
+// Convention: read `PORTAL_BASE_URL`, fall back to `https://app.coherencedaddy.com`.
+// Mirrors `server/src/services/customer-portal.ts:portalBaseUrl()` so the
+// digest, the Stripe-portal redirect, and the upsell endpoint all agree on
+// what "the portal" is.
+// ---------------------------------------------------------------------------
+
+function portalBaseUrl(): string {
+  return (
+    process.env.PORTAL_BASE_URL?.trim() || "https://app.coherencedaddy.com"
+  ).replace(/\/$/, "");
+}
+
+export function buildDashboardRunUrl(runId: string): string {
+  const base = portalBaseUrl();
+  const qs = new URLSearchParams({
+    run: runId,
+    utm_source: "watchtower-digest",
+    utm_medium: "email",
+    utm_campaign: "weekly-digest",
+  });
+  return `${base}/watchtower?${qs.toString()}`;
+}
+
+export function buildManageSubscriptionUrl(): string {
+  const base = portalBaseUrl();
+  const qs = new URLSearchParams({
+    utm_source: "watchtower-digest",
+    utm_medium: "email",
+    utm_campaign: "manage-subscription",
+  });
+  return `${base}/billing?${qs.toString()}`;
 }
 
 export interface AnswerCheckReportData {

@@ -156,6 +156,21 @@ PR for the source list).
 
 ## Changelog
 
+- **2026-05-15** — Weekly digest email — Stream F (partial) of the
+  Watchtower portal audit. Payload contract gained `dashboardUrl`
+  (UTM-tagged deep-link to `${PORTAL_BASE_URL}/watchtower?run=<id>`,
+  `utm_source=watchtower-digest`, `utm_medium=email`,
+  `utm_campaign=weekly-digest`) and `manageSubscriptionUrl`
+  (`${PORTAL_BASE_URL}/billing?…utm_campaign=manage-subscription`).
+  URL builders read `PORTAL_BASE_URL` (matches `customer-portal.ts`)
+  with `https://app.coherencedaddy.com` fallback so the cron never
+  crashes on a missing env. Storefront template (`coherencedaddy-landing
+  /lib/watchtower-email.ts`) now renders both CTAs plus a full
+  plain-text body alongside the existing HTML (deliverability +
+  a11y win). **Deferred to Agent E**: the "prompt set changed since
+  last run" inline notice, which depends on the
+  `watchtower_prompt_versions` table (PR pending). A TODO marker in
+  `watchtower-email-callback.ts` points to it.
 - **2026-05-14** — Phase 2: customer-facing "Run now". New `POST /api/watchtower/subscriptions/:id/runs/manual` route + `watchtower_runs.trigger` column (`cron`\|`manual`\|`test`, migration 0113). `checkManualRunCaps` (in `watchtower-monitor.ts`) enforces 1/24h + 5/30d per subscription and 50/hour global, all DB-counted (no Redis in this repo); board actors bypass. `runSubscription` now takes a `trigger` opt — the weekly cron stays `cron`, `/trigger-test` records `test`. Tests in `__tests__/watchtower-manual-run.test.ts`. Portal "Run now" button is a follow-up in `app-coherencedaddy-portal`.
 - **2026-05-11** — Added Grok (xAI) as the 5th engine. New adapter `server/src/services/watchtower-engines/grok.ts` (model `grok-2-1212`, env `WATCHTOWER_GROK_API_KEY`). Engine env vars in the same batch were renamed to the `WATCHTOWER_` namespace (e.g. `OPENAI_API_KEY` → `WATCHTOWER_OPENAI_API_KEY`) so Watchtower credentials are isolated from Codex Local / content-agent / visual-backend keys. Cost per sub/mo: $0.25 → $0.85 (margin 99% → 97%, still healthy).
 - **2026-05-09** — ✅ Live Stripe Product + Price created on Coherence
