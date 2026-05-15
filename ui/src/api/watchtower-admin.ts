@@ -83,4 +83,14 @@ export const watchtowerAdminApi = {
     ),
   aggregate: () =>
     api.get<WatchtowerAdminAggregate>("/watchtower-admin/aggregate"),
+  /**
+   * Mint a single-use impersonation nonce for the given subscription. The
+   * portal SPA exchanges this nonce for a 60-min impersonation cookie. The
+   * UI redirects to the returned `redirectUrl` immediately.
+   */
+  impersonate: (subscriptionId: string) =>
+    api.post<{ redirectUrl: string; expiresAt: string }>(
+      `/watchtower-admin/customers/${subscriptionId}/impersonate`,
+      {},
+    ),
 };

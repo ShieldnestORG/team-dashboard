@@ -163,6 +163,11 @@ export {
   CUSTOMER_CREDENTIAL_KINDS,
 } from "./customer_portal.js";
 export type { CustomerCredentialKind } from "./customer_portal.js";
+export { adminImpersonationNonces } from "./admin_impersonation.js";
+export type {
+  AdminImpersonationNonce,
+  NewAdminImpersonationNonce,
+} from "./admin_impersonation.js";
 export { llmsTxtJobs, llmsTxtOutputs } from "./llms_txt.js";
 export {
   watchtowerSubscriptions,
