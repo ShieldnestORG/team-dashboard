@@ -1214,7 +1214,19 @@ export function OnboardingWizard() {
                       </p>
                     </div>
                   </div>
-                  <div className="border border-border divide-y divide-border">
+                  {/*
+                    data-testid contract: the onboarding e2e spec
+                    (tests/e2e/onboarding.spec.ts) scopes its company/agent/task
+                    visibility assertions to this container, because by step 4
+                    the company + agent are already created and so their names
+                    also render in the sidebar (CompanySwitcher, SidebarAgents),
+                    which trips Playwright strict-mode locator matching.
+                    Keep this testid stable.
+                  */}
+                  <div
+                    data-testid="onboarding-summary"
+                    className="border border-border divide-y divide-border"
+                  >
                     <div className="flex items-center gap-3 px-3 py-2.5">
                       <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
