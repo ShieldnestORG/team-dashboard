@@ -1,15 +1,22 @@
 // ---------------------------------------------------------------------------
 // Watchtower brand-mention monitor — read-only API surface (v1).
 //
-// Mounted at /api/watchtower by app.ts. Three routes:
+// Mounted at /api/watchtower by app.ts. Four routes:
 //
 //   GET  /subscriptions/:id              → subscription + last 4 runs
 //   GET  /runs/:id                       → run row + per-result detail
+//   POST /subscriptions/:id/runs/manual  → customer-facing "Run now". Same
+//                                          auth as the GETs (board or owning
+//                                          portal session); non-board callers
+//                                          are rate-limited by
+//                                          checkManualRunCaps. Records the
+//                                          run with trigger='manual'.
 //   POST /runs/:id/trigger-test          → INTERNAL only — runs the
 //                                          subscription that owns the run
 //                                          id (or, for now, treats :id as
 //                                          the subscription id) and
-//                                          returns the new runId.
+//                                          returns the new runId. Records
+//                                          the run with trigger='test'.
 //                                          Gated on INTERNAL_API_TOKEN.
 //
 // Auth on the two GETs:
@@ -34,7 +41,10 @@ import {
   watchtowerRuns,
   watchtowerResults,
 } from "@paperclipai/db";
-import { runSubscription } from "../services/watchtower-monitor.js";
+import {
+  checkManualRunCaps,
+  runSubscription,
+} from "../services/watchtower-monitor.js";
 import {
   PORTAL_SESSION_COOKIE,
   customerPortalService,
@@ -165,7 +175,9 @@ export function watchtowerRoutes(db: Db) {
 
     const subscriptionId = req.params.id as string;
     try {
-      const result = await runSubscription(db, subscriptionId);
+      const result = await runSubscription(db, subscriptionId, {
+        trigger: "test",
+      });
       return res.json({
         ok: true,
         runId: result.runId,
@@ -177,6 +189,53 @@ export function watchtowerRoutes(db: Db) {
       logger.warn(
         { err: message, subscriptionId },
         "watchtower: trigger-test failed",
+      );
+      return res.status(500).json({ error: "run_failed", detail: message });
+    }
+  });
+
+  // -------------------- POST /subscriptions/:id/runs/manual --------------------
+  // Customer-facing "Run now" button (audit Phase 2). Auth is the same as the
+  // GET endpoints: a board actor, or a portal session owning the subscription.
+  //
+  // Non-board callers are rate-limited by `checkManualRunCaps` (1/24h + 5/30d
+  // per subscription, 50/hr global). Board actors bypass the caps — ops keeps
+  // a single "re-run" path here instead of reaching for /trigger-test.
+  router.post("/subscriptions/:id/runs/manual", async (req, res) => {
+    const id = req.params.id as string;
+    const [sub] = await db
+      .select()
+      .from(watchtowerSubscriptions)
+      .where(eq(watchtowerSubscriptions.id, id));
+
+    if (!sub) return res.status(404).json({ error: "not_found" });
+    if (!authorizeSubscriptionRead(req, res, sub.accountId ?? null)) return;
+
+    if (req.actor?.type !== "board") {
+      const cap = await checkManualRunCaps(db, id);
+      if (!cap.ok) {
+        res.setHeader("Retry-After", String(cap.retryAfterSeconds));
+        return res.status(429).json({
+          error: cap.code,
+          detail: cap.detail,
+          retryAfterSeconds: cap.retryAfterSeconds,
+        });
+      }
+    }
+
+    try {
+      const result = await runSubscription(db, id, { trigger: "manual" });
+      return res.json({
+        ok: true,
+        runId: result.runId,
+        mentionCount: result.mentionCount,
+        totalPrompts: result.totalPrompts,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { err: message, subscriptionId: id },
+        "watchtower: manual run failed",
       );
       return res.status(500).json({ error: "run_failed", detail: message });
     }
