@@ -1,4 +1,4 @@
--- 0113_admin_access_log.sql
+-- 0114_admin_access_log.sql
 -- Admin access log — ops-telemetry audit trail for authenticated admin
 -- route hits. Stream D blocker / V2 blocker #6 from
 -- docs/audits/watchtower-portal-audit-2026-05-13.md.

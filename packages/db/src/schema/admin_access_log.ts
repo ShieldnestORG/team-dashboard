@@ -22,7 +22,7 @@ import {
 //                        (including unauth 401s).
 //
 // Do not collapse the two: compliance retention is forever, ops retention is
-// short and high-volume. Migration 0113_admin_access_log.sql carries the same
+// short and high-volume. Migration 0114_admin_access_log.sql carries the same
 // rationale in plain SQL.
 //
 // `actor_id` is nullable + UUID-typed but unconstrained (no FK). We log
