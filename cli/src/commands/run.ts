@@ -138,12 +138,30 @@ function getMissingModuleSpecifier(err: unknown): string | null {
   return null;
 }
 
-function maybeEnableUiDevMiddleware(entrypoint: string): void {
+export function maybeEnableUiDevMiddleware(entrypoint: string): void {
   if (process.env.PAPERCLIP_UI_DEV_MIDDLEWARE !== undefined) return;
   const normalized = entrypoint.replaceAll("\\", "/");
-  if (normalized.endsWith("/server/src/index.ts") || normalized.endsWith("@paperclipai/server/src/index.ts")) {
-    process.env.PAPERCLIP_UI_DEV_MIDDLEWARE = "true";
+  if (!normalized.endsWith("/server/src/index.ts") && !normalized.endsWith("@paperclipai/server/src/index.ts")) {
+    return;
   }
+  // Mirror the candidate paths the server itself checks in app.ts static-mode
+  // branch (relative to server/src/__dirname): ../ui-dist and ../../ui/dist.
+  // If a built UI bundle is already present, leave it alone — otherwise we'd
+  // override the dev's `pnpm build` output with Vite dev middleware and trip
+  // the same Vite-429 hydration cliff that broke e2e CI for a week (see PR #66).
+  const serverSrcDir = path.dirname(entrypoint);
+  const uiDistCandidates = [
+    path.resolve(serverSrcDir, "../ui-dist"),
+    path.resolve(serverSrcDir, "../../ui/dist"),
+  ];
+  const builtUiDist = uiDistCandidates.find((dir) => fs.existsSync(path.join(dir, "index.html")));
+  if (builtUiDist) {
+    console.log(
+      "[paperclip] ui/dist found — running with static UI (set PAPERCLIP_UI_DEV_MIDDLEWARE=true to override)",
+    );
+    return;
+  }
+  process.env.PAPERCLIP_UI_DEV_MIDDLEWARE = "true";
 }
 
 async function importServerEntry(): Promise<StartedServer> {
