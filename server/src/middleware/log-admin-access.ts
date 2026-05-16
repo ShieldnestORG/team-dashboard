@@ -24,14 +24,14 @@ import { logger } from "./logger.js";
 //   - Unauth attempts (no `req.actor` or `req.actor.type === 'none'`) ARE
 //     logged with `actor_type='none'`, typically against a 401 status.
 //
+// 90-day retention is enforced by `admin-access-log-retention-cron.ts`
+// (job `admin-access-log:purge`, daily 04:30 UTC, 100k batch cap).
+//
 // TODO follow-up (NOT in this PR):
-//   1. 90-day retention cron — add to `server/src/services/system-crons.ts`
-//      as `purgeAdminAccessLog()` running daily, deleting rows older than
-//      90d. Spec called out in 0114 migration header.
-//   2. Apply this middleware to `system-crons.ts`, `intel-billing.ts`,
+//   1. Apply this middleware to `system-crons.ts`, `intel-billing.ts`,
 //      and other admin-only route groups (audit doc lists them; intentionally
 //      not done here to keep PR blast radius small).
-//   3. Surface an "Audit log" tab in `ui/src/pages/WatchtowerAdmin.tsx`
+//   2. Surface an "Audit log" tab in `ui/src/pages/WatchtowerAdmin.tsx`
 //      backed by `GET /api/watchtower-admin/audit?path=...`.
 // ---------------------------------------------------------------------------
 

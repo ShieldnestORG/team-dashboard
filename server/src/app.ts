@@ -57,6 +57,7 @@ import { startTrendCrons } from "./services/trend-crons.js";
 import { initFeedbackDb } from "./services/intel-quality.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
 import { startRetentionCron } from "./services/maintenance-retention-cron.js";
+import { startAdminAccessLogRetentionCron } from "./services/admin-access-log-retention-cron.js";
 import { maintenanceRoutes } from "./routes/maintenance.js";
 import { startMoltbookCrons } from "./services/moltbook-crons.js";
 import { startAffiliateCrons } from "./services/affiliate-crons.js";
@@ -489,6 +490,7 @@ export async function createApp(
   startTrendCrons(db);
   startMaintenanceCrons(db);
   startRetentionCron(db);
+  startAdminAccessLogRetentionCron(db);
   startMoltbookCrons(db);
   startAffiliateCrons(db);
   startComplianceScanCron(db);
