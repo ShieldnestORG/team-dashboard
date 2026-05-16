@@ -1,9 +1,15 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { getCronStatus, updateCronJob, triggerCronJob } from "../services/cron-registry.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 export function systemCronRoutes(db: Db) {
   const router = Router();
+
+  // Admin-access audit log. Mounted FIRST so unauth probes are recorded too —
+  // the board-only guard below short-circuits with 401, but the
+  // res.on('finish') hook still fires and records actor_type='none'.
+  router.use(logAdminAccess(db));
 
   router.use((req, res, next) => {
     if (req.actor?.type !== "board") {

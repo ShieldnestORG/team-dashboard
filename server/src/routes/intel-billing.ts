@@ -4,6 +4,7 @@ import type { Db } from "@paperclipai/db";
 import { intelCustomers, intelPlans, intelApiKeys } from "@paperclipai/db";
 import { intelBillingService, verifyStripeSignature } from "../services/intel-billing.js";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 // ---------------------------------------------------------------------------
 // Intel API billing routes
@@ -75,7 +76,11 @@ export function intelBillingRoutes(db: Db) {
   });
 
   // GET /api/intel-billing/customers — admin list (authenticated via board actor)
-  router.get("/customers", async (req, res) => {
+  // Per-route logAdminAccess: the rest of this file is public (`/plans`,
+  // `/checkout`) or Bearer-API-key (`/me`) and is NOT admin traffic, so we
+  // can't router.use() the middleware at the top. Applied here so this single
+  // board-only endpoint is captured in admin_access_log.
+  router.get("/customers", logAdminAccess(db), async (req, res) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Admin only" });
       return;
