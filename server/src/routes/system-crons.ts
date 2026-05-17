@@ -5,6 +5,14 @@ import { getCronStatus, updateCronJob, triggerCronJob } from "../services/cron-r
 export function systemCronRoutes(db: Db) {
   const router = Router();
 
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
+
   // GET /api/system-crons — list all registered cron jobs with DB + in-memory state
   router.get("/", (_req, res) => {
     try {

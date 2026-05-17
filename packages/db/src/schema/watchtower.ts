@@ -59,6 +59,10 @@ export const watchtowerRuns = pgTable(
       .notNull()
       .references(() => watchtowerSubscriptions.id, { onDelete: "cascade" }),
     runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+    // How this run was triggered: cron (weekly job) | manual ("Run now"
+    // button) | test (internal /trigger-test helper). Backs the manual-run
+    // rate limiter — see checkManualRunCaps in watchtower-monitor.ts.
+    trigger: text("trigger").notNull().default("cron"),
     // Engines actually queried this run (skipped engines aren't listed).
     engines: text("engines").array().notNull(),
     totalPrompts: integer("total_prompts").notNull(),
