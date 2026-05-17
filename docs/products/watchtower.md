@@ -80,15 +80,18 @@ All engine keys are **product-scoped with the `WATCHTOWER_` prefix** so credenti
 
 If **all five** engine keys are missing, `runSubscription()` throws `no engines enabled` — the cron's per-subscription error capture turns this into a logged error per row, not a process crash.
 
-## API surface (read-only in v1)
+## API surface
 
-Mounted at `/api/watchtower` by `app.ts`. CRUD lives with Worker A's portal once the Stripe webhook + portal-auth path lands.
+Mounted at `/api/watchtower` by `app.ts`. Subscription CRUD lives with the portal/Stripe webhook path; the reads + the manual-run trigger live here.
 
 | Route | Purpose |
 |---|---|
-| `GET /subscriptions/:id` | Subscription row + last 4 runs (summary only) |
-| `GET /runs/:id` | One run + every per-result row |
-| `POST /runs/:id/trigger-test` | INTERNAL — runs the subscription whose id is in the path. Gated on `X-Internal-Token` header matching `INTERNAL_API_TOKEN` env. Dev/QA helper. |
+| `GET /subscriptions/:id` | Subscription row + last 4 runs (summary only). Board actor OR owning portal session. |
+| `GET /runs/:id` | One run + every per-result row. Same auth as above. |
+| `POST /subscriptions/:id/runs/manual` | Customer-facing "Run now". Same auth as the GETs. Non-board callers are rate-limited by `checkManualRunCaps` — **1 / 24h + 5 / 30d per subscription, 50 / hour global** — and get `429` with `error` ∈ {`manual_run_daily_cap`, `manual_run_monthly_cap`, `manual_runs_global_cap`} + a `Retry-After` header. Records the run with `trigger='manual'`. Board actors bypass the caps. |
+| `POST /runs/:id/trigger-test` | INTERNAL — runs the subscription whose id is in the path. Gated on `X-Internal-Token` header matching `INTERNAL_API_TOKEN` env. Dev/QA helper. Records the run with `trigger='test'`. |
+
+The `watchtower_runs.trigger` column (`cron` \| `manual` \| `test`, migration 0113) is what lets the limiter count manual runs without the weekly cron consuming a customer's quota. **Caveat:** the limiter is check-then-act and `runSubscription` only writes its run row after the engine fan-out, so two clicks inside that ~20s window can both pass — worst case one extra paid run; precise enforcement (Redis counter) is deferred per the audit V2 spec.
 
 ## Free-tool wedge (`/api/public/answer-check/*`)
 
@@ -153,6 +156,22 @@ PR for the source list).
 
 ## Changelog
 
+- **2026-05-15** — Weekly digest email — Stream F (partial) of the
+  Watchtower portal audit. Payload contract gained `dashboardUrl`
+  (UTM-tagged deep-link to `${PORTAL_BASE_URL}/watchtower?run=<id>`,
+  `utm_source=watchtower-digest`, `utm_medium=email`,
+  `utm_campaign=weekly-digest`) and `manageSubscriptionUrl`
+  (`${PORTAL_BASE_URL}/billing?…utm_campaign=manage-subscription`).
+  URL builders read `PORTAL_BASE_URL` (matches `customer-portal.ts`)
+  with `https://app.coherencedaddy.com` fallback so the cron never
+  crashes on a missing env. Storefront template (`coherencedaddy-landing
+  /lib/watchtower-email.ts`) now renders both CTAs plus a full
+  plain-text body alongside the existing HTML (deliverability +
+  a11y win). **Deferred to Agent E**: the "prompt set changed since
+  last run" inline notice, which depends on the
+  `watchtower_prompt_versions` table (PR pending). A TODO marker in
+  `watchtower-email-callback.ts` points to it.
+- **2026-05-14** — Phase 2: customer-facing "Run now". New `POST /api/watchtower/subscriptions/:id/runs/manual` route + `watchtower_runs.trigger` column (`cron`\|`manual`\|`test`, migration 0113). `checkManualRunCaps` (in `watchtower-monitor.ts`) enforces 1/24h + 5/30d per subscription and 50/hour global, all DB-counted (no Redis in this repo); board actors bypass. `runSubscription` now takes a `trigger` opt — the weekly cron stays `cron`, `/trigger-test` records `test`. Tests in `__tests__/watchtower-manual-run.test.ts`. Portal "Run now" button is a follow-up in `app-coherencedaddy-portal`.
 - **2026-05-11** — Added Grok (xAI) as the 5th engine. New adapter `server/src/services/watchtower-engines/grok.ts` (model `grok-2-1212`, env `WATCHTOWER_GROK_API_KEY`). Engine env vars in the same batch were renamed to the `WATCHTOWER_` namespace (e.g. `OPENAI_API_KEY` → `WATCHTOWER_OPENAI_API_KEY`) so Watchtower credentials are isolated from Codex Local / content-agent / visual-backend keys. Cost per sub/mo: $0.25 → $0.85 (margin 99% → 97%, still healthy).
 - **2026-05-09** — ✅ Live Stripe Product + Price created on Coherence
   Daddy account `acct_1TJQywQvkbvTR7Og`:

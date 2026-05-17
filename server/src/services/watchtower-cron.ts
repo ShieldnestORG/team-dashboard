@@ -17,6 +17,8 @@ import { customerAccounts, watchtowerSubscriptions } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import { runSubscription } from "./watchtower-monitor.js";
 import {
+  buildDashboardRunUrl,
+  buildManageSubscriptionUrl,
   sendWatchtowerDigest,
   type WatchtowerWeeklyDigestData,
 } from "./watchtower-email-callback.js";
@@ -167,6 +169,8 @@ async function sendDigest(
     totalEngines,
     topExcerpts: summary.topExcerpts.slice(0, 3),
     reportUrl,
+    dashboardUrl: buildDashboardRunUrl(result.runId),
+    manageSubscriptionUrl: buildManageSubscriptionUrl(),
   };
 
   await sendWatchtowerDigest({

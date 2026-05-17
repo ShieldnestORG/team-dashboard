@@ -334,6 +334,54 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
+// ── Impersonate (View-as-customer) button ──────────────────────────────────
+//
+// Mint a single-use, 5-min nonce server-side and redirect the admin browser
+// to the portal SPA's /admin/impersonate?nonce=... handler, which posts to
+// /api/portal/admin-impersonate (cross-origin, credentials: include) to
+// exchange the nonce for a 60-min impersonation cookie.
+
+function ImpersonateButton({
+  subscriptionId,
+  customerEmail,
+}: {
+  subscriptionId: string;
+  customerEmail: string | null;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const label = customerEmail ?? "this customer";
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={async () => {
+          if (!confirm(`Open the customer portal as ${label}?\n\nReads only. Every page view is logged. The session expires in 60 minutes.`)) {
+            return;
+          }
+          setPending(true);
+          setError(null);
+          try {
+            const result = await watchtowerAdminApi.impersonate(subscriptionId);
+            // Hand off to the portal. The portal's /admin/impersonate handler
+            // POSTs the nonce, which sets the cookie on `.coherencedaddy.com`
+            // and then redirects to the dashboard.
+            window.location.assign(result.redirectUrl);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to mint nonce");
+            setPending(false);
+          }
+        }}
+      >
+        View as customer
+      </Button>
+      {error && <span className="text-xs text-red-400">{error}</span>}
+    </>
+  );
+}
+
 // ── Drill-down sheet ───────────────────────────────────────────────────────
 
 function CustomerSheet({
@@ -558,10 +606,14 @@ function CustomerSheet({
                 <p className="text-[11px] text-muted-foreground">
                   Refund / cancel / re-run actions land in Phase 2.
                 </p>
-                <div className="mt-2">
+                <div className="mt-2 flex items-center gap-2">
                   <Button variant="secondary" size="sm" onClick={onClose}>
                     Close
                   </Button>
+                  <ImpersonateButton
+                    subscriptionId={detailQuery.data.subscription.id}
+                    customerEmail={detailQuery.data.subscription.email}
+                  />
                 </div>
               </div>
             </div>

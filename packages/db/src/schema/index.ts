@@ -45,6 +45,11 @@ export { financeEvents } from "./finance_events.js";
 export { approvals } from "./approvals.js";
 export { approvalComments } from "./approval_comments.js";
 export { activityLog } from "./activity_log.js";
+export { adminAccessLog } from "./admin_access_log.js";
+export type {
+  AdminAccessLogRow,
+  NewAdminAccessLogRow,
+} from "./admin_access_log.js";
 export { companySecrets } from "./company_secrets.js";
 export { companySecretVersions } from "./company_secret_versions.js";
 export { companySkills } from "./company_skills.js";
@@ -158,11 +163,17 @@ export {
   CUSTOMER_CREDENTIAL_KINDS,
 } from "./customer_portal.js";
 export type { CustomerCredentialKind } from "./customer_portal.js";
+export { adminImpersonationNonces } from "./admin_impersonation.js";
+export type {
+  AdminImpersonationNonce,
+  NewAdminImpersonationNonce,
+} from "./admin_impersonation.js";
 export { llmsTxtJobs, llmsTxtOutputs } from "./llms_txt.js";
 export {
   watchtowerSubscriptions,
   watchtowerRuns,
   watchtowerResults,
+  watchtowerPromptVersions,
 } from "./watchtower.js";
 export type {
   WatchtowerSubscription,
@@ -171,6 +182,8 @@ export type {
   NewWatchtowerRun,
   WatchtowerResult,
   NewWatchtowerResult,
+  WatchtowerPromptVersion,
+  NewWatchtowerPromptVersion,
 } from "./watchtower.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

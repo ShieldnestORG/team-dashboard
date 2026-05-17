@@ -22,12 +22,13 @@
 // are flagged as v1-quality in docs/products/watchtower.md.
 // ---------------------------------------------------------------------------
 
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   watchtowerSubscriptions,
   watchtowerRuns,
   watchtowerResults,
+  watchtowerPromptVersions,
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { ALL_ENGINES, type EngineAdapter } from "./watchtower-engines/index.js";
@@ -198,9 +199,147 @@ export interface RunResult {
   summary: RunSummary;
 }
 
+/** How a run was triggered — persisted on the `watchtower_runs.trigger` column. */
+export type RunTrigger = "cron" | "manual" | "test";
+
 export interface RunSubscriptionOpts {
   /** Override the engine list — used by tests to inject a single mock. */
   engines?: ReadonlyArray<EngineAdapter>;
+  /**
+   * How this run was triggered. Defaults to "cron" (the weekly job).
+   * The manual-run route passes "manual" so the rate limiter can count it;
+   * the internal /trigger-test helper passes "test" so QA runs don't.
+   */
+  trigger?: RunTrigger;
+  /**
+   * Override the prompt_version_id pinned on the run row. Tests use this
+   * to bypass the active-version lookup; production callers should leave
+   * it undefined so the helper resolves the latest version.
+   */
+  promptVersionId?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Manual "Run now" rate limits — audit V2 blocker #3.
+//
+// Three caps, all DB-counted (no Redis in this repo). Enforced by
+// `checkManualRunCaps` at POST /api/watchtower/subscriptions/:id/runs/manual.
+// ---------------------------------------------------------------------------
+
+/** Per-subscription manual runs allowed per rolling 24h. */
+export const MANUAL_RUN_DAILY_CAP = 1;
+/** Per-subscription manual runs allowed per rolling 30 days. */
+export const MANUAL_RUN_MONTHLY_CAP = 5;
+/** Manual runs allowed across ALL subscriptions per rolling hour. */
+export const MANUAL_RUN_GLOBAL_HOURLY_CAP = 50;
+
+export type ManualRunCapResult =
+  | { ok: true }
+  | { ok: false; code: string; detail: string; retryAfterSeconds: number };
+
+/**
+ * Check whether a subscription is allowed to trigger a manual run right now.
+ *
+ * Counts only `trigger = 'manual'` rows — cron and test runs never consume a
+ * customer's quota. Three windows, checked cheapest-customer-first:
+ *   1. per-subscription / 24h   → 429 manual_run_daily_cap
+ *   2. per-subscription / 30d   → 429 manual_run_monthly_cap
+ *   3. global / 1h              → 429 manual_runs_global_cap
+ *
+ * NOTE: this is check-then-act, and `runSubscription` only writes its run
+ * row after the (~20s) engine fan-out completes. Two clicks inside that
+ * window can both pass — worst case is one extra paid run. The monthly and
+ * global caps are the real backstops; precise per-second enforcement is
+ * deferred (would need the Redis counter the V2 spec describes).
+ */
+export async function checkManualRunCaps(
+  db: Db,
+  subscriptionId: string,
+  now: Date = new Date(),
+): Promise<ManualRunCapResult> {
+  const HOUR = 60 * 60 * 1000;
+  const dayAgo = new Date(now.getTime() - 24 * HOUR);
+  const monthAgo = new Date(now.getTime() - 30 * 24 * HOUR);
+  const hourAgo = new Date(now.getTime() - HOUR);
+
+  const countManual = async (where: ReturnType<typeof and>): Promise<number> => {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(watchtowerRuns)
+      .where(where);
+    return row?.n ?? 0;
+  };
+
+  const daily = await countManual(
+    and(
+      eq(watchtowerRuns.subscriptionId, subscriptionId),
+      eq(watchtowerRuns.trigger, "manual"),
+      gte(watchtowerRuns.runAt, dayAgo),
+    ),
+  );
+  if (daily >= MANUAL_RUN_DAILY_CAP) {
+    return {
+      ok: false,
+      code: "manual_run_daily_cap",
+      detail: `Manual runs are limited to ${MANUAL_RUN_DAILY_CAP} per 24 hours.`,
+      retryAfterSeconds: 24 * 60 * 60,
+    };
+  }
+
+  const monthly = await countManual(
+    and(
+      eq(watchtowerRuns.subscriptionId, subscriptionId),
+      eq(watchtowerRuns.trigger, "manual"),
+      gte(watchtowerRuns.runAt, monthAgo),
+    ),
+  );
+  if (monthly >= MANUAL_RUN_MONTHLY_CAP) {
+    return {
+      ok: false,
+      code: "manual_run_monthly_cap",
+      detail: `Manual runs are limited to ${MANUAL_RUN_MONTHLY_CAP} per 30 days.`,
+      retryAfterSeconds: 7 * 24 * 60 * 60,
+    };
+  }
+
+  const global = await countManual(
+    and(
+      eq(watchtowerRuns.trigger, "manual"),
+      gte(watchtowerRuns.runAt, hourAgo),
+    ),
+  );
+  if (global >= MANUAL_RUN_GLOBAL_HOURLY_CAP) {
+    return {
+      ok: false,
+      code: "manual_runs_global_cap",
+      detail:
+        "Manual runs are temporarily rate-limited across all customers. Try again shortly.",
+      retryAfterSeconds: 60 * 60,
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Returns the id of the most recent `watchtower_prompt_versions` row for
+ * a subscription, or null if none exist (legacy subscription with no
+ * version history yet — the migration 0115 backfill closes this for all
+ * pre-existing subs, but the helper is defensive in case a brand-new
+ * subscription is created via a code path that hasn't been wired to
+ * mint version 1).
+ */
+export async function getActivePromptVersionId(
+  db: Db,
+  subscriptionId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ id: watchtowerPromptVersions.id })
+    .from(watchtowerPromptVersions)
+    .where(eq(watchtowerPromptVersions.subscriptionId, subscriptionId))
+    .orderBy(desc(watchtowerPromptVersions.createdAt))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 /**
@@ -305,6 +444,23 @@ export async function runSubscription(
   );
   await Promise.all(workers);
 
+  // Resolve the active prompt version BEFORE opening the transaction so a
+  // missing version row only logs a warn and doesn't roll back the run.
+  // Tests can override via opts.promptVersionId to pin a specific id (or
+  // explicit null to assert legacy behavior).
+  let promptVersionId: string | null;
+  if (opts.promptVersionId !== undefined) {
+    promptVersionId = opts.promptVersionId;
+  } else {
+    promptVersionId = await getActivePromptVersionId(db, subscriptionId);
+    if (!promptVersionId) {
+      logger.warn(
+        { subscriptionId },
+        "watchtower: no prompt version row found; run will be inserted with prompt_version_id=NULL (treated as legacy by the portal UI)",
+      );
+    }
+  }
+
   // Persist a run row first so we have an FK target, then bulk-insert
   // results. Done in a single transaction so a partial run never leaves
   // an orphan run row with zero results.
@@ -318,10 +474,12 @@ export async function runSubscription(
       .insert(watchtowerRuns)
       .values({
         subscriptionId,
+        trigger: opts.trigger ?? "cron",
         engines: enginesUsed,
         totalPrompts: prompts.length,
         mentionCount,
         summary,
+        promptVersionId,
       })
       .returning({ id: watchtowerRuns.id });
 

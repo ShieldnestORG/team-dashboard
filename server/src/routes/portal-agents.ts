@@ -13,6 +13,11 @@ import {
   customerPortalService,
   PORTAL_SESSION_COOKIE,
 } from "../services/customer-portal.js";
+import {
+  ADMIN_IMPERSONATION_COOKIE,
+  verifyImpersonationCookie,
+} from "../services/admin-impersonation.js";
+import { requireNonImpersonating } from "./portal.js";
 
 // ---------------------------------------------------------------------------
 // Portal Agents routes — mounted at /api/portal/agents
@@ -63,7 +68,18 @@ export function portalAgentsRoutes(db: Db): Router {
   const svc = customerPortalService(db);
 
   // ── Auth helper ─────────────────────────────────────────────────────────
+  // Impersonation cookie wins for reads (admin views target customer's data).
+  // Mutations on this router call requireNonImpersonating() to block writes.
   function requireSession(req: Request, res: Response): string | null {
+    const header = req.headers["cookie"];
+    if (typeof header === "string") {
+      const cookies = parseCookies(header);
+      const impCookie = cookies[ADMIN_IMPERSONATION_COOKIE];
+      if (impCookie) {
+        const imp = verifyImpersonationCookie(impCookie);
+        if (imp) return imp.targetAccountId;
+      }
+    }
     const cookie = readSessionCookie(req);
     const session = svc.verifySession(cookie);
     if (!session) {
@@ -367,6 +383,7 @@ export function portalAgentsRoutes(db: Db): Router {
   // ── POST /items/:kind/:id/approve ────────────────────────────────────────
   // Idempotent. Sets status to "approved" and records approvedByCustomerAccountId.
   router.post("/items/:kind/:id/approve", async (req: Request, res: Response) => {
+    if (!requireNonImpersonating(req, res)) return;
     const accountId = requireSession(req, res);
     if (!accountId) return;
 
@@ -473,6 +490,7 @@ export function portalAgentsRoutes(db: Db): Router {
   // Idempotent. Sets status to "rejected" and records rejectedByCustomerAccountId.
   // Optional body: { reason: string }
   router.post("/items/:kind/:id/reject", async (req: Request, res: Response) => {
+    if (!requireNonImpersonating(req, res)) return;
     const accountId = requireSession(req, res);
     if (!accountId) return;
 
