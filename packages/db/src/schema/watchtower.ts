@@ -51,6 +51,38 @@ export const watchtowerSubscriptions = pgTable("watchtower_subscriptions", {
     .defaultNow(),
 });
 
+// Immutable per-subscription prompt snapshot. A new row is inserted every
+// time the customer edits their prompts. The `prompts` column on
+// `watchtower_subscriptions` remains the source of truth for "what to run
+// next"; rows here are the historical log used to detect comparison-reset
+// boundaries in the portal UI and (eventually) to gate result-derived
+// upsell triggers. See migration 0115 for the full rationale.
+export const watchtowerPromptVersions = pgTable(
+  "watchtower_prompt_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => watchtowerSubscriptions.id, { onDelete: "cascade" }),
+    // string[] of prompts snapshotted at version creation time.
+    prompts: jsonb("prompts").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // Optional actor attribution. Nullable because the initial backfill
+    // row (migration 0115) has no actor.
+    createdByActorId: uuid("created_by_actor_id"),
+    createdByActorType: text("created_by_actor_type"),
+    createdByActorLabel: text("created_by_actor_label"),
+  },
+  (table) => ({
+    subCreatedIdx: index("watchtower_prompt_versions_sub_created_idx").on(
+      table.subscriptionId,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const watchtowerRuns = pgTable(
   "watchtower_runs",
   {
@@ -68,11 +100,21 @@ export const watchtowerRuns = pgTable(
     totalPrompts: integer("total_prompts").notNull(),
     mentionCount: integer("mention_count").notNull(),
     summary: jsonb("summary"),
+    // Nullable: legacy runs from before migration 0115 have no version.
+    // ON DELETE SET NULL — deleting a version (rare/unsupported) leaves
+    // the historical run row intact rather than cascading.
+    promptVersionId: uuid("prompt_version_id").references(
+      () => watchtowerPromptVersions.id,
+      { onDelete: "set null" },
+    ),
   },
   (table) => ({
     subRunAtIdx: index("watchtower_runs_sub_run_at_idx").on(
       table.subscriptionId,
       table.runAt,
+    ),
+    promptVersionIdx: index("watchtower_runs_prompt_version_idx").on(
+      table.promptVersionId,
     ),
   }),
 );
@@ -107,3 +149,7 @@ export type WatchtowerRun = typeof watchtowerRuns.$inferSelect;
 export type NewWatchtowerRun = typeof watchtowerRuns.$inferInsert;
 export type WatchtowerResult = typeof watchtowerResults.$inferSelect;
 export type NewWatchtowerResult = typeof watchtowerResults.$inferInsert;
+export type WatchtowerPromptVersion =
+  typeof watchtowerPromptVersions.$inferSelect;
+export type NewWatchtowerPromptVersion =
+  typeof watchtowerPromptVersions.$inferInsert;
