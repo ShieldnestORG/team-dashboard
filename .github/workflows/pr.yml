@@ -206,6 +206,16 @@ jobs:
       - name: Run e2e tests
         env:
           PAPERCLIP_E2E_SKIP_LLM: "true"
+          # Force static-UI mode. `paperclipai run` auto-enables Vite dev
+          # middleware whenever it detects it's running from the monorepo
+          # (see cli/src/commands/run.ts:maybeEnableUiDevMiddleware). In CI
+          # the playwright run bursts ~200 module requests at first paint
+          # and Vite's built-in DoS guard 429s its own /@fs/ and /src/
+          # responses, leaving the React app un-hydrated past the 15s
+          # locator timeout. We `pnpm build` above, so `ui/dist` exists —
+          # explicitly opting out of vite-dev makes the server serve the
+          # production bundle via express.static, which has no rate limit.
+          PAPERCLIP_UI_DEV_MIDDLEWARE: "false"
         run: pnpm run test:e2e
 
       - name: Upload Playwright report
