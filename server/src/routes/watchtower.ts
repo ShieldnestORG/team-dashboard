@@ -55,6 +55,7 @@ import {
   ADMIN_IMPERSONATION_COOKIE,
   verifyImpersonationCookie,
 } from "../services/admin-impersonation.js";
+import { requireNonImpersonating } from "./portal.js";
 import { logger } from "../middleware/logger.js";
 
 function parseImpersonationCookie(req: Request): string | null {
@@ -423,6 +424,7 @@ export function watchtowerRoutes(db: Db) {
 
     if (!sub) return res.status(404).json({ error: "not_found" });
     if (!authorizeSubscriptionRead(req, res, sub.accountId ?? null)) return;
+    if (!requireNonImpersonating(req, res)) return;
 
     if (req.actor?.type !== "board") {
       const cap = await checkManualRunCaps(db, id);
