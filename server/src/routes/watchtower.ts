@@ -51,7 +51,29 @@ import {
   PORTAL_SESSION_COOKIE,
   customerPortalService,
 } from "../services/customer-portal.js";
+import {
+  ADMIN_IMPERSONATION_COOKIE,
+  verifyImpersonationCookie,
+} from "../services/admin-impersonation.js";
 import { logger } from "../middleware/logger.js";
+
+function parseImpersonationCookie(req: Request): string | null {
+  const header = req.headers["cookie"];
+  if (typeof header !== "string") return null;
+  for (const raw of header.split(/;\s*/)) {
+    const eq = raw.indexOf("=");
+    if (eq <= 0) continue;
+    const k = raw.slice(0, eq).trim();
+    if (k === ADMIN_IMPERSONATION_COOKIE) {
+      try {
+        return decodeURIComponent(raw.slice(eq + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
 
 function parsePortalCookie(req: Request): string | null {
   const header = req.headers["cookie"];
@@ -88,6 +110,18 @@ export function watchtowerRoutes(db: Db) {
   ): boolean {
     if (req.actor?.type === "board") return true;
 
+    // Impersonation cookie: admin viewing as the target customer. Read-only
+    // by design — the /runs/:id/trigger-test route below explicitly blocks it.
+    const impCookie = parseImpersonationCookie(req);
+    const imp = verifyImpersonationCookie(impCookie);
+    if (imp) {
+      if (!subscriptionAccountId || imp.targetAccountId !== subscriptionAccountId) {
+        res.status(403).json({ error: "forbidden" });
+        return false;
+      }
+      return true;
+    }
+
     const cookie = parsePortalCookie(req);
     const session = portal.verifySession(cookie);
     if (!session) {
@@ -99,6 +133,19 @@ export function watchtowerRoutes(db: Db) {
       return false;
     }
     return true;
+  }
+
+  function refuseUnderImpersonation(req: Request, res: Response): boolean {
+    const impCookie = parseImpersonationCookie(req);
+    const imp = verifyImpersonationCookie(impCookie);
+    if (imp) {
+      res.status(403).json({
+        error: "Read-only: writes are disabled while impersonating a customer.",
+        impersonating: true,
+      });
+      return true;
+    }
+    return false;
   }
 
   // -------------------- GET /subscriptions/:id --------------------

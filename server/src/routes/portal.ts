@@ -7,6 +7,17 @@ import {
 } from "../services/customer-portal.js";
 import { stripeRequest, stripeConfigured } from "../services/stripe-client.js";
 import { logger } from "../middleware/logger.js";
+import {
+  adminImpersonationService,
+  ADMIN_IMPERSONATION_COOKIE,
+  verifyImpersonationCookie,
+  type ImpersonationSession,
+} from "../services/admin-impersonation.js";
+import { logActivity } from "../services/activity-log.js";
+
+const TEAM_DASHBOARD_COMPANY_ID =
+  process.env.TEAM_DASHBOARD_COMPANY_ID ||
+  "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 // ---------------------------------------------------------------------------
 // Customer Portal MVP routes — mounted at /api/portal.
@@ -66,6 +77,102 @@ function setSessionCookie(res: Response, value: string) {
   if (useDomain && useDomain.trim()) parts.push(`Domain=${useDomain}`);
   if (useSecure) parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+// ---------------------------------------------------------------------------
+// Impersonation cookie helpers — mirror the session cookie config but use a
+// distinct name (`cd_portal_impersonation`) and a shorter 60-min lifetime.
+// The two cookies coexist: clearing one does NOT clear the other, so the
+// "Stop impersonating" button leaves the admin's real customer session (if
+// any) intact. The Domain attribute keeps both readable across
+// app.coherencedaddy.com + coherencedaddy.com.
+// ---------------------------------------------------------------------------
+
+const IMPERSONATION_MAX_AGE_SEC = 60 * 60; // matches SESSION_TTL_MIN
+
+function readImpersonationCookie(req: Request): string | null {
+  const header = req.headers["cookie"];
+  if (typeof header !== "string") return null;
+  const cookies = parseCookies(header);
+  return cookies[ADMIN_IMPERSONATION_COOKIE] ?? null;
+}
+
+function setImpersonationCookie(res: Response, value: string) {
+  const useSecure = process.env.NODE_ENV !== "development";
+  const useDomain = process.env.PORTAL_COOKIE_DOMAIN ?? COOKIE_DOMAIN;
+  const parts = [
+    `${ADMIN_IMPERSONATION_COOKIE}=${encodeURIComponent(value)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${IMPERSONATION_MAX_AGE_SEC}`,
+  ];
+  if (useDomain && useDomain.trim()) parts.push(`Domain=${useDomain}`);
+  if (useSecure) parts.push("Secure");
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+function clearImpersonationCookie(res: Response) {
+  const useSecure = process.env.NODE_ENV !== "development";
+  const useDomain = process.env.PORTAL_COOKIE_DOMAIN ?? COOKIE_DOMAIN;
+  const parts = [
+    `${ADMIN_IMPERSONATION_COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (useDomain && useDomain.trim()) parts.push(`Domain=${useDomain}`);
+  if (useSecure) parts.push("Secure");
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+// Inspect both cookies. Resolution order:
+//   1. impersonation cookie (admin viewing as someone else)
+//   2. real customer session
+// The impersonation cookie is read-only and surfaces via `req.impersonation`.
+// Callers that mutate state (POST/DELETE) MUST call requireNonImpersonating.
+export interface PortalAuthResolution {
+  accountId: string;
+  impersonation: ImpersonationSession | null;
+}
+
+function resolvePortalAuth(
+  req: Request,
+  verifyCustomerSession: (c: string | null | undefined) => { accountId: string } | null,
+): PortalAuthResolution | null {
+  const impCookie = readImpersonationCookie(req);
+  const imp = verifyImpersonationCookie(impCookie);
+  if (imp) {
+    return { accountId: imp.targetAccountId, impersonation: imp };
+  }
+  const customer = verifyCustomerSession(readSessionCookie(req));
+  if (customer) {
+    return { accountId: customer.accountId, impersonation: null };
+  }
+  return null;
+}
+
+/**
+ * Block writes under an impersonation cookie. Read-only mode is a CORE
+ * security property — even though the portal's current write surface is
+ * small, this guard MUST be applied to every new mutation route added in
+ * the future. The test suite asserts it.
+ */
+export function requireNonImpersonating(
+  req: Request,
+  res: Response,
+): boolean {
+  const impCookie = readImpersonationCookie(req);
+  const imp = verifyImpersonationCookie(impCookie);
+  if (imp) {
+    res.status(403).json({
+      error: "Read-only: writes are disabled while impersonating a customer.",
+      impersonating: true,
+    });
+    return false;
+  }
+  return true;
 }
 
 function clearSessionCookie(res: Response) {
@@ -168,15 +275,19 @@ export function portalRoutes(db: Db): Router {
   const svc = customerPortalService(db);
 
   function requireSession(req: Request, res: Response): string | null {
-    const cookie = readSessionCookie(req);
-    const session = svc.verifySession(cookie);
-    if (!session) {
+    // Impersonation cookie wins when present (admin "View as customer").
+    // Reads resolve as the target customer; mutations are blocked by
+    // requireNonImpersonating() on a per-route basis.
+    const resolved = resolvePortalAuth(req, (c) => svc.verifySession(c));
+    if (!resolved) {
       res.status(401).json({ error: "Unauthenticated" });
       return null;
     }
-    (req as AuthedRequest).customerAccountId = session.accountId;
-    return session.accountId;
+    (req as AuthedRequest).customerAccountId = resolved.accountId;
+    return resolved.accountId;
   }
+
+  const impSvc = adminImpersonationService(db);
 
   // -- Login: issue magic link ------------------------------------------------
   router.post("/login", async (req: Request, res: Response) => {
@@ -317,6 +428,7 @@ export function portalRoutes(db: Db): Router {
 
   // -- Add credential ---------------------------------------------------------
   router.post("/credentials", async (req: Request, res: Response) => {
+    if (!requireNonImpersonating(req, res)) return;
     const accountId = requireSession(req, res);
     if (!accountId) return;
     const body = (req.body ?? {}) as { kind?: unknown; value?: unknown };
@@ -338,6 +450,7 @@ export function portalRoutes(db: Db): Router {
 
   // -- Soft-revoke credential by id ------------------------------------------
   router.delete("/credentials/:id", async (req: Request, res: Response) => {
+    if (!requireNonImpersonating(req, res)) return;
     const accountId = requireSession(req, res);
     if (!accountId) return;
     const id = req.params.id as string;
@@ -356,6 +469,8 @@ export function portalRoutes(db: Db): Router {
 
   // -- Stripe Billing Portal session ------------------------------------------
   router.post("/stripe-portal", async (req: Request, res: Response) => {
+    // Billing is destructive (cancel, change card). Block under impersonation.
+    if (!requireNonImpersonating(req, res)) return;
     const accountId = requireSession(req, res);
     if (!accountId) return;
     if (!stripeConfigured()) {
@@ -393,6 +508,128 @@ export function portalRoutes(db: Db): Router {
       logger.error({ err, accountId }, "portal/stripe-portal: create session failed");
       res.status(500).json({ error: "Failed to create billing portal session" });
     }
+  });
+
+  // -- Admin impersonation: exchange nonce → session cookie ------------------
+  router.post("/admin-impersonate", async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as { nonce?: unknown };
+    const nonce = typeof body.nonce === "string" ? body.nonce.trim() : "";
+    if (!nonce) {
+      res.status(400).json({ error: "nonce required" });
+      return;
+    }
+    try {
+      const result = await impSvc.exchangeNonce(nonce);
+      if (!result) {
+        // Nonce missing, expired, or already burned. Uniform 401 — do NOT
+        // distinguish between cases (token-existence oracle).
+        res.status(401).json({ error: "Invalid or expired nonce" });
+        return;
+      }
+      setImpersonationCookie(res, result.cookieValue);
+
+      // activity_log: admin.impersonate.start. companyId is the
+      // team-dashboard primary company (Coherence Daddy). The
+      // impersonated_customer_id lives on the actor side (entityType =
+      // customer_account) so a customer's GDPR export can filter by their
+      // own accountId == entityId and see every admin login.
+      void logActivity(db, {
+        companyId: TEAM_DASHBOARD_COMPANY_ID,
+        actorType: "user",
+        actorId: result.adminActorId,
+        action: "admin.impersonate.start",
+        entityType: "customer_account",
+        entityId: result.session.targetAccountId,
+        details: {
+          admin_actor_id: result.adminActorId,
+          impersonated_customer_id: result.session.targetAccountId,
+          session_id: result.session.sid,
+          started_at: result.session.startedAt.toISOString(),
+          expires_at: result.session.expiresAt.toISOString(),
+        },
+      }).catch((err) => {
+        logger.warn(
+          { err },
+          "portal/admin-impersonate: activity.start write failed",
+        );
+      });
+
+      res.json({
+        ok: true,
+        viewingAs: {
+          email: result.targetEmail,
+          accountId: result.session.targetAccountId,
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "portal/admin-impersonate: exchange failed");
+      res.status(500).json({ error: "Exchange failed" });
+    }
+  });
+
+  // -- Admin impersonation: end + clear cookie -------------------------------
+  router.post("/admin-impersonate/end", async (req: Request, res: Response) => {
+    const cookie = readImpersonationCookie(req);
+    const session = verifyImpersonationCookie(cookie);
+    if (!session) {
+      // Nothing to end; clear any stale cookie defensively and return ok.
+      clearImpersonationCookie(res);
+      res.json({ ok: true, ended: false });
+      return;
+    }
+    const endedAt = new Date();
+    const durationSec = Math.max(
+      0,
+      Math.floor((endedAt.getTime() - session.startedAt.getTime()) / 1000),
+    );
+
+    void logActivity(db, {
+      companyId: TEAM_DASHBOARD_COMPANY_ID,
+      actorType: "user",
+      actorId: session.adminActorId,
+      action: "admin.impersonate.end",
+      entityType: "customer_account",
+      entityId: session.targetAccountId,
+      details: {
+        admin_actor_id: session.adminActorId,
+        impersonated_customer_id: session.targetAccountId,
+        session_id: session.sid,
+        duration_s: durationSec,
+        ended_at: endedAt.toISOString(),
+      },
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "portal/admin-impersonate/end: activity.end write failed",
+      );
+    });
+
+    clearImpersonationCookie(res);
+    res.json({ ok: true, ended: true });
+  });
+
+  // -- Admin impersonation: status (for the banner) --------------------------
+  router.get("/admin-impersonate/status", async (req: Request, res: Response) => {
+    const cookie = readImpersonationCookie(req);
+    const session = verifyImpersonationCookie(cookie);
+    if (!session) {
+      res.json({ active: false });
+      return;
+    }
+    // Resolve the email to render in the banner. Best-effort.
+    let email: string | null = null;
+    try {
+      const acct = await svc.getAccount(session.targetAccountId);
+      email = acct?.email ?? null;
+    } catch (err) {
+      logger.warn({ err }, "portal/admin-impersonate/status: getAccount failed");
+    }
+    res.json({
+      active: true,
+      viewingAs: { email, accountId: session.targetAccountId },
+      sessionStartedAt: session.startedAt.toISOString(),
+      sessionExpiresAt: session.expiresAt.toISOString(),
+    });
   });
 
   return router;

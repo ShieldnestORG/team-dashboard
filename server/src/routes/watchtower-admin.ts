@@ -28,6 +28,20 @@ import {
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { logAdminAccess } from "../middleware/log-admin-access.js";
+import { adminImpersonationService } from "../services/admin-impersonation.js";
+import { logActivity } from "../services/activity-log.js";
+
+const TEAM_DASHBOARD_COMPANY_ID =
+  process.env.TEAM_DASHBOARD_COMPANY_ID ||
+  "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+function portalBaseUrlForRedirect(): string {
+  // Reuse the same env var the customer-portal service uses. Hardcoding
+  // would make local dev painful and would diverge from the source of truth.
+  return (
+    process.env.PORTAL_BASE_URL?.trim() || "https://app.coherencedaddy.com"
+  );
+}
 
 // Stripe price for the single Watchtower tier today. Used to compute MRR
 // from the count of active subscriptions — the runtime price lookup lives
@@ -281,6 +295,90 @@ export function watchtowerAdminRoutes(db: Db) {
       res.status(500).json({ error: "Failed to load customer" });
     }
   });
+
+  // -------------------- POST /customers/:subscriptionId/impersonate --------------------
+  // Audit V2 blocker #1: mint a single-use, 5-minute nonce and return the
+  // portal redirect URL. The exchange happens on the portal side.
+  router.post(
+    "/customers/:subscriptionId/impersonate",
+    async (req, res) => {
+      const subscriptionId = req.params.subscriptionId as string;
+      try {
+        const [sub] = await db
+          .select({
+            accountId: watchtowerSubscriptions.accountId,
+            subEmail: watchtowerSubscriptions.email,
+            accountEmail: customerAccounts.email,
+          })
+          .from(watchtowerSubscriptions)
+          .leftJoin(
+            customerAccounts,
+            eq(customerAccounts.id, watchtowerSubscriptions.accountId),
+          )
+          .where(eq(watchtowerSubscriptions.id, subscriptionId))
+          .limit(1);
+
+        if (!sub) {
+          res.status(404).json({ error: "Subscription not found" });
+          return;
+        }
+        if (!sub.accountId) {
+          // We need a customer_account row to impersonate against. Old
+          // subscriptions purchased before the portal launched may not have
+          // been linked yet; the admin should run the customer-account
+          // backfill first.
+          res.status(409).json({
+            error:
+              "Subscription has no linked customer account. Run the account-link backfill first.",
+          });
+          return;
+        }
+
+        const adminActorId =
+          (req.actor?.type === "board" ? req.actor.userId : undefined) ??
+          "unknown";
+        const customerLabel = sub.accountEmail ?? sub.subEmail ?? null;
+
+        const impSvc = adminImpersonationService(db);
+        const minted = await impSvc.mintNonce({
+          adminActorId,
+          targetAccountId: sub.accountId,
+          targetCustomerLabel: customerLabel,
+        });
+
+        // Informational audit row — the actual session-start event lands on
+        // exchange in the portal route. Fire-and-forget; do not block the
+        // admin redirect on activity-log writes.
+        void logActivity(db, {
+          companyId: TEAM_DASHBOARD_COMPANY_ID,
+          actorType: "user",
+          actorId: adminActorId,
+          action: "admin.impersonate.mint",
+          entityType: "customer_account",
+          entityId: sub.accountId,
+          details: {
+            subscriptionId,
+            target_customer_label: customerLabel,
+            expires_at: minted.expiresAt.toISOString(),
+          },
+        }).catch((err) => {
+          logger.warn(
+            { err },
+            "watchtower-admin: impersonate.mint activity write failed",
+          );
+        });
+
+        const url = `${portalBaseUrlForRedirect()}/admin/impersonate?nonce=${encodeURIComponent(minted.nonce)}`;
+        res.json({ redirectUrl: url, expiresAt: minted.expiresAt });
+      } catch (err) {
+        logger.error(
+          { err, subscriptionId },
+          "watchtower-admin: impersonate mint failed",
+        );
+        res.status(500).json({ error: "Failed to mint impersonation nonce" });
+      }
+    },
+  );
 
   // -------------------- GET /aggregate --------------------
   router.get("/aggregate", async (_req, res) => {
