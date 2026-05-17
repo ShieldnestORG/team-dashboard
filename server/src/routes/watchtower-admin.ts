@@ -27,6 +27,7 @@ import {
   watchtowerSubscriptions,
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 // Stripe price for the single Watchtower tier today. Used to compute MRR
 // from the count of active subscriptions — the runtime price lookup lives
@@ -41,6 +42,13 @@ const LIST_LIMIT = 500;
 
 export function watchtowerAdminRoutes(db: Db) {
   const router = Router();
+
+  // Mount the access-log middleware FIRST so it sees unauth attempts too —
+  // the board-only guard below will short-circuit with 401, but the
+  // res.on('finish') hook still fires and records the row with
+  // actor_type='none', status_code=401. Forensic value (someone is
+  // probing /watchtower-admin without a board key) > log volume cost.
+  router.use(logAdminAccess(db));
 
   // Every route here is board-only. Mirrors the inline guard pattern used
   // across the existing admin routes (see intel-billing.ts, house-ads.ts).
