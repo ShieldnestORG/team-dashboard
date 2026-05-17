@@ -47,6 +47,7 @@ All content cron jobs below are mirrored into `social_automations` (linked to `s
 ## Other Operational Crons
 - **Trends Scan (1 job)**: CoinGecko, HackerNews, Google Trends, Bing News every 6h.
 - **Maintenance (2 jobs)**: Stale content cleanup and general health checks.
+- **Admin Access Log Retention (1 job)**: Daily 04:30 UTC purge of `admin_access_log` rows older than 90 days (per migration 0114 spec). Batch-capped at 100k rows per run to avoid table locks on a long backlog. Owner: `system`. Daily (`admin-access-log:purge`). Source: `server/src/services/admin-access-log-retention-cron.ts`.
 - **SSL Monitor (1 job)**: Certificate expiry check every 6h.
 - **Auto-Reply (1 job)**: Single `search/recent` query covering all targets (default 30 min).
 - **Moltbook Backend (5 jobs)**: Ingest, post, engage, heartbeat, and performance tracking.
