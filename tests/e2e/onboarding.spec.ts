@@ -75,9 +75,15 @@ test.describe("Onboarding wizard", () => {
       page.locator("h3", { hasText: "Ready to launch" })
     ).toBeVisible({ timeout: 10_000 });
 
-    await expect(page.locator("text=" + COMPANY_NAME)).toBeVisible();
-    await expect(page.locator("text=" + AGENT_NAME)).toBeVisible();
-    await expect(page.locator("text=" + TASK_TITLE)).toBeVisible();
+    // Scope these assertions to the onboarding summary panel. By step 4 the
+    // company + agent already exist (created on Next from steps 1 + 2) and
+    // therefore also render in the sidebar (CompanySwitcher, SidebarAgents),
+    // so an unscoped text= locator hits 2 elements and Playwright strict-mode
+    // errors out. The data-testid contract is declared in OnboardingWizard.tsx.
+    const summary = page.getByTestId("onboarding-summary");
+    await expect(summary.locator("text=" + COMPANY_NAME)).toBeVisible();
+    await expect(summary.locator("text=" + AGENT_NAME)).toBeVisible();
+    await expect(summary.locator("text=" + TASK_TITLE)).toBeVisible();
 
     await page.getByRole("button", { name: "Create & Open Issue" }).click();
 

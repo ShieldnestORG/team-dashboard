@@ -15,6 +15,9 @@ jobs:
     env:
       PAPERCLIP_E2E_SKIP_LLM: ${{ inputs.skip_llm && 'true' || 'false' }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # See pr.yml for rationale: prevent paperclipai run's auto-enable of
+      # Vite dev middleware so the built ui/dist bundle is served instead.
+      PAPERCLIP_UI_DEV_MIDDLEWARE: "false"
     steps:
       - uses: actions/checkout@v4
 
