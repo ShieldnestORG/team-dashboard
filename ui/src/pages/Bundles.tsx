@@ -75,7 +75,7 @@ async function fetchBundlePlans(): Promise<{ plans: BundlePlan[] }> {
 }
 
 export function Bundles() {
-  const [interval, setInterval] = useState<"monthly" | "annual">("monthly");
+  const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,13 +87,13 @@ export function Bundles() {
 
   async function checkout(slug: string) {
     setError(null);
-    if (!email || !email.includes("@")) { setError("Enter a valid email"); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError("Enter a valid email"); return; }
     setLoading(slug);
     try {
       const res = await fetch("/api/bundles/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, email, interval }),
+        body: JSON.stringify({ slug, email, interval: billingInterval }),
       });
       const json = await res.json() as { url?: string; error?: string };
       if (!res.ok || !json.url) throw new Error(json.error ?? "Checkout failed");
@@ -119,14 +119,14 @@ export function Bundles() {
       {/* Billing interval toggle */}
       <div className="mb-6 flex justify-center gap-2">
         <button
-          onClick={() => setInterval("monthly")}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${interval === "monthly" ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-muted"}`}
+          onClick={() => setBillingInterval("monthly")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${billingInterval === "monthly" ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-muted"}`}
         >
           Monthly
         </button>
         <button
-          onClick={() => setInterval("annual")}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${interval === "annual" ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-muted"}`}
+          onClick={() => setBillingInterval("annual")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${billingInterval === "annual" ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-muted"}`}
         >
           Annual <span className="ml-1 text-xs text-green-600 font-semibold">Save ~20%</span>
         </button>
@@ -150,7 +150,7 @@ export function Bundles() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {plans.map((plan) => {
             const meta = BUNDLE_HIGHLIGHTS[plan.slug] ?? { color: "border-muted", popular: false, tagline: "", standaloneValue: 0 };
-            const displayPrice = interval === "annual" ? plan.annualPriceCents : plan.priceCents;
+            const displayPrice = billingInterval === "annual" ? plan.annualPriceCents : plan.priceCents;
             const savings = meta.standaloneValue > 0
               ? Math.round((1 - displayPrice / meta.standaloneValue) * 100)
               : 0;

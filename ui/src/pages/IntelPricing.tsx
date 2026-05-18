@@ -29,7 +29,7 @@ export function IntelPricing() {
 
   async function subscribe(plan: IntelPlan) {
     setError(null);
-    if (!email || !email.includes("@")) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("Enter a valid email");
       return;
     }

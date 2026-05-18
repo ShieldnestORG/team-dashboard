@@ -91,7 +91,7 @@ function EnrollForm({ tier, onCancel }: EnrollFormProps) {
       setError("Company slug is required");
       return;
     }
-    if (!email || !email.includes("@")) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("Enter a valid email address");
       return;
     }
