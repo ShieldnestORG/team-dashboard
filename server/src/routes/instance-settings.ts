@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import { patchInstanceExperimentalSettingsSchema, patchInstanceGeneralSettingsSchema } from "@paperclipai/shared";
 import { forbidden } from "../errors.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { validate } from "../middleware/validate.js";
 import { instanceSettingsService, logActivity } from "../services/index.js";
 import { getActorInfo } from "./authz.js";
@@ -19,6 +20,12 @@ function assertCanManageInstanceSettings(req: Request) {
 export function instanceSettingsRoutes(db: Db) {
   const router = Router();
   const svc = instanceSettingsService(db);
+
+  // Every route in this file requires instance-admin board auth (see
+  // assertCanManageInstanceSettings above). Mount router-level so unauth
+  // probes are also recorded — the assert throws 401/403 but res.on('finish')
+  // still fires and writes a row with actor_type='none' / status_code=401|403.
+  router.use(logAdminAccess(db));
 
   router.get("/instance/settings/general", async (req, res) => {
     assertCanManageInstanceSettings(req);

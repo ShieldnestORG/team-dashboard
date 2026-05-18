@@ -8,6 +8,7 @@ import { creditscoreContentAgent } from "../services/creditscore-content-agent.j
 import { creditscoreSchemaAgent } from "../services/creditscore-schema-agent.js";
 import { creditscoreCompetitorAgent } from "../services/creditscore-competitor-agent.js";
 import { creditscoreSageStrategist } from "../services/creditscore-sage-strategist.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,12 @@ export function creditscoreRoutes(db: Db): Router {
   const schemaAgent = creditscoreSchemaAgent(db);
   const competitorAgent = creditscoreCompetitorAgent(db);
   const sageStrategist = creditscoreSageStrategist(db);
+  // Audit middleware applied per-route on board-only endpoints. This router
+  // mixes public storefront proxies (/plans, /checkout, /entitlement,
+  // /report/:id, /audit/store) with ~17 board-only admin endpoints; a
+  // router-level mount would over-log the high-volume public surfaces.
+  // Same pattern as intel-billing.ts.
+  const audit = logAdminAccess(db);
 
   // GET /api/creditscore/plans — public; consumed by coherencedaddy-landing
   router.get("/plans", async (_req, res) => {
@@ -78,7 +85,7 @@ export function creditscoreRoutes(db: Db): Router {
 
   // POST /api/creditscore/comp-grant — board admin: comp a subscription (free promo)
   // Body: { tier, url, email, compReason, durationDays? }
-  router.post("/comp-grant", async (req: Request, res: Response) => {
+  router.post("/comp-grant", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -114,7 +121,7 @@ export function creditscoreRoutes(db: Db): Router {
   });
 
   // GET /api/creditscore/promo-codes — board admin: list Stripe promo codes
-  router.get("/promo-codes", async (req: Request, res: Response) => {
+  router.get("/promo-codes", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -131,7 +138,7 @@ export function creditscoreRoutes(db: Db): Router {
   // POST /api/creditscore/promo-codes — board admin: create Stripe coupon + promo code
   // Body: { code, percentOff?, amountOffCents?, currency?, maxRedemptions?, expiresAt?,
   //         duration?, durationInMonths?, name? }
-  router.post("/promo-codes", async (req: Request, res: Response) => {
+  router.post("/promo-codes", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -244,7 +251,7 @@ export function creditscoreRoutes(db: Db): Router {
   // GET /api/creditscore/reports — board admin lead view of stored reports
   // Filters: q (domain/email ilike), status, hasEmail, hasSubscription, tier,
   //          since (ISO date), limit (max 200), offset.
-  router.get("/reports", async (req: Request, res: Response) => {
+  router.get("/reports", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -364,7 +371,7 @@ export function creditscoreRoutes(db: Db): Router {
   });
 
   // GET /api/creditscore/content-drafts — board admin review queue
-  router.get("/content-drafts", async (req: Request, res: Response) => {
+  router.get("/content-drafts", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -379,7 +386,7 @@ export function creditscoreRoutes(db: Db): Router {
   });
 
   // GET /api/creditscore/content-drafts/:id — single draft detail
-  router.get("/content-drafts/:id", async (req: Request, res: Response) => {
+  router.get("/content-drafts/:id", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -399,7 +406,7 @@ export function creditscoreRoutes(db: Db): Router {
   });
 
   // POST /api/creditscore/content-drafts/:id/approve
-  router.post("/content-drafts/:id/approve", async (req: Request, res: Response) => {
+  router.post("/content-drafts/:id/approve", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -420,7 +427,7 @@ export function creditscoreRoutes(db: Db): Router {
   });
 
   // POST /api/creditscore/content-drafts/:id/reject
-  router.post("/content-drafts/:id/reject", async (req: Request, res: Response) => {
+  router.post("/content-drafts/:id/reject", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -441,7 +448,7 @@ export function creditscoreRoutes(db: Db): Router {
   });
 
   // POST /api/creditscore/content-drafts/:id/published — mark as live on customer site
-  router.post("/content-drafts/:id/published", async (req: Request, res: Response) => {
+  router.post("/content-drafts/:id/published", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -464,7 +471,7 @@ export function creditscoreRoutes(db: Db): Router {
 
   // -- Schema Impls (admin review) --------------------------------------------
 
-  router.get("/schema-impls", async (req: Request, res: Response) => {
+  router.get("/schema-impls", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -477,7 +484,7 @@ export function creditscoreRoutes(db: Db): Router {
     }
   });
 
-  router.get("/schema-impls/:id", async (req: Request, res: Response) => {
+  router.get("/schema-impls/:id", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -495,7 +502,7 @@ export function creditscoreRoutes(db: Db): Router {
     }
   });
 
-  router.post("/schema-impls/:id/approve", async (req: Request, res: Response) => {
+  router.post("/schema-impls/:id/approve", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -513,7 +520,7 @@ export function creditscoreRoutes(db: Db): Router {
     }
   });
 
-  router.post("/schema-impls/:id/reject", async (req: Request, res: Response) => {
+  router.post("/schema-impls/:id/reject", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -531,7 +538,7 @@ export function creditscoreRoutes(db: Db): Router {
     }
   });
 
-  router.post("/schema-impls/:id/delivered", async (req: Request, res: Response) => {
+  router.post("/schema-impls/:id/delivered", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -548,7 +555,7 @@ export function creditscoreRoutes(db: Db): Router {
   // -- Competitor scans (read-only; generated by cron) -------------------------
 
   // GET /api/creditscore/competitor-scans — recent scans across all subs.
-  router.get("/competitor-scans", async (req: Request, res: Response) => {
+  router.get("/competitor-scans", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -564,6 +571,7 @@ export function creditscoreRoutes(db: Db): Router {
 
   router.get(
     "/subscriptions/:id/competitor-scans",
+    audit,
     async (req: Request, res: Response) => {
       if (req.actor?.type !== "board") {
         res.status(401).json({ error: "Board authentication required" });
@@ -587,7 +595,7 @@ export function creditscoreRoutes(db: Db): Router {
   // -- Sage weekly strategy docs (Pro) -----------------------------------------
 
   // GET /api/creditscore/strategy-docs — recent docs across all subs.
-  router.get("/strategy-docs", async (req: Request, res: Response) => {
+  router.get("/strategy-docs", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;
@@ -601,7 +609,7 @@ export function creditscoreRoutes(db: Db): Router {
     }
   });
 
-  router.get("/subscriptions/:id/strategy-docs", async (req: Request, res: Response) => {
+  router.get("/subscriptions/:id/strategy-docs", audit, async (req: Request, res: Response) => {
     if (req.actor?.type !== "board") {
       res.status(401).json({ error: "Board authentication required" });
       return;

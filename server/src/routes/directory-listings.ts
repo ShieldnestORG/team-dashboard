@@ -23,6 +23,7 @@ import {
   type ListingTierSlug,
 } from "../services/directory-listings.js";
 import { verifyStripeSignature, stripeRequest } from "../services/stripe-client.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { logger } from "../middleware/logger.js";
 import { sendTransactional } from "../services/email-templates.js";
 
@@ -59,9 +60,13 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 export function directoryListingsRoutes(db: Db): Router {
   const router = Router();
   const svc = directoryListingsService(db);
+  // Audit middleware attached alongside `requireAdmin` on every admin route.
+  // The /public/enroll endpoint (further down) is the only non-admin route
+  // in this router and is intentionally NOT logged.
+  const audit = logAdminAccess(db);
 
   // GET /api/directory-listings/tiers — list tier config (admin)
-  router.get("/tiers", requireAdmin, (_req, res) => {
+  router.get("/tiers", requireAdmin, audit, (_req, res) => {
     res.json({
       tiers: Object.values(LISTING_TIERS).map((t) => ({
         slug: t.slug,
@@ -74,7 +79,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // GET /api/directory-listings/stats — counts + MRR
-  router.get("/stats", requireAdmin, async (_req, res) => {
+  router.get("/stats", requireAdmin, audit, async (_req, res) => {
     try {
       const stats = await svc.getStats();
       res.json(stats);
@@ -85,7 +90,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // GET /api/directory-listings — paginated list of companies + latest listing
-  router.get("/", requireAdmin, async (req, res) => {
+  router.get("/", requireAdmin, audit, async (req, res) => {
     try {
       const directory = (req.query.directory as string | undefined) || undefined;
       const search = (req.query.search as string | undefined) || undefined;
@@ -107,7 +112,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // GET /api/directory-listings/company/:companyId — listings history for a company
-  router.get("/company/:companyId", requireAdmin, async (req, res) => {
+  router.get("/company/:companyId", requireAdmin, audit, async (req, res) => {
     try {
       const companyId = Number.parseInt(req.params.companyId as string, 10);
       if (Number.isNaN(companyId)) {
@@ -123,7 +128,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // GET /api/directory-listings/company/:companyId/traffic — attribution data
-  router.get("/company/:companyId/traffic", requireAdmin, async (req, res) => {
+  router.get("/company/:companyId/traffic", requireAdmin, audit, async (req, res) => {
     try {
       const companyId = Number.parseInt(req.params.companyId as string, 10);
       if (Number.isNaN(companyId)) {
@@ -143,7 +148,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // PATCH /api/directory-listings/company/:companyId/contact — update contact info
-  router.patch("/company/:companyId/contact", requireAdmin, async (req, res) => {
+  router.patch("/company/:companyId/contact", requireAdmin, audit, async (req, res) => {
     try {
       const companyId = Number.parseInt(req.params.companyId as string, 10);
       if (Number.isNaN(companyId)) {
@@ -165,7 +170,7 @@ export function directoryListingsRoutes(db: Db): Router {
 
   // POST /api/directory-listings/checkout — create Stripe Checkout session
   // body: { companyId, tier }
-  router.post("/checkout", requireAdmin, async (req, res) => {
+  router.post("/checkout", requireAdmin, audit, async (req, res) => {
     try {
       const companyId = Number(req.body?.companyId);
       const tier = req.body?.tier as ListingTierSlug;
@@ -182,7 +187,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // POST /api/directory-listings/:id/cancel — cancel subscription
-  router.post("/:id/cancel", requireAdmin, async (req, res) => {
+  router.post("/:id/cancel", requireAdmin, audit, async (req, res) => {
     try {
       const id = Number.parseInt(req.params.id as string, 10);
       if (Number.isNaN(id)) {
@@ -198,7 +203,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // POST /api/directory-listings/:id/note — add freeform note
-  router.post("/:id/note", requireAdmin, async (req, res) => {
+  router.post("/:id/note", requireAdmin, audit, async (req, res) => {
     try {
       const id = Number.parseInt(req.params.id as string, 10);
       const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
@@ -215,7 +220,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // POST /api/directory-listings/:id/outreach — mark outreach attempt
-  router.post("/:id/outreach", requireAdmin, async (req, res) => {
+  router.post("/:id/outreach", requireAdmin, audit, async (req, res) => {
     try {
       const id = Number.parseInt(req.params.id as string, 10);
       const companyId = Number(req.body?.companyId);
@@ -232,7 +237,7 @@ export function directoryListingsRoutes(db: Db): Router {
   });
 
   // GET /api/directory-listings/:id/events — audit log for a listing
-  router.get("/:id/events", requireAdmin, async (req, res) => {
+  router.get("/:id/events", requireAdmin, audit, async (req, res) => {
     try {
       const id = Number.parseInt(req.params.id as string, 10);
       if (Number.isNaN(id)) {

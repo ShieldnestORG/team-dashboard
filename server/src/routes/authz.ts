@@ -1,6 +1,15 @@
 import type { Request } from "express";
 import { forbidden, unauthorized } from "../errors.js";
 
+// ---------------------------------------------------------------------------
+// NOTE on logAdminAccess: this module exports per-request guard helpers only
+// (no Router), so the admin_access_log middleware cannot be mounted here.
+// Coverage is delivered by the calling routers — every file that imports
+// these helpers (routines.ts, issues.ts, instance-settings.ts, access.ts,
+// and the rest of the admin surface) attaches `logAdminAccess` at the
+// route or router level. See PR #65 + the admin-access-log batch follow-ups.
+// ---------------------------------------------------------------------------
+
 export function assertBoard(req: Request) {
   if (req.actor.type !== "board") {
     throw forbidden("Board access required");

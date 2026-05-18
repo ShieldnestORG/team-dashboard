@@ -30,6 +30,7 @@ import {
   routineService,
   workProductService,
 } from "../services/index.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -52,6 +53,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
   const workProductsSvc = workProductService(db);
   const documentsSvc = documentService(db);
   const routinesSvc = routineService(db);
+  // Audit middleware applied per-route to board-only endpoints. This router
+  // overwhelmingly serves agent product traffic (heartbeats, comments,
+  // attachments) which is intentionally NOT audited — router-level mount
+  // would explode the table. Only the explicit `req.actor.type !== "board"`
+  // endpoints (document delete, read-mark, inbox-archive) get `audit`.
+  const audit = logAdminAccess(db);
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
@@ -553,7 +560,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.json(revisions);
   });
 
-  router.delete("/issues/:id/documents/:key", async (req, res) => {
+  router.delete("/issues/:id/documents/:key", audit, async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
     if (!issue) {
@@ -681,7 +688,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.json(removed);
   });
 
-  router.post("/issues/:id/read", async (req, res) => {
+  router.post("/issues/:id/read", audit, async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
     if (!issue) {
@@ -713,7 +720,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.json(readState);
   });
 
-  router.post("/issues/:id/inbox-archive", async (req, res) => {
+  router.post("/issues/:id/inbox-archive", audit, async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
     if (!issue) {
@@ -745,7 +752,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.json(archiveState);
   });
 
-  router.delete("/issues/:id/inbox-archive", async (req, res) => {
+  router.delete("/issues/:id/inbox-archive", audit, async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
     if (!issue) {
