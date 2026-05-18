@@ -11,7 +11,7 @@ import { useTheme } from "../context/ThemeContext";
 import { structureApi } from "../api/structure";
 import type { StructureRevision } from "../api/structure";
 import { queryKeys } from "../lib/queryKeys";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -372,6 +372,7 @@ export function Structure() {
   const { selectedCompanyId } = useCompany();
   const { theme } = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "revisions">("overview");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Structure" }]);
@@ -474,7 +475,7 @@ export function Structure() {
           </div>
         </div>
 
-        <Tabs defaultValue="overview">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "revisions")}>
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="revisions">
@@ -486,34 +487,32 @@ export function Structure() {
               )}
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="overview" className="mt-0 flex-1">
-            {/* This div closes in the parent flex */}
-          </TabsContent>
-
-          <TabsContent value="revisions" className="mt-4 px-0 md:px-0">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Revision History</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <RevisionsList revisions={revisions} />
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
       </div>
 
-      {/* Diagram fills remaining space */}
-      <div className="flex-1 min-h-[500px] border-t">
-        <DiagramViewer
-          source={diagramSource}
-          darkMode={darkMode}
-          isFullscreen={false}
-          onToggleFullscreen={toggleFullscreen}
-          diagramMeta={diagramMeta}
-        />
-      </div>
+      {/* Tab content fills remaining space */}
+      {activeTab === "overview" ? (
+        <div className="flex-1 min-h-[500px] border-t">
+          <DiagramViewer
+            source={diagramSource}
+            darkMode={darkMode}
+            isFullscreen={false}
+            onToggleFullscreen={toggleFullscreen}
+            diagramMeta={diagramMeta}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-auto px-4 md:px-6 pb-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Revision History</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RevisionsList revisions={revisions} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

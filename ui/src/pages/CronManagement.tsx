@@ -69,6 +69,16 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
+function timeUntil(iso: string | null): string {
+  if (!iso) return "—";
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "due";
+  if (ms < 60_000) return `in ${Math.floor(ms / 1000)}s`;
+  if (ms < 3_600_000) return `in ${Math.floor(ms / 60_000)}m`;
+  if (ms < 86_400_000) return `in ${Math.floor(ms / 3_600_000)}h`;
+  return `in ${Math.floor(ms / 86_400_000)}d`;
+}
+
 function formatDuration(ms: number | null): string {
   if (ms === null) return "-";
   if (ms < 1000) return `${ms}ms`;
@@ -196,7 +206,7 @@ function CronJobRow({ job }: { job: SystemCronJob }) {
             Last: {timeAgo(job.lastRunAt)} {job.lastDurationMs !== null && `(${formatDuration(job.lastDurationMs)})`}
           </span>
           <span className="text-[10px] text-muted-foreground">
-            Next: {timeAgo(job.nextRunAt).replace(" ago", "")}
+            Next: {timeUntil(job.nextRunAt)}
           </span>
         </div>
       </div>
@@ -242,7 +252,7 @@ export function CronManagement() {
     setBreadcrumbs([{ label: "Cron Jobs" }]);
   }, [setBreadcrumbs]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: cronKeys.list,
     queryFn: () => systemCronsApi.list(),
     refetchInterval: 30_000,
@@ -317,6 +327,20 @@ export function CronManagement() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
+      ) : error ? (
+        <Card>
+          <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>Failed to load cron jobs: {error instanceof Error ? error.message : "Unknown error"}</span>
+          </CardContent>
+        </Card>
+      ) : crons.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center text-sm text-muted-foreground">
+            <Timer className="h-6 w-6" />
+            <span>No cron jobs registered yet.</span>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-4">
           {Array.from(grouped.entries())

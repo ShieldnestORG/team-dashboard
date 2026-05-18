@@ -72,7 +72,7 @@ export function ApiDashboard() {
     setBreadcrumbs([{ label: "API Routes" }]);
   }, [setBreadcrumbs]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.apiRoutes,
     queryFn: () => apiRoutesApi.list(true),
     refetchInterval: 60_000,
@@ -114,6 +114,20 @@ export function ApiDashboard() {
   }, [filtered]);
 
   if (isLoading) return <PageSkeleton variant="dashboard" />;
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        <div>
+          <div className="font-medium">Failed to load API routes</div>
+          <div className="text-xs text-destructive/80">
+            {error instanceof Error ? error.message : "Unknown error"}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const stats = data?.stats;
 

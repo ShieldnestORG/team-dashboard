@@ -27,6 +27,9 @@ import {
   CheckSquare,
   Gauge,
   Share2,
+  Building2,
+  Eye,
+  CreditCard,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -134,10 +137,10 @@ export function Sidebar() {
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
-          <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={Database} />
-          <SidebarNavItem to="/watchtower" label="Watchtower" icon={Radar} />
+          <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={CreditCard} />
+          <SidebarNavItem to="/watchtower" label="Watchtower" icon={Eye} />
           <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
-          <SidebarNavItem to="/org" label="Org" icon={Network} />
+          <SidebarNavItem to="/org" label="Org" icon={Building2} />
           <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
           <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
           <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
