@@ -406,6 +406,22 @@ export async function createApp(
   // Mounted at the app level (not behind /api/{boardMutationGuard}) so the
   // public storefront can hit /api/portal/auth and /api/portal/login without
   // tripping the board-CSRF origin check.
+  // Boot-time fail-loud check: every portal POST that issues a session calls
+  // `sessionSecret()`, which throws if PORTAL_SESSION_SECRET is missing or
+  // < 32 chars. Without this warning the failure surfaces only when a user
+  // clicks the magic-link button, lands on `?error=server_error`, and someone
+  // ssh's into the VPS to read logs. The 2026-05-13 deploy lost an hour to
+  // exactly this — see commit history. Warn at boot so it's visible in
+  // container logs immediately.
+  {
+    const sec = (process.env.PORTAL_SESSION_SECRET ?? "").trim();
+    if (!sec || sec.length < 32) {
+      logger.warn(
+        { hasSecret: sec.length > 0, length: sec.length },
+        "PORTAL_SESSION_SECRET missing or < 32 chars — /api/portal/auth POST will return server_error on every magic-link click. Generate with `openssl rand -hex 32` and set in .env before any portal user attempts sign-in.",
+      );
+    }
+  }
   app.use("/api/portal", portalRoutes(db));
   // 100 Agents customer feed + approval queue — mounted under /api/portal/agents.
   app.use("/api/portal/agents", portalAgentsRoutes(db));
