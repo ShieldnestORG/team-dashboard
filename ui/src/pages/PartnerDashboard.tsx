@@ -41,7 +41,7 @@ export function PartnerDashboard() {
       return;
     }
 
-    fetch(`/api/partners/${slug}/dashboard?token=${token}`)
+    fetch(`/api/partners/${encodeURIComponent(slug ?? "")}/dashboard?token=${encodeURIComponent(token)}`)
       .then((res) => {
         if (res.status === 403) {
           setError("forbidden");
