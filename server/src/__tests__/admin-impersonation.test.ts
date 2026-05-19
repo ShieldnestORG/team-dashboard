@@ -147,7 +147,14 @@ function makeDb(state: State) {
             targetCustomerLabel:
               (payload.targetCustomerLabel as string | null) ?? null,
             createdAt: new Date(),
-            expiresAt: payload.expiresAt as Date,
+            // Service passes a SQL `now() + interval` fragment (not a JS
+            // Date) to sidestep a Neon-pooler Date-param bug. The stub
+            // only ever needs a Date for in-memory comparisons, so we
+            // synthesize one here from NONCE_TTL_MIN (5 min).
+            expiresAt:
+              payload.expiresAt instanceof Date
+                ? payload.expiresAt
+                : new Date(Date.now() + 5 * 60 * 1000),
             burnedAt: null,
           });
         }
@@ -190,8 +197,11 @@ function makeDb(state: State) {
               pendingMatchNonce = null;
               pendingNowForBurn = null;
               if (!row) return resolve([]);
+              // burned_at is now a SQL `now()` fragment in prod; stub uses
+              // a fresh Date for the in-memory representation.
+              const burnedRaw = setPayload.burnedAt;
               row.burnedAt =
-                (setPayload.burnedAt as Date | undefined) ?? new Date();
+                burnedRaw instanceof Date ? burnedRaw : new Date();
               return resolve([row]);
             }
             return resolve([]);

@@ -169,13 +169,20 @@ export function adminImpersonationService(db: Db) {
     const now = input.now ?? new Date();
     const nonce = randomBytes(32).toString("hex");
     const expiresAt = new Date(now.getTime() + NONCE_TTL_MIN * 60 * 1000);
+    // Drive expires_at via SQL `now() + interval` instead of passing a JS
+    // Date as a bound parameter — postgres.js + Neon's pgbouncer pooler
+    // throws `TypeError: Received an instance of Date` on Date params in
+    // this code path (works fine against direct connections / embedded
+    // postgres, which is why tests passed but prod 500'd from 2026-05-09
+    // until the 2026-05-19 fix). Returned `expiresAt` stays the JS-side
+    // value; small drift from server `now()` is fine (TTL hint only).
     await db.insert(adminImpersonationNonces).values({
       nonce,
       adminActorId: input.adminActorId,
       adminActorLabel: input.adminActorLabel ?? null,
       targetAccountId: input.targetAccountId,
       targetCustomerLabel: input.targetCustomerLabel ?? null,
-      expiresAt,
+      expiresAt: sql`now() + (${NONCE_TTL_MIN} * interval '1 minute')`,
     });
     return { nonce, expiresAt };
   }
@@ -190,14 +197,18 @@ export function adminImpersonationService(db: Db) {
     // Atomic single-use: only the row that still has burned_at IS NULL AND
     // expires_at > now wins the UPDATE. Concurrent exchanges race; second
     // returns zero rows → null → caller responds 401.
+    // burned_at + the expiry comparison both use SQL `now()` — see mintNonce
+    // comment for why JS Date params fail against the Neon pooler. The `now`
+    // arg is still threaded through to `issueImpersonationCookie` (which
+    // signs a JS-side timestamp into the cookie payload).
     const claim = await db
       .update(adminImpersonationNonces)
-      .set({ burnedAt: now })
+      .set({ burnedAt: sql`now()` })
       .where(
         and(
           eq(adminImpersonationNonces.nonce, nonce),
           isNull(adminImpersonationNonces.burnedAt),
-          sql`${adminImpersonationNonces.expiresAt} > ${now}`,
+          sql`${adminImpersonationNonces.expiresAt} > now()`,
         ),
       )
       .returning();
