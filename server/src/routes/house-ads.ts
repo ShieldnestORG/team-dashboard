@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import type { StorageService } from "../storage/types.js";
 import { houseAdsService } from "../services/house-ads.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,11 @@ function parseDate(input: unknown): Date | null | undefined {
 export function houseAdsRoutes(db: Db, storage: StorageService): Router {
   const router = Router();
   const svc = houseAdsService(db);
+  // Per-route audit middleware. Public surfaces below (/active, /:id/image,
+  // /:id/click) are high-volume ad-serving traffic and intentionally NOT
+  // logged — only the four board-only admin endpoints (list/create/update/
+  // delete) attach `audit`. Same pattern as intel-billing.ts.
+  const audit = logAdminAccess(db);
 
   // -- Public -----------------------------------------------------------------
 
@@ -120,7 +126,7 @@ export function houseAdsRoutes(db: Db, storage: StorageService): Router {
 
   // -- Admin ------------------------------------------------------------------
 
-  router.get("/", async (req: Request, res: Response) => {
+  router.get("/", audit, async (req: Request, res: Response) => {
     if (!requireBoard(req, res)) return;
     const companyId = req.actor?.companyId;
     if (!companyId) {
@@ -136,7 +142,7 @@ export function houseAdsRoutes(db: Db, storage: StorageService): Router {
     }
   });
 
-  router.post("/", async (req: Request, res: Response) => {
+  router.post("/", audit, async (req: Request, res: Response) => {
     if (!requireBoard(req, res)) return;
     const companyId = req.actor?.companyId;
     if (!companyId) {
@@ -174,7 +180,7 @@ export function houseAdsRoutes(db: Db, storage: StorageService): Router {
     }
   });
 
-  router.patch("/:id", async (req: Request, res: Response) => {
+  router.patch("/:id", audit, async (req: Request, res: Response) => {
     if (!requireBoard(req, res)) return;
     const id = req.params.id as string;
     const body = req.body ?? {};
@@ -205,7 +211,7 @@ export function houseAdsRoutes(db: Db, storage: StorageService): Router {
     }
   });
 
-  router.delete("/:id", async (req: Request, res: Response) => {
+  router.delete("/:id", audit, async (req: Request, res: Response) => {
     if (!requireBoard(req, res)) return;
     const id = req.params.id as string;
     try {

@@ -252,4 +252,92 @@ describeDb("admin-access-log middleware (e2e)", () => {
     expect(row.actorId).toBeNull();
     expect(await countRows()).toBe(beforeCount + 1);
   });
+
+  // -------------------------------------------------------------------------
+  // Per-route attachment coverage — the broaden batch (PR following #75)
+  // attaches `audit = logAdminAccess(db)` as a per-route handler instead of a
+  // router-level `router.use()`. These two tests lock that pattern in for the
+  // riskiest new surfaces: access.ts (instance-admin promote / member
+  // permissions) and creditscore.ts (comp-grant / promo-code creation).
+  // We mount minimal Express apps that mirror the exact handler chain used in
+  // those route files — `router.post(path, audit, handler)` — and assert that
+  // a row is written with the correct method/path/actor.
+  // -------------------------------------------------------------------------
+
+  it("access.ts pattern: per-route audit on /admin/users/:userId/promote-instance-admin writes a row", async () => {
+    const beforeCount = await countRows();
+    const userId = randomUUID();
+    const targetUserId = randomUUID();
+    const audit = logAdminAccess(db);
+
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.actor = { type: "board", userId, isInstanceAdmin: true, source: "session" };
+      next();
+    });
+    // Mirrors access.ts: `router.post(path, audit, async (req, res) => { ... })`.
+    app.post("/admin/users/:userId/promote-instance-admin", audit, (_req, res) => {
+      res.status(201).json({ ok: true });
+    });
+
+    const res = await request(app)
+      .post(`/admin/users/${targetUserId}/promote-instance-admin`)
+      .send({});
+    expect(res.status).toBe(201);
+
+    const row = await waitForLatestRow();
+    expect(row.method).toBe("POST");
+    expect(row.path).toBe(`/admin/users/${targetUserId}/promote-instance-admin`);
+    expect(row.statusCode).toBe(201);
+    expect(row.actorType).toBe("board");
+    expect(row.actorId).toBe(userId);
+    expect(await countRows()).toBe(beforeCount + 1);
+  });
+
+  it("creditscore.ts pattern: per-route audit on /comp-grant captures body shape but never values", async () => {
+    const beforeCount = await countRows();
+    const userId = randomUUID();
+    const audit = logAdminAccess(db);
+
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.actor = { type: "board", userId, isInstanceAdmin: true, source: "session" };
+      next();
+    });
+    // Mirrors creditscore.ts: `router.post("/comp-grant", audit, async (req, res) => { ... })`.
+    app.post("/comp-grant", audit, (_req, res) => {
+      res.status(200).json({ ok: true });
+    });
+
+    const secretEmail = "secretive-customer@example.com";
+    const res = await request(app)
+      .post("/comp-grant")
+      .send({
+        tier: "pro",
+        url: "https://example.com",
+        email: secretEmail,
+        compReason: "early adopter discount",
+      });
+    expect(res.status).toBe(200);
+
+    const row = await waitForLatestRow();
+    expect(row.method).toBe("POST");
+    expect(row.path).toBe("/comp-grant");
+    expect(row.actorType).toBe("board");
+    // Body shape recorded as keys → kinds, never raw values.
+    expect(row.requestSummary).toMatchObject({
+      body_shape: {
+        tier: "string",
+        url: "string",
+        email: "string",
+        compReason: "string",
+      },
+    });
+    // Crucial: the actual email/url string never appears in the stored row.
+    expect(JSON.stringify(row.requestSummary)).not.toContain(secretEmail);
+    expect(JSON.stringify(row.requestSummary)).not.toContain("https://example.com");
+    expect(await countRows()).toBe(beforeCount + 1);
+  });
 });

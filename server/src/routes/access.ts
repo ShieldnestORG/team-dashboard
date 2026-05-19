@@ -37,6 +37,7 @@ import {
   unauthorized,
   badRequest
 } from "../errors.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
 import {
@@ -1565,6 +1566,13 @@ export function accessRoutes(
   const access = accessService(db);
   const boardAuth = boardAuthService(db);
   const agents = agentService(db);
+  // Audit middleware applied per-route on board-admin endpoints (member
+  // permissions, invite revocation, join-request approval/rejection,
+  // instance-admin promotions, cross-company access edits). Public/auth
+  // surfaces in this file (board-claim accept, cli-auth challenges, invite
+  // accept, skills, claim-api-key) are intentionally NOT audited — they
+  // are bootstrap/onboarding flows rather than admin actions.
+  const audit = logAdminAccess(db);
 
   async function assertInstanceAdmin(req: Request) {
     if (req.actor.type !== "board") throw unauthorized();
@@ -2482,7 +2490,7 @@ export function accessRoutes(
     }
   );
 
-  router.post("/invites/:inviteId/revoke", async (req, res) => {
+  router.post("/invites/:inviteId/revoke", audit, async (req, res) => {
     const id = req.params.inviteId as string;
     const invite = await db
       .select()
@@ -2523,7 +2531,7 @@ export function accessRoutes(
     res.json(revoked);
   });
 
-  router.get("/companies/:companyId/join-requests", async (req, res) => {
+  router.get("/companies/:companyId/join-requests", audit, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCompanyPermission(req, companyId, "joins:approve");
     const query = listJoinRequestsQuerySchema.parse(req.query);
@@ -2543,6 +2551,7 @@ export function accessRoutes(
 
   router.post(
     "/companies/:companyId/join-requests/:requestId/approve",
+    audit,
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const requestId = req.params.requestId as string;
@@ -2689,6 +2698,7 @@ export function accessRoutes(
 
   router.post(
     "/companies/:companyId/join-requests/:requestId/reject",
+    audit,
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const requestId = req.params.requestId as string;
@@ -2816,7 +2826,7 @@ export function accessRoutes(
     }
   );
 
-  router.get("/companies/:companyId/members", async (req, res) => {
+  router.get("/companies/:companyId/members", audit, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCompanyPermission(req, companyId, "users:manage_permissions");
     const members = await access.listMembers(companyId);
@@ -2825,6 +2835,7 @@ export function accessRoutes(
 
   router.patch(
     "/companies/:companyId/members/:memberId/permissions",
+    audit,
     validate(updateMemberPermissionsSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
@@ -2843,6 +2854,7 @@ export function accessRoutes(
 
   router.post(
     "/admin/users/:userId/promote-instance-admin",
+    audit,
     async (req, res) => {
       await assertInstanceAdmin(req);
       const userId = req.params.userId as string;
@@ -2853,6 +2865,7 @@ export function accessRoutes(
 
   router.post(
     "/admin/users/:userId/demote-instance-admin",
+    audit,
     async (req, res) => {
       await assertInstanceAdmin(req);
       const userId = req.params.userId as string;
@@ -2862,7 +2875,7 @@ export function accessRoutes(
     }
   );
 
-  router.get("/admin/users/:userId/company-access", async (req, res) => {
+  router.get("/admin/users/:userId/company-access", audit, async (req, res) => {
     await assertInstanceAdmin(req);
     const userId = req.params.userId as string;
     const memberships = await access.listUserCompanyAccess(userId);
@@ -2871,6 +2884,7 @@ export function accessRoutes(
 
   router.put(
     "/admin/users/:userId/company-access",
+    audit,
     validate(updateUserCompanyAccessSchema),
     async (req, res) => {
       await assertInstanceAdmin(req);

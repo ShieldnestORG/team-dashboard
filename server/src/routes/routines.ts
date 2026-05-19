@@ -8,6 +8,7 @@ import {
   updateRoutineSchema,
   updateRoutineTriggerSchema,
 } from "@paperclipai/shared";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, logActivity, routineService } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -17,6 +18,13 @@ export function routineRoutes(db: Db) {
   const router = Router();
   const svc = routineService(db);
   const access = accessService(db);
+  // Audit middleware applied per-route to every routine management endpoint.
+  // The lone public surface — POST /routine-triggers/public/:publicId/fire —
+  // is a high-volume signed webhook and intentionally NOT audited (the actor
+  // is the external trigger, not a board user). All other routes accept both
+  // board and agent traffic; the middleware records actor_type so board
+  // actions can be filtered out of the volume for forensics.
+  const audit = logAdminAccess(db);
 
   async function assertBoardCanAssignTasks(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -49,14 +57,14 @@ export function routineRoutes(db: Db) {
     return routine;
   }
 
-  router.get("/companies/:companyId/routines", async (req, res) => {
+  router.get("/companies/:companyId/routines", audit, async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const result = await svc.list(companyId);
     res.json(result);
   });
 
-  router.post("/companies/:companyId/routines", validate(createRoutineSchema), async (req, res) => {
+  router.post("/companies/:companyId/routines", audit, validate(createRoutineSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertBoardCanAssignTasks(req, companyId);
     assertCanManageCompanyRoutine(req, companyId, req.body.assigneeAgentId);
@@ -79,7 +87,7 @@ export function routineRoutes(db: Db) {
     res.status(201).json(created);
   });
 
-  router.get("/routines/:id", async (req, res) => {
+  router.get("/routines/:id", audit, async (req, res) => {
     const detail = await svc.getDetail(req.params.id as string);
     if (!detail) {
       res.status(404).json({ error: "Routine not found" });
@@ -89,7 +97,7 @@ export function routineRoutes(db: Db) {
     res.json(detail);
   });
 
-  router.patch("/routines/:id", validate(updateRoutineSchema), async (req, res) => {
+  router.patch("/routines/:id", audit, validate(updateRoutineSchema), async (req, res) => {
     const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
     if (!routine) {
       res.status(404).json({ error: "Routine not found" });
@@ -130,7 +138,7 @@ export function routineRoutes(db: Db) {
     res.json(updated);
   });
 
-  router.get("/routines/:id/runs", async (req, res) => {
+  router.get("/routines/:id/runs", audit, async (req, res) => {
     const routine = await svc.get(req.params.id as string);
     if (!routine) {
       res.status(404).json({ error: "Routine not found" });
@@ -142,7 +150,7 @@ export function routineRoutes(db: Db) {
     res.json(result);
   });
 
-  router.post("/routines/:id/triggers", validate(createRoutineTriggerSchema), async (req, res) => {
+  router.post("/routines/:id/triggers", audit, validate(createRoutineTriggerSchema), async (req, res) => {
     const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
     if (!routine) {
       res.status(404).json({ error: "Routine not found" });
@@ -168,7 +176,7 @@ export function routineRoutes(db: Db) {
     res.status(201).json(created);
   });
 
-  router.patch("/routine-triggers/:id", validate(updateRoutineTriggerSchema), async (req, res) => {
+  router.patch("/routine-triggers/:id", audit, validate(updateRoutineTriggerSchema), async (req, res) => {
     const trigger = await svc.getTrigger(req.params.id as string);
     if (!trigger) {
       res.status(404).json({ error: "Routine trigger not found" });
@@ -199,7 +207,7 @@ export function routineRoutes(db: Db) {
     res.json(updated);
   });
 
-  router.delete("/routine-triggers/:id", async (req, res) => {
+  router.delete("/routine-triggers/:id", audit, async (req, res) => {
     const trigger = await svc.getTrigger(req.params.id as string);
     if (!trigger) {
       res.status(404).json({ error: "Routine trigger not found" });
@@ -228,6 +236,7 @@ export function routineRoutes(db: Db) {
 
   router.post(
     "/routine-triggers/:id/rotate-secret",
+    audit,
     validate(rotateRoutineTriggerSecretSchema),
     async (req, res) => {
       const trigger = await svc.getTrigger(req.params.id as string);
@@ -260,7 +269,7 @@ export function routineRoutes(db: Db) {
     },
   );
 
-  router.post("/routines/:id/run", validate(runRoutineSchema), async (req, res) => {
+  router.post("/routines/:id/run", audit, validate(runRoutineSchema), async (req, res) => {
     const routine = await assertCanManageExistingRoutine(req, req.params.id as string);
     if (!routine) {
       res.status(404).json({ error: "Routine not found" });
