@@ -30,7 +30,7 @@ PostgreSQL (managed)                       VPS2 168.231.127.180 — handed off, 
 - **Admin Dashboard**: VPS4 Docker (`SERVE_UI=true`) — team-dashboard admin UI served from Express alongside API, fronted by nginx.
 - **Backend API**: VPS4 Docker behind nginx at `api.coherencedaddy.com` — Express.js API, agent runtime, WebSocket. Container binds `127.0.0.1:3200 → 3100`.
 - **Vercel rewrites to VPS4**: `/api/intel/*`, `/api/trends/*`, `/api/content/*`, `/api/partner-directory/*`, `/api/bundles/*`, `/api/creditscore/*` → `https://api.coherencedaddy.com/...`. See `docs/OWNERSHIP.md` for the full inter-repo contract.
-- **Database**: Neon PostgreSQL — managed by Vercel integration.
+- **Database**: Neon PostgreSQL — managed by Vercel integration. **Reachable from anywhere with the credentials over TLS** (us-east-1 AWS pooler endpoint). NOT on the Tailscale mesh. The `feedback_no_public_llm_db` Tailnet-only rule applies to self-hosted services (Ollama, custom binds) — Neon is a managed SaaS, public-by-design behind TLS + creds. To run a migration or query against prod Neon from your local machine: export the `DATABASE_URL` from `.env` and run `pnpm db:migrate` (or `psql "$DATABASE_URL"`). No SSH or VPN needed.
 - **Firecrawl**: VPS1 Tailnet `http://100.67.128.51:3002` — scraping, crawling, Playwright, Redis. Self-hosted, `USE_DB_AUTHENTICATION=false`. Tailnet-only bind.
 - **Embeddings**: VPS1 Tailnet `http://100.67.128.51:8080` — BGE-M3 via HuggingFace TEI 1.6 (CPU). Tailnet-only.
 - **Ollama**: VPS1 Tailnet `http://100.67.128.51:11434` — local Gemma 2:2b for fallback / agent / KG workloads. Tailnet-only. Content generation primarily uses Ollama Cloud (`https://ollama.com/api`) — see [Ollama Endpoint Routing](../../README.md) and `OLLAMA_URL` env.
