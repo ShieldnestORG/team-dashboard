@@ -37,6 +37,28 @@ if [ "$actual" != "$EXPECTED_API_IP" ]; then
 fi
 
 echo "✅ predeploy: $EXPECTED_API_HOST → $actual ($EXPECTED_VPS_LABEL)"
+
+# Run migrations against the configured DATABASE_URL before shipping a new
+# image. This is the belt half of the belt+suspenders fix from 2026-05-17:
+# migration 0116 shipped in code but never applied because the running
+# container was reused on `docker compose up -d` and the boot-time
+# auto-apply gate (PAPERCLIP_MIGRATION_AUTO_APPLY) wasn't set in VPS4's env.
+# See docs/handoffs/2026-05-17-migration-0116-diagnosis.md.
+#
+# `pnpm db:migrate` is idempotent — no-op when nothing is pending.
+echo ""
+echo "→ predeploy: applying pending migrations against \$DATABASE_URL"
+if pnpm db:migrate; then
+  echo "✅ predeploy: migrations up to date"
+else
+  echo "❌ predeploy: migrations failed — aborting deploy"
+  echo "   Investigate the migration error above before SSHing to the VPS."
+  echo "   Do NOT bypass by running docker compose up directly — the image"
+  echo "   will boot against a stale schema."
+  exit 1
+fi
+
+echo ""
 echo "   Safe to deploy. Recommended next step:"
 echo ""
 echo "     ssh root@$actual \"cd /opt/team-dashboard/repo && git pull && cd /opt/team-dashboard && docker compose up -d --build && docker image prune -f && docker container prune -f && docker builder prune -f\""

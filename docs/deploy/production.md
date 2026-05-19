@@ -38,8 +38,13 @@ PostgreSQL (managed)                       VPS2 168.231.127.180 — handed off, 
 
 ## Updating the Backend
 
-Always run `./scripts/predeploy.sh` first — it verifies the deploy target
-and prints the exact command below (prune tail included).
+Always run `./scripts/predeploy.sh` first — it verifies the deploy target,
+**runs pending DB migrations against `DATABASE_URL` (added 2026-05-17 after the
+migration-0116 incident — see `docs/handoffs/2026-05-17-migration-0116-diagnosis.md`)**,
+and prints the exact command below (prune tail included). If you bypass the
+script (e.g. raw `ssh ... docker compose up -d`), you must run `pnpm db:migrate`
+manually first — `docker compose up -d` reuses the running container, so
+boot-time migration logic never re-runs.
 
 ```bash
 ssh root@31.220.61.14 'cd /opt/team-dashboard/repo && git pull && cd /opt/team-dashboard && docker compose build && docker compose up -d && docker image prune -f && docker container prune -f && docker builder prune -f'

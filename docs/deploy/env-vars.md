@@ -9,6 +9,7 @@ These variables are required for the project to function. **VPS** requires all v
 |----------|----------|-------|---------|
 | **Database** | | | |
 | `DATABASE_URL` | Yes | VPS + Vercel + Local | Neon PostgreSQL connection string |
+| `PAPERCLIP_MIGRATION_AUTO_APPLY` | Yes (prod) | VPS | Set to `true` on VPS4. Boot-time safety net: if a container restarts against a stale schema (e.g. `predeploy.sh` was bypassed, or `docker compose up` reused an existing image), the server applies pending migrations during startup instead of refusing to boot. Without this, the server hard-fails on any pending migration — see the 2026-05-17 migration-0116 incident. |
 | **Auth** | | | |
 | `PAPERCLIP_AGENT_JWT_SECRET` | Yes | VPS | Agent JWT signing secret |
 | `BETTER_AUTH_SECRET` | Yes | VPS | Better Auth session signing |
