@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useToast } from "../context/ToastContext";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -17,6 +18,7 @@ function statusBadgeClass(status: string): string {
 
 export function AffiliatesAdmin() {
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { pushToast } = useToast();
   const [affiliates, setAffiliates] = useState<AdminAffiliate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,11 @@ export function AffiliatesAdmin() {
         prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a))
       );
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update status");
+      pushToast({
+        title: "Failed to update status",
+        body: err instanceof Error ? err.message : undefined,
+        tone: "error",
+      });
     } finally {
       setActionLoading(null);
     }
