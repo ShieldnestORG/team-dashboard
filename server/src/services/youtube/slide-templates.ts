@@ -33,23 +33,37 @@ export interface SlideTemplate {
 // Template definitions
 // ---------------------------------------------------------------------------
 
+// Coherence Daddy canonical design system. Source of truth lives in the
+// storefront repo at coherencedaddy-landing/app/globals.css (Tailwind v4
+// `@theme inline` block) and in the public tutorial decks at
+// github.com/Coherence-Daddy/{give-claude-a-workflow,
+// give-claude-an-organized-brain, use-ollama-to-enhance-claude}/index.html.
+// See docs/products/youtube-slide-design-system.md for the full reference.
+//
+// Banned per the brand: pure #000 / #fff (use Deep Canvas / Paper Ink),
+// cyan #00d4ff (replaced with the canonical link-blue), Inter (replaced
+// with Geist Sans), gradient text on headings.
 const coherencedaddy: SlideTemplate = {
   name: "coherencedaddy",
   channel: "COHERENCE DADDY",
-  primary: "#FF876D",
-  primaryLight: "#ffaa90",
-  primaryDark: "#e0604a",
-  secondary: "#00d4ff",
-  primaryBg: "#0c0c0e",
-  secondaryBg: "#1e1e1e",
-  darkBg: "#111113",
-  text: "#E2E2E2",
-  bodyText: "rgba(216,216,216,0.7)",
-  muted: "#6B6B6B",
-  cardBg: "#1e1e1e",
-  cardBorder: "#333333",
-  font: "'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
-  particles: ["#FF876D", "#00d4ff", "#ffaa90", "#e0604a"],
+  primary: "#FF6B4A",        // Rizz Coral — THE accent
+  primaryLight: "#FF8A6B",   // softer coral for subtle highlights
+  primaryDark: "#E5553A",    // Pressed Coral (:active state)
+  secondary: "#5B9DF9",      // canonical link blue (replaces banned cyan)
+  primaryBg: "#0E0E10",      // Deep Canvas (off-black, pure #000 banned)
+  secondaryBg: "#18181B",    // Raised Surface (cards, dialogs)
+  darkBg: "#1D1D20",         // Surface-2 (elevated cards)
+  text: "#F2F1ED",           // Paper Ink (warm off-white, pure #fff banned)
+  bodyText: "rgba(242,241,237,0.7)",  // Paper Ink at 70%
+  muted: "#A1A1A6",          // Muted Fog
+  cardBg: "#18181B",
+  cardBorder: "rgba(255,255,255,0.08)",  // Whisper Line
+  // Geist is the canonical face. In the Puppeteer rendering environment
+  // we depend on the @import in buildBaseCss to load it from Google Fonts;
+  // the fallback chain lands on platform sans-serif if the network call
+  // fails. Inter is intentionally absent from the cascade — banned per brand.
+  font: "'Geist', 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  particles: ["#FF6B4A", "#5B9DF9", "#FF8A6B", "#E5553A"],
 };
 
 const tx: SlideTemplate = {
@@ -90,30 +104,34 @@ export function getTemplate(name?: string): SlideTemplate {
 // ---------------------------------------------------------------------------
 
 export function buildSystemPrompt(t: SlideTemplate): string {
-  return `You are an expert presentation designer creating premium, high-end YouTube slides. Generate a single HTML page at 1920x1080.
+  return `You are an expert presentation designer creating slides for the ${t.channel} ecosystem at 1920x1080. The brand is minimalist editorial with a single coral accent — calm, type-driven, faith-driven, intentionally not corporate, not "AI-slop premium".
 
-BRAND (${t.channel} — premium, high-end):
-- Dark backgrounds: ${t.primaryBg}, ${t.secondaryBg}, ${t.darkBg} — rich near-black
-- PRIMARY accent: ${t.primary} — headlines, key numbers, CTAs
-- Primary gradient: linear-gradient(135deg, ${t.primary}, ${t.primaryDark})
-- Light variant: ${t.primaryLight} for subtle highlights
-- SECONDARY accent: ${t.secondary} — data highlights, tech elements
-- Text: ${t.text} headings, ${t.bodyText} body, ${t.muted} captions
-- Cards: ${t.cardBg} bg, border: 1px solid ${t.cardBorder}, border-radius: 16px
-- Font: ${t.font}
-- Channel: ${t.channel}
+BRAND TOKENS (${t.channel}):
+- Deep Canvas: ${t.primaryBg} — primary background (off-black, pure #000 BANNED)
+- Raised Surface: ${t.secondaryBg} — cards
+- Surface-2: ${t.darkBg} — elevated cards
+- Paper Ink: ${t.text} — primary text (warm off-white, pure #fff BANNED)
+- Muted Fog: ${t.muted} — captions, metadata
+- Body at 70%: ${t.bodyText}
+- Rizz Coral: ${t.primary} — THE accent. Headlines emphasis, active state, key numbers
+- Coral light: ${t.primaryLight}, pressed: ${t.primaryDark}
+- Link Blue: ${t.secondary} — links, secondary accent ONLY (cyan #00d4ff is BANNED)
+- Whisper Line: ${t.cardBorder} — 1px structural borders
+- Font: ${t.font} (Geist Sans loaded via Google Fonts; Inter is BANNED)
 
-DESIGN QUALITY:
-- Generous whitespace — 60px+ padding, 40px+ between elements
-- Clean type hierarchy — max 2 font sizes per slide
-- Decorative elements: SUBTLE thin lines, small dots, gentle glows — not chunky
-- For checkmarks: simple CSS (circle + rotated border trick) — not emoji or heavy icons
-- Cards: 48px+ padding, 16px border-radius, breathing room
-- Max 3 cards per slide, never overflow
-- Max 100 chars per text line
+DESIGN PRINCIPLES:
+- Hierarchy from weight × color contrast × space — never massive font sizes (h1 ceiling 4.5rem)
+- Generous whitespace: 60px+ padding, 40px+ between elements
+- Cards: ${t.cardBg} fill, 1px ${t.cardBorder} border, 16px radius
+- Eyebrow labels are uppercase mono, 0.18em letter-spacing, coral, with a 28px leading rule (::before width:28px height:1px background:coral)
+- Subtle 1px coral left rail for visual rhythm — never chunky
+- Numbers (3+ digits, percentages, scores): use a mono fallback like 'JetBrains Mono', monospace
+- Letter-spacing -0.02em on body, -0.035em on headlines
 
-OUTPUT: Only a complete HTML document. No markdown fences. No JS, fonts, images, SVG.
-Body must be exactly 1920x1080px with overflow:hidden.`;
+BANNED: pure #000/#fff, cyan, Inter font, gradient text on headings, emoji, circular spinners, centered hero compositions, radial-gradient halos behind text or images, glowing/pulsing/halo effects of any kind, soft drop-glow on buttons or CTAs (no box-shadow with coral or any colored glow — depth must come from neutral shadow only, and most surfaces should have NO shadow at all).
+
+OUTPUT: complete HTML document only. No markdown fences. No JS, no SVG.
+Body exactly 1920x1080px with overflow:hidden.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,11 +140,15 @@ Body must be exactly 1920x1080px with overflow:hidden.`;
 
 export function buildBaseCss(t: SlideTemplate): string {
   return `
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     width: 1920px; height: 1080px; overflow: hidden;
     font-family: ${t.font};
+    background: ${t.primaryBg};
+    color: ${t.text};
     -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.02em;
   }
   .slide {
     width: 1920px; height: 1080px; position: relative;

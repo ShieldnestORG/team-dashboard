@@ -27,6 +27,24 @@ import {
 // HTML escape
 // ---------------------------------------------------------------------------
 
+/** Section-title narration framings cycled per section. Each framing produces
+ * ~3-4 seconds of TTS so the section-title slide gets natural display time
+ * without flashing past, and rotating across sections avoids the same
+ * phrase repeating every break. Keep these short, varied, and tonally on-brand. */
+const SECTION_INTRO_FRAMINGS: Array<(t: string) => string> = [
+  (t) => `Now. ${t}.`,
+  (t) => `Next up. ${t}. Pay attention.`,
+  (t) => `Here's where it gets real. ${t}.`,
+  (t) => `${t}. This one matters.`,
+  (t) => `Listen close. ${t}.`,
+  (t) => `${t}. Stay with me.`,
+];
+
+function framedSectionIntro(title: string, idx: number): string {
+  const framing = SECTION_INTRO_FRAMINGS[idx % SECTION_INTRO_FRAMINGS.length];
+  return framing(title);
+}
+
 function esc(text: string | undefined): string {
   if (!text) return "";
   return String(text)
@@ -152,33 +170,43 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
   }
 
   // Main sections
+  let sectionIdx = 0;
   for (const section of script.mainContent?.sections || []) {
     const sectionHtml = await generateSlideHtml({
       type: "section_title",
       title: section.title,
       badge: (section.type || "topic").toUpperCase(),
     }, t);
+    // Pad the section-title narration so the slide gets ~3-4s of display
+    // time without "Let's get into it" repeating every section. Cycle
+    // through a small pool of intro/outro phrases keyed by sectionIdx.
+    const sectionTitleText = section.title || "Section";
     slides.push({
       type: "section_title",
-      html: sectionHtml || staticTemplateSectionTitle(t, section.title || "Section", (section.type || "topic").toUpperCase()),
-      spokenText: section.title || "",
+      html: sectionHtml || staticTemplateSectionTitle(t, sectionTitleText, (section.type || "topic").toUpperCase()),
+      spokenText: framedSectionIntro(sectionTitleText, sectionIdx),
     });
+    sectionIdx++;
 
     const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
     const bulletTexts = bullets.map((b) => (typeof b === "string" ? b : String(b)));
 
+    // Content slides use the static bullet template — NOT a fresh Ollama call per
+    // highlight variant. The AI path was previously calling generateSlideHtml three
+    // times per 3-bullet chunk (once per highlightIndex), and Ollama produced
+    // different HTML each time: title color shifted between white/orange,
+    // title size jumped between sizes, the CTA tail rewrote ("Dive deeper at..."
+    // → "Explore more at..." → "If you want to dive deeper, check out..."). On
+    // screen the user perceived this as the entire card swapping out instead of
+    // a single bullet being highlighted. The static template renders a fixed
+    // layout where ONLY the per-bullet styling (color/weight/glow) varies with
+    // highlightIndex — exactly what was wanted.
     for (let c = 0; c < bulletTexts.length; c += 3) {
       const chunk = bulletTexts.slice(c, c + 3);
       for (let h = 0; h < chunk.length; h++) {
-        const contentHtml = await generateSlideHtml({
-          type: "content",
-          title: section.title || "Details",
-          content: chunk,
-          highlightIndex: h,
-        }, t);
         slides.push({
           type: "content",
-          html: contentHtml || staticTemplateBullets(t, section.title || "Details", chunk, h),
+          html: staticTemplateBullets(t, section.title || "Details", chunk, h),
           spokenText: chunk[h],
         });
       }
@@ -196,8 +224,12 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
     });
   }
 
-  // CTA
-  const ctaHtml = await generateSlideHtml({ type: "cta" }, t);
+  // CTA — always use static template. Ollama-generated CTAs come back as
+  // malformed/empty card stacks ("001 // COHERENCE" eyebrow over a blank
+  // card, no subscribe button) because the prompt is generic and the
+  // model can't reliably produce a high-stakes layout like a CTA. The
+  // static template has a guaranteed clear subscribe button + brand voice.
+  // Same pattern we use for content/bullet slides.
   const ctaText = [
     script.callToAction?.subscribe,
     script.callToAction?.like,
@@ -205,7 +237,7 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
   ].filter(Boolean).join(". ");
   slides.push({
     type: "cta",
-    html: ctaHtml || staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
+    html: staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
     spokenText: ctaText || "Subscribe for more content!",
   });
 
@@ -234,12 +266,15 @@ export function buildSlidesFromScript(script: ScriptData, template?: SlideTempla
     });
   }
 
+  let sectionIdx = 0;
   for (const section of script.mainContent?.sections || []) {
+    const sectionTitleText = section.title || "Section";
     slides.push({
       type: "section_title",
-      html: staticTemplateSectionTitle(t, section.title || "Section", (section.type || "topic").toUpperCase()),
-      spokenText: section.title || "",
+      html: staticTemplateSectionTitle(t, sectionTitleText, (section.type || "topic").toUpperCase()),
+      spokenText: framedSectionIntro(sectionTitleText, sectionIdx),
     });
+    sectionIdx++;
 
     const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
     const bulletTexts = bullets.map((b) => (typeof b === "string" ? b : String(b)));
@@ -325,7 +360,13 @@ function staticTemplateSectionTitle(t: SlideTemplate, title: string, badge = "TO
 function staticTemplateBullets(t: SlideTemplate, title: string, bullets: string[], highlightIndex = -1): string {
   const bulletHtml = bullets
     .map((b, i) => {
-      const text = b.length > 120 ? b.slice(0, 117) + "..." : b;
+      // Truncation cap raised from 120 to 200 chars. The narrated text comes
+      // from the same source string, so anything we truncate visually creates
+      // a "card lies" moment where the slide reads "...truncated" but the
+      // narration keeps going. Combined with the script-writer prompt that
+      // now caps bullet length at ~120 chars, truncation at 200 should fire
+      // only on extreme outliers.
+      const text = b.length > 200 ? b.slice(0, 197) + "..." : b;
       const isActive = highlightIndex === -1 || i === highlightIndex;
       const isPast = highlightIndex !== -1 && i < highlightIndex;
       const textColor = isActive ? t.text : isPast ? hexToRgba(t.text, 0.45) : hexToRgba(t.text, 0.2);
@@ -388,7 +429,7 @@ function staticTemplateCTA(t: SlideTemplate, _subscribeText: string): string {
     <div class="slide bg-accent">
       ${particles(t, 8)}
       <p style="color:${t.primary};font-size:28px;letter-spacing:6px;font-weight:400;margin-bottom:40px">${esc(t.channel)}</p>
-      <div style="background:${t.primary};border-radius:40px;padding:16px 80px;box-shadow:0 0 30px ${hexToRgba(t.primary, 0.4)}">
+      <div style="background:${t.primary};border-radius:10px;padding:16px 80px">
         <span style="color:${t.primaryBg};font-size:36px;font-weight:900;letter-spacing:1px">SUBSCRIBE</span>
       </div>
       <p style="color:${t.muted};font-size:24px;margin-top:50px">LIKE &amp; COMMENT FOR MORE CONTENT</p>
