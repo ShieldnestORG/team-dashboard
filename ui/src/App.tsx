@@ -66,6 +66,7 @@ import { AgentOps } from "./pages/AgentOps";
 import { ApiDashboard } from "./pages/ApiDashboard";
 import { YouTubePipeline } from "./pages/YouTubePipeline";
 import { YouTubeVideos } from "./pages/YouTubeVideos";
+import { VideoEdit } from "./pages/VideoEdit";
 import { MarketingPushes } from "./pages/MarketingPushes";
 import { Partners } from "./pages/Partners";
 import { AffiliatesAdmin } from "./pages/AffiliatesAdmin";
@@ -276,6 +277,7 @@ function boardRoutes() {
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
       <Route path="youtube" element={<Navigate to="/socials/youtube" replace />} />
       <Route path="youtube/videos" element={<YouTubeVideos />} />
+      <Route path="video-edit" element={<VideoEdit />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="intel-billing" element={<IntelBilling />} />

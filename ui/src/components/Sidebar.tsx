@@ -30,6 +30,7 @@ import {
   Building2,
   Eye,
   CreditCard,
+  Film,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -151,6 +152,7 @@ export function Sidebar() {
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
           <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />
           <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
+          <SidebarNavItem to="/video-edit" label="Video Edit" icon={Film} />
         </SidebarSection>
 
         <PluginSlotOutlet

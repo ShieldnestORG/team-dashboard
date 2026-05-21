@@ -112,6 +112,7 @@ import { partnerGoRoutes } from "./routes/partner-go.js";
 import { partnerSiteRoutes, partnerSiteFeedRoutes } from "./routes/partner-site.js";
 import { agentOpsRoutes } from "./routes/agent-ops.js";
 import { youtubeRoutes } from "./routes/youtube.js";
+import { videoEditRoutes } from "./routes/video-edit.js";
 import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.js";
 import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
 import { syncSocialAutomations } from "./services/socials/cron-introspect.js";
@@ -325,6 +326,7 @@ export async function createApp(
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
+  api.use("/video-edit", videoEditRoutes(db));
   api.use("/partners", partnerRoutes(db));
   api.use("/partners/:slug/site", partnerSiteRoutes(db));
   api.use("/knowledge-graph", knowledgeGraphRoutes(db));

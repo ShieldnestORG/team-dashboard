@@ -51,6 +51,10 @@ These variables are required for the project to function. **VPS** requires all v
 | `CANVA_CALLBACK_URL` | Optional | VPS | Canva OAuth callback URL |
 | `CANVA_MEDIA_FOLDER_ID` | Optional | VPS | Canva folder to pull designs from for media tweets |
 | `YT_PIPELINE_ENABLED` | Optional | VPS | Set to `false` to leave the 5 YouTube crons dormant. Default: enabled |
+| **Video Edit** | | | |
+| `VIDEO_USE_BIN` | Optional | VPS | Absolute path to the `video-use` entry script on the host. Leave unset and jobs queue but won't run (UI shows "Engine not configured"). Used by `server/src/services/video-edit/engine.ts`. |
+| `VIDEO_EDIT_DATA_DIR` | Optional | VPS | Base dir for raw-input folders + outputs. Default: `/paperclip/video-edit`. |
+| `ELEVENLABS_API_KEY` | Optional | VPS | ElevenLabs Scribe key — required by video-use for word-level transcription. Sign up at <https://elevenlabs.io/app/settings/api-keys>. |
 | **Platform Publishing** | | | |
 | `YOUTUBE_CLIENT_ID/SECRET` | Optional | VPS | YouTube Shorts auto-publishing |
 | `YOUTUBE_REFRESH_TOKEN` | Optional | VPS | YouTube OAuth refresh token |

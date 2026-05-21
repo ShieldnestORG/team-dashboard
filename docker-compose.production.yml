@@ -21,6 +21,10 @@ services:
       SMTP_PASS: "${SMTP_PASS:-}"
       ALERT_EMAIL_TO: "${ALERT_EMAIL_TO:-}"
       ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-}"
+      # ── Video Edit pipeline (browser-use/video-use) ──
+      VIDEO_USE_BIN: "${VIDEO_USE_BIN:-}"
+      VIDEO_EDIT_DATA_DIR: "${VIDEO_EDIT_DATA_DIR:-/paperclip/video-edit}"
+      ELEVENLABS_API_KEY: "${ELEVENLABS_API_KEY:-}"
     volumes:
       - paperclip-data:/paperclip
       - paperclip-backups:/paperclip/backups
