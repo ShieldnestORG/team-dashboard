@@ -116,3 +116,4 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Shop Sharers](docs/products/shop-sharers.md) — Email capture on shop.coherencedaddy.com → referral code + QR + shareable link + opt-in affiliate approval queue.
 - [Tutorials Hub](docs/products/tutorials-hub.md) — `coherencedaddy.com/tutorials/<slug>` content surface: registry, subdirectory-vs-subdomain decision, add-a-tutorial checklist, AdSense behavior.
 - [Launch Monitor](docs/products/launch-monitor.md) — HN/Reddit/dev.to launch-post comment poller + Haiku pattern classifier + human-in-the-loop reply queue at `/socials/launch-monitor`.
+- [Video Edit](docs/products/video-edit.md) — Sibling to the YouTube synth pipeline. Edits **real footage** via browser-use/video-use at `/video-edit`. Backend + UI shipped; engine integration pending `VIDEO_USE_BIN`. Automation TODO list lives in this doc.
