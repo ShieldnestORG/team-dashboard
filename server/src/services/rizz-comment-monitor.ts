@@ -19,6 +19,7 @@
 
 import type { Db } from "@paperclipai/db";
 import { tiktokReviewSubmissions } from "@paperclipai/db";
+import { crawleeFallbackEnabled, crawleeScrape } from "./crawlee-fallback.js";
 import { logger } from "../middleware/logger.js";
 
 const FIRECRAWL_URL = process.env.FIRECRAWL_URL || "https://firecrawl.coherencedaddy.com";
@@ -128,13 +129,37 @@ export class FirecrawlTiktokCommentSource implements TiktokCommentSource {
   async listRecentVideos(handle: string, limit: number): Promise<RawTiktokVideo[]> {
     const cleanHandle = handle.replace(/^@/, "");
     const profileUrl = `https://www.tiktok.com/@${cleanHandle}`;
-    const markdown = await firecrawlScrapeMarkdown(profileUrl);
+    let markdown = await firecrawlScrapeMarkdown(profileUrl);
+
+    if (!markdown && crawleeFallbackEnabled()) {
+      const fallback = await crawleeScrape(profileUrl);
+      if (fallback) {
+        markdown = fallback;
+        logger.info(
+          { handle: cleanHandle, url: profileUrl, via: "crawlee" },
+          "rizz-comment-monitor: Crawlee fallback succeeded after Firecrawl failure (listRecentVideos)",
+        );
+      }
+    }
+
     if (!markdown) return [];
     return parseVideoUrlsFromMarkdown(markdown).slice(0, limit);
   }
 
   async fetchComments(videoUrl: string): Promise<RawTiktokComment[]> {
-    const markdown = await firecrawlScrapeMarkdown(videoUrl, 6000);
+    let markdown = await firecrawlScrapeMarkdown(videoUrl, 6000);
+
+    if (!markdown && crawleeFallbackEnabled()) {
+      const fallback = await crawleeScrape(videoUrl);
+      if (fallback) {
+        markdown = fallback;
+        logger.info(
+          { url: videoUrl, via: "crawlee" },
+          "rizz-comment-monitor: Crawlee fallback succeeded after Firecrawl failure (fetchComments)",
+        );
+      }
+    }
+
     if (!markdown) return [];
     const videoId = videoUrl.match(/\/video\/(\d+)/)?.[1] ?? "";
     // For V1.1 first-pass we treat the entire markdown body as the comment
