@@ -34,7 +34,12 @@ export interface TTSResult {
 export interface ChunkedTTSResult {
   audioPath: string;
   durationSec: number;
+  /** Interleaved [content, silence, content, silence, ..., content]. Kept for back-compat. */
   chunkDurations: number[];
+  /** Per-input-chunk content audio duration (no silence). Same length as input chunks. */
+  contentDurations: number[];
+  /** Silence inserted between content chunks, in seconds. */
+  silenceGapSec: number;
   provider: string;
 }
 
@@ -140,7 +145,9 @@ export async function generateChunkedTTS(
 
   const chunkPaths: string[] = [];
   const chunkDurations: number[] = [];
+  const contentDurations: number[] = [];
   const SILENCE_GAP_SEC = 0.6;
+  const FADE_SEC = 0.03; // 30ms fade-in/out at chunk boundaries to suppress click artifacts
 
   // Generate a silence file for gaps
   const silencePath = join(AUDIO_DIR, `silence_${Date.now()}.mp3`);
@@ -152,6 +159,7 @@ export async function generateChunkedTTS(
     const text = chunks[i].trim();
     if (!text) {
       chunkDurations.push(SILENCE_GAP_SEC);
+      contentDurations.push(0);
       continue;
     }
 
@@ -160,8 +168,11 @@ export async function generateChunkedTTS(
 
     try {
       const result = await generateGrokTTS(text, chunkFile);
+      await applyEdgeFades(chunkFile, result.durationSec, FADE_SEC);
+      const fadedDuration = await getAudioDuration(chunkFile);
       chunkPaths.push(chunkFile);
-      chunkDurations.push(result.durationSec);
+      chunkDurations.push(fadedDuration);
+      contentDurations.push(fadedDuration);
 
       // Add silence gap after each chunk except the last
       if (i < chunks.length - 1) {
@@ -172,6 +183,7 @@ export async function generateChunkedTTS(
       logger.warn({ err, chunk: i }, "Chunk TTS failed, adding silence");
       chunkPaths.push(silencePath);
       chunkDurations.push(SILENCE_GAP_SEC);
+      contentDurations.push(0);
     }
   }
 
@@ -199,7 +211,28 @@ export async function generateChunkedTTS(
     "Chunked TTS generation complete",
   );
 
-  return { audioPath: outputPath, durationSec: totalDuration, chunkDurations, provider: "grok" };
+  return {
+    audioPath: outputPath,
+    durationSec: totalDuration,
+    chunkDurations,
+    contentDurations,
+    silenceGapSec: SILENCE_GAP_SEC,
+    provider: "grok",
+  };
+}
+
+/**
+ * Apply 30ms fade-in and fade-out to an MP3 in place to suppress click/pop
+ * artifacts at concat boundaries. Re-encodes through libmp3lame.
+ */
+async function applyEdgeFades(audioPath: string, durationSec: number, fadeSec: number): Promise<void> {
+  const fadeOutStart = Math.max(0, durationSec - fadeSec);
+  const tmpPath = `${audioPath}.faded.mp3`;
+  await execAsync(
+    `ffmpeg -y -i "${audioPath}" -af "afade=t=in:st=0:d=${fadeSec},afade=t=out:st=${fadeOutStart.toFixed(3)}:d=${fadeSec}" -codec:a libmp3lame -qscale:a 2 "${tmpPath}"`,
+    { timeout: 60_000 },
+  );
+  await execAsync(`mv "${tmpPath}" "${audioPath}"`);
 }
 
 // ---------------------------------------------------------------------------

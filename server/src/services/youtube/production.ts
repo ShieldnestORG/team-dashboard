@@ -16,7 +16,7 @@ import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunc
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
-import { assembleYouTubeVideo, generateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
+import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
 import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
@@ -123,21 +123,21 @@ export async function runProductionPipeline(
     logger.info({ productionId }, "YT Pipeline: generating TTS audio...");
     let tts: TTSResult;
     let perSlideDurations: number[] | undefined;
+    let chunkContentDurations: number[] | undefined;
+    let chunkSilenceGapSec: number | undefined;
+    let captionChunks: string[] | undefined;
 
     if (mode === "site-walker") {
       // Chunked TTS: one chunk per screenshot for cleaner voice output
       const ttsChunks = buildTTSChunks(script);
+      captionChunks = buildCaptionChunks(script);
       const chunkedResult = await generateChunkedTTS(ttsChunks, `audio_${productionId}.mp3`);
       tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
-      // Collapse [content, silence, content, silence, ..., content] into per-slide durations
-      // Each slide = its content duration + the following silence gap (if any)
-      const raw = chunkedResult.chunkDurations;
-      perSlideDurations = [];
-      for (let i = 0; i < raw.length; i += 2) {
-        const contentDur = raw[i] || 0;
-        const silenceDur = raw[i + 1] || 0;
-        perSlideDurations.push(contentDur + silenceDur);
-      }
+      chunkContentDurations = chunkedResult.contentDurations;
+      chunkSilenceGapSec = chunkedResult.silenceGapSec;
+      perSlideDurations = chunkContentDurations.map((d, i) =>
+        d + (i < chunkContentDurations!.length - 1 ? chunkSilenceGapSec! : 0),
+      );
     } else {
       const ttsText = formatScriptForTTS(script);
       tts = await generateTTSAudio(ttsText, `audio_${productionId}.mp3`);
@@ -148,8 +148,28 @@ export async function runProductionPipeline(
     const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
 
     // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text)
-    const captionText = formatScriptPlainText(script);
-    const captionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
+    let captionsPath: string;
+    if (captionChunks && chunkContentDurations && chunkSilenceGapSec !== undefined) {
+      // Chunk-aware path: distribute words inside each measured chunk's duration.
+      // Eliminates uniform-rate drift on slides with varying speaking rates.
+      captionsPath = await generateChunkedCaptions(
+        captionChunks,
+        chunkContentDurations,
+        chunkSilenceGapSec,
+        `captions_${productionId}.srt`,
+      );
+    } else {
+      const captionText = formatScriptPlainText(script);
+      captionsPath = await generateCaptions(captionText, tts.durationSec, `captions_${productionId}.srt`);
+    }
+
+    // 8b. Self-eval: validate caption alignment before publish
+    const captionCheck = await validateCaptions(captionsPath, tts.durationSec);
+    if (captionCheck.ok) {
+      logger.info({ productionId, ...captionCheck }, "Caption alignment OK");
+    } else {
+      logger.warn({ productionId, ...captionCheck }, "Caption alignment drift detected");
+    }
 
     // 9. Assemble video
     let video: YtAssembleResult | undefined;
@@ -356,6 +376,67 @@ function extractVisualPrompts(script: ScriptData): string[] {
     "YouTube video outro card, subscribe reminder, professional dark gradient, tokns.fi branding, tech aesthetic",
   );
   return prompts;
+}
+
+/**
+ * Build per-chunk text aligned 1:1 with screenshots. Shared between
+ * buildTTSChunks (with pronunciation fixes) and buildCaptionChunks (plain).
+ */
+function buildChunkTexts(script: ScriptData): string[] {
+  const sections = script.mainContent?.sections || [];
+  if (sections.length === 0) return [];
+
+  const sectionTexts = sections.map((section) => {
+    let text = `${section.title}. `;
+    if (Array.isArray(section.content)) {
+      for (const line of section.content) {
+        if (typeof line === "string" && !line.startsWith("[")) {
+          text += `${line} `;
+        }
+      }
+    }
+    return text.trim();
+  });
+
+  let intro = "";
+  if (script.hook) intro += `${script.hook.text} `;
+  if (script.introduction) {
+    intro += `${script.introduction.greeting} `;
+    intro += `${script.introduction.topicIntro} `;
+    intro += `${script.introduction.valueProposition} `;
+    intro += script.introduction.credibility;
+  }
+
+  let outro = "";
+  if (script.conclusion) {
+    outro += script.conclusion.recap.join(". ") + ". ";
+    outro += script.conclusion.finalThought + " ";
+  }
+  if (script.callToAction) {
+    outro += [
+      script.callToAction.subscribe,
+      script.callToAction.like,
+      script.callToAction.comment,
+    ].filter(Boolean).join(". ");
+  }
+
+  const chunks: string[] = [];
+  for (let i = 0; i < sectionTexts.length; i++) {
+    let chunk = "";
+    if (i === 0) chunk += intro.trim() + " ";
+    chunk += sectionTexts[i];
+    if (i === sectionTexts.length - 1) chunk += " " + outro.trim();
+    chunks.push(chunk.trim());
+  }
+  return chunks;
+}
+
+/**
+ * Plain-text chunks aligned with TTS chunks, for caption generation.
+ * No pronunciation mangling — what the viewer reads on screen.
+ */
+function buildCaptionChunks(script: ScriptData): string[] {
+  return buildChunkTexts(script);
 }
 
 /**

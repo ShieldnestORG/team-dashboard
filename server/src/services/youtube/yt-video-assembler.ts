@@ -180,3 +180,126 @@ function formatSrtTime(seconds: number): string {
   const ms = Math.floor((seconds % 1) * 1000);
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")},${ms.toString().padStart(3, "0")}`;
 }
+
+/**
+ * Generate SRT captions chunk-aware: distribute words proportionally inside
+ * each chunk's measured content duration, leaving silence gaps caption-free.
+ *
+ * Eliminates the uniform-rate drift in generateCaptions when slides have
+ * varying speaking rates (the 2026-04-27 council issue).
+ */
+export async function generateChunkedCaptions(
+  chunks: string[],
+  contentDurations: number[],
+  silenceGapSec: number,
+  outputFilename?: string,
+): Promise<string> {
+  ensureDir(TEMP_DIR);
+  const filename = outputFilename || `captions_${Date.now()}.srt`;
+  const outputPath = join(TEMP_DIR, filename);
+
+  if (chunks.length !== contentDurations.length) {
+    throw new Error(`Caption chunks (${chunks.length}) and durations (${contentDurations.length}) length mismatch`);
+  }
+
+  let srt = "";
+  let index = 1;
+  let cursorSec = 0;
+
+  for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+    const text = chunks[chunkIdx].trim();
+    const chunkDur = contentDurations[chunkIdx];
+
+    if (!text || chunkDur <= 0) {
+      cursorSec += chunkDur + (chunkIdx < chunks.length - 1 ? silenceGapSec : 0);
+      continue;
+    }
+
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      cursorSec += chunkDur + (chunkIdx < chunks.length - 1 ? silenceGapSec : 0);
+      continue;
+    }
+
+    const wordsPerSecond = words.length / chunkDur;
+    const wordsPerCaption = Math.max(3, Math.min(8, Math.ceil(wordsPerSecond * 3)));
+
+    let wordIdx = 0;
+    while (wordIdx < words.length) {
+      const chunkWords = words.slice(wordIdx, wordIdx + wordsPerCaption);
+      const startSec = cursorSec + (wordIdx / words.length) * chunkDur;
+      const endSec = cursorSec + Math.min(((wordIdx + chunkWords.length) / words.length) * chunkDur, chunkDur);
+
+      srt += `${index}\n`;
+      srt += `${formatSrtTime(startSec)} --> ${formatSrtTime(endSec)}\n`;
+      srt += `${chunkWords.join(" ")}\n\n`;
+
+      index++;
+      wordIdx += wordsPerCaption;
+    }
+
+    cursorSec += chunkDur;
+    if (chunkIdx < chunks.length - 1) cursorSec += silenceGapSec;
+  }
+
+  await writeFile(outputPath, srt);
+  return outputPath;
+}
+
+export interface CaptionValidationResult {
+  ok: boolean;
+  srtEndSec: number;
+  audioDurationSec: number;
+  driftSec: number;
+  entries: number;
+  issues: string[];
+}
+
+/**
+ * Self-evaluate caption/audio alignment before publish.
+ * Checks the SRT's last end-time against actual audio duration and flags drift.
+ */
+export async function validateCaptions(
+  captionsPath: string,
+  audioDurationSec: number,
+): Promise<CaptionValidationResult> {
+  const issues: string[] = [];
+  const srt = await readFile(captionsPath, "utf8");
+
+  // Parse SRT timestamps: HH:MM:SS,mmm --> HH:MM:SS,mmm
+  const timeRe = /(\d{2}):(\d{2}):(\d{2}),(\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2}),(\d{3})/g;
+  const matches: Array<{ start: number; end: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = timeRe.exec(srt)) !== null) {
+    const start = +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000;
+    const end = +m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000;
+    matches.push({ start, end });
+  }
+
+  if (matches.length === 0) {
+    issues.push("No caption entries parsed from SRT");
+    return { ok: false, srtEndSec: 0, audioDurationSec, driftSec: 0, entries: 0, issues };
+  }
+
+  const srtEndSec = matches[matches.length - 1].end;
+  const driftSec = srtEndSec - audioDurationSec;
+
+  if (driftSec > 0.5) issues.push(`SRT ends ${driftSec.toFixed(2)}s after audio`);
+  if (driftSec < -2.0) issues.push(`SRT ends ${Math.abs(driftSec).toFixed(2)}s before audio (under-captioned tail)`);
+
+  for (let i = 0; i < matches.length; i++) {
+    if (matches[i].end < matches[i].start) issues.push(`Entry ${i + 1}: end < start`);
+    if (i > 0 && matches[i].start < matches[i - 1].end - 0.05) {
+      issues.push(`Entry ${i + 1}: overlaps previous`);
+    }
+  }
+
+  return {
+    ok: Math.abs(driftSec) <= 0.5 && issues.length === 0,
+    srtEndSec,
+    audioDurationSec,
+    driftSec,
+    entries: matches.length,
+    issues,
+  };
+}
