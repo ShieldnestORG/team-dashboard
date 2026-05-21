@@ -94,6 +94,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
 | `CRAWLEE_FALLBACK_ENABLED` | Optional | VPS | `true` to activate the Crawlee + Playwright fallback when Firecrawl `/v1/scrape` fails. Currently wired into `firecrawl-sync` only. Requires Playwright browsers installed in the runtime (`pnpm exec playwright install chromium`). Default `false`. |
 | `SYNTHETIC_MONITOR_ENABLED` | Optional | VPS | `true` to enable the synthetic uptime monitor (`server/src/services/synthetic-monitor.ts`) — Playwright-rendered canary checks that capture JS console errors, uncaught page errors, broken images, and load time. Requires Playwright browsers installed in the runtime (`pnpm exec playwright install chromium`). Default `false`. |
+| `SITEMAP_CRAWL_ENABLED` | Optional | VPS | `true` to activate the sitemap deep-crawl service (`server/src/services/sitemap-crawl.ts`) — walks N same-origin pages of a target site (default 20 pages, depth 2) and returns markdown per page for competitor/partner intel. Standalone service; no consumers wired in yet. Requires Playwright browsers (`pnpm exec playwright install chromium`). Default `false`. |
 | `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |
 | **Payments** | | | |
 | `STRIPE_SECRET_KEY` | Optional | VPS | Stripe API secret key for donations + Intel API paid tier |
