@@ -88,6 +88,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `FIRECRAWL_API_KEY` | Yes | VPS | `self-hosted` for Tailnet self-hosted Firecrawl (`USE_DB_AUTHENTICATION=false`). |
 | `EMBED_API_KEY` | Yes | VPS | Embedding service auth |
 | `FIRECRAWL_EMBEDDING_API_KEY` | Yes | VPS | Firecrawl scraping API auth |
+| `CRAWLEE_FALLBACK_ENABLED` | Optional | VPS | `true` to activate the Crawlee + Playwright fallback when Firecrawl `/v1/scrape` fails. Currently wired into `firecrawl-sync` only. Requires Playwright browsers installed in the runtime (`pnpm exec playwright install chromium`). Default `false`. |
 | `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |
 | **Payments** | | | |
 | `STRIPE_SECRET_KEY` | Optional | VPS | Stripe API secret key for donations + Intel API paid tier |

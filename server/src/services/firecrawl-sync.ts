@@ -12,6 +12,7 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { getEmbedding } from "./intel-embeddings.js";
+import { crawleeFallbackEnabled, crawleeScrape } from "./crawlee-fallback.js";
 import { logger } from "../middleware/logger.js";
 
 const FIRECRAWL_URL =
@@ -133,8 +134,23 @@ async function syncOneCompany(
 ): Promise<boolean> {
   if (!company.website) return false;
 
-  const markdown = await firecrawlScrape(company.website);
+  let markdown = await firecrawlScrape(company.website);
+  let via: "firecrawl" | "crawlee" = "firecrawl";
+
+  if (!markdown && crawleeFallbackEnabled()) {
+    const fallback = await crawleeScrape(company.website);
+    if (fallback) {
+      markdown = fallback;
+      via = "crawlee";
+      logger.info(
+        { slug: company.slug, url: company.website },
+        "Firecrawl sync: Crawlee fallback succeeded after Firecrawl failure",
+      );
+    }
+  }
+
   if (!markdown) return false;
+  logger.debug({ slug: company.slug, via }, "Firecrawl sync: scrape path used");
 
   const headline = `${company.name} — weekly site refresh`;
   const body = markdown.slice(0, 8_000);

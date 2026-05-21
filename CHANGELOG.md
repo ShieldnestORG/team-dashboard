@@ -4,6 +4,34 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [Unreleased] — Crawlee fallback for Firecrawl (Phase 1)
+
+### New Features
+
+**Crawlee + Playwright fallback behind the Firecrawl interface**
+- New service `server/src/services/crawlee-fallback.ts` — lazy-loaded Playwright
+  + Turndown pipeline that returns markdown for a single URL. Off by default;
+  flip `CRAWLEE_FALLBACK_ENABLED=true` to activate.
+- `firecrawl-sync` now consults the fallback when `/v1/scrape` returns null,
+  logs `via: "crawlee"` on success, and keeps the existing Firecrawl circuit
+  breaker so the primary path can still trip independently.
+- `crawlee@^3.16.0` + `turndown@^7.2.4` added as server deps; `@types/turndown`
+  to devDeps. Imports are dynamic so the modules never block boot or tests.
+- Unit-tested in `server/src/__tests__/firecrawl-sync-crawlee-fallback.test.ts`
+  (4 scenarios: fallback success, flag-off no-op, primary-succeeded no-op,
+  both-fail surface). Browser-binary E2E intentionally not in CI.
+
+### Files
+- New: `server/src/services/crawlee-fallback.ts`, `server/src/__tests__/firecrawl-sync-crawlee-fallback.test.ts`
+- Modified: `server/src/services/firecrawl-sync.ts`, `server/package.json`, `docs/deploy/env-vars.md`
+
+### Operator notes
+- The fallback stays off until `CRAWLEE_FALLBACK_ENABLED=true` is set on the
+  VPS and Playwright browsers are installed (`pnpm exec playwright install chromium`).
+- Future phases (deep audit tier, Rizz extractor hardening, deep crawl,
+  synthetic monitoring, socials scraping) reuse this same module surface.
+
+
 ## [2026-04-25] — Socials Hub
 
 ### New Features
