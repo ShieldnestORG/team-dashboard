@@ -39,6 +39,7 @@ import {
   type ProfileSnapshot,
   type RecentVideo,
 } from "@paperclipai/db";
+import { crawleeFallbackEnabled, crawleeScrape } from "./crawlee-fallback.js";
 import { logger } from "../middleware/logger.js";
 
 const FIRECRAWL_URL = process.env.FIRECRAWL_URL || "https://firecrawl.coherencedaddy.com";
@@ -249,7 +250,19 @@ export class FirecrawlTiktokProfileSource implements TiktokProfileSource {
   async scrapeProfile(handle: string): Promise<TiktokProfileScrape | null> {
     const cleanHandle = handle.replace(/^@/, "");
     const url = `https://www.tiktok.com/@${cleanHandle}`;
-    const markdown = await firecrawlScrapeMarkdown(url);
+    let markdown = await firecrawlScrapeMarkdown(url);
+
+    if (!markdown && crawleeFallbackEnabled()) {
+      const fallback = await crawleeScrape(url);
+      if (fallback) {
+        markdown = fallback;
+        logger.info(
+          { handle: cleanHandle, url, via: "crawlee" },
+          "rizz-extractor: Crawlee fallback succeeded after Firecrawl failure",
+        );
+      }
+    }
+
     if (!markdown) return null;
     const videos = parseVideoUrls(markdown);
     const profile = parseProfileFromMarkdown(markdown);
