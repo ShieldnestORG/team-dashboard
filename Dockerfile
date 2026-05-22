@@ -52,9 +52,19 @@ WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && mkdir -p /paperclip /opt/pw-browsers \
-  && chown node:node /paperclip /opt/pw-browsers \
-  && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
-     npx --prefix /app/server playwright install chromium 2>/dev/null || true
+  && chown node:node /paperclip /opt/pw-browsers
+# Playwright Chromium: this VPS's path to Playwright's CDN intermittently hangs
+# *after* the binary download completes (a secondary artifact fetch stalls with
+# no timeout — cost a 3h wedged build on 2026-05-22). Bound each attempt with
+# `timeout` so a hang becomes a fast failure, retry a few times, and never fail
+# the build on it: presentation slide rendering falls back to the Grok image
+# backend when no browser is present.
+RUN for i in 1 2 3; do \
+      echo "playwright install chromium (attempt $i)"; \
+      PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
+        timeout 180 npx --prefix /app/server playwright install chromium && break; \
+      echo "attempt $i timed out or failed; retrying"; \
+    done; true
 
 ENV NODE_ENV=production \
   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
