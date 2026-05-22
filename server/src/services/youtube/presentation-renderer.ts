@@ -129,38 +129,49 @@ export interface Slide {
 // AI-powered slide builder (primary)
 // ---------------------------------------------------------------------------
 
+// One AI HTML generation per slide. These calls are independent, so they run
+// in a bounded-concurrency pool rather than serially — a video with N slides
+// used to take N × (Ollama latency) and could exceed 30 min; now wall time is
+// roughly ceil(N / SLIDE_GEN_CONCURRENCY) × latency. Each job carries a static
+// fallback used when the AI call fails or returns non-HTML.
+const SLIDE_GEN_CONCURRENCY = 6;
+
+interface SlideJob {
+  type: string;
+  req: SlideRequest;
+  fallbackHtml: string;
+  spokenText: string;
+}
+
 export async function buildSlidesFromScriptAI(script: ScriptData, template?: SlideTemplate): Promise<Slide[]> {
   const t = template || getTemplate();
-  const slides: Slide[] = [];
+  const jobs: SlideJob[] = [];
 
   // Title
-  const titleHtml = await generateSlideHtml({ type: "title", title: script.title, subtitle: t.channel }, t);
-  slides.push({
+  jobs.push({
     type: "title",
-    html: titleHtml || staticTemplateTitle(t, script.title || "Untitled"),
+    req: { type: "title", title: script.title, subtitle: t.channel },
+    fallbackHtml: staticTemplateTitle(t, script.title || "Untitled"),
     spokenText: script.title || "",
   });
 
   // Hook
   if (script.hook?.text) {
-    const hookHtml = await generateSlideHtml({ type: "hook", content: [script.hook.text] }, t);
-    slides.push({
+    jobs.push({
       type: "hook",
-      html: hookHtml || staticTemplateQuote(t, script.hook.text),
+      req: { type: "hook", content: [script.hook.text] },
+      fallbackHtml: staticTemplateQuote(t, script.hook.text),
       spokenText: script.hook.text,
     });
   }
 
   // Main sections
   for (const section of script.mainContent?.sections || []) {
-    const sectionHtml = await generateSlideHtml({
+    const badge = (section.type || "topic").toUpperCase();
+    jobs.push({
       type: "section_title",
-      title: section.title,
-      badge: (section.type || "topic").toUpperCase(),
-    }, t);
-    slides.push({
-      type: "section_title",
-      html: sectionHtml || staticTemplateSectionTitle(t, section.title || "Section", (section.type || "topic").toUpperCase()),
+      req: { type: "section_title", title: section.title, badge },
+      fallbackHtml: staticTemplateSectionTitle(t, section.title || "Section", badge),
       spokenText: section.title || "",
     });
 
@@ -170,15 +181,10 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
     for (let c = 0; c < bulletTexts.length; c += 3) {
       const chunk = bulletTexts.slice(c, c + 3);
       for (let h = 0; h < chunk.length; h++) {
-        const contentHtml = await generateSlideHtml({
+        jobs.push({
           type: "content",
-          title: section.title || "Details",
-          content: chunk,
-          highlightIndex: h,
-        }, t);
-        slides.push({
-          type: "content",
-          html: contentHtml || staticTemplateBullets(t, section.title || "Details", chunk, h),
+          req: { type: "content", title: section.title || "Details", content: chunk, highlightIndex: h },
+          fallbackHtml: staticTemplateBullets(t, section.title || "Details", chunk, h),
           spokenText: chunk[h],
         });
       }
@@ -188,28 +194,44 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
   // Conclusion
   if (script.conclusion?.recap) {
     const recap = script.conclusion.recap.map((r) => (typeof r === "string" ? r : String(r)));
-    const conclusionHtml = await generateSlideHtml({ type: "conclusion", content: recap }, t);
-    slides.push({
+    jobs.push({
       type: "conclusion",
-      html: conclusionHtml || staticTemplateConclusion(t, recap),
+      req: { type: "conclusion", content: recap },
+      fallbackHtml: staticTemplateConclusion(t, recap),
       spokenText: recap.join(". "),
     });
   }
 
   // CTA
-  const ctaHtml = await generateSlideHtml({ type: "cta" }, t);
   const ctaText = [
     script.callToAction?.subscribe,
     script.callToAction?.like,
     script.callToAction?.comment,
   ].filter(Boolean).join(". ");
-  slides.push({
+  jobs.push({
     type: "cta",
-    html: ctaHtml || staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
+    req: { type: "cta" },
+    fallbackHtml: staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
     spokenText: ctaText || "Subscribe for more content!",
   });
 
-  return slides;
+  // Resolve AI HTML for every slide in a bounded-concurrency pool, preserving
+  // order. Each slot falls back to its static template on failure.
+  const htmls: string[] = new Array(jobs.length);
+  for (let i = 0; i < jobs.length; i += SLIDE_GEN_CONCURRENCY) {
+    const slice = jobs.slice(i, i + SLIDE_GEN_CONCURRENCY);
+    const settled = await Promise.allSettled(slice.map((job) => generateSlideHtml(job.req, t)));
+    settled.forEach((r, j) => {
+      const aiHtml = r.status === "fulfilled" ? r.value : null;
+      htmls[i + j] = aiHtml || slice[j].fallbackHtml;
+    });
+  }
+
+  return jobs.map((job, i) => ({
+    type: job.type,
+    html: htmls[i],
+    spokenText: job.spokenText,
+  }));
 }
 
 // ---------------------------------------------------------------------------
