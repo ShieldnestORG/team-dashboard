@@ -98,8 +98,13 @@ async function callOllamaForReply(systemPrompt: string, tweetText: string): Prom
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 const MAX_QUERY_LENGTH = 512;
+// Account slug used for search-poll reads. The poll runs the search under the
+// `primary` X account; if no tokens are connected for `primary`, the poll
+// must skip quietly (see pollViaSearch token-check below) — otherwise every
+// tick logs an [ERROR] line in prod.
+const SEARCH_ACCOUNT_SLUG = "primary";
 
-class AutoReplyService {
+export class AutoReplyService {
   private db: Db;
   private configsByAuthorId = new Map<string, AutoReplyConfigRow>();
   private configsByUsername = new Map<string, AutoReplyConfigRow>();
@@ -273,13 +278,19 @@ class AutoReplyService {
       return { checked: 0, found: 0, newReplies: 0 };
     }
 
-    const tokens = await loadTokens(this.db, COMPANY_ID).catch(() => null);
+    // Check tokens for the SAME account slug the client below will use.
+    // Previously this checked the default ("tx_rizz") while the client ran as
+    // "primary" — so when primary wasn't connected, the guard passed and
+    // every query inside the loop threw, logging an [ERROR] each tick.
+    const tokens = await loadTokens(this.db, COMPANY_ID, SEARCH_ACCOUNT_SLUG).catch(() => null);
     if (!tokens) {
-      logger.warn("Auto-reply poll skipped: no X OAuth tokens");
+      logger.info(
+        `X auto-reply poll skipped: no OAuth tokens for account '${SEARCH_ACCOUNT_SLUG}' — reconnect via /settings/x to enable`,
+      );
       return { checked: 0, found: 0, newReplies: 0 };
     }
 
-    const client = new XApiClient(this.db, COMPANY_ID, "primary");
+    const client = new XApiClient(this.db, COMPANY_ID, SEARCH_ACCOUNT_SLUG);
     let totalFound = 0;
     let newReplies = 0;
 
