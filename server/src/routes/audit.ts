@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 
 import { logger } from "../middleware/logger.js";
+import { crawleeFallbackEnabled, crawleeScrape } from "../services/crawlee-fallback.js";
 
 const FIRECRAWL_URL =
   process.env.FIRECRAWL_URL || "https://firecrawl.coherencedaddy.com";
@@ -131,6 +132,7 @@ async function fcScrape(
   url: string,
 ): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> {
   let res: Response;
+  let primaryError: FirecrawlError;
   try {
     res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
       method: "POST",
@@ -142,10 +144,12 @@ async function fcScrape(
       signal: AbortSignal.timeout(45_000),
     });
   } catch (err) {
-    throw new FirecrawlError(`scrape: network error (${(err as Error).message})`, "scrape", err);
+    primaryError = new FirecrawlError(`scrape: network error (${(err as Error).message})`, "scrape", err);
+    return await scrapeFallbackOrThrow(url, primaryError);
   }
   if (!res.ok) {
-    throw new FirecrawlError(`scrape: HTTP ${res.status}`, "scrape");
+    primaryError = new FirecrawlError(`scrape: HTTP ${res.status}`, "scrape");
+    return await scrapeFallbackOrThrow(url, primaryError);
   }
   const data = (await res.json()) as {
     success: boolean;
@@ -156,13 +160,30 @@ async function fcScrape(
     };
   };
   if (!data.success || !data.data) {
-    throw new FirecrawlError("scrape: response missing data", "scrape");
+    primaryError = new FirecrawlError("scrape: response missing data", "scrape");
+    return await scrapeFallbackOrThrow(url, primaryError);
   }
   return {
     markdown: (data.data.markdown ?? "").slice(0, 60_000),
     links: data.data.links ?? [],
     metadata: data.data.metadata ?? {},
   };
+}
+
+// Try Crawlee as a secondary scraper when Firecrawl's /v1/scrape fails.
+// Returns a scrape-shaped object when Crawlee succeeds (links + metadata are
+// empty — Crawlee only yields markdown), otherwise rethrows the original
+// Firecrawl error so callers see the same failure mode as before this fallback
+// was wired in.
+async function scrapeFallbackOrThrow(
+  url: string,
+  primaryError: FirecrawlError,
+): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> {
+  if (!crawleeFallbackEnabled()) throw primaryError;
+  const fallback = await crawleeScrape(url);
+  if (!fallback) throw primaryError;
+  logger.info({ url, via: "crawlee" }, "audit: Crawlee fallback succeeded after Firecrawl failure");
+  return { markdown: fallback.slice(0, 60_000), links: [], metadata: {} };
 }
 
 async function fcMap(url: string): Promise<string[]> {
@@ -683,6 +704,7 @@ let healthCache: { ok: boolean; reason?: string; checkedAt: number } | null = nu
 const HEALTH_CACHE_MS = 30_000;
 
 async function probeFirecrawl(): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const probeUrl = "https://example.com";
   try {
     const res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
       method: "POST",
@@ -690,7 +712,7 @@ async function probeFirecrawl(): Promise<{ ok: true } | { ok: false; reason: str
         "Content-Type": "application/json",
         Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
       },
-      body: JSON.stringify({ url: "https://example.com", formats: ["markdown"], timeout: 4000 }),
+      body: JSON.stringify({ url: probeUrl, formats: ["markdown"], timeout: 4000 }),
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
@@ -699,7 +721,7 @@ async function probeFirecrawl(): Promise<{ ok: true } | { ok: false; reason: str
         { status: res.status, errorMessage: null },
         "audit health: firecrawl HTTP non-2xx",
       );
-      return { ok: false, reason: "crawler_http_error" };
+      return await probeCrawleeFallback("crawler_http_error");
     }
     return { ok: true };
   } catch (err) {
@@ -709,8 +731,28 @@ async function probeFirecrawl(): Promise<{ ok: true } | { ok: false; reason: str
       { status: null, errorMessage: (err as Error).message },
       "audit health: firecrawl unreachable",
     );
-    return { ok: false, reason: "crawler_unreachable" };
+    return await probeCrawleeFallback("crawler_unreachable");
   }
+}
+
+// If Firecrawl is down but the Crawlee fallback can still scrape, the audit
+// pipeline is functional — report healthy so the storefront keeps serving
+// audits. If Crawlee is disabled or also failing, surface the original
+// Firecrawl reason so on-call alerting still fires.
+async function probeCrawleeFallback(
+  primaryReason: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!crawleeFallbackEnabled()) return { ok: false, reason: primaryReason };
+  try {
+    const md = await crawleeScrape("https://example.com");
+    if (md) {
+      logger.info({ via: "crawlee" }, "audit health: Crawlee fallback healthy");
+      return { ok: true };
+    }
+  } catch (err) {
+    logger.warn({ errorMessage: (err as Error).message }, "audit health: crawlee probe threw");
+  }
+  return { ok: false, reason: primaryReason };
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
