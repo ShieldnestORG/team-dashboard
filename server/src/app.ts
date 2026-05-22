@@ -118,6 +118,7 @@ import { initAutoReplyService, startAutoReplyCron } from "./services/auto-reply.
 import { syncCronRegistry, startCronScheduler } from "./services/cron-registry.js";
 import { syncSocialAutomations } from "./services/socials/cron-introspect.js";
 import { startYouTubeCrons } from "./services/youtube/yt-crons.js";
+import { startVideoEditCrons } from "./services/video-edit/ve-crons.js";
 import { initVpsMonitor } from "./services/vps-monitor.js";
 import { knowledgeGraphRoutes } from "./routes/knowledge-graph.js";
 import { agentMemoryRoutes } from "./routes/agent-memory.js";
@@ -503,6 +504,7 @@ export async function createApp(
   startAffiliateCrons(db);
   startComplianceScanCron(db);
   startYouTubeCrons(db);
+  startVideoEditCrons(db);
   startKnowledgeGraphCrons(db);
   startSeoAuditCron(db);
   startPluginLogRetention(db);

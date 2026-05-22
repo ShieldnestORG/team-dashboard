@@ -156,6 +156,95 @@ getting used.
   and the publish destination, so the recall agent can answer "which video
   came out of the May 21 walkthrough recording."
 
+## Operations runbook
+
+> The queue advances on its own via the `ve:drain-queue` cron (every 1 min).
+> Manual ops below are for break-fix and inspection, not normal flow.
+
+### Quick health check
+
+```bash
+curl -fsS https://api.coherencedaddy.com/api/video-edit/config | jq
+```
+
+Look for `engineConfigured: true`, `pipelineEnabled: true`, sensible `queue.*`
+counts, and a non-null `freeDiskBytes` greater than ~20 GB. `recentFailures[]`
+should normally be empty.
+
+### "The queue is stuck on a `running` job that's dead"
+
+`ve:reap-stuck` runs every 15 min and resets any `running` job whose
+`startedAt` exceeded 2 hours. If you need to clear one immediately:
+
+```bash
+# On VPS4 (root@31.220.61.14)
+DB=$(grep "^DATABASE_URL=" /opt/team-dashboard/.env.production | cut -d= -f2-)
+psql "$DB" -c "UPDATE video_edit_jobs SET status='failed', error='manual reap',
+  completed_at=now(), updated_at=now() WHERE id='<job-uuid>' AND status='running';"
+```
+
+The next `ve:drain-queue` tick will pick up the next pending row.
+
+### "Rerun a failed job"
+
+There's no built-in re-queue. Either insert a new job via `POST
+/api/video-edit/jobs` (recommended — captures any brief changes) or flip the
+row directly:
+
+```sql
+UPDATE video_edit_jobs
+SET status='pending', error=NULL, started_at=NULL, completed_at=NULL,
+    output_path=NULL, files_purged_at=NULL, updated_at=now()
+WHERE id='<job-uuid>';
+```
+
+### "Purge a specific job's MP4 now"
+
+`ve:cleanup-outputs` runs daily at 02:00 with a 30-day retention. For an
+out-of-band purge:
+
+```bash
+# On VPS4
+rm -f /paperclip/video-edit/raw/<job-dir>/edit/final.mp4
+# Then mark it in the DB:
+psql "$DB" -c "UPDATE video_edit_jobs SET files_purged_at=now(), updated_at=now() WHERE id='<job-uuid>';"
+```
+
+### "Pause the entire pipeline"
+
+Set `VIDEO_EDIT_ENABLED=false` in `/opt/team-dashboard/.env.production` and
+`docker compose up -d` to restart. All three crons go dormant; engine
+refuses to run; queued jobs sit untouched until you flip back. The UI shows
+"Engine not configured" until then.
+
+### "Disk pressure on `/paperclip` is climbing"
+
+```bash
+ssh root@31.220.61.14 'du -sh /paperclip/video-edit/* | sort -h | tail -10'
+```
+
+Either trigger the cleanup manually (`docker exec team-dashboard-server-1
+node -e "require('./server/dist/services/video-edit/ve-crons.js').cleanupOldOutputs(db)"`
+— or wait for 02:00 UTC), or temporarily drop the retention window in
+`server/src/services/video-edit/ve-crons.ts` and redeploy.
+
+### "Kill an in-flight subprocess"
+
+```bash
+ssh root@31.220.61.14 'docker exec team-dashboard-server-1 pkill -f "/opt/video-use/bin/video-use" || true'
+```
+
+Then mark the job failed per the "stuck job" recipe above. The next
+`ve:drain-queue` tick resumes normal flow.
+
+### What the crons actually do
+
+| Cron | Schedule | Purpose | Source |
+|---|---|---|---|
+| `ve:drain-queue` | every 1m | Picks oldest pending job, dispatches to engine | `server/src/services/video-edit/ve-crons.ts` |
+| `ve:reap-stuck` | every 15m | Resets `running` jobs older than 2hr to `failed` | same |
+| `ve:cleanup-outputs` | daily 02:00 | Deletes `final.mp4` for `ready` jobs > 30 days, sets `files_purged_at` | same |
+
 ## Cross-references
 
 - The YouTube synth pipeline (sibling, not replaced):

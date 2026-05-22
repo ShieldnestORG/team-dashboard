@@ -13,15 +13,35 @@ export interface VideoEditJob {
   error: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  filesPurgedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface VideoEditQueueCounts {
+  pending: number;
+  running: number;
+  ready: number;
+  failed: number;
+  canceled: number;
 }
 
 export interface VideoEditConfig {
   engine: string;
   engineConfigured: boolean;
+  pipelineEnabled: boolean;
   videoUseBin: string | null;
   dataDir: string;
+  freeDiskBytes: number | null;
+  queue: VideoEditQueueCounts;
+  runningJobId: string | null;
+  runningSince: string | null;
+  lastCompletedAt: string | null;
+  recentFailures: Array<{ id: string; error: string | null; at: string | null }>;
+}
+
+export interface VideoEditStats {
+  jobs: VideoEditQueueCounts & { total: number };
 }
 
 export interface VideoEditOptionsInput {
@@ -34,6 +54,7 @@ export interface VideoEditOptionsInput {
 
 export const videoEditApi = {
   getConfig: () => api.get<VideoEditConfig>("/video-edit/config"),
+  getStats: () => api.get<VideoEditStats>("/video-edit/stats"),
   getJobs: () => api.get<{ jobs: VideoEditJob[] }>("/video-edit/jobs"),
   getJob: (id: string) => api.get<{ job: VideoEditJob }>(`/video-edit/jobs/${id}`),
   createJob: (input: {
@@ -48,4 +69,5 @@ export const videoEditApi = {
     ),
   cancelJob: (id: string) =>
     api.post<{ success: boolean }>(`/video-edit/jobs/${id}/cancel`, {}),
+  videoDownloadUrl: (id: string) => `/api/video-edit/jobs/${encodeURIComponent(id)}/video`,
 };

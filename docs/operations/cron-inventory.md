@@ -52,6 +52,7 @@ All content cron jobs below are mirrored into `social_automations` (linked to `s
 - **Auto-Reply (1 job)**: Single `search/recent` query covering all targets (default 30 min).
 - **Moltbook Backend (5 jobs)**: Ingest, post, engage, heartbeat, and performance tracking.
 - **YouTube Pipeline (6 jobs)**: Production, publish-queue, analytics, strategy, optimization, and 30-day video file cleanup.
+- **Video Edit Pipeline (3 jobs)**: `ve:drain-queue` (every 1m — picks the oldest pending `video_edit_jobs` row, dispatches to `runVideoUseEngine`, single-runner discipline), `ve:reap-stuck` (every 15m — resets `running` jobs whose `startedAt` exceeds the 2hr engine timeout to `failed`), `ve:cleanup-outputs` (daily 02:00 — deletes `final.mp4` for `ready` jobs older than 30 days, sets `files_purged_at`). Gated by `VIDEO_EDIT_ENABLED` (default: enabled). Owner: `core`. Source: `server/src/services/video-edit/ve-crons.ts`. See [docs/products/video-edit.md](../products/video-edit.md).
 - **Discord Plugin (2 jobs)**: Ticket cleanup and daily stats.
 - **Twitter Plugin (4 jobs)**: Post-dispatcher (2m), engagement-cycle (30m), queue-cleanup (6h), analytics-rollup (daily).
 - **Moltbook Plugin (3 jobs)**: Content-dispatcher (5m), heartbeat (30m), daily-cleanup (midnight).
