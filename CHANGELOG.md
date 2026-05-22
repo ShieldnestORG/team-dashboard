@@ -4,32 +4,50 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
-## [Unreleased] — Crawlee fallback for Firecrawl (Phase 1)
+## [2026-05-21] — Crawlee toolbelt (Phases 1-7) + reliability sweep
 
-### New Features
+### Crawlee + Playwright toolbelt — 7 phases shipped same-day
 
-**Crawlee + Playwright fallback behind the Firecrawl interface**
-- New service `server/src/services/crawlee-fallback.ts` — lazy-loaded Playwright
-  + Turndown pipeline that returns markdown for a single URL. Off by default;
-  flip `CRAWLEE_FALLBACK_ENABLED=true` to activate.
-- `firecrawl-sync` now consults the fallback when `/v1/scrape` returns null,
-  logs `via: "crawlee"` on success, and keeps the existing Firecrawl circuit
-  breaker so the primary path can still trip independently.
-- `crawlee@^3.16.0` + `turndown@^7.2.4` added as server deps; `@types/turndown`
-  to devDeps. Imports are dynamic so the modules never block boot or tests.
-- Unit-tested in `server/src/__tests__/firecrawl-sync-crawlee-fallback.test.ts`
-  (4 scenarios: fallback success, flag-off no-op, primary-succeeded no-op,
-  both-fail surface). Browser-binary E2E intentionally not in CI.
+**Phase 1 — Crawlee foundation** (PR #85). New service `server/src/services/crawlee-fallback.ts` — lazy-loaded Playwright + Turndown HTML→markdown pipeline gated by `CRAWLEE_FALLBACK_ENABLED`. Wired into `firecrawl-sync.ts` as the first consumer. `crawlee@^3.16.0` + `turndown@^7.2.4` added; Playwright was already a dep. Dynamic imports so absence never blocks boot.
 
-### Files
-- New: `server/src/services/crawlee-fallback.ts`, `server/src/__tests__/firecrawl-sync-crawlee-fallback.test.ts`
-- Modified: `server/src/services/firecrawl-sync.ts`, `server/package.json`, `docs/deploy/env-vars.md`
+**Phase 2 — Deep audit tier** (PR #89). New `server/src/services/audit-deep.ts` + `POST /api/audit/deep` route. Premium tier that renders JS, captures console + page errors, counts broken images, screenshots above-the-fold, follows up to N internal links. Gated by `AUDIT_DEEP_ENABLED`.
+
+**Phase 3 — Rizz extractor hardening** (PR #91). Wired Crawlee fallback into `rizz-tiktok-extractor.ts` and `rizz-comment-monitor.ts` (both scrape paths in the latter — `listRecentVideos` and `fetchComments`). Reuses `CRAWLEE_FALLBACK_ENABLED`.
+
+**Phase 4 — Launch Monitor Product Hunt source** (PR #90). New `launch-monitor-crawlee-sources.ts` with `fetchProductHuntComments(slug, opts)`. Gated by `LAUNCH_MONITOR_CRAWLEE_ENABLED`. Standalone — cron wiring deferred to follow-up that needs a `tracked_item` schema decision.
+
+**Phase 5 — Sitemap deep crawl** (PR #88). New `sitemap-crawl.ts` using `PlaywrightCrawler` + `enqueueLinks` (same-origin, robots-aware via Crawlee's `RobotsTxtFile`). Walks up to N pages of a target site for competitor/partner intel. Gated by `SITEMAP_CRAWL_ENABLED`.
+
+**Phase 6 — Synthetic uptime checks** (PR #87). New `synthetic-monitor.ts` with `runSyntheticCheck(url)` + `runSyntheticBatch(urls, opts)`. Full-browser monitoring (console errors, page errors, broken images, load time). Gated by `SYNTHETIC_MONITOR_ENABLED`. No cron wiring yet.
+
+**Phase 7 — Bluesky scraping** (PR #92). New `services/socials/bluesky-scrape.ts` with `@atproto/api` primary and Crawlee + Playwright fallback against `bsky.app/profile/<handle>`. SDK path always on; Crawlee fallback gated by `SOCIALS_BLUESKY_CRAWLEE_FALLBACK`.
+
+### Same-day reliability sweep (post-outage)
+
+Firecrawl crashed in prod on 2026-05-21 because the 2026-05-09 hardening pass added `cap_drop: ALL` to the redis container without a paired `user: redis` (root-without-DAC_OVERRIDE couldn't write to `/data`). Restart loop count hit 7322. After fixing Firecrawl by hand (added `user: redis` to `/opt/firecrawl/docker-compose.override.yaml`), four follow-ups shipped to harden the application layer:
+
+- **`audit.ts` Crawlee fallback** (PR #94). The exact outage path — `/api/audit` had no fallback. Same pattern as Phase 1, plus `probeCrawleeFallback` for `/audit/health`.
+- **`city-collector.ts` + `partner-onboarding.ts` Crawlee fallback** (PR #96). Two more callers that would have failed identically.
+- **BGE-M3 embedding 422 fix** (PR #95). `intel-embeddings.ts` was POSTing `{ texts: [...] }` instead of `{ inputs: [...] }`. ~10 indirect callers fixed by a one-line change to the wrapper.
+- **X auto-reply graceful skip** (PR #97). Cron token guard was checking the wrong account slug (`tx_rizz` instead of `primary`), so every iteration logged a real `[ERROR]` when only `primary` was missing. Now a single `info`-level skip with an actionable reconnect message.
+
+### Files (cumulative)
+- New services: `server/src/services/crawlee-fallback.ts`, `audit-deep.ts`, `sitemap-crawl.ts`, `synthetic-monitor.ts`, `launch-monitor-crawlee-sources.ts`, `services/socials/bluesky-scrape.ts`
+- New route: `server/src/routes/audit-deep.ts`
+- New tests: 8 new `server/src/__tests__/*` files (crawlee-fallback wiring, audit-deep, sitemap-crawl, synthetic-monitor, launch-monitor-crawlee-sources, bluesky-scrape, rizz-extractors-crawlee-fallback, city-partner-crawlee-fallback, intel-embeddings, auto-reply-no-tokens)
+- Modified services: `firecrawl-sync.ts`, `rizz-tiktok-extractor.ts`, `rizz-comment-monitor.ts`, `audit.ts`, `city-collector.ts`, `partner-onboarding.ts`, `intel-embeddings.ts`, `auto-reply.ts`
+- Modified config: `server/package.json`, `pnpm-lock.yaml`, `server/src/app.ts`, `docs/deploy/env-vars.md`
 
 ### Operator notes
-- The fallback stays off until `CRAWLEE_FALLBACK_ENABLED=true` is set on the
-  VPS and Playwright browsers are installed (`pnpm exec playwright install chromium`).
-- Future phases (deep audit tier, Rizz extractor hardening, deep crawl,
-  synthetic monitoring, socials scraping) reuse this same module surface.
+- All Crawlee paths are env-flag-off by default. Activation order after deploy: `CRAWLEE_FALLBACK_ENABLED=true` first (lowest risk — only fires when Firecrawl already failed; covers Phase 1 + 3 + audit.ts + city + partner). Then flip the rest one at a time as their consumers come online.
+- Chromium is already in the VPS4 Docker image (existing youtube/site-walker consumer). No additional VPS install needed.
+- Bluesky DOM selectors in Phase 7 are heuristic — smoke against a known handle before flipping that flag in prod.
+- Phase 4 needs a `tracked_item` shape for `platform: "producthunt"` before cron consumption.
+- Phase 6 needs a canary URL list + cron wiring before it's useful in alerting.
+
+### Infra notes
+- Memory entry saved: `project_2026_05_21_firecrawl_redis_outage.md` documents the `cap_drop: ALL` anti-pattern, the live-probe audit lesson (static config grep is false-positive-prone), and the correct hardening pattern (pair `cap_drop: ALL` with `user:` OR explicit `cap_add: [DAC_OVERRIDE, ...]`).
+- Static-config audit of bge-m3 and ollama on VPS1 flagged the same pattern but **live-probe writes succeeded** — those containers use host bind-mounts to root-owned dirs, so root-in-container writes work without DAC_OVERRIDE. Pattern is a false positive in their case. Documented in the memory entry.
 
 
 ## [2026-04-25] — Socials Hub
