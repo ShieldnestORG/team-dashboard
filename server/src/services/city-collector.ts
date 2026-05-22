@@ -26,6 +26,7 @@ import type { Db } from "@paperclipai/db";
 import { cityIntelligence } from "@paperclipai/db";
 import type { CityItem, CityRawSource } from "@paperclipai/db";
 import { callOllamaGenerate } from "./ollama-client.js";
+import { crawleeFallbackEnabled, crawleeScrape } from "./crawlee-fallback.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID =
@@ -430,7 +431,17 @@ async function collectYelp(q: CityQuery): Promise<{
     [q.city, q.region].filter(Boolean).join(", "),
   );
   const url = `https://www.yelp.com/search?find_desc=${findDesc}&find_loc=${findLoc}`;
-  const md = await firecrawlScrape(url);
+  let md = await firecrawlScrape(url);
+  if (!md && crawleeFallbackEnabled()) {
+    const fallback = await crawleeScrape(url);
+    if (fallback) {
+      md = fallback;
+      logger.info(
+        { url, via: "crawlee" },
+        "city-collector: Crawlee fallback succeeded after Firecrawl failure",
+      );
+    }
+  }
   const signals: RawSignal[] = [];
   if (md) {
     // Pull out bolded category labels — Yelp search pages surface these heavily
