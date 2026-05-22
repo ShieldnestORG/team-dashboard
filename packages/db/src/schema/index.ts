@@ -105,6 +105,7 @@ export {
   ytPublishQueue,
   ytAnalytics,
   ytKeywordPerformance,
+  ytAdAssets,
 } from "./youtube_pipeline.js";
 export { videoEditJobs } from "./video_edit.js";
 export type { VideoEditJob, NewVideoEditJob, VideoEditOptions } from "./video_edit.js";
