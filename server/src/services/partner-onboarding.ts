@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies } from "@paperclipai/db";
 import { callOllamaGenerate } from "./ollama-client.js";
+import { crawleeFallbackEnabled, crawleeScrape } from "./crawlee-fallback.js";
 import { logger } from "../middleware/logger.js";
 
 const FIRECRAWL_URL =
@@ -235,7 +236,25 @@ export async function prefillPartnerFromWebsite(
   website: string,
   name?: string,
 ): Promise<PartnerPrefillResult> {
-  const { markdown } = await firecrawlScrape(website);
+  let markdown: string;
+  try {
+    ({ markdown } = await firecrawlScrape(website));
+  } catch (err) {
+    if (crawleeFallbackEnabled()) {
+      const fallback = await crawleeScrape(website);
+      if (fallback) {
+        markdown = fallback;
+        logger.info(
+          { website, via: "crawlee" },
+          "partner-onboarding: Crawlee fallback succeeded after Firecrawl failure (prefill)",
+        );
+      } else {
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
   const partnerName = name ?? new URL(website).hostname.replace(/^www\./, "");
   const intel = await extractBusinessIntel(markdown, partnerName, "other");
   return {
@@ -286,7 +305,27 @@ export async function runPartnerOnboarding(
 
   try {
     // Step 1: Scrape the partner's website
-    const { markdown, metadata } = await firecrawlScrape(partner.website);
+    let markdown: string;
+    let metadata: Record<string, unknown>;
+    try {
+      ({ markdown, metadata } = await firecrawlScrape(partner.website));
+    } catch (err) {
+      if (crawleeFallbackEnabled()) {
+        const fallback = await crawleeScrape(partner.website);
+        if (fallback) {
+          markdown = fallback;
+          metadata = {};
+          logger.info(
+            { slug: partnerSlug, website: partner.website, via: "crawlee" },
+            "partner-onboarding: Crawlee fallback succeeded after Firecrawl failure",
+          );
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
     logger.info(
       { slug: partnerSlug, chars: markdown.length },
       "Scraped partner website",
