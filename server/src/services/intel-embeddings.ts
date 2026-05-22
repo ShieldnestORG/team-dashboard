@@ -14,7 +14,10 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
       "Content-Type": "application/json",
       ...(EMBED_API_KEY ? { "X-API-Key": EMBED_API_KEY } : {}),
     },
-    body: JSON.stringify({ texts }),
+    // BGE-M3 via HuggingFace TEI expects `inputs` (string | string[]); see
+    // docs/api/intel.md "Vector Search Architecture". Sending `texts` triggers
+    // a 422 "missing field `inputs`" from the upstream Rust serde validator.
+    body: JSON.stringify({ inputs: texts }),
   });
 
   if (!res.ok) {
