@@ -39,20 +39,31 @@ function domainFromUrl(input: string): string | null {
   }
 }
 
-// A result is "degraded" if the crawler returned no pages OR the three
-// data-derived subscores are all zero (which means the regex/JSON-LD
-// detection found nothing — usually a sign that scraping silently
-// returned empty markdown).
+// A result is "degraded" if the crawler returned no pages OR every scrape
+// came back with effectively empty markdown (the symptom of Firecrawl
+// answering 200 with an empty body — the original P0 cause from
+// 2026-04-30).
 //
-// AI-bot-access and technical can be non-zero from robots.txt + URL
-// inspection alone, so they don't count toward this check.
+// We deliberately do NOT treat "all three data subscores zero" as
+// degraded: that triggers on genuinely thin / parked / single-page sites
+// where the crawler worked fine but the page has no JSON-LD, no headings,
+// and no sitemap lastmod (example.com is the canonical case). Treating
+// those as "crawler down" hides a real, low-but-honest result behind a
+// misleading error message.
+//
+// The markdown-length check is the actual signal for "crawler succeeded
+// but returned nothing useful." 100 chars combined across all scrapes is
+// well below any real page (example.com itself produces ~400) but well
+// above an empty/whitespace-only response.
+const MIN_TOTAL_MARKDOWN_CHARS = 100;
+
 export function isDegradedAuditResult(result: AuditResult): boolean {
   if ((result.pagesScraped ?? 0) === 0) return true;
-  const dataSubscoreSum =
-    result.breakdown.structuredData.score
-    + result.breakdown.contentQuality.score
-    + result.breakdown.freshness.score;
-  return dataSubscoreSum === 0;
+  const totalMarkdownChars = (result.rawData ?? []).reduce(
+    (sum, page) => sum + (page.markdown?.length ?? 0),
+    0,
+  );
+  return totalMarkdownChars < MIN_TOTAL_MARKDOWN_CHARS;
 }
 
 type RawScrape = AuditResult["rawData"][number];
