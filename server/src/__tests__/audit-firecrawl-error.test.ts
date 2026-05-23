@@ -33,7 +33,7 @@ describe("runAudit when Firecrawl is unreachable", () => {
     vi.restoreAllMocks();
   });
 
-  it("emits an error event and never emits complete when /v1/map fails", async () => {
+  it("emits an error event with step='map' and the crawler-down message when /v1/map fails", async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url.endsWith("/robots.txt")) {
@@ -55,11 +55,17 @@ describe("runAudit when Firecrawl is unreachable", () => {
     expect(errorEvents).toHaveLength(1);
     expect(errorEvents[0]).toMatchObject({
       type: "error",
+      step: "map",
+      // User-facing copy unchanged for the real Firecrawl-outage case.
       message: expect.stringContaining("Crawler temporarily unavailable"),
     });
   });
 
-  it("emits an error event when /v1/map succeeds but every /v1/scrape fails", async () => {
+  it("emits an error event with step='scrape' and the site-specific message when /v1/map succeeds but every /v1/scrape fails", async () => {
+    // 2026-05-23 roguedefender.com regression: map worked but the site
+    // itself is unreachable. Previously emitted "Crawler temporarily
+    // unavailable" which misled users into retrying instead of
+    // checking their own site.
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url.endsWith("/robots.txt")) {
@@ -81,7 +87,21 @@ describe("runAudit when Firecrawl is unreachable", () => {
     await runAudit("https://example.com", (e) => events.push(e), () => false);
 
     expect(events.some((e) => e.type === "complete")).toBe(false);
-    expect(events.some((e) => e.type === "error")).toBe(true);
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    if (errorEvent?.type === "error") {
+      expect(errorEvent.step).toBe("scrape");
+      expect(errorEvent.message).toMatch(/Couldn't fetch your site/);
+      expect(errorEvent.message).not.toMatch(/Crawler temporarily unavailable/);
+      // scrapeFailures carries the per-URL diagnostic so
+      // creditscore_audit_runs (migration 0119) can persist it.
+      expect(errorEvent.scrapeFailures).toBeDefined();
+      expect(errorEvent.scrapeFailures!.length).toBeGreaterThan(0);
+      expect(errorEvent.scrapeFailures![0]).toMatchObject({
+        url: expect.stringContaining("example.com"),
+        error: expect.stringContaining("HTTP 503"),
+      });
+    }
   });
 
   it("does NOT emit hardcoded alt1/alt2/alt3 competitors when /v1/search fails", async () => {
@@ -204,7 +224,10 @@ describe("runAudit when Firecrawl is unreachable", () => {
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
     if (errorEvent && errorEvent.type === "error") {
-      expect(errorEvent.message).toContain("Crawler temporarily unavailable");
+      // Map worked, scrape (both primary and fallback) failed — this is
+      // the site-specific failure path, not the crawler-down path.
+      expect(errorEvent.step).toBe("scrape");
+      expect(errorEvent.message).toMatch(/Couldn't fetch your site/);
     }
   });
 
