@@ -2,7 +2,11 @@ import express, { Router } from "express";
 import type { Request, Response } from "express";
 import { and, count, desc, eq, gte, ilike, isNotNull, or, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { creditscoreReports, creditscoreSubscriptions } from "@paperclipai/db";
+import {
+  creditscoreReports,
+  creditscoreSubscriptions,
+  creditscoreAuditRuns,
+} from "@paperclipai/db";
 import { creditscoreService } from "../services/creditscore.js";
 import { creditscoreContentAgent } from "../services/creditscore-content-agent.js";
 import { creditscoreSchemaAgent } from "../services/creditscore-schema-agent.js";
@@ -620,6 +624,43 @@ export function creditscoreRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "creditscore: list strategy docs failed");
       res.status(500).json({ error: "Failed to list docs" });
+    }
+  });
+
+  // GET /api/creditscore/audit-runs — board admin: per-audit diagnostic log.
+  // Query params:
+  //   status=error|complete|running  (filter)
+  //   url=<substring>                (case-insensitive partial match)
+  //   limit=N (default 50, max 200)
+  //
+  // Backed by creditscore_audit_runs (migration 0119). Use this to answer
+  // "why did audit X fail" without grepping rolling container logs — every
+  // audit attempt has a row, including the URL, error step, scrape failure
+  // details, and timings.
+  router.get("/audit-runs", audit, async (req: Request, res: Response) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const statusFilter = typeof req.query.status === "string" ? req.query.status : "";
+    const urlFilter = typeof req.query.url === "string" ? req.query.url : "";
+    const limitRaw = Number.parseInt(String(req.query.limit ?? "50"), 10);
+    const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 50, 1), 200);
+    try {
+      const filters: SQL[] = [];
+      if (statusFilter) filters.push(eq(creditscoreAuditRuns.status, statusFilter));
+      if (urlFilter) filters.push(ilike(creditscoreAuditRuns.url, `%${urlFilter}%`));
+      const where = filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters);
+      const rows = await db
+        .select()
+        .from(creditscoreAuditRuns)
+        .where(where)
+        .orderBy(desc(creditscoreAuditRuns.startedAt))
+        .limit(limit);
+      res.json({ rows });
+    } catch (err) {
+      logger.error({ err }, "creditscore: audit-runs list failed");
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 

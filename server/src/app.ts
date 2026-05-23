@@ -415,8 +415,9 @@ export async function createApp(
   app.use("/api/portal/agents", portalAgentsRoutes(db));
   // Contextual upsell cards for logged-in portal users — mounted under /api/portal.
   app.use("/api/portal", portalUpsellRoutes(db));
-  // Public AEO audit — no auth required
-  app.use("/api/public", auditRoutes());
+  // Public AEO audit — no auth required. `db` is passed so every audit
+  // attempt gets a row in creditscore_audit_runs for post-hoc debugging.
+  app.use("/api/public", auditRoutes(db));
   app.use("/api/public", answerCheckRoutes(db));
   // Deep audit (premium tier) — env-gated (AUDIT_DEEP_ENABLED), uses Playwright
   // to capture runtime errors. Mounted on /api (not /api/public) so it sits

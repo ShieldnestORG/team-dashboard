@@ -106,3 +106,34 @@ export const creditscoreReports = pgTable(
     ),
   }),
 );
+
+// Per-audit diagnostic log. Every runAudit() call inserts a row at start
+// and updates it on outcome. See migration 0119 for column docs.
+export const creditscoreAuditRuns = pgTable(
+  "creditscore_audit_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id").notNull(),
+    url: text("url").notNull(),
+    // status: running | complete | error
+    status: text("status").notNull().default("running"),
+    // error_step: map | scrape | search | validation
+    errorStep: text("error_step"),
+    errorMessage: text("error_message"),
+    // Array of {url, error} per failed scrape attempt.
+    scrapeFailures: jsonb("scrape_failures"),
+    pagesMapped: integer("pages_mapped"),
+    pagesScraped: integer("pages_scraped"),
+    score: integer("score"),
+    clientIp: text("client_ip"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    durationMs: integer("duration_ms"),
+  },
+  (table) => ({
+    startedIdx: index("creditscore_audit_runs_started_idx").on(table.startedAt),
+    statusIdx: index("creditscore_audit_runs_status_idx").on(table.status),
+    urlIdx: index("creditscore_audit_runs_url_idx").on(table.url),
+    jobIdx: index("creditscore_audit_runs_job_idx").on(table.jobId),
+  }),
+);

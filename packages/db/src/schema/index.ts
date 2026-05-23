@@ -124,6 +124,7 @@ export {
   creditscorePlans,
   creditscoreSubscriptions,
   creditscoreReports,
+  creditscoreAuditRuns,
 } from "./creditscore.js";
 export { creditscoreContentDrafts } from "./creditscore_content_drafts.js";
 export {

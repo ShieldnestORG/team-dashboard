@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import { eq } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
+import { creditscoreAuditRuns } from "@paperclipai/db";
 
 import { logger } from "../middleware/logger.js";
 import { crawleeFallbackEnabled, crawleeScrape } from "../services/crawlee-fallback.js";
@@ -55,10 +58,20 @@ setInterval(() => {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// Server-side diagnostic fields on the `error` event. The storefront only
+// renders `message`; `step` and `scrapeFailures` are picked up by the
+// route layer to populate creditscore_audit_runs for later debugging.
+export type AuditErrorStep = "map" | "scrape" | "search" | "validation";
+
 export type SSEEvent =
   | { type: "step"; label: string; detail?: string }
   | { type: "complete"; result: AuditResult }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      step?: AuditErrorStep;
+      scrapeFailures?: Array<{ url: string; error: string }>;
+    };
 
 export type AuditResult = {
   url: string;
@@ -333,9 +346,14 @@ export async function runAudit(
     siteUrls = await fcMap(url);
   } catch (err) {
     if (err instanceof FirecrawlError) {
+      logger.warn(
+        { url, errorMessage: err.message, errorStep: "map" },
+        "audit: fcMap failed — likely crawler outage",
+      );
       emit({
         type: "error",
         message: "Crawler temporarily unavailable. Try again in a few minutes.",
+        step: "map",
       });
       return;
     }
@@ -367,7 +385,7 @@ export async function runAudit(
 
   // Per-page scrapes can fail individually — that's fine, we record what
   // came back. But if NONE of them succeed we treat the whole audit as
-  // crawler-down rather than persisting a 0-page "complete" report.
+  // failed rather than persisting a 0-page "complete" report.
   const scrapeOutcomes = await Promise.allSettled(pagesToScrape.map((u) => fcScrape(u)));
   const validScrapes = scrapeOutcomes
     .map((o, i) =>
@@ -386,10 +404,40 @@ export async function runAudit(
       } => v !== null,
     );
 
+  // Collect per-URL failure reasons — same array we ship in the error
+  // event so the audit_runs row captures exactly what each scrape said.
+  const scrapeFailures = scrapeOutcomes
+    .map((o, i) =>
+      o.status === "rejected"
+        ? {
+            url: pagesToScrape[i] ?? "(unknown)",
+            error: o.reason instanceof Error ? o.reason.message : String(o.reason),
+          }
+        : null,
+    )
+    .filter((v): v is { url: string; error: string } => v !== null);
+
+  // Log every scrape failure server-side. Previously these were silently
+  // discarded by Promise.allSettled, which made post-hoc debugging
+  // impossible (e.g. the 2026-05-23 roguedefender.com case).
+  for (const f of scrapeFailures) {
+    logger.warn(
+      { url: f.url, errorMessage: f.error, errorStep: "scrape" },
+      "audit: fcScrape failed for page",
+    );
+  }
+
   if (validScrapes.length === 0) {
+    // Distinguish "Firecrawl is down" (fcMap would have failed too) from
+    // "this specific site couldn't be fetched" (map worked, scrapes
+    // didn't). Telling a user "crawler updating" when their site is
+    // actually unreachable wastes their time on retries.
     emit({
       type: "error",
-      message: "Crawler temporarily unavailable. Try again in a few minutes.",
+      message:
+        "Couldn't fetch your site. It may be down, blocking automated requests, or slow to respond. Try again, or check the URL is reachable from a regular browser.",
+      step: "scrape",
+      scrapeFailures,
     });
     return;
   }
@@ -516,6 +564,10 @@ export async function runAudit(
     });
   } catch (err) {
     if (err instanceof FirecrawlError) {
+      logger.warn(
+        { url, errorMessage: err.message, errorStep: "search" },
+        "audit: fcSearch failed — emitting empty competitors",
+      );
       emit({ type: "step", label: "Finding competitors...", detail: "Search unavailable" });
     } else {
       throw err;
@@ -757,7 +809,7 @@ async function probeCrawleeFallback(
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
-export function auditRoutes(): Router {
+export function auditRoutes(db?: Db): Router {
   const router = Router();
 
   router.options("/audit", (_req, res) => {
@@ -849,9 +901,102 @@ export function auditRoutes(): Router {
       cancelled = true;
     });
 
+    // ── Audit log row (creditscore_audit_runs) ─────────────────────────
+    // Persist every audit attempt so we can answer "what happened on
+    // job X" without grepping rolling container logs. Phase 3 of the
+    // 2026-04-30 fail-loudly plan; motivated by 2026-05-23 where a
+    // roguedefender.com failure produced zero server-side log lines.
+    //
+    // The row is updated when runAudit emits `complete` or `error`,
+    // and again from the `.catch` handler below if runAudit throws.
+    // Falling back gracefully if `db` wasn't injected keeps the route
+    // testable in isolation.
+    const startedAt = Date.now();
+    const clientIp =
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ??
+      req.socket.remoteAddress ??
+      null;
+    let auditRunId: string | null = null;
+    let pagesMapped: number | null = null;
+    let lastEventWritten: "complete" | "error" | null = null;
+
+    if (db) {
+      db.insert(creditscoreAuditRuns)
+        .values({
+          jobId,
+          url: job.url,
+          status: "running",
+          clientIp,
+        })
+        .returning({ id: creditscoreAuditRuns.id })
+        .then((rows) => {
+          auditRunId = rows[0]?.id ?? null;
+        })
+        .catch((err: unknown) => {
+          logger.warn(
+            { jobId, errorMessage: (err as Error).message },
+            "audit: failed to insert creditscore_audit_runs row",
+          );
+        });
+    }
+
+    async function updateAuditRun(
+      patch: Partial<typeof creditscoreAuditRuns.$inferInsert>,
+    ): Promise<void> {
+      if (!db || !auditRunId) return;
+      try {
+        await db
+          .update(creditscoreAuditRuns)
+          .set({
+            ...patch,
+            finishedAt: new Date(),
+            durationMs: Date.now() - startedAt,
+          })
+          .where(eq(creditscoreAuditRuns.id, auditRunId));
+      } catch (err) {
+        logger.warn(
+          { auditRunId, errorMessage: (err as Error).message },
+          "audit: failed to update creditscore_audit_runs row",
+        );
+      }
+    }
+
     const emit = (event: SSEEvent): void => {
+      // Intercept step events that carry the pages-mapped count so we
+      // can persist it even when the audit later errors.
+      if (event.type === "step" && event.label.startsWith("Mapping site structure")) {
+        const m = event.detail?.match(/^(\d+) pages found/);
+        if (m) pagesMapped = Number(m[1]);
+      }
+
       if (!res.writableEnded) {
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        // Strip server-only diagnostic fields from the wire payload —
+        // storefront ignores them but no need to leak internal error
+        // strings to the public SSE stream.
+        const payload =
+          event.type === "error"
+            ? { type: "error" as const, message: event.message }
+            : event;
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+
+      if (event.type === "complete") {
+        lastEventWritten = "complete";
+        void updateAuditRun({
+          status: "complete",
+          pagesMapped,
+          pagesScraped: event.result.pagesScraped,
+          score: event.result.score,
+        });
+      } else if (event.type === "error") {
+        lastEventWritten = "error";
+        void updateAuditRun({
+          status: "error",
+          errorStep: event.step ?? null,
+          errorMessage: event.message,
+          scrapeFailures: event.scrapeFailures ?? null,
+          pagesMapped,
+        });
       }
     };
 
@@ -865,7 +1010,21 @@ export function auditRoutes(): Router {
       .catch((err: unknown) => {
         job.status = "error";
         const message = err instanceof Error ? err.message : "Audit failed";
-        if (!cancelled) emit({ type: "error", message });
+        logger.error(
+          { jobId, url: job.url, errorMessage: message },
+          "audit: runAudit threw uncaught error",
+        );
+        if (!cancelled && lastEventWritten !== "error") {
+          emit({ type: "error", message, step: undefined });
+        } else if (lastEventWritten !== "error") {
+          // Persist the uncaught error even if the client disconnected.
+          void updateAuditRun({
+            status: "error",
+            errorStep: null,
+            errorMessage: message,
+            pagesMapped,
+          });
+        }
         if (!res.writableEnded) res.end();
       });
   });
