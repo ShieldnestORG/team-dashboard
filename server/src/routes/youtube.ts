@@ -12,6 +12,7 @@ import type { Db } from "@paperclipai/db";
 import { ytProductions, ytPublishQueue, ytAnalytics, ytContentStrategies, ytSeoData } from "@paperclipai/db";
 import { desc, eq, and, sql } from "drizzle-orm";
 import { runProductionPipeline } from "../services/youtube/production.js";
+import { createAdProduction, runAdPipelineForProduction } from "../services/youtube/ad/orchestrator.js";
 import { processPublishQueue, forcePublish } from "../services/youtube/publish-queue.js";
 import { collectAnalytics, generateOptimizationInsights } from "../services/youtube/analytics.js";
 import { generateContentStrategy } from "../services/youtube/content-strategy.js";
@@ -62,6 +63,33 @@ export function youtubeRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Pipeline run failed");
       res.status(500).json({ error: err instanceof Error ? err.message : "Pipeline failed" });
+    }
+  });
+
+  // ── Ad Pipeline (URL → product-ad video) ─────────────────────
+
+  // Kick off an ad pipeline run for a URL. Returns the productionId
+  // immediately; the pipeline runs in the background. Poll /api/youtube/pipeline
+  // (or the per-id status) to observe progress; the finished video flows
+  // through the same yt_publish_queue as any other production.
+  router.post("/ad/run", async (req, res) => {
+    try {
+      const { url, targetDurationSec } = req.body as { url?: string; targetDurationSec?: number };
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ error: "url is required" });
+      }
+      try { new URL(url); } catch { return res.status(400).json({ error: "url is malformed" }); }
+
+      const { productionId } = await createAdProduction(db, { url, targetDurationSec });
+
+      // Fire and forget — orchestrator handles its own errors and DB status.
+      runAdPipelineForProduction(db, productionId, { url, targetDurationSec })
+        .catch((err) => logger.error({ err, productionId }, "Ad pipeline crashed"));
+
+      return res.status(202).json({ productionId, status: "processing" });
+    } catch (err) {
+      logger.error({ err }, "Ad pipeline kickoff failed");
+      return res.status(500).json({ error: err instanceof Error ? err.message : "Ad pipeline kickoff failed" });
     }
   });
 
