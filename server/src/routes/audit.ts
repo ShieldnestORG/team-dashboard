@@ -141,11 +141,31 @@ export class FirecrawlError extends Error {
   }
 }
 
-async function fcScrape(
+// Firecrawl scrape budgets. Bumped 2026-05-23 from 30s/45s to 60s/75s after
+// slow-but-real sites (roguedefender.com) consistently hit HTTP 408 inside
+// Firecrawl's internal 30s window. Outer abort = scrape budget + 15s slack
+// so the inner timeout always fires first (cleaner error message).
+const FIRECRAWL_SCRAPE_TIMEOUT_MS = 60_000;
+const FIRECRAWL_SCRAPE_ABORT_MS = 75_000;
+// Retry budget for the retry attempt — half the first try, because a site
+// that took >60s once is unlikely to come back in 60s on a retry, and we
+// need to leave room under the 180s storefront timeout for Crawlee fallback.
+const FIRECRAWL_SCRAPE_RETRY_TIMEOUT_MS = 30_000;
+const FIRECRAWL_SCRAPE_RETRY_ABORT_MS = 40_000;
+// Default 2s; overridable via env so unit tests can drive it to 0.
+function scrapeRetryBackoffMs(): number {
+  const v = Number(process.env.SCRAPE_RETRY_BACKOFF_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 2_000;
+}
+
+// One Firecrawl /v1/scrape attempt. Throws FirecrawlError on any failure
+// (network, HTTP non-2xx, missing payload). Pure — no retry, no fallback —
+// so the wrapper can compose those orthogonally.
+async function fcScrapeOnce(
   url: string,
+  budget: { scrapeMs: number; abortMs: number },
 ): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> {
   let res: Response;
-  let primaryError: FirecrawlError;
   try {
     res = await fetch(`${FIRECRAWL_URL}/v1/scrape`, {
       method: "POST",
@@ -153,16 +173,14 @@ async function fcScrape(
         "Content-Type": "application/json",
         Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
       },
-      body: JSON.stringify({ url, formats: ["markdown", "links"], timeout: 30000 }),
-      signal: AbortSignal.timeout(45_000),
+      body: JSON.stringify({ url, formats: ["markdown", "links"], timeout: budget.scrapeMs }),
+      signal: AbortSignal.timeout(budget.abortMs),
     });
   } catch (err) {
-    primaryError = new FirecrawlError(`scrape: network error (${(err as Error).message})`, "scrape", err);
-    return await scrapeFallbackOrThrow(url, primaryError);
+    throw new FirecrawlError(`scrape: network error (${(err as Error).message})`, "scrape", err);
   }
   if (!res.ok) {
-    primaryError = new FirecrawlError(`scrape: HTTP ${res.status}`, "scrape");
-    return await scrapeFallbackOrThrow(url, primaryError);
+    throw new FirecrawlError(`scrape: HTTP ${res.status}`, "scrape");
   }
   const data = (await res.json()) as {
     success: boolean;
@@ -173,8 +191,7 @@ async function fcScrape(
     };
   };
   if (!data.success || !data.data) {
-    primaryError = new FirecrawlError("scrape: response missing data", "scrape");
-    return await scrapeFallbackOrThrow(url, primaryError);
+    throw new FirecrawlError("scrape: response missing data", "scrape");
   }
   return {
     markdown: (data.data.markdown ?? "").slice(0, 60_000),
@@ -183,11 +200,71 @@ async function fcScrape(
   };
 }
 
-// Try Crawlee as a secondary scraper when Firecrawl's /v1/scrape fails.
-// Returns a scrape-shaped object when Crawlee succeeds (links + metadata are
-// empty — Crawlee only yields markdown), otherwise rethrows the original
-// Firecrawl error so callers see the same failure mode as before this fallback
-// was wired in.
+// True if a FirecrawlError is worth retrying. Network errors, timeouts
+// (HTTP 408), rate limits (429), and server errors (5xx) are transient.
+// Permanent client errors (403, 404, 410, etc.) won't get better on retry
+// and just waste the user's time.
+function isTransientFirecrawlError(err: FirecrawlError): boolean {
+  if (err.message.startsWith("scrape: network error")) return true;
+  if (err.message === "scrape: response missing data") return true;
+  const httpMatch = err.message.match(/^scrape: HTTP (\d+)/);
+  if (!httpMatch) return true;
+  const status = Number(httpMatch[1]);
+  if (status === 408 || status === 429) return true;
+  if (status >= 500 && status < 600) return true;
+  // 400, 401, 403, 404, 410, etc. — won't recover.
+  return false;
+}
+
+// Public scrape entry point: one Firecrawl attempt + one retry on
+// transient errors + Crawlee fallback after exhaustion. Throws the most
+// recent FirecrawlError if everything fails.
+async function fcScrape(
+  url: string,
+): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> {
+  let primaryError: FirecrawlError;
+  try {
+    return await fcScrapeOnce(url, {
+      scrapeMs: FIRECRAWL_SCRAPE_TIMEOUT_MS,
+      abortMs: FIRECRAWL_SCRAPE_ABORT_MS,
+    });
+  } catch (err) {
+    if (!(err instanceof FirecrawlError)) throw err;
+    primaryError = err;
+  }
+
+  if (isTransientFirecrawlError(primaryError)) {
+    const backoffMs = scrapeRetryBackoffMs();
+    logger.warn(
+      { url, errorMessage: primaryError.message, attempt: 1, backoffMs },
+      "audit: fcScrape transient failure — retrying once",
+    );
+    if (backoffMs > 0) await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    try {
+      const retried = await fcScrapeOnce(url, {
+        scrapeMs: FIRECRAWL_SCRAPE_RETRY_TIMEOUT_MS,
+        abortMs: FIRECRAWL_SCRAPE_RETRY_ABORT_MS,
+      });
+      logger.info({ url }, "audit: fcScrape succeeded on retry");
+      return retried;
+    } catch (err) {
+      if (err instanceof FirecrawlError) primaryError = err;
+      else throw err;
+    }
+  } else {
+    logger.warn(
+      { url, errorMessage: primaryError.message },
+      "audit: fcScrape permanent failure — not retrying",
+    );
+  }
+
+  return await scrapeFallbackOrThrow(url, primaryError);
+}
+
+// Try Crawlee as a secondary scraper when Firecrawl's /v1/scrape exhausts
+// its retries. Returns a scrape-shaped object when Crawlee succeeds
+// (links + metadata are empty — Crawlee only yields markdown), otherwise
+// rethrows the most recent Firecrawl error.
 async function scrapeFallbackOrThrow(
   url: string,
   primaryError: FirecrawlError,
@@ -432,10 +509,22 @@ export async function runAudit(
     // "this specific site couldn't be fetched" (map worked, scrapes
     // didn't). Telling a user "crawler updating" when their site is
     // actually unreachable wastes their time on retries.
+    //
+    // When every failure is a timeout (HTTP 408 from Firecrawl, or an
+    // AbortError from the outer signal), narrow the message further —
+    // "took too long to respond" tells the user the actual problem,
+    // not a vague "may be down."
+    const allTimeouts =
+      scrapeFailures.length > 0 &&
+      scrapeFailures.every(
+        (f) => f.error.includes("HTTP 408") || f.error.includes("AbortError") || f.error.includes("timeout"),
+      );
+    const message = allTimeouts
+      ? "Your site took too long to respond (we waited up to 60 seconds and retried). It may be loading too slowly for an automated crawler. Try again in a few minutes, or check that your site is responsive in a regular browser."
+      : "Couldn't fetch your site. It may be down, blocking automated requests, or unreachable. Try again, or check the URL is reachable from a regular browser.";
     emit({
       type: "error",
-      message:
-        "Couldn't fetch your site. It may be down, blocking automated requests, or slow to respond. Try again, or check the URL is reachable from a regular browser.",
+      message,
       step: "scrape",
       scrapeFailures,
     });

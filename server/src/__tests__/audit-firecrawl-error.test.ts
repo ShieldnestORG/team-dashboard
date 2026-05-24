@@ -25,6 +25,9 @@ describe("runAudit when Firecrawl is unreachable", () => {
     crawleeFallbackEnabledMock.mockReset();
     // Default: fallback flag off so existing failure-mode tests don't change.
     crawleeFallbackEnabledMock.mockReturnValue(false);
+    // Skip the 2s real-time backoff on retry attempts — every test
+    // that doesn't explicitly want to assert backoff timing gets to run fast.
+    vi.stubEnv("SCRAPE_RETRY_BACKOFF_MS", "0");
   });
 
   afterEach(() => {
@@ -258,5 +261,131 @@ describe("runAudit when Firecrawl is unreachable", () => {
     expect(crawleeScrapeMock).not.toHaveBeenCalled();
     expect(events.some((e) => e.type === "complete")).toBe(false);
     expect(events.some((e) => e.type === "error")).toBe(true);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // Retry-with-backoff behaviour (added 2026-05-23)
+  // ────────────────────────────────────────────────────────────────────
+
+  it("retries once on transient HTTP 408 and succeeds when the retry returns 200", async () => {
+    // Per-page scrape call counter so we can return 408 on first attempt
+    // and 200 on the retry.
+    const scrapeCallsByUrl = new Map<string, number>();
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/robots.txt")) return new Response("", { status: 200 });
+      if (url.includes("/v1/map")) {
+        return new Response(
+          JSON.stringify({ success: true, links: ["https://example.com/about"] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/v1/search")) {
+        return new Response(JSON.stringify({ success: true, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/v1/scrape")) {
+        const body = init?.body ? JSON.parse(init.body as string) : {};
+        const target = body.url as string;
+        const n = (scrapeCallsByUrl.get(target) ?? 0) + 1;
+        scrapeCallsByUrl.set(target, n);
+        if (n === 1) return new Response("Request Timeout", { status: 408 });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              markdown: "# Hello\n\n" + "real content ".repeat(50),
+              links: [],
+              metadata: {},
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const events: SSEEvent[] = [];
+    await runAudit("https://example.com", (e) => events.push(e), () => false);
+
+    // Every page got two scrape calls: the failing first + the successful retry.
+    for (const [, count] of scrapeCallsByUrl) {
+      expect(count).toBe(2);
+    }
+    expect(events.some((e) => e.type === "error")).toBe(false);
+    const complete = events.find((e) => e.type === "complete");
+    expect(complete).toBeDefined();
+    if (complete?.type === "complete") {
+      expect(complete.result.pagesScraped).toBeGreaterThan(0);
+    }
+  });
+
+  it("does NOT retry permanent failures (HTTP 403) — single attempt then Crawlee fallback or error", async () => {
+    // crawleeFallbackEnabled is false by default in beforeEach, so 403
+    // means: one attempt per page, no retry, no Crawlee, hard error.
+    const scrapeCalls = vi.fn();
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/robots.txt")) return new Response("", { status: 200 });
+      if (url.includes("/v1/map")) {
+        return new Response(
+          JSON.stringify({ success: true, links: ["https://example.com/about"] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/v1/scrape")) {
+        scrapeCalls();
+        return new Response("Forbidden", { status: 403 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const events: SSEEvent[] = [];
+    await runAudit("https://example.com", (e) => events.push(e), () => false);
+
+    // The map mock only returns 1 URL, so pagesToScrape = [home, /about] (2).
+    // The key assertion: no doubling for retry. With a transient error this
+    // would be 4 (2 pages × 2 attempts); with 403 it stays at 2.
+    expect(scrapeCalls).toHaveBeenCalledTimes(2);
+    const error = events.find((e) => e.type === "error");
+    expect(error).toBeDefined();
+    if (error?.type === "error") {
+      expect(error.step).toBe("scrape");
+    }
+  });
+
+  it("surfaces the timeout-specific error message when every scrape failure is a timeout", async () => {
+    // All scrapes return HTTP 408. After retry exhausts (also 408), the
+    // route should pick the "took too long to respond" message rather
+    // than the generic "couldn't fetch."
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/robots.txt")) return new Response("", { status: 200 });
+      if (url.includes("/v1/map")) {
+        return new Response(
+          JSON.stringify({ success: true, links: ["https://example.com/about"] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/v1/scrape")) {
+        return new Response("Request Timeout", { status: 408 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const events: SSEEvent[] = [];
+    await runAudit("https://example.com", (e) => events.push(e), () => false);
+
+    const error = events.find((e) => e.type === "error");
+    expect(error).toBeDefined();
+    if (error?.type === "error") {
+      expect(error.step).toBe("scrape");
+      expect(error.message).toMatch(/took too long to respond/);
+      expect(error.message).not.toMatch(/Couldn't fetch your site\./);
+      expect(error.scrapeFailures?.every((f) => f.error.includes("HTTP 408"))).toBe(true);
+    }
   });
 });
