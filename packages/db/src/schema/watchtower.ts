@@ -46,6 +46,12 @@ export const watchtowerSubscriptions = pgTable("watchtower_subscriptions", {
   // for an upsell tier and not yet wired into a cron.
   frequency: text("frequency").notNull().default("weekly"),
   promptCap: integer("prompt_cap").notNull().default(25),
+  // Opt-in Google-rank tracking (migration 0119). When trackRank is true and
+  // a domain is set, the weekly run also queries self-hosted Firecrawl per
+  // rank query and records the domain's position. rankQueries is a string[]
+  // of keyword queries; when null the run falls back to `prompts`.
+  trackRank: boolean("track_rank").notNull().default(false),
+  rankQueries: jsonb("rank_queries"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

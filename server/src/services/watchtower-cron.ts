@@ -171,6 +171,9 @@ async function sendDigest(
     reportUrl,
     dashboardUrl: buildDashboardRunUrl(result.runId),
     manageSubscriptionUrl: buildManageSubscriptionUrl(),
+    // Present only for trackRank subscriptions (migration 0119); omitted
+    // otherwise so the digest payload is unchanged for existing customers.
+    ...(summary.rank && summary.rank.length > 0 ? { rank: summary.rank } : {}),
   };
 
   await sendWatchtowerDigest({

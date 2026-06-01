@@ -45,6 +45,17 @@ export interface WatchtowerWeeklyDigestData {
    * ("Manage subscription") to reduce churn-via-buried-cancel.
    */
   manageSubscriptionUrl: string;
+  /**
+   * Google-rank entries (migration 0119). Optional and backwards-compatible:
+   * present only for trackRank subscriptions. The storefront digest template
+   * renders a "Google rank" section when this is a non-empty array.
+   */
+  rank?: Array<{
+    query: string;
+    position: number | null;
+    matchedUrl: string | null;
+    topUrl: string | null;
+  }>;
   // TODO(stream-f): when Agent E ships the `watchtower_prompt_versions`
   // table (PR pending), add an optional `promptVersionChange` field here
   // and inline a "prompt set changed since last run" notice in the

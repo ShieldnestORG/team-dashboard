@@ -32,6 +32,7 @@ import {
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { ALL_ENGINES, type EngineAdapter } from "./watchtower-engines/index.js";
+import { runRankCheck, type RankEntry } from "./watchtower-rank.js";
 
 // Hard ceiling per CLAUDE.md cost protection. A subscription's prompt_cap
 // can be set lower (default 25) but never higher than this.
@@ -113,6 +114,12 @@ export interface RunSummary {
   }>;
   /** Engines that were skipped because env vars were missing. */
   skippedEngines: string[];
+  /**
+   * Google-rank entries, present only for subscriptions with trackRank=true
+   * and a domain set. One entry per rank query. Omitted entirely otherwise so
+   * existing (mention-only) runs keep their exact summary shape.
+   */
+  rank?: RankEntry[];
 }
 
 export interface PerEngineOutput {
@@ -444,6 +451,26 @@ export async function runSubscription(
   );
   await Promise.all(workers);
 
+  // Opt-in Google-rank check (migration 0119). Only runs when the
+  // subscription enabled trackRank AND has a domain to look for. Uses the
+  // subscription's rank_queries when set, else falls back to the prompts.
+  // Bounded by the same effective cap as prompts and fail-soft (runRankCheck
+  // never throws), so a Firecrawl outage degrades to a missing rank section
+  // rather than a failed run.
+  let rankEntries: RankEntry[] | undefined;
+  if (sub.trackRank && sub.domain) {
+    const rawRankQueries = Array.isArray(sub.rankQueries)
+      ? (sub.rankQueries as unknown[])
+      : null;
+    const rankQueries = (rawRankQueries ?? allPrompts)
+      .filter((q): q is string => typeof q === "string" && q.trim().length > 0)
+      .map((q) => q.trim())
+      .slice(0, effectiveCap);
+    if (rankQueries.length > 0) {
+      rankEntries = await runRankCheck(sub.domain, rankQueries);
+    }
+  }
+
   // Resolve the active prompt version BEFORE opening the transaction so a
   // missing version row only logs a warn and doesn't roll back the run.
   // Tests can override via opts.promptVersionId to pin a specific id (or
@@ -469,6 +496,7 @@ export async function runSubscription(
     const mentionCount = outputs.filter((o) => o.detection.mentioned).length;
 
     const summary = buildSummary(outputs, enginesUsed, skippedEngines);
+    if (rankEntries) summary.rank = rankEntries;
 
     const [runRow] = await tx
       .insert(watchtowerRuns)
