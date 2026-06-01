@@ -376,6 +376,27 @@ describeDb("resolveWatchtowerRecipient", () => {
     expect(email).toBeNull();
   });
 
+  it("falls back to the subscription's own email when there is no account_id (promo client)", async () => {
+    const subId = randomUUID();
+    await db.insert(watchtowerSubscriptions).values({
+      id: subId,
+      accountId: null,
+      email: "Promo@Example.com",
+      brandName: "Brand",
+      prompts: ["q"],
+      status: "active",
+      frequency: "weekly",
+    });
+
+    const email = await resolveWatchtowerRecipient(db, {
+      id: subId,
+      accountId: null,
+      email: "Promo@Example.com",
+    });
+    // Fallback resolves AND normalizes to lowercase.
+    expect(email).toBe("promo@example.com");
+  });
+
   it("returns null when account_id points at a missing row (skip, do not leak)", async () => {
     const orphanAccountId = randomUUID();
     const subId = randomUUID();

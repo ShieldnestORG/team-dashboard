@@ -52,27 +52,34 @@ export function maskEmail(email: string): string {
 /**
  * Resolve the digest recipient email for a single subscription row.
  *
- * Join path: `watchtower_subscriptions.account_id` → `customer_accounts.id`
- * → `customer_accounts.email`. Returns `null` when the FK is unset OR the
- * account row is missing OR the email is empty. The cron treats `null` as
- * "skip this subscription's digest" — we do NOT fall back to a shared ops
- * env address, because that would leak Customer A's brand mentions to
- * whoever owns the env (the leak this fix exists to prevent).
+ * Resolution order:
+ *   1. `account_id` → `customer_accounts.email` (the normal paid path).
+ *   2. the subscription's own captured `email` (e.g. promo clients inserted
+ *      without a customer_accounts row — see watchtower_subscriptions.email,
+ *      documented as the recipient fallback).
+ *
+ * Returns `null` when neither resolves. The cron treats `null` as "skip this
+ * subscription's digest". The fallback is the subscription's OWN email, not a
+ * shared ops env address — so it does not reintroduce the cross-customer leak
+ * the account-only path guarded against (one env address receiving every
+ * customer's mentions).
  */
 export async function resolveWatchtowerRecipient(
   db: Db,
-  subscription: { id: string; accountId: string | null },
+  subscription: { id: string; accountId: string | null; email?: string | null },
 ): Promise<string | null> {
-  if (!subscription.accountId) return null;
+  if (subscription.accountId) {
+    const [account] = await db
+      .select({ email: customerAccounts.email })
+      .from(customerAccounts)
+      .where(eq(customerAccounts.id, subscription.accountId));
 
-  const [account] = await db
-    .select({ email: customerAccounts.email })
-    .from(customerAccounts)
-    .where(eq(customerAccounts.id, subscription.accountId));
+    const email = account?.email?.trim().toLowerCase();
+    if (email) return email;
+  }
 
-  const email = account?.email?.trim().toLowerCase();
-  if (!email) return null;
-  return email;
+  const subEmail = subscription.email?.trim().toLowerCase();
+  return subEmail || null;
 }
 
 /**
