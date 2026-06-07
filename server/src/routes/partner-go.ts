@@ -31,6 +31,25 @@ function detectVisitorType(ua: string | undefined): string {
   return "human";
 }
 
+// Only http(s) destinations are redirectable — blocks javascript:/data: and
+// other scheme-based abuse smuggled in via a stored partner website.
+function isSafeRedirectTarget(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+// Partners that may receive outbound /go redirects: admin-onboarded ("trial")
+// or paid ("active"). A self-enrolled, unpaid partner ("pending_payment") must
+// NOT get a working redirect on the trusted api.coherencedaddy.com domain —
+// that would be a free open-redirect/phishing primitive.
+const REDIRECTABLE_STATUSES = new Set(["trial", "active"]);
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -54,6 +73,19 @@ export function partnerGoRoutes(db: Db): Router {
         return;
       }
 
+      // Refuse to redirect for partners that haven't been verified/paid, and
+      // refuse non-http(s) destinations regardless of status.
+      if (!REDIRECTABLE_STATUSES.has(partner.status)) {
+        res.status(404).json({ error: "Partner not found" });
+        return;
+      }
+      const safeTarget = isSafeRedirectTarget(partner.website);
+      if (!safeTarget) {
+        logger.warn({ slug, website: partner.website }, "Blocked unsafe partner redirect target");
+        res.status(404).json({ error: "Partner not found" });
+        return;
+      }
+
       // Hash the IP for privacy
       const ip = req.ip || "unknown";
       const ipHash = createHash("sha256")
@@ -61,13 +93,16 @@ export function partnerGoRoutes(db: Db): Router {
         .digest("hex")
         .slice(0, 16);
 
-      // Parse query params
-      const sourceType = (req.query.src as string) || "direct";
-      const sourceContentId = (req.query.cid as string) || null;
-      const clickOrigin = (req.query.origin as string) || "cd";
-      const utmSource = (req.query.utm_source as string) || null;
-      const utmMedium = (req.query.utm_medium as string) || null;
-      const utmCampaign = (req.query.utm_campaign as string) || null;
+      // Parse query params — Express yields string[] for repeated keys, so
+      // coerce to a single string before use (an array would throw downstream).
+      const qp = (v: unknown): string | null =>
+        Array.isArray(v) ? (typeof v[0] === "string" ? v[0] : null) : typeof v === "string" ? v : null;
+      const sourceType = qp(req.query.src) || "direct";
+      const sourceContentId = qp(req.query.cid);
+      const clickOrigin = qp(req.query.origin) || "cd";
+      const utmSource = qp(req.query.utm_source);
+      const utmMedium = qp(req.query.utm_medium);
+      const utmCampaign = qp(req.query.utm_campaign);
       const ua = (req.headers["user-agent"] as string) || null;
       const visitorType = detectVisitorType(ua ?? undefined);
 
@@ -99,7 +134,7 @@ export function partnerGoRoutes(db: Db): Router {
         .where(eq(partnerCompanies.id, partner.id));
 
       // Build redirect URL with UTM params if not already present
-      let redirectUrl = partner.website;
+      let redirectUrl = safeTarget;
       if (utmSource || utmMedium || utmCampaign) {
         const url = new URL(redirectUrl);
         if (utmSource && !url.searchParams.has("utm_source"))

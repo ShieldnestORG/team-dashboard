@@ -385,8 +385,8 @@ async function handlePartnerStripeEvent(
           currentPeriodEnd,
           status: "active",
           isPaying: true,
-          convertedAt: new Date(),
-          updatedAt: new Date(),
+          convertedAt: sql`now()`,
+          updatedAt: sql`now()`,
         })
         .where(eq(partnerCompanies.slug, partnerSlug));
 
@@ -451,9 +451,6 @@ async function handlePartnerStripeEvent(
             const basisCents = session.amount_total ?? 0;
             const rateNum = Number(effectiveRate);
             const amountCents = Math.round(basisCents * rateNum);
-            const now = new Date();
-            const periodEnd = currentPeriodEnd ?? now;
-            const holdExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
             await db
               .insert(commissions)
@@ -465,11 +462,11 @@ async function handlePartnerStripeEvent(
                 rate: effectiveRate,
                 amountCents,
                 basisCents,
-                periodStart: now,
-                periodEnd,
+                periodStart: sql`now()`,
+                periodEnd: currentPeriodEnd ?? sql`now()`,
                 status: "pending_activation",
                 stripeInvoiceId: session.invoice ?? session.id,
-                holdExpiresAt,
+                holdExpiresAt: sql`now() + interval '30 days'`,
               })
               .onConflictDoNothing();
 
@@ -521,11 +518,11 @@ async function handlePartnerStripeEvent(
         .set({
           subscriptionStatus: "active",
           isPaying: true,
-          convertedAt: rows[0].convertedAt ?? new Date(),
+          convertedAt: rows[0].convertedAt ?? sql`now()`,
           currentPeriodEnd: inv.period_end
             ? new Date(inv.period_end * 1000)
             : (rows[0].currentPeriodEnd ?? undefined),
-          updatedAt: new Date(),
+          updatedAt: sql`now()`,
         })
         .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription));
 
@@ -575,10 +572,6 @@ async function handlePartnerStripeEvent(
         const basisCents = inv.amount_paid ?? 0;
         const rateNum = Number(effectiveRate);
         const amountCents = Math.round(basisCents * rateNum);
-        const now = new Date();
-        const periodStart = inv.period_start ? new Date(inv.period_start * 1000) : now;
-        const periodEnd = inv.period_end ? new Date(inv.period_end * 1000) : now;
-        const holdExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
         await db
           .insert(commissions)
@@ -590,11 +583,11 @@ async function handlePartnerStripeEvent(
             rate: effectiveRate,
             amountCents,
             basisCents,
-            periodStart,
-            periodEnd,
+            periodStart: inv.period_start ? new Date(inv.period_start * 1000) : sql`now()`,
+            periodEnd: inv.period_end ? new Date(inv.period_end * 1000) : sql`now()`,
             status: "pending_activation",
             stripeInvoiceId: inv.id,
-            holdExpiresAt,
+            holdExpiresAt: sql`now() + interval '30 days'`,
           })
           .onConflictDoNothing();
 
@@ -622,7 +615,7 @@ async function handlePartnerStripeEvent(
       if (!inv.subscription) return;
       await db
         .update(partnerCompanies)
-        .set({ subscriptionStatus: "past_due", updatedAt: new Date() })
+        .set({ subscriptionStatus: "past_due", updatedAt: sql`now()` })
         .where(eq(partnerCompanies.stripeSubscriptionId, inv.subscription));
       break;
     }
@@ -635,7 +628,7 @@ async function handlePartnerStripeEvent(
         .set({
           subscriptionStatus: "canceled",
           status: "trial",
-          updatedAt: new Date(),
+          updatedAt: sql`now()`,
         })
         .where(eq(partnerCompanies.stripeSubscriptionId, sub.id));
       logger.info({ subscriptionId: sub.id }, "partner-network: subscription canceled");
@@ -654,7 +647,7 @@ async function handlePartnerStripeEvent(
           .set({
             status: sql`CASE WHEN ${commissions.status} = 'paid' THEN 'clawed_back' ELSE 'reversed' END`,
             clawbackReason: "stripe_refund",
-            updatedAt: new Date(),
+            updatedAt: sql`now()`,
           })
           .where(eq(commissions.stripeInvoiceId, charge.invoice));
 

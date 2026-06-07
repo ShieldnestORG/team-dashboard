@@ -172,6 +172,9 @@ interface CandidateRow {
   leadStatus: string | null;
   lockExpiresAt: Date;
   lockReleasedAt: Date | null;
+  // Paying leads keep attribution regardless of timeout (merged from the old
+  // lock-expiry cron). Defaults to not-paying when omitted.
+  isPaying?: boolean;
 }
 
 const PROGRESSED = new Set([
@@ -193,6 +196,7 @@ function createLockExpirationStub(rows: CandidateRow[], now: Date) {
       (r) =>
         r.lockReleasedAt === null &&
         r.lockExpiresAt.getTime() < now.getTime() &&
+        !(r.isPaying ?? false) &&
         (r.leadStatus === null || !PROGRESSED.has(r.leadStatus)),
     );
 
@@ -232,6 +236,7 @@ function createLockExpirationStub(rows: CandidateRow[], now: Date) {
               for (const r of state.rows) {
                 if (r.lockReleasedAt !== null) continue;
                 if (r.lockExpiresAt.getTime() >= now.getTime()) continue;
+                if (r.isPaying) continue;
                 if (r.leadStatus && PROGRESSED.has(r.leadStatus)) continue;
                 if (pendingSet?.lockReleasedAt !== undefined) {
                   r.lockReleasedAt = pendingSet.lockReleasedAt as Date;
@@ -467,6 +472,20 @@ describe("affiliate:lock-expiration cron", () => {
         lockExpiresAt: new Date(now.getTime() - 60_000),
         lockReleasedAt: null,
       },
+      // Expired + early pipeline BUT paying → stays locked (referrer of record).
+      // Merged guard from the former lock-expiry cron.
+      {
+        attributionId: "attr-paying",
+        leadId: "lead-6",
+        affiliateId: "aff-6",
+        affiliateEmail: "six@example.com",
+        affiliateName: "Affiliate Six",
+        leadName: "Lead Six",
+        leadStatus: "qualified",
+        lockExpiresAt: new Date(now.getTime() - 60_000),
+        lockReleasedAt: null,
+        isPaying: true,
+      },
     ];
 
     const { db, state, insertCalls } = createLockExpirationStub(rows, now);
@@ -488,6 +507,7 @@ describe("affiliate:lock-expiration cron", () => {
     expect(byId["attr-nullstatus"]).not.toBeNull();
     expect(byId["attr-progressed"]).toBeNull();
     expect(byId["attr-fresh"]).toBeNull();
+    expect(byId["attr-paying"]).toBeNull();
 
     // crm_activities insert: one batch, two rows, both lock_expired + system
     expect(insertCalls).toHaveLength(1);

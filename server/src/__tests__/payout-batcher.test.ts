@@ -148,17 +148,24 @@ function createDbStub(opts: {
           return chain;
         }),
         insert: vi.fn(() => ({
-          values: (v: Record<string, unknown>) => ({
-            async returning() {
-              record.insertedPayout = v;
-              if (opts.payoutReturnsEmptyFor?.has(record.affiliateId)) {
-                return [];
-              }
-              const id = `payout-${record.affiliateId}`;
-              record.payoutIdReturned = id;
-              return [{ id }];
-            },
-          }),
+          values: (v: Record<string, unknown>) => {
+            const chain = {
+              // Production now chains .onConflictDoNothing() for idempotency.
+              onConflictDoNothing() {
+                return chain;
+              },
+              async returning() {
+                record.insertedPayout = v;
+                if (opts.payoutReturnsEmptyFor?.has(record.affiliateId)) {
+                  return [];
+                }
+                const id = `payout-${record.affiliateId}`;
+                record.payoutIdReturned = id;
+                return [{ id }];
+              },
+            };
+            return chain;
+          },
         })),
         update: vi.fn(() => ({
           set: (_v: Record<string, unknown>) => ({

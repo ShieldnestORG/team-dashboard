@@ -74,9 +74,24 @@ function hashPassword(password: string): string {
 }
 
 function verifyPassword(password: string, stored: string): boolean {
+  // Guard against malformed/legacy stored hashes: a missing salt/hash segment
+  // or a non-64-byte decoded hash would otherwise throw in scryptSync /
+  // timingSafeEqual and surface as a 500 (and an auth oracle) instead of a
+  // clean "invalid credentials" 401.
+  if (typeof stored !== "string" || !stored.includes(":")) return false;
   const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const hashBuf = Buffer.from(hash, "hex");
+  if (hashBuf.length !== 64) return false;
   const derived = scryptSync(password, salt, 64);
-  return timingSafeEqual(derived, Buffer.from(hash, "hex"));
+  return timingSafeEqual(derived, hashBuf);
+}
+
+// Pragmatic email shape check — not RFC-perfect, just enough to reject garbage
+// before it becomes a login identity / DB row.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(email: string): boolean {
+  return EMAIL_RE.test(email) && email.length <= 254;
 }
 
 function slugify(name: string): string {
@@ -152,6 +167,11 @@ export function affiliateRoutes(db: Db): Router {
 
       if (!name || !email || !password) {
         res.status(400).json({ error: "name, email, and password are required" });
+        return;
+      }
+
+      if (!isValidEmail(email.trim())) {
+        res.status(400).json({ error: "A valid email address is required" });
         return;
       }
 
@@ -248,6 +268,11 @@ export function affiliateRoutes(db: Db): Router {
       }
 
       const token = createAffiliateJwt(affiliate.id, affiliate.email);
+      if (!token) {
+        logger.error("Affiliate JWT secret not configured — refusing to issue token");
+        res.status(503).json({ error: "Authentication is temporarily unavailable" });
+        return;
+      }
 
       res.json({
         token,
@@ -535,7 +560,7 @@ export function affiliateRoutes(db: Db): Router {
         if (dup.affiliateId === affiliateId && dup.onboardingStatus === "failed") {
           await db
             .update(partnerCompanies)
-            .set({ onboardingStatus: "none", onboardingError: null, updatedAt: new Date() })
+            .set({ onboardingStatus: "none", onboardingError: null, updatedAt: sql`now()` })
             .where(eq(partnerCompanies.slug, dup.slug));
           runPartnerOnboarding(db, dup.slug).catch((err) =>
             logger.error({ err, slug: dup.slug }, "Affiliate prospect re-onboarding failed"),
@@ -549,7 +574,6 @@ export function affiliateRoutes(db: Db): Router {
         }
 
         // Check if there's an active, unexpired attribution owned by another affiliate
-        const now = new Date();
         const [activeAttribution] = await db
           .select({
             id: referralAttribution.id,
@@ -560,7 +584,7 @@ export function affiliateRoutes(db: Db): Router {
             and(
               eq(referralAttribution.leadId, dup.id),
               isNull(referralAttribution.lockReleasedAt),
-              gt(referralAttribution.lockExpiresAt, now),
+              gt(referralAttribution.lockExpiresAt, sql`now()`),
             ),
           )
           .limit(1);
@@ -592,7 +616,7 @@ export function affiliateRoutes(db: Db): Router {
         if (expiredActive) {
           await db
             .update(referralAttribution)
-            .set({ lockReleasedAt: now, updatedAt: now })
+            .set({ lockReleasedAt: sql`now()`, updatedAt: sql`now()` })
             .where(eq(referralAttribution.id, expiredActive.id));
         }
 
@@ -601,16 +625,15 @@ export function affiliateRoutes(db: Db): Router {
         // attribution row.
         await db
           .update(partnerCompanies)
-          .set({ affiliateId, updatedAt: now })
+          .set({ affiliateId, updatedAt: sql`now()` })
           .where(eq(partnerCompanies.id, dup.id));
 
-        const lockExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await db.insert(referralAttribution).values({
           leadId: dup.id,
           affiliateId,
           attributionType: "affiliate_referred_cd_closed",
-          lockStartAt: now,
-          lockExpiresAt,
+          lockStartAt: sql`now()`,
+          lockExpiresAt: sql`now() + interval '30 days'`,
           firstTouchLogged: firstTouchStatus ?? false,
           firstTouchType: firstTouchType ?? null,
           firstTouchDate: firstTouchDateParsed,
@@ -621,7 +644,7 @@ export function affiliateRoutes(db: Db): Router {
 
         await db
           .update(partnerCompanies)
-          .set({ leadStatus: "submitted", pipelineEnteredAt: now, lastActivityAt: now, updatedAt: now })
+          .set({ leadStatus: "submitted", pipelineEnteredAt: sql`now()`, lastActivityAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(partnerCompanies.id, dup.id));
 
         await db.insert(crmActivities).values({
@@ -644,7 +667,7 @@ export function affiliateRoutes(db: Db): Router {
         // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
         await db
           .update(affiliates)
-          .set({ lastLeadSubmittedAt: now, updatedAt: now })
+          .set({ lastLeadSubmittedAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(affiliates.id, affiliateId));
 
         res.status(201).json({
@@ -699,14 +722,12 @@ export function affiliateRoutes(db: Db): Router {
       }
 
       // Create referral attribution row for this new prospect
-      const attributionNow = new Date();
-      const attributionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       await db.insert(referralAttribution).values({
         leadId: partner.id,
         affiliateId,
         attributionType: "affiliate_referred_cd_closed",
-        lockStartAt: attributionNow,
-        lockExpiresAt: attributionExpiresAt,
+        lockStartAt: sql`now()`,
+        lockExpiresAt: sql`now() + interval '30 days'`,
         firstTouchLogged: firstTouchStatus ?? false,
         firstTouchType: firstTouchType ?? null,
         firstTouchDate: firstTouchDateParsed,
@@ -719,9 +740,9 @@ export function affiliateRoutes(db: Db): Router {
         .update(partnerCompanies)
         .set({
           leadStatus: "submitted",
-          pipelineEnteredAt: attributionNow,
-          lastActivityAt: attributionNow,
-          updatedAt: attributionNow,
+          pipelineEnteredAt: sql`now()`,
+          lastActivityAt: sql`now()`,
+          updatedAt: sql`now()`,
         })
         .where(eq(partnerCompanies.id, partner.id));
 
@@ -750,7 +771,7 @@ export function affiliateRoutes(db: Db): Router {
       // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
       await db
         .update(affiliates)
-        .set({ lastLeadSubmittedAt: attributionNow, updatedAt: attributionNow })
+        .set({ lastLeadSubmittedAt: sql`now()`, updatedAt: sql`now()` })
         .where(eq(affiliates.id, affiliateId));
 
       res.status(201).json({
@@ -778,14 +799,13 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       const [updated] = await db
         .update(affiliates)
-        .set({ policyAcceptedAt: now, updatedAt: now })
+        .set({ policyAcceptedAt: sql`now()`, updatedAt: sql`now()` })
         .where(eq(affiliates.id, id))
         .returning({ policyAcceptedAt: affiliates.policyAcceptedAt });
 
-      const acceptedAt = updated?.policyAcceptedAt ?? now;
+      const acceptedAt = updated?.policyAcceptedAt ?? new Date();
       res.json({ acceptedAt: acceptedAt.toISOString() });
     } catch (err) {
       logger.error({ err }, "Failed to accept policy");
@@ -852,12 +872,21 @@ export function affiliateRoutes(db: Db): Router {
         storeNotes?: string;
       };
 
+      // Reject non-string / oversized free-text before it hits the DB.
+      const NOTE_MAX = 10_000;
+      for (const [k, v] of Object.entries({ affiliateNotes, storeNotes })) {
+        if (v !== undefined && (typeof v !== "string" || v.length > NOTE_MAX)) {
+          res.status(400).json({ error: `${k} must be a string of at most ${NOTE_MAX} characters` });
+          return;
+        }
+      }
+
       const result = await db
         .update(partnerCompanies)
         .set({
           ...(affiliateNotes !== undefined ? { affiliateNotes } : {}),
           ...(storeNotes !== undefined ? { storeNotes } : {}),
-          updatedAt: new Date(),
+          updatedAt: sql`now()`,
         })
         .where(
           and(
@@ -882,6 +911,12 @@ export function affiliateRoutes(db: Db): Router {
   // ── POST /forgot-password — Public password reset request ────────────────
   router.post("/forgot-password", async (req, res) => {
     try {
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
+      if (!checkRateLimit(clientIp)) {
+        res.status(429).json({ error: "Too many attempts. Please try again in 15 minutes." });
+        return;
+      }
+
       const { email } = req.body as { email?: string };
 
       // Always return 200 — don't reveal if email exists
@@ -902,11 +937,14 @@ export function affiliateRoutes(db: Db): Router {
         // Generate raw token, store SHA-256 hash
         const rawToken = randomBytes(32).toString("hex");
         const hashedToken = createHash("sha256").update(rawToken).digest("hex");
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
         await db
           .update(affiliates)
-          .set({ resetToken: hashedToken, resetTokenExpiresAt: expiresAt, updatedAt: new Date() })
+          .set({
+            resetToken: hashedToken,
+            resetTokenExpiresAt: sql`now() + interval '1 hour'`,
+            updatedAt: sql`now()`,
+          })
           .where(eq(affiliates.id, affiliate.id));
 
         sendTransactional("affiliate-reset-password", affiliate.email, {
@@ -960,7 +998,7 @@ export function affiliateRoutes(db: Db): Router {
           passwordHash: newPasswordHash,
           resetToken: null,
           resetTokenExpiresAt: null,
-          updatedAt: new Date(),
+          updatedAt: sql`now()`,
         })
         .where(eq(affiliates.id, affiliate.id));
 
@@ -1077,9 +1115,21 @@ export function affiliateRoutes(db: Db): Router {
       const affiliateId = req.affiliateClaims!.sub;
       const body = req.body as { name?: string; location?: string; website?: string };
 
-      const updateFields: Record<string, unknown> = { updatedAt: new Date() };
-      if (body.name !== undefined) updateFields.name = body.name;
-      if (body.location !== undefined) updateFields.location = body.location;
+      const updateFields: Record<string, unknown> = { updatedAt: sql`now()` };
+      if (body.name !== undefined) {
+        if (typeof body.name !== "string" || body.name.length > 500) {
+          res.status(400).json({ error: "name must be a string of at most 500 characters" });
+          return;
+        }
+        updateFields.name = body.name;
+      }
+      if (body.location !== undefined) {
+        if (typeof body.location !== "string" || body.location.length > 500) {
+          res.status(400).json({ error: "location must be a string of at most 500 characters" });
+          return;
+        }
+        updateFields.location = body.location;
+      }
       if (body.website !== undefined) {
         try {
           updateFields.website = new URL(body.website.trim()).toString();
@@ -1341,7 +1391,7 @@ export function affiliateAdminRoutes(db: Db): Router {
 
       await db
         .update(affiliates)
-        .set({ status, updatedAt: new Date() })
+        .set({ status, updatedAt: sql`now()` })
         .where(eq(affiliates.id, id));
 
       // Notify affiliate if newly approved
@@ -1482,10 +1532,9 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       const [updated] = await db
         .update(commissions)
-        .set({ status: "approved", updatedAt: now })
+        .set({ status: "approved", updatedAt: sql`now()` })
         .where(eq(commissions.id, id))
         .returning({ id: commissions.id, status: commissions.status });
 
@@ -1525,10 +1574,9 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       const [updated] = await db
         .update(commissions)
-        .set({ status: "reversed", clawbackReason: reason, updatedAt: now })
+        .set({ status: "reversed", clawbackReason: reason, updatedAt: sql`now()` })
         .where(eq(commissions.id, id))
         .returning({
           id: commissions.id,
@@ -1580,10 +1628,9 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       const [updated] = await db
         .update(commissions)
-        .set({ status: "held", clawbackReason: reason, updatedAt: now })
+        .set({ status: "held", clawbackReason: reason, updatedAt: sql`now()` })
         .where(eq(commissions.id, id))
         .returning({
           id: commissions.id,
@@ -1697,12 +1744,11 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       const updateFields: Record<string, unknown> = {
         status: "sent",
-        sentAt: now,
+        sentAt: sql`now()`,
         externalId,
-        updatedAt: now,
+        updatedAt: sql`now()`,
       };
       if (method && typeof method === "string" && method.trim().length > 0) {
         updateFields.method = method;
@@ -1747,19 +1793,24 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
-
       const updated = await db.transaction(async (tx) => {
         const [payoutRow] = await tx
           .update(payouts)
-          .set({ status: "paid", paidAt: now, updatedAt: now })
+          .set({ status: "paid", paidAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(payouts.id, id))
           .returning();
 
+        // Only promote commissions still scheduled for THIS payout — never
+        // resurrect ones reversed/held/clawed-back after the batch was cut.
         await tx
           .update(commissions)
-          .set({ status: "paid", updatedAt: now })
-          .where(eq(commissions.payoutBatchId, id));
+          .set({ status: "paid", updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(commissions.payoutBatchId, id),
+              eq(commissions.status, "scheduled_for_payout"),
+            ),
+          );
 
         return payoutRow;
       });
@@ -2031,15 +2082,14 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       await db.transaction(async (tx) => {
         await tx
           .update(partnerCompanies)
           .set({
             leadStatus: toDb,
-            pipelineEnteredAt: from === toDb ? partnerCompanies.pipelineEnteredAt : now,
-            lastActivityAt: now,
-            updatedAt: now,
+            pipelineEnteredAt: from === toDb ? partnerCompanies.pipelineEnteredAt : sql`now()`,
+            lastActivityAt: sql`now()`,
+            updatedAt: sql`now()`,
           })
           .where(eq(partnerCompanies.id, id));
 
@@ -2069,11 +2119,10 @@ export function affiliateAdminRoutes(db: Db): Router {
       const id = req.params.id as string;
       const { repId } = req.body as { repId?: string | null };
 
-      const now = new Date();
       await db.transaction(async (tx) => {
         await tx
           .update(partnerCompanies)
-          .set({ assignedRepId: repId ?? null, lastActivityAt: now, updatedAt: now })
+          .set({ assignedRepId: repId ?? null, lastActivityAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(partnerCompanies.id, id));
         await tx.insert(crmActivities).values({
           leadId: id,
@@ -2103,7 +2152,6 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       const [act] = await db.transaction(async (tx) => {
         const inserted = await tx
           .insert(crmActivities)
@@ -2117,7 +2165,7 @@ export function affiliateAdminRoutes(db: Db): Router {
           .returning();
         await tx
           .update(partnerCompanies)
-          .set({ lastActivityAt: now, updatedAt: now })
+          .set({ lastActivityAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(partnerCompanies.id, id));
         return inserted;
       });
@@ -2182,11 +2230,10 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       await db.transaction(async (tx) => {
         await tx
           .update(referralAttribution)
-          .set({ attributionType, adminOverride: true, overrideReason: reason, updatedAt: now })
+          .set({ attributionType, adminOverride: true, overrideReason: reason, updatedAt: sql`now()` })
           .where(eq(referralAttribution.id, current.id));
 
         await tx.insert(attributionOverrides).values({
@@ -2210,7 +2257,7 @@ export function affiliateAdminRoutes(db: Db): Router {
 
         await tx
           .update(partnerCompanies)
-          .set({ lastActivityAt: now, updatedAt: now })
+          .set({ lastActivityAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(partnerCompanies.id, id));
       });
 
@@ -2244,14 +2291,11 @@ export function affiliateAdminRoutes(db: Db): Router {
         )
         .limit(1);
 
-      const now = new Date();
-      const lockExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
       await db.transaction(async (tx) => {
         if (oldAtt) {
           await tx
             .update(referralAttribution)
-            .set({ lockReleasedAt: now, adminOverride: true, overrideReason: reason, updatedAt: now })
+            .set({ lockReleasedAt: sql`now()`, adminOverride: true, overrideReason: reason, updatedAt: sql`now()` })
             .where(eq(referralAttribution.id, oldAtt.id));
         }
 
@@ -2261,8 +2305,8 @@ export function affiliateAdminRoutes(db: Db): Router {
             leadId: id,
             affiliateId: newAffiliateId,
             attributionType: "admin_override",
-            lockStartAt: now,
-            lockExpiresAt,
+            lockStartAt: sql`now()`,
+            lockExpiresAt: sql`now() + interval '30 days'`,
             adminOverride: true,
             overrideReason: reason,
           })
@@ -2281,7 +2325,7 @@ export function affiliateAdminRoutes(db: Db): Router {
 
         await tx
           .update(partnerCompanies)
-          .set({ affiliateId: newAffiliateId, lastActivityAt: now, updatedAt: now })
+          .set({ affiliateId: newAffiliateId, lastActivityAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(partnerCompanies.id, id));
 
         await tx.insert(crmActivities).values({
@@ -2330,12 +2374,11 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       await db.transaction(async (tx) => {
         for (const loser of losers) {
           await tx
             .update(referralAttribution)
-            .set({ lockReleasedAt: now, adminOverride: true, overrideReason: reason, updatedAt: now })
+            .set({ lockReleasedAt: sql`now()`, adminOverride: true, overrideReason: reason, updatedAt: sql`now()` })
             .where(eq(referralAttribution.id, loser.id));
 
           await tx.insert(attributionOverrides).values({
@@ -2355,9 +2398,9 @@ export function affiliateAdminRoutes(db: Db): Router {
           .set({
             affiliateId: winnerAffiliateId,
             leadStatus: "qualified",
-            pipelineEnteredAt: now,
-            lastActivityAt: now,
-            updatedAt: now,
+            pipelineEnteredAt: sql`now()`,
+            lastActivityAt: sql`now()`,
+            updatedAt: sql`now()`,
           })
           .where(eq(partnerCompanies.id, id));
 

@@ -105,7 +105,7 @@ export function shopSharersService(db: Db) {
       .update(shopSharers)
       .set({
         affiliateApplicationStatus: "pending",
-        updatedAt: new Date(),
+        updatedAt: sql`now()`,
       })
       .where(
         and(
@@ -136,7 +136,6 @@ export function shopSharersService(db: Db) {
     const passwordHash = hashPassword(placeholderPassword);
     const resetToken = randomBytes(24).toString("hex");
     const resetTokenHash = createHash("sha256").update(resetToken).digest("hex");
-    const resetExpires = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
 
     const [affiliate] = await db
       .insert(affiliates)
@@ -146,7 +145,7 @@ export function shopSharersService(db: Db) {
         name: opts.displayName ?? sharer.email.split("@")[0] ?? "Sharer",
         status: "active",
         resetToken: resetTokenHash,
-        resetTokenExpiresAt: resetExpires,
+        resetTokenExpiresAt: sql`now() + interval '14 days'`,
       })
       .returning();
 
@@ -156,7 +155,7 @@ export function shopSharersService(db: Db) {
         affiliateApplicationStatus: "approved",
         affiliateId: affiliate!.id,
         sharedMarketingEligible: true,
-        updatedAt: new Date(),
+        updatedAt: sql`now()`,
       })
       .where(eq(shopSharers.id, sharerId))
       .returning();
@@ -171,7 +170,7 @@ export function shopSharersService(db: Db) {
         affiliateApplicationStatus: "rejected",
         sharedMarketingEligible: false,
         notes: notes ?? null,
-        updatedAt: new Date(),
+        updatedAt: sql`now()`,
       })
       .where(eq(shopSharers.id, sharerId))
       .returning();

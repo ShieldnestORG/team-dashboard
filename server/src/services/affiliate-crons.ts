@@ -103,35 +103,13 @@ export function startAffiliateCrons(db: Db): void {
     },
   });
 
-  registerCronJob({
-    jobName: "affiliate:lock-expiry",
-    schedule: "0 3 * * *", // Daily 3 AM UTC
-    ownerAgent: "nova",
-    sourceFile: "affiliate-crons.ts",
-    handler: async () => {
-      // Release expired attribution locks whose associated lead has NOT converted.
-      // Conversion signal: partner_companies.is_paying = true → lock stays (referrer of record).
-      // Single-statement UPDATE with an EXISTS subquery that requires is_paying = false.
-      const now = new Date();
-      const released = await db
-        .update(referralAttribution)
-        .set({ lockReleasedAt: now, updatedAt: now })
-        .where(
-          and(
-            isNull(referralAttribution.lockReleasedAt),
-            lt(referralAttribution.lockExpiresAt, sql`NOW()`),
-            sql`EXISTS (
-              SELECT 1 FROM ${partnerCompanies}
-              WHERE ${partnerCompanies.id} = ${referralAttribution.leadId}
-                AND ${partnerCompanies.isPaying} = false
-            )`,
-          ),
-        )
-        .returning({ id: referralAttribution.id });
-
-      return { released: released.length };
-    },
-  });
+  // NOTE: the former `affiliate:lock-expiry` cron (daily 03:00) was removed —
+  // it released ALL expired locks for non-paying leads, which contradicted and
+  // pre-empted `affiliate:lock-expiration` (03:45). lock-expiry would release
+  // attribution for in-flight, non-paying deals (e.g. proposal_sent) 45 minutes
+  // before lock-expiration's "stays locked while in motion" rule could apply,
+  // silently destroying attribution. The not-paying condition has been folded
+  // into lock-expiration so a single cron now owns release with both guards.
 
   // ---------------------------------------------------------------------------
   // affiliate:commission-maturation — daily 03:15 UTC
@@ -146,7 +124,7 @@ export function startAffiliateCrons(db: Db): void {
     handler: async () => {
       const matured = await db
         .update(commissions)
-        .set({ status: "approved", updatedAt: new Date() })
+        .set({ status: "approved", updatedAt: sql`now()` })
         .where(
           and(
             eq(commissions.status, "pending_activation"),
@@ -198,8 +176,6 @@ export function startAffiliateCrons(db: Db): void {
           affiliates.payoutMethod,
         );
 
-      const scheduledFor = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
       let batched = 0;
       let skipped = 0;
       let failed = 0;
@@ -241,13 +217,16 @@ export function startAffiliateCrons(db: Db): void {
                 method: candidate.payoutMethod ?? "manual_ach",
                 status: "scheduled",
                 batchMonth,
-                scheduledFor,
+                scheduledFor: sql`now() + interval '7 days'`,
               })
+              // Idempotent: the (affiliate_id, batch_month) unique index means a
+              // re-run in the same month conflicts and returns no row, so we bail
+              // below without double-paying or re-scheduling commissions.
+              .onConflictDoNothing({ target: [payouts.affiliateId, payouts.batchMonth] })
               .returning({ id: payouts.id });
 
             if (!payout) {
-              // Unique (affiliate_id, batch_month) hit — already batched for this
-              // month. Safe to bail without mutating commissions.
+              // Already batched for this month — bail without mutating commissions.
               return;
             }
 
@@ -256,7 +235,7 @@ export function startAffiliateCrons(db: Db): void {
               .set({
                 payoutBatchId: payout.id,
                 status: "scheduled_for_payout",
-                updatedAt: new Date(),
+                updatedAt: sql`now()`,
               })
               .where(
                 and(
@@ -311,8 +290,6 @@ export function startAffiliateCrons(db: Db): void {
     ownerAgent: "nova",
     sourceFile: "affiliate-crons.ts",
     handler: async () => {
-      const now = new Date();
-
       // Reusable SQL fragment: effective age reference for a pipeline row.
       const ageRef = sql`COALESCE(${partnerCompanies.lastActivityAt}, ${partnerCompanies.pipelineEnteredAt}, ${partnerCompanies.createdAt})`;
 
@@ -338,8 +315,8 @@ export function startAffiliateCrons(db: Db): void {
           .update(partnerCompanies)
           .set({
             leadStatus: t.toStatus,
-            lastActivityAt: now,
-            updatedAt: now,
+            lastActivityAt: sql`now()`,
+            updatedAt: sql`now()`,
           })
           .where(
             and(
@@ -376,10 +353,13 @@ export function startAffiliateCrons(db: Db): void {
 
   // ---------------------------------------------------------------------------
   // affiliate:lock-expiration — daily 03:45 UTC
-  // Phase 3 companion to affiliate:lock-expiry. Releases attribution locks when:
+  // Sole owner of attribution-lock release (the old lock-expiry cron was merged
+  // in). Releases attribution locks when ALL of:
   //   - lockExpiresAt < NOW()
   //   - lockReleasedAt IS NULL
   //   - the lead has NOT progressed past `qualified` (i.e. still in early pipeline)
+  //   - the lead is NOT paying (is_paying = false) — a paying lead keeps its
+  //     referrer-of-record attribution regardless of timeout
   //
   // Progression-past-qualified is the Phase 3 signal that the lead is "in motion"
   // and attribution should not be released purely on timeout. Statuses that
@@ -398,8 +378,6 @@ export function startAffiliateCrons(db: Db): void {
     ownerAgent: "nova",
     sourceFile: "affiliate-crons.ts",
     handler: async () => {
-      const now = new Date();
-
       // Statuses that mean "lead has progressed past qualified" — attribution
       // stays locked for these regardless of timeout.
       const progressedStatuses = [
@@ -433,6 +411,8 @@ export function startAffiliateCrons(db: Db): void {
           and(
             isNull(referralAttribution.lockReleasedAt),
             lt(referralAttribution.lockExpiresAt, sql`NOW()`),
+            // paying leads keep attribution forever (referrer of record)
+            eq(partnerCompanies.isPaying, false),
             // not progressed past qualified
             or(
               isNull(partnerCompanies.leadStatus),
@@ -453,7 +433,7 @@ export function startAffiliateCrons(db: Db): void {
       // Re-check lockReleasedAt IS NULL so concurrent releases don't double-fire.
       const released = await db
         .update(referralAttribution)
-        .set({ lockReleasedAt: now, updatedAt: now })
+        .set({ lockReleasedAt: sql`now()`, updatedAt: sql`now()` })
         .where(
           and(
             inArray(referralAttribution.id, attributionIds),
@@ -642,8 +622,8 @@ export function startAffiliateCrons(db: Db): void {
             .set({
               tier: matched.name,
               commissionRate: matched.commissionRate,
-              tierUpgradedAt: new Date(),
-              updatedAt: new Date(),
+              tierUpgradedAt: sql`now()`,
+              updatedAt: sql`now()`,
             })
             .where(eq(affiliates.id, aff.id));
 

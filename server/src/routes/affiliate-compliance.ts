@@ -225,7 +225,7 @@ export function affiliateComplianceRoutes(db: Db): Router {
           .set({
             status: toStatus,
             reviewedByUserId: reviewerId,
-            reviewedAt: new Date(),
+            reviewedAt: sql`now()`,
           })
           .where(eq(affiliateViolations.id, id))
           .returning();
@@ -236,8 +236,6 @@ export function affiliateComplianceRoutes(db: Db): Router {
       // Enforced + clawback path — transactional update of commissions +
       // violation row + (for terminal severity) affiliate suspension.
       const result = await db.transaction(async (tx) => {
-        const now = new Date();
-
         // Clawback logic: paid → clawed_back, else → reversed.
         const conds = [eq(commissions.affiliateId, existing.affiliateId)] as ReturnType<
           typeof eq
@@ -251,7 +249,7 @@ export function affiliateComplianceRoutes(db: Db): Router {
           .set({
             status: sql`CASE WHEN ${commissions.status} = 'paid' THEN 'clawed_back' ELSE 'reversed' END`,
             clawbackReason: "compliance_violation",
-            updatedAt: now,
+            updatedAt: sql`now()`,
           })
           .where(and(...conds))
           .returning({ id: commissions.id });
@@ -262,7 +260,7 @@ export function affiliateComplianceRoutes(db: Db): Router {
             status: "enforced",
             commissionsClawedBack: clawedBack.length,
             reviewedByUserId: reviewerId,
-            reviewedAt: now,
+            reviewedAt: sql`now()`,
           })
           .where(eq(affiliateViolations.id, id))
           .returning();
@@ -272,10 +270,10 @@ export function affiliateComplianceRoutes(db: Db): Router {
           await tx
             .update(affiliates)
             .set({
-              suspendedAt: now,
+              suspendedAt: sql`now()`,
               suspensionReason: "compliance_terminal_violation",
               status: "suspended",
-              updatedAt: now,
+              updatedAt: sql`now()`,
             })
             .where(eq(affiliates.id, existing.affiliateId));
         }
@@ -322,14 +320,13 @@ export function affiliateComplianceRoutes(db: Db): Router {
         return;
       }
 
-      const now = new Date();
       const [updated] = await db
         .update(affiliates)
         .set({
-          suspendedAt: now,
+          suspendedAt: sql`now()`,
           suspensionReason: reason,
           status: "suspended",
-          updatedAt: now,
+          updatedAt: sql`now()`,
         })
         .where(eq(affiliates.id, id))
         .returning({

@@ -4,6 +4,7 @@ import type { Db } from "@paperclipai/db";
 import { shopSharersService, shareUrlFor } from "../services/shop-sharers.js";
 import { logger } from "../middleware/logger.js";
 import { sendTransactional, sendSharerWelcomeEmail } from "../services/email-templates.js";
+import { authRateLimit } from "../middleware/global-rate-limit.js";
 import { assertBoard } from "./authz.js";
 
 // ---------------------------------------------------------------------------
@@ -76,7 +77,9 @@ export function shopSharersRoutes(db: Db): Router {
 
   // -- Public -----------------------------------------------------------------
 
-  router.post("/sharers", async (req: Request, res: Response) => {
+  // Tighter limit than the global 300/min — each create fires an outbound
+  // welcome email, so this is an email-bomb / sender-reputation surface.
+  router.post("/sharers", authRateLimit, async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as { email?: unknown; source?: unknown };
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const source =
@@ -156,6 +159,7 @@ export function shopSharersRoutes(db: Db): Router {
 
   router.post(
     "/sharers/:code/apply-affiliate",
+    authRateLimit,
     async (req: Request, res: Response) => {
       const code = req.params.code as string;
       try {

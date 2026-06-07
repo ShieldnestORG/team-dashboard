@@ -19,12 +19,15 @@ const TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const ISSUER = "affiliate";
 const AUDIENCE = "affiliate-api";
 
-function getSecret(): string {
+function getSecret(): string | null {
+  // No hardcoded fallback: a missing secret must fail closed (refuse to issue
+  // or verify tokens) rather than sign with a public, checked-in dev string,
+  // which would let anyone forge a valid affiliate JWT. Matches agent-auth-jwt.ts.
   return (
     process.env.AFFILIATE_JWT_SECRET ??
     process.env.BETTER_AUTH_SECRET ??
     process.env.PAPERCLIP_AGENT_JWT_SECRET ??
-    "paperclip-dev-secret"
+    null
   );
 }
 
@@ -56,8 +59,9 @@ function safeCompare(a: string, b: string) {
   return timingSafeEqual(left, right);
 }
 
-export function createAffiliateJwt(affiliateId: string, email: string): string {
+export function createAffiliateJwt(affiliateId: string, email: string): string | null {
   const secret = getSecret();
+  if (!secret) return null;
   const now = Math.floor(Date.now() / 1000);
   const claims: AffiliateJwtClaims = {
     sub: affiliateId,
@@ -86,6 +90,7 @@ export function verifyAffiliateJwt(token: string): AffiliateJwtClaims | null {
   if (!header || header.alg !== JWT_ALGORITHM) return null;
 
   const secret = getSecret();
+  if (!secret) return null;
   const signingInput = `${headerB64}.${claimsB64}`;
   const expectedSig = signPayload(secret, signingInput);
   if (!safeCompare(signature, expectedSig)) return null;

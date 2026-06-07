@@ -58,6 +58,17 @@ export function partnerRoutes(db: Db): Router {
         res.status(400).json({ error: "Valid email is required" });
         return;
       }
+      // If a website is supplied it must be a real http(s) URL — it is later
+      // used as a 302 redirect target by /api/go/:slug, so reject anything else.
+      if (websiteUrl) {
+        try {
+          const u = new URL(websiteUrl);
+          if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("bad scheme");
+        } catch {
+          res.status(400).json({ error: "websiteUrl must be a valid http(s) URL" });
+          return;
+        }
+      }
       const tierPriceEnv: Record<string, string> = {
         proof: "STRIPE_PRICE_PARTNER_PROOF",
         performance: "STRIPE_PRICE_PARTNER_PERFORMANCE",
