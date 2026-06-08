@@ -71,7 +71,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
 
 const PAGE_SIZE = 50;
 
-type DialogMode = "approve" | "reverse" | "hold" | null;
+type DialogMode = "approve" | "reverse" | "hold" | "clawback" | null;
 
 interface ActionDialogState {
   mode: DialogMode;
@@ -160,7 +160,7 @@ export function AffiliateAdminCommissions() {
     const { mode, commission, reason } = dialog;
     const trimmed = reason.trim();
 
-    if ((mode === "reverse" || mode === "hold") && trimmed.length < 3) {
+    if ((mode === "reverse" || mode === "hold" || mode === "clawback") && trimmed.length < 3) {
       setDialog((d) => ({ ...d, error: "Reason is required (min 3 characters)" }));
       return;
     }
@@ -173,6 +173,8 @@ export function AffiliateAdminCommissions() {
         await affiliatesAdminApi.reverseCommission(commission.id, trimmed);
       } else if (mode === "hold") {
         await affiliatesAdminApi.holdCommission(commission.id, trimmed);
+      } else if (mode === "clawback") {
+        await affiliatesAdminApi.clawbackCommission(commission.id, trimmed);
       }
       // Refresh list
       const res = await affiliatesAdminApi.listCommissionsAdmin(filters);
@@ -222,7 +224,20 @@ export function AffiliateAdminCommissions() {
         </div>
       );
     }
-    // scheduled_for_payout, paid, reversed, clawed_back — read-only
+    // Disbursed money — recover via a clawback against future earnings. Only
+    // surfaced for 'paid' (unambiguously disbursed). A 'scheduled_for_payout'
+    // commission whose parent payout was already sent is the rare transient
+    // window between mark-sent and mark-paid; it becomes 'paid' at mark-paid, and
+    // the POST /commissions/:id/clawback API still covers it in the interim.
+    if (s === "paid") {
+      return (
+        <div className="flex items-center gap-1.5 justify-end">
+          <Button size="sm" variant="outline" className="text-xs h-7 border-red-500/40 text-red-600 hover:bg-red-500/10"
+            onClick={() => openDialog("clawback", c)}>Claw Back</Button>
+        </div>
+      );
+    }
+    // scheduled_for_payout, reversed, clawed_back — read-only
     const reason = c.clawbackReason ?? null;
     return (
       <span className="text-xs text-muted-foreground italic block text-right">
@@ -402,6 +417,7 @@ export function AffiliateAdminCommissions() {
               {dialog.mode === "approve" && "Approve commission"}
               {dialog.mode === "reverse" && "Reverse commission"}
               {dialog.mode === "hold" && "Hold commission"}
+              {dialog.mode === "clawback" && "Claw back commission"}
             </DialogTitle>
             {dialog.commission && (
               <DialogDescription>
@@ -419,6 +435,14 @@ export function AffiliateAdminCommissions() {
           </DialogHeader>
 
           <div className="space-y-2">
+            {dialog.mode === "clawback" && (
+              <p className="text-xs text-muted-foreground rounded-md border border-red-500/20 bg-red-500/5 px-2.5 py-2">
+                The money for this commission was already disbursed. Clawing it
+                back opens a recovery obligation that is netted against the
+                affiliate's future payouts — the sent/paid payout itself is not
+                altered.
+              </p>
+            )}
             <label className="block text-xs font-medium text-foreground">
               Reason {dialog.mode === "approve" ? "(optional)" : <span className="text-destructive">*</span>}
             </label>
@@ -453,7 +477,7 @@ export function AffiliateAdminCommissions() {
               onClick={handleDialogSubmit}
               disabled={dialog.loading}
               className={
-                dialog.mode === "reverse"
+                dialog.mode === "reverse" || dialog.mode === "clawback"
                   ? "bg-red-500 hover:bg-red-500/90 text-white"
                   : dialog.mode === "hold"
                   ? "bg-orange-500 hover:bg-orange-500/90 text-white"
@@ -463,6 +487,7 @@ export function AffiliateAdminCommissions() {
               {dialog.loading ? "Saving…" :
                 dialog.mode === "approve" ? "Approve" :
                 dialog.mode === "reverse" ? "Reverse" :
+                dialog.mode === "clawback" ? "Claw Back" :
                 "Hold"}
             </Button>
           </DialogFooter>

@@ -396,9 +396,10 @@ are frozen when the monthly batcher cuts the batch and are never recomputed. So
   parent payout's `amount` and `commission_count` are decremented in the same
   transaction so the batch total stays accurate.
 - **Scheduled for Payout, parent payout `sent`**, or commission **Paid** → blocked
-  (`409 INVALID_STATUS_TRANSITION`). The funds are in flight / disbursed;
-  rewriting the batch total would falsify it. These cases belong to a dedicated
-  clawback flow (against future earnings), not an in-place status flip.
+  for *reversal* (`409 INVALID_STATUS_TRANSITION`). The funds are in flight /
+  disbursed; rewriting the batch total would falsify it. These cases are handled
+  by the dedicated **clawback recovery flow** below (recovered against future
+  earnings), not an in-place status flip.
 
 (`/hold` is already gated to Pending Activation / Approved, so it can never touch
 a batched or paid commission.)
@@ -413,6 +414,42 @@ flip the commission (`paid → clawed_back`, else `→ reversed`) and call the s
 only parent payouts still `scheduled`. Sent/paid payouts are left untouched so a
 disbursed batch total is never falsified. The helper is idempotent: re-delivered
 webhooks whose rows are already reversed decrement nothing.
+
+**Clawback recovery flow (recovering disbursed money).** When a commission is
+flipped to `clawed_back` (its money already went out), the loss is recorded as a
+first-class recovery obligation in **`affiliate_clawbacks`** (migration 0121) and
+recovered by withholding from the affiliate's *future* payouts. We never invoice
+the affiliate — net-against-future only.
+
+- **Ledger.** One `affiliate_clawbacks` row per clawed-back commission (unique on
+  `source_commission_id`, which gives idempotency). It carries `origin_amount_cents`,
+  `recovered_cents`, a `status` (`open → recovering → recovered`, or `written_off`),
+  the `reason` (`stripe_refund` / `compliance_violation` / `admin_manual`), and a
+  `window_expires_at`. An affiliate's outstanding balance is
+  `SUM(origin − recovered)` over open/recovering rows.
+- **Creation hooks.** The two automatic clawback paths (refund webhook in
+  `directory-listings.ts`, compliance enforce in `affiliate-compliance.ts`) open a
+  ledger row for each commission whose pre-flip status was `paid`. Admins open one
+  manually via **`POST /commissions/:id/clawback`** — the dedicated route for the
+  cases `/reverse` blocks (a `paid` commission, or a `scheduled_for_payout` one
+  whose parent payout is already sent/paid). It refuses not-yet-disbursed
+  commissions, pointing the operator back to `/reverse`.
+- **Recovery at mark-sent.** Recovery is applied when a payout is marked **sent**
+  (the moment cash actually leaves), not in the batcher. `mark-sent` locks the
+  payout row `FOR UPDATE`, nets the outstanding balance against the payout's gross
+  oldest-first (FIFO, `services/clawback.ts applyClawbackRecovery`), and stores the
+  withheld amount in `payouts.clawback_applied_cents`. The payout's `amount_cents`
+  stays the gross sum of its commissions, so the reversal guard above is
+  unaffected; **net cash disbursed = amount_cents − clawback_applied_cents**.
+- **Window / write-off.** The `affiliate:clawback-writeoff` daily cron flips any
+  open/recovering obligation past `window_expires_at` (default
+  `CLAWBACK_RECOVERY_WINDOW_DAYS` = 180) with a remaining balance to
+  `written_off`. If future earnings never cover it inside the window, it is written
+  off — there is no insufficient-funds collection step.
+- **Surfaces.** Admin: `GET /clawbacks` + the **Clawbacks** tab, a **Claw Back**
+  action on disbursed commissions, and a net/gross breakdown on the Payouts table.
+  Affiliate: outstanding balance on `/me` + dashboard, a `GET /clawbacks` ledger,
+  and the withheld amount shown on payout history.
 
 **Example business rules**
 - Payout cycle: monthly

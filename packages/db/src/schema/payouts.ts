@@ -12,6 +12,12 @@ export const payouts = pgTable(
     amountCents: integer("amount_cents").notNull(),
     commissionCount: integer("commission_count").notNull(),
 
+    // How much of amountCents (the gross sum of linked commissions) was withheld
+    // at mark-sent time to repay outstanding clawbacks. Net cash disbursed =
+    // amountCents - clawbackAppliedCents. Kept separate so amountCents stays the
+    // true gross and the reversal guard's decrement math is unaffected.
+    clawbackAppliedCents: integer("clawback_applied_cents").notNull().default(0),
+
     method: text("method").notNull().default("manual_ach"),
     externalId: text("external_id"),
 

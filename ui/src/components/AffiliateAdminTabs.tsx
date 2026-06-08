@@ -11,6 +11,7 @@ type TabKey =
   | "attribution"
   | "commissions"
   | "payouts"
+  | "clawbacks"
   | "compliance"
   | "engagement"
   | "tiers"
@@ -29,6 +30,7 @@ const TABS: Tab[] = [
   { key: "attribution", label: "Attribution", href: "/affiliates/attribution" },
   { key: "commissions", label: "Commissions", href: "/affiliates/commissions" },
   { key: "payouts", label: "Payouts", href: "/affiliates/payouts" },
+  { key: "clawbacks", label: "Clawbacks", href: "/affiliates/clawbacks" },
   { key: "compliance", label: "Compliance", href: "/affiliates/compliance" },
   { key: "engagement", label: "Engagement", href: "/affiliates/engagement" },
   { key: "tiers", label: "Tiers", href: "/affiliates/tiers" },

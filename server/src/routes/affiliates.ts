@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
-import { eq, and, ilike, count, sql, isNull, gt, desc, inArray, gte, lte } from "drizzle-orm";
+import { eq, and, ilike, count, sql, isNull, gt, desc, inArray, notInArray, gte, lte } from "drizzle-orm";
 import { randomBytes, createHash } from "node:crypto";
 import { scryptSync, timingSafeEqual } from "node:crypto";
 import type { Db } from "@paperclipai/db";
@@ -13,11 +13,17 @@ import {
   referralAttribution,
   commissions,
   payouts,
+  affiliateClawbacks,
   crmActivities,
   attributionOverrides,
   authUsers,
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import {
+  recordClawback,
+  applyClawbackRecovery,
+  getOutstandingBalanceCents,
+} from "../services/clawback.js";
 import { requireAffiliate } from "../middleware/affiliate-auth.js";
 import { createAffiliateJwt } from "../affiliate-auth-jwt.js";
 import { assertBoard } from "./authz.js";
@@ -374,6 +380,10 @@ export function affiliateRoutes(db: Db): Router {
       }
       const lifetimeCents = approvedCents + scheduledCents + paidCents;
 
+      // Outstanding clawback balance — money owed back, netted against future
+      // payouts. Surfaced so the affiliate sees why a payout may be reduced.
+      const clawbackBalanceCents = await getOutstandingBalanceCents(db, id);
+
       res.json({
         affiliate,
         prospectCount,
@@ -383,6 +393,7 @@ export function affiliateRoutes(db: Db): Router {
         scheduledCents,
         paidCents,
         lifetimeCents,
+        clawbackBalanceCents,
       });
     } catch (err) {
       logger.error({ err }, "Failed to get affiliate profile");
@@ -1093,6 +1104,7 @@ export function affiliateRoutes(db: Db): Router {
           .select({
             id: payouts.id,
             amountCents: payouts.amountCents,
+            clawbackAppliedCents: payouts.clawbackAppliedCents,
             commissionCount: payouts.commissionCount,
             method: payouts.method,
             externalId: payouts.externalId,
@@ -1114,6 +1126,44 @@ export function affiliateRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to list affiliate payouts");
       res.status(500).json({ error: "Failed to list payouts" });
+    }
+  });
+
+  // ── GET /clawbacks — Affiliate's own clawback ledger (JWT-auth) ───────────
+  router.get("/clawbacks", authMiddleware, async (req, res) => {
+    try {
+      const affiliateId = req.affiliateClaims!.sub;
+
+      const rows = await db
+        .select({
+          id: affiliateClawbacks.id,
+          sourceCommissionId: affiliateClawbacks.sourceCommissionId,
+          leadName: partnerCompanies.name,
+          originAmountCents: affiliateClawbacks.originAmountCents,
+          recoveredCents: affiliateClawbacks.recoveredCents,
+          status: affiliateClawbacks.status,
+          reason: affiliateClawbacks.reason,
+          windowExpiresAt: affiliateClawbacks.windowExpiresAt,
+          createdAt: affiliateClawbacks.createdAt,
+        })
+        .from(affiliateClawbacks)
+        .leftJoin(commissions, eq(commissions.id, affiliateClawbacks.sourceCommissionId))
+        .leftJoin(partnerCompanies, eq(partnerCompanies.id, commissions.leadId))
+        .where(eq(affiliateClawbacks.affiliateId, affiliateId))
+        .orderBy(desc(affiliateClawbacks.createdAt));
+
+      const balanceCents = await getOutstandingBalanceCents(db, affiliateId);
+
+      res.json({
+        clawbacks: rows.map((r) => ({
+          ...r,
+          remainingCents: Math.max(0, r.originAmountCents - r.recoveredCents),
+        })),
+        balanceCents,
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to list affiliate clawbacks");
+      res.status(500).json({ error: "Failed to list clawbacks" });
     }
   });
 
@@ -1690,6 +1740,131 @@ export function affiliateAdminRoutes(db: Db): Router {
     }
   });
 
+  // ── POST /commissions/:id/clawback — Recover already-disbursed money ──────
+  // The dedicated flow for the cases /reverse blocks: a 'paid' commission, or a
+  // 'scheduled_for_payout' commission whose parent payout is already sent/paid.
+  // Flips the commission to 'clawed_back' and opens a recovery obligation
+  // (affiliate_clawbacks) netted against the affiliate's FUTURE payouts at
+  // mark-sent time. The disbursed payout row is never mutated — its total is a
+  // historical fact (see services/payout-adjust.ts).
+  router.post("/commissions/:id/clawback", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const id = req.params.id as string;
+      const { reason } = (req.body ?? {}) as { reason?: string };
+
+      if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+        res.status(400).json({ error: "reason is required" });
+        return;
+      }
+
+      const reviewerId =
+        req.actor.type === "board" ? req.actor.userId ?? null : null;
+
+      const [existing] = await db
+        .select({
+          id: commissions.id,
+          affiliateId: commissions.affiliateId,
+          status: commissions.status,
+          amountCents: commissions.amountCents,
+          payoutBatchId: commissions.payoutBatchId,
+        })
+        .from(commissions)
+        .where(eq(commissions.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Commission not found" });
+        return;
+      }
+
+      if (existing.status === "clawed_back") {
+        res.status(409).json({
+          error: "Commission is already clawed back",
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      // Clawback only applies once the money has actually left: a paid
+      // commission, or one scheduled in a payout already sent/paid. Anything
+      // earlier is still recoverable in place via /reverse.
+      let disbursed = existing.status === "paid";
+      if (!disbursed && existing.status === "scheduled_for_payout" && existing.payoutBatchId) {
+        const [payout] = await db
+          .select({ status: payouts.status })
+          .from(payouts)
+          .where(eq(payouts.id, existing.payoutBatchId))
+          .limit(1);
+        disbursed = !!payout && (payout.status === "sent" || payout.status === "paid");
+      }
+
+      if (!disbursed) {
+        res.status(409).json({
+          error:
+            "This commission's money has not been disbursed yet — use Reverse instead. Clawback is only for paid commissions or those in an already-sent payout.",
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      const result = await db.transaction(async (tx) => {
+        // Status-guarded flip — loses gracefully to a concurrent reverse/clawback.
+        const [row] = await tx
+          .update(commissions)
+          .set({ status: "clawed_back", clawbackReason: reason, updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(commissions.id, id),
+              notInArray(commissions.status, ["clawed_back", "reversed"]),
+            ),
+          )
+          .returning({
+            id: commissions.id,
+            status: commissions.status,
+            clawbackReason: commissions.clawbackReason,
+          });
+
+        if (!row) return null;
+
+        const clawback = await recordClawback(tx, {
+          affiliateId: existing.affiliateId,
+          sourceCommissionId: id,
+          originAmountCents: existing.amountCents,
+          reason: "admin_manual",
+          createdByUserId: reviewerId,
+          notes: reason,
+        });
+
+        return { commission: row, clawbackId: clawback?.id ?? null };
+      });
+
+      if (!result) {
+        res.status(409).json({
+          error: "Commission is already clawed back",
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      logger.info(
+        {
+          commissionId: id,
+          affiliateId: existing.affiliateId,
+          priorStatus: existing.status,
+          reason,
+        },
+        "Commission clawed back by admin",
+      );
+
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "Failed to claw back commission");
+      res.status(500).json({ error: "Failed to claw back commission" });
+    }
+  });
+
   // ── PUT /commissions/:id/hold — Put commission on hold ───────────────────
   router.put("/commissions/:id/hold", async (req, res) => {
     try {
@@ -1771,6 +1946,7 @@ export function affiliateAdminRoutes(db: Db): Router {
           affiliateId: payouts.affiliateId,
           affiliateName: affiliates.name,
           amountCents: payouts.amountCents,
+          clawbackAppliedCents: payouts.clawbackAppliedCents,
           commissionCount: payouts.commissionCount,
           method: payouts.method,
           externalId: payouts.externalId,
@@ -1819,42 +1995,70 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const [existing] = await db
-        .select({ id: payouts.id, status: payouts.status })
-        .from(payouts)
-        .where(eq(payouts.id, id))
-        .limit(1);
+      const outcome = await db.transaction(async (tx) => {
+        // Lock the payout row so two concurrent mark-sent calls can't both net
+        // clawback recovery and double-recover the same balance.
+        const [locked] = await tx
+          .select({
+            id: payouts.id,
+            status: payouts.status,
+            affiliateId: payouts.affiliateId,
+            amountCents: payouts.amountCents,
+          })
+          .from(payouts)
+          .where(eq(payouts.id, id))
+          .limit(1)
+          .for("update");
 
-      if (!existing) {
+        if (!locked) return { kind: "not_found" as const };
+        if (locked.status !== "scheduled") return { kind: "conflict" as const, status: locked.status };
+
+        // Net outstanding clawbacks against this payout's gross. amountCents
+        // stays the gross sum of linked commissions (so the reversal guard is
+        // unaffected); clawbackAppliedCents records the withheld portion. Net
+        // cash actually disbursed = amountCents - clawbackAppliedCents.
+        const applied = await applyClawbackRecovery(tx, locked.affiliateId, locked.amountCents);
+
+        const setFields: Record<string, unknown> = {
+          status: "sent",
+          sentAt: sql`now()`,
+          externalId,
+          clawbackAppliedCents: applied,
+          updatedAt: sql`now()`,
+        };
+        if (method && typeof method === "string" && method.trim().length > 0) {
+          setFields.method = method;
+        }
+
+        const [row] = await tx
+          .update(payouts)
+          .set(setFields)
+          .where(eq(payouts.id, id))
+          .returning();
+
+        return { kind: "ok" as const, payout: row, applied };
+      });
+
+      if (outcome.kind === "not_found") {
         res.status(404).json({ error: "Payout not found" });
         return;
       }
-
-      if (existing.status !== "scheduled") {
+      if (outcome.kind === "conflict") {
         res.status(409).json({
-          error: `Cannot mark payout sent in status '${existing.status}'`,
+          error: `Cannot mark payout sent in status '${outcome.status}'`,
           code: "INVALID_STATUS_TRANSITION",
         });
         return;
       }
 
-      const updateFields: Record<string, unknown> = {
-        status: "sent",
-        sentAt: sql`now()`,
-        externalId,
-        updatedAt: sql`now()`,
-      };
-      if (method && typeof method === "string" && method.trim().length > 0) {
-        updateFields.method = method;
+      if (outcome.applied > 0) {
+        logger.info(
+          { payoutId: id, clawbackAppliedCents: outcome.applied },
+          "Clawback recovery applied to payout at mark-sent",
+        );
       }
 
-      const [updated] = await db
-        .update(payouts)
-        .set(updateFields)
-        .where(eq(payouts.id, id))
-        .returning();
-
-      res.json({ payout: updated });
+      res.json({ payout: outcome.payout });
     } catch (err) {
       logger.error({ err }, "Failed to mark payout sent");
       res.status(500).json({ error: "Failed to mark payout sent" });
@@ -1913,6 +2117,64 @@ export function affiliateAdminRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to mark payout paid");
       res.status(500).json({ error: "Failed to mark payout paid" });
+    }
+  });
+
+  // ── GET /clawbacks — List clawback obligations (board auth) ───────────────
+  router.get("/clawbacks", async (req, res) => {
+    try {
+      assertBoard(req);
+
+      const affiliateIdFilter = req.query.affiliateId as string | undefined;
+      const statusParam = req.query.status as string | undefined;
+
+      const conditions = [] as ReturnType<typeof eq>[];
+      if (affiliateIdFilter) {
+        conditions.push(eq(affiliateClawbacks.affiliateId, affiliateIdFilter));
+      }
+      if (statusParam) {
+        const statusList = statusParam.split(",").map((s) => s.trim()).filter(Boolean);
+        if (statusList.length === 1) conditions.push(eq(affiliateClawbacks.status, statusList[0]));
+        else if (statusList.length > 1) conditions.push(inArray(affiliateClawbacks.status, statusList));
+      }
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const baseQuery = db
+        .select({
+          id: affiliateClawbacks.id,
+          affiliateId: affiliateClawbacks.affiliateId,
+          affiliateName: affiliates.name,
+          sourceCommissionId: affiliateClawbacks.sourceCommissionId,
+          leadName: partnerCompanies.name,
+          originAmountCents: affiliateClawbacks.originAmountCents,
+          recoveredCents: affiliateClawbacks.recoveredCents,
+          status: affiliateClawbacks.status,
+          reason: affiliateClawbacks.reason,
+          notes: affiliateClawbacks.notes,
+          windowExpiresAt: affiliateClawbacks.windowExpiresAt,
+          createdByUserId: affiliateClawbacks.createdByUserId,
+          createdAt: affiliateClawbacks.createdAt,
+          updatedAt: affiliateClawbacks.updatedAt,
+        })
+        .from(affiliateClawbacks)
+        .leftJoin(affiliates, eq(affiliates.id, affiliateClawbacks.affiliateId))
+        .leftJoin(commissions, eq(commissions.id, affiliateClawbacks.sourceCommissionId))
+        .leftJoin(partnerCompanies, eq(partnerCompanies.id, commissions.leadId));
+
+      const rows = await (where ? baseQuery.where(where) : baseQuery).orderBy(
+        desc(affiliateClawbacks.createdAt),
+      );
+
+      res.json({
+        clawbacks: rows.map((r) => ({
+          ...r,
+          remainingCents: Math.max(0, r.originAmountCents - r.recoveredCents),
+        })),
+        total: rows.length,
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to list clawbacks (admin)");
+      res.status(500).json({ error: "Failed to list clawbacks" });
     }
   });
 

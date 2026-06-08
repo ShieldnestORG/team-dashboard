@@ -24,6 +24,7 @@
 import express from "express";
 import request from "supertest";
 import { SQL } from "drizzle-orm";
+import { affiliateClawbacks } from "@paperclipai/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/stripe-client.js", () => ({
@@ -107,29 +108,28 @@ function createDbStub(opts: {
     const chain = {
       values(v: unknown) {
         capturedValues = v;
-        return {
-          async onConflictDoNothing() {
-            calls.inserts.push({
-              table,
-              values: capturedValues,
-              hadOnConflict: true,
-            });
+        // After onConflictDoNothing the caller may either await directly or
+        // chain .returning() (recordClawback does the latter). Support both.
+        const afterConflict = {
+          async returning(_cols: unknown) {
+            calls.inserts.push({ table, values: capturedValues, hadOnConflict: true });
             return opts.insertResult ?? [];
           },
+          then(onFulfilled?: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) {
+            calls.inserts.push({ table, values: capturedValues, hadOnConflict: true });
+            return Promise.resolve(opts.insertResult ?? []).then(onFulfilled, onRejected);
+          },
+        };
+        return {
+          onConflictDoNothing(_target?: unknown) {
+            return afterConflict;
+          },
           then(onFulfilled?: (v: unknown) => unknown) {
-            calls.inserts.push({
-              table,
-              values: capturedValues,
-              hadOnConflict: false,
-            });
+            calls.inserts.push({ table, values: capturedValues, hadOnConflict: false });
             return Promise.resolve(opts.insertResult ?? []).then(onFulfilled);
           },
           async returning(_cols: unknown) {
-            calls.inserts.push({
-              table,
-              values: capturedValues,
-              hadOnConflict: false,
-            });
+            calls.inserts.push({ table, values: capturedValues, hadOnConflict: false });
             return opts.insertResult ?? [];
           },
         };
@@ -496,12 +496,14 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
   });
 
   // ---- case 6 ---------------------------------------------------------------
-  it("charge.refunded SQL CASE maps already-paid commissions to 'clawed_back'", async () => {
-    // Same handler path as case 5. We re-assert that the CASE has the
-    // `WHEN status = 'paid' THEN 'clawed_back'` branch (shape inspection — we
-    // cannot run SQL without a live DB).
+  it("charge.refunded SQL CASE maps already-paid commissions to 'clawed_back' AND opens a clawback obligation", async () => {
+    // Same handler path as case 5, but the commission was already 'paid' (money
+    // disbursed). Besides the CASE flip, the handler must open a recovery
+    // obligation in affiliate_clawbacks for the now-clawed-back commission.
     const { db, calls } = createDbStub({
-      selectRows: () => [{ status: "paid", amountCents: 1000, payoutBatchId: null }],
+      selectRows: () => [
+        { id: "comm-9", affiliateId: "aff-9", status: "paid", amountCents: 1000, payoutBatchId: null },
+      ],
     });
     const { app } = makeApp(db);
 
@@ -531,6 +533,19 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
     // branch per-row.
     expect(rendered).toMatch(/WHEN.*=.*'paid'.*THEN.*'clawed_back'/s);
     expect(rendered).toMatch(/ELSE\s+'reversed'/s);
+
+    // A clawback ledger row is opened (idempotently, via onConflictDoNothing) for
+    // the disbursed commission, with the right affiliate / source / amount / reason.
+    const clawbackInsert = calls.inserts.find((i) => i.table === affiliateClawbacks);
+    expect(clawbackInsert).toBeDefined();
+    expect(clawbackInsert!.hadOnConflict).toBe(true);
+    const cv = clawbackInsert!.values as Record<string, unknown>;
+    expect(cv.affiliateId).toBe("aff-9");
+    expect(cv.sourceCommissionId).toBe("comm-9");
+    expect(cv.originAmountCents).toBe(1000);
+    expect(cv.reason).toBe("stripe_refund");
+    // window_expires_at is a SQL fragment (now() + interval), not a JS Date.
+    expect(cv.windowExpiresAt).toBeInstanceOf(SQL);
   });
 
   // ---- case 7 ---------------------------------------------------------------

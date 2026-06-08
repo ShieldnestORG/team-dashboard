@@ -29,6 +29,7 @@ import {
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { decrementUnsentPayouts } from "../services/payout-adjust.js";
+import { recordClawback } from "../services/clawback.js";
 import { assertBoard } from "./authz.js";
 import { HttpError } from "../errors.js";
 
@@ -249,6 +250,7 @@ export function affiliateComplianceRoutes(db: Db): Router {
         // parent payout totals can be decremented in the same transaction.
         const affected = await tx
           .select({
+            id: commissions.id,
             status: commissions.status,
             amountCents: commissions.amountCents,
             payoutBatchId: commissions.payoutBatchId,
@@ -267,6 +269,21 @@ export function affiliateComplianceRoutes(db: Db): Router {
           .returning({ id: commissions.id });
 
         await decrementUnsentPayouts(tx, affected);
+
+        // Open a recovery obligation for each commission whose money was already
+        // disbursed ('paid' pre-flip → now 'clawed_back'). Idempotent per source
+        // commission, so re-enforcing a violation records nothing new.
+        for (const c of affected) {
+          if (c.status === "paid") {
+            await recordClawback(tx, {
+              affiliateId: existing.affiliateId,
+              sourceCommissionId: c.id,
+              originAmountCents: c.amountCents,
+              reason: "compliance_violation",
+              createdByUserId: reviewerId,
+            });
+          }
+        }
 
         const [updatedViolation] = await tx
           .update(affiliateViolations)

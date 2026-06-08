@@ -134,6 +134,7 @@ export function AffiliateDashboard() {
   const [scheduledCents, setScheduledCents] = useState(0);
   const [paidCents, setPaidCents] = useState(0);
   const [lifetimeCents, setLifetimeCents] = useState(0);
+  const [clawbackBalanceCents, setClawbackBalanceCents] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,6 +189,7 @@ export function AffiliateDashboard() {
         setScheduledCents(meRes.scheduledCents ?? 0);
         setPaidCents(meRes.paidCents ?? 0);
         setLifetimeCents(meRes.lifetimeCents ?? 0);
+        setClawbackBalanceCents(meRes.clawbackBalanceCents ?? 0);
         setProspects(prospectsRes.prospects);
         if (meRes.affiliate.status === "active" && !meRes.affiliate.policyAcceptedAt) {
           setShowPolicyModal(true);
@@ -632,6 +634,35 @@ export function AffiliateDashboard() {
             </a>
           </section>
         </Cascade>
+
+        {/* Outstanding clawback balance — money owed back, netted from future payouts */}
+        {clawbackBalanceCents > 0 && (
+          <Cascade index={2}>
+            <a
+              href="/payouts"
+              className="block p-4 transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: "rgba(217,67,67,0.08)",
+                border: `1px solid rgba(217,67,67,0.35)`,
+                borderRadius: 10,
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p style={{ fontFamily: FONT_MONO, fontSize: "0.625rem", letterSpacing: "0.12em", textTransform: "uppercase", color: CD.danger }}>
+                    Outstanding clawback
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: CD.muted }}>
+                    Recovered from your future payouts until cleared.
+                  </p>
+                </div>
+                <span style={{ fontFamily: FONT_MONO, fontSize: "1.25rem", fontWeight: 600, color: CD.danger, fontVariantNumeric: "tabular-nums" }}>
+                  {formatDollars(clawbackBalanceCents)}
+                </span>
+              </div>
+            </a>
+          </Cascade>
+        )}
 
         {/* Phase 4 widgets — tier + leaderboard */}
         {(tier || leaderboardTop5.length > 0) && (

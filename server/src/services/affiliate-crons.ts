@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
+  affiliateClawbacks,
   affiliateEngagement,
   affiliateTiers,
   affiliates,
@@ -269,6 +270,46 @@ export function startAffiliateCrons(db: Db): void {
       );
 
       return { batchMonth, batched, skipped, failed, totalCents };
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // affiliate:clawback-writeoff — daily 04:30 UTC
+  // Net-against-future-earnings policy: a clawback obligation not fully recovered
+  // before window_expires_at is flagged 'written_off' (we never invoice the
+  // affiliate). Only touches rows still open/recovering with a remaining balance.
+  // ---------------------------------------------------------------------------
+  registerCronJob({
+    jobName: "affiliate:clawback-writeoff",
+    schedule: "30 4 * * *",
+    ownerAgent: "nova",
+    sourceFile: "affiliate-crons.ts",
+    handler: async () => {
+      const writtenOff = await db
+        .update(affiliateClawbacks)
+        .set({ status: "written_off", updatedAt: sql`now()` })
+        .where(
+          and(
+            inArray(affiliateClawbacks.status, ["open", "recovering"]),
+            lt(affiliateClawbacks.windowExpiresAt, sql`now()`),
+            sql`${affiliateClawbacks.recoveredCents} < ${affiliateClawbacks.originAmountCents}`,
+          ),
+        )
+        .returning({
+          id: affiliateClawbacks.id,
+          affiliateId: affiliateClawbacks.affiliateId,
+          remainingCents: sql<number>`${affiliateClawbacks.originAmountCents} - ${affiliateClawbacks.recoveredCents}`,
+        });
+
+      if (writtenOff.length > 0) {
+        const totalWrittenOffCents = writtenOff.reduce((sum, r) => sum + Number(r.remainingCents), 0);
+        logger.info(
+          { count: writtenOff.length, totalWrittenOffCents },
+          "affiliate:clawback-writeoff wrote off expired clawback obligations",
+        );
+      }
+
+      return { writtenOff: writtenOff.length };
     },
   });
 

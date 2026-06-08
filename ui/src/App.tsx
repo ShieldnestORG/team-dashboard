@@ -88,6 +88,7 @@ import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
 import { AffiliateResetPassword } from "./pages/AffiliateResetPassword";
 import { AffiliateAdminCommissions } from "./pages/AffiliateAdminCommissions";
 import { AffiliateAdminPayouts } from "./pages/AffiliateAdminPayouts";
+import { AffiliateAdminClawbacks } from "./pages/AffiliateAdminClawbacks";
 import { AffiliateAdminLeads } from "./pages/AffiliateAdminLeads";
 import { AffiliateAdminLeadDetail } from "./pages/AffiliateAdminLeadDetail";
 import { AffiliateAdminCompliance } from "./pages/AffiliateAdminCompliance";
@@ -265,6 +266,7 @@ function boardRoutes() {
       <Route path="affiliates/attribution" element={<AffiliateAdminLeads />} />
       <Route path="affiliates/commissions" element={<AffiliateAdminCommissions />} />
       <Route path="affiliates/payouts" element={<AffiliateAdminPayouts />} />
+      <Route path="affiliates/clawbacks" element={<AffiliateAdminClawbacks />} />
       <Route path="affiliates/compliance" element={<AffiliateAdminCompliance />} />
       <Route path="affiliates/engagement" element={<AffiliateAdminEngagement />} />
       <Route path="affiliates/tiers" element={<AffiliateAdminTiers />} />

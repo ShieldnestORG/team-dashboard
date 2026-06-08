@@ -79,6 +79,8 @@ export type PayoutStatus = "scheduled" | "sent" | "paid" | "failed";
 export interface Payout {
   id: string;
   amountCents: number;
+  /** Withheld at mark-sent to repay clawbacks. Net cash = amountCents - this. */
+  clawbackAppliedCents?: number;
   commissionCount: number;
   method: PayoutMethod | string;
   externalId: string | null;
@@ -90,6 +92,26 @@ export interface Payout {
   createdAt: string;
 }
 
+export type ClawbackStatus = "open" | "recovering" | "recovered" | "written_off";
+
+export interface Clawback {
+  id: string;
+  sourceCommissionId: string;
+  leadName: string | null;
+  originAmountCents: number;
+  recoveredCents: number;
+  remainingCents: number;
+  status: ClawbackStatus | string;
+  reason: string;
+  windowExpiresAt: string;
+  createdAt: string;
+}
+
+export interface ListClawbacksResponse {
+  clawbacks: Clawback[];
+  balanceCents: number;
+}
+
 export interface AffiliateMeResponse {
   affiliate: Affiliate;
   prospectCount: number;
@@ -99,6 +121,8 @@ export interface AffiliateMeResponse {
   scheduledCents: number;
   paidCents: number;
   lifetimeCents: number;
+  /** Outstanding clawback balance, netted against future payouts. */
+  clawbackBalanceCents?: number;
 }
 
 export interface ListEarningsResponse {
@@ -309,6 +333,9 @@ export const affiliatesApi = {
 
   listPayouts: () =>
     affiliateRequest<ListPayoutsResponse>("/payouts"),
+
+  listClawbacks: () =>
+    affiliateRequest<ListClawbacksResponse>("/clawbacks"),
 
   acceptPolicy: () =>
     affiliateRequest<{ acceptedAt: string }>("/accept-policy", { method: "POST" }),
