@@ -162,8 +162,12 @@ function createDbStub(opts: {
     return chain;
   });
 
-  const dbStub = { select, insert, update } as unknown as import("@paperclipai/db").Db;
-  return { db: dbStub, calls, select, insert, update };
+  const transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+    cb({ select, insert, update }),
+  );
+
+  const dbStub = { select, insert, update, transaction } as unknown as import("@paperclipai/db").Db;
+  return { db: dbStub, calls, select, insert, update, transaction };
 }
 
 function makeApp(
@@ -426,7 +430,10 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
 
   // ---- case 5 ---------------------------------------------------------------
   it("charge.refunded updates commissions via CASE expression (reverses pending rows)", async () => {
-    const { db, calls } = createDbStub({ selectRows: () => [] });
+    // Non-batched commission: handler snapshots it, flips it, no payout to touch.
+    const { db, calls } = createDbStub({
+      selectRows: () => [{ status: "approved", amountCents: 1000, payoutBatchId: null }],
+    });
     const { app } = makeApp(db);
 
     const event = {
@@ -467,7 +474,9 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
     // Same handler path as case 5. We re-assert that the CASE has the
     // `WHEN status = 'paid' THEN 'clawed_back'` branch (shape inspection — we
     // cannot run SQL without a live DB).
-    const { db, calls } = createDbStub({ selectRows: () => [] });
+    const { db, calls } = createDbStub({
+      selectRows: () => [{ status: "paid", amountCents: 1000, payoutBatchId: null }],
+    });
     const { app } = makeApp(db);
 
     const event = {

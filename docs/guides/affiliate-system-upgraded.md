@@ -388,6 +388,32 @@ Exposed concepts: when commission starts · recurring vs one-time · payout sche
 4. Payout sent → **Paid**
 5. Cancellation / refund inside rules → **Reversed** or **Clawed Back**
 
+**Reversal guard (payout integrity).** A payout row's `amount` / `commission_count`
+are frozen when the monthly batcher cuts the batch and are never recomputed. So
+`PUT /commissions/:id/reverse` is gated on how far the money has moved:
+- **Pending Activation / Approved / Held** → reversible; no payout exists yet.
+- **Scheduled for Payout, parent payout still `scheduled`** → reversible; the
+  parent payout's `amount` and `commission_count` are decremented in the same
+  transaction so the batch total stays accurate.
+- **Scheduled for Payout, parent payout `sent`**, or commission **Paid** → blocked
+  (`409 INVALID_STATUS_TRANSITION`). The funds are in flight / disbursed;
+  rewriting the batch total would falsify it. These cases belong to a dedicated
+  clawback flow (against future earnings), not an in-place status flip.
+
+(`/hold` is already gated to Pending Activation / Approved, so it can never touch
+a batched or paid commission.)
+
+**Automatic reversal paths share the same payout adjustment.** Reversals also
+happen without an admin: the `charge.refunded` Stripe webhook
+(`directory-listings.ts`) and the compliance-violation clawback
+(`affiliate-compliance.ts`). Unlike the manual route, these *must* record the
+event (a refund/violation already happened), so they never block — instead they
+flip the commission (`paid → clawed_back`, else `→ reversed`) and call the shared
+`decrementUnsentPayouts` helper (`services/payout-adjust.ts`), which decrements
+only parent payouts still `scheduled`. Sent/paid payouts are left untouched so a
+disbursed batch total is never falsified. The helper is idempotent: re-delivered
+webhooks whose rows are already reversed decrement nothing.
+
 **Example business rules**
 - Payout cycle: monthly
 - Minimum threshold: configurable

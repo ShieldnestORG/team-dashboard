@@ -27,6 +27,15 @@ import { sendTransactional } from "../services/email-templates.js";
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
+// Thrown inside a transaction to signal a 409 (vs a 500). Lets us roll back the
+// tx and still return a precise client error instead of "Internal error".
+class StatusConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StatusConflictError";
+  }
+}
+
 // ── Simple in-memory rate limiter for auth endpoints ────────────────────────
 // Limits: 10 attempts per IP per 15-minute window
 // Resets automatically via TTL cleanup; safe for single-server deployment.
@@ -1564,7 +1573,12 @@ export function affiliateAdminRoutes(db: Db): Router {
       }
 
       const [existing] = await db
-        .select({ id: commissions.id, status: commissions.status })
+        .select({
+          id: commissions.id,
+          status: commissions.status,
+          amountCents: commissions.amountCents,
+          payoutBatchId: commissions.payoutBatchId,
+        })
         .from(commissions)
         .where(eq(commissions.id, id))
         .limit(1);
@@ -1574,18 +1588,98 @@ export function affiliateAdminRoutes(db: Db): Router {
         return;
       }
 
-      const [updated] = await db
-        .update(commissions)
-        .set({ status: "reversed", clawbackReason: reason, updatedAt: sql`now()` })
-        .where(eq(commissions.id, id))
-        .returning({
-          id: commissions.id,
-          status: commissions.status,
-          clawbackReason: commissions.clawbackReason,
+      // Source-status guard. A commission may only be reversed while its money
+      // has not yet left: pending_activation / approved / held, or
+      // scheduled_for_payout while the parent payout is still 'scheduled'
+      // (handled in the tx below, where the payout total is also decremented).
+      // Once the payout is 'sent' or the commission is 'paid', the amount is a
+      // historical fact — reversing it here would falsify the payout total, so
+      // we block it and leave clawbacks to a dedicated future flow.
+      if (existing.status === "reversed") {
+        res.status(409).json({
+          error: "Commission is already reversed",
+          code: "INVALID_STATUS_TRANSITION",
         });
+        return;
+      }
+      if (existing.status === "paid") {
+        res.status(409).json({
+          error:
+            "Cannot reverse a paid commission — the payout has already been disbursed. Use a clawback against future earnings instead.",
+          code: "INVALID_STATUS_TRANSITION",
+        });
+        return;
+      }
+
+      let updated;
+      try {
+        updated = await db.transaction(async (tx) => {
+          // If the commission was already batched, decrement the parent payout's
+          // frozen amountCents / commissionCount in the SAME tx so the batch
+          // total never overstates what's owed. Only safe while the payout is
+          // still 'scheduled' — once it's 'sent', the funds are in flight.
+          if (existing.status === "scheduled_for_payout") {
+            if (!existing.payoutBatchId) {
+              // Inconsistent data: fail loud rather than silently overstate.
+              throw new StatusConflictError(
+                "Commission is scheduled_for_payout but has no parent payout batch",
+              );
+            }
+
+            const [payout] = await tx
+              .select({ id: payouts.id, status: payouts.status })
+              .from(payouts)
+              .where(eq(payouts.id, existing.payoutBatchId))
+              .limit(1);
+
+            if (!payout) {
+              throw new StatusConflictError("Parent payout batch not found");
+            }
+            if (payout.status !== "scheduled") {
+              throw new StatusConflictError(
+                `Cannot reverse — parent payout is already '${payout.status}'. The funds are in flight; use a clawback instead.`,
+              );
+            }
+
+            await tx
+              .update(payouts)
+              .set({
+                amountCents: sql`${payouts.amountCents} - ${existing.amountCents}`,
+                commissionCount: sql`${payouts.commissionCount} - 1`,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(payouts.id, existing.payoutBatchId));
+          }
+
+          const [row] = await tx
+            .update(commissions)
+            .set({ status: "reversed", clawbackReason: reason, updatedAt: sql`now()` })
+            .where(eq(commissions.id, id))
+            .returning({
+              id: commissions.id,
+              status: commissions.status,
+              clawbackReason: commissions.clawbackReason,
+            });
+          return row;
+        });
+      } catch (txErr) {
+        if (txErr instanceof StatusConflictError) {
+          res.status(409).json({
+            error: txErr.message,
+            code: "INVALID_STATUS_TRANSITION",
+          });
+          return;
+        }
+        throw txErr;
+      }
 
       logger.info(
-        { commissionId: id, priorStatus: existing.status, reason },
+        {
+          commissionId: id,
+          priorStatus: existing.status,
+          payoutBatchId: existing.payoutBatchId,
+          reason,
+        },
         "Commission reversed by admin",
       );
 
