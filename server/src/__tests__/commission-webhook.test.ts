@@ -48,7 +48,7 @@ import { directoryListingsWebhookRoutes } from "../routes/directory-listings.ts"
 type CallLog = {
   selects: Array<{ fromTable: unknown }>;
   inserts: Array<{ table: unknown; values: unknown; hadOnConflict: boolean }>;
-  updates: Array<{ table: unknown; set: unknown; wherePassed: boolean }>;
+  updates: Array<{ table: unknown; set: unknown; wherePassed: boolean; where: unknown }>;
 };
 
 type SelectRowProvider = (calls: CallLog) => unknown[];
@@ -146,9 +146,9 @@ function createDbStub(opts: {
         capturedSet = v;
         return chain;
       },
-      where(_cond: unknown) {
+      where(cond: unknown) {
         whereCalled = true;
-        calls.updates.push({ table, set: capturedSet, wherePassed: whereCalled });
+        calls.updates.push({ table, set: capturedSet, wherePassed: whereCalled, where: cond });
         return {
           async returning(_cols: unknown) {
             return [];
@@ -188,6 +188,32 @@ function makeApp(
 
 function stripeSigHeaders() {
   return { "stripe-signature": "t=0,v1=stub" };
+}
+
+/**
+ * Recursively walk a drizzle SQL condition tree (from `and` / `eq` /
+ * `notInArray`) and collect every embedded string — literal SQL chunks
+ * (`StringChunk.value` is a string[]) and bound param values (`Param.value`).
+ * Lets a test assert on the *shape* of a WHERE clause without a live DB.
+ */
+function collectSqlStrings(node: unknown, acc: string[] = []): string[] {
+  if (node == null) return acc;
+  if (Array.isArray(node)) {
+    for (const n of node) collectSqlStrings(n, acc);
+    return acc;
+  }
+  if (typeof node === "string") {
+    acc.push(node);
+    return acc;
+  }
+  if (typeof node === "object") {
+    const o = node as { value?: unknown; queryChunks?: unknown };
+    if (Array.isArray(o.value)) acc.push(o.value.join("")); // StringChunk
+    else if (typeof o.value === "string") acc.push(o.value); // Param
+    if (Array.isArray(o.queryChunks)) collectSqlStrings(o.queryChunks, acc);
+    if (o.value != null && typeof o.value === "object") collectSqlStrings(o.value, acc);
+  }
+  return acc;
 }
 
 describe("handlePartnerStripeEvent — commission ledger", () => {
@@ -505,6 +531,43 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
     // branch per-row.
     expect(rendered).toMatch(/WHEN.*=.*'paid'.*THEN.*'clawed_back'/s);
     expect(rendered).toMatch(/ELSE\s+'reversed'/s);
+  });
+
+  // ---- case 7 ---------------------------------------------------------------
+  it("charge.refunded guards terminal rows: WHERE excludes already reversed/clawed_back so a re-delivery can't downgrade clawed_back→reversed", async () => {
+    // Stripe re-delivers webhooks. A commission set to 'clawed_back' on the
+    // first delivery must NOT be flipped to 'reversed' on a duplicate delivery
+    // (clawed_back means money was disbursed and recovery is owed). The handler
+    // enforces this with a WHERE notInArray(status, ['reversed','clawed_back'])
+    // guard so terminal rows are never re-touched. We can't run SQL without a
+    // live DB, so we inspect the WHERE condition's SQL tree for the guard.
+    const { db, calls } = createDbStub({
+      // Simulate the row as it exists on the SECOND delivery: already terminal.
+      selectRows: () => [{ status: "clawed_back", amountCents: 1000, payoutBatchId: null }],
+    });
+    const { app } = makeApp(db);
+
+    const event = {
+      type: "charge.refunded",
+      data: {
+        object: {
+          id: "ch_refund_redeliver",
+          invoice: "in_already_clawed",
+          metadata: { source: "partner_network" },
+        },
+      },
+    };
+
+    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+
+    expect(calls.updates).toHaveLength(1);
+    const strings = collectSqlStrings(calls.updates[0].where);
+    // The guard must compare against the status column with `not in` and name
+    // both terminal states as bound params — that's what keeps a re-delivered
+    // refund from rewriting a clawed_back row back to reversed.
+    expect(strings.some((s) => /not in/i.test(s))).toBe(true);
+    expect(strings).toContain("reversed");
+    expect(strings).toContain("clawed_back");
   });
 
   if (ORIGINAL_SECRET === undefined) {

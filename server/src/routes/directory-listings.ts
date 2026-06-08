@@ -8,7 +8,7 @@
 
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   affiliates,
@@ -642,6 +642,9 @@ async function handlePartnerStripeEvent(
 
       // If the commission was already paid, flag it 'clawed_back' (requires admin
       // follow-up). Otherwise it's simply 'reversed' — idempotent by state.
+      // Already-terminal rows ('reversed'/'clawed_back') are left untouched so a
+      // re-delivered refund webhook can't downgrade a 'clawed_back' row (money
+      // disbursed, recovery needed) back to 'reversed' and lose that distinction.
       // If it was already batched (scheduled_for_payout) and the parent payout
       // hasn't been sent yet, decrement that payout's frozen total in the same
       // transaction so the batch doesn't pay out a refunded commission.
@@ -667,7 +670,12 @@ async function handlePartnerStripeEvent(
               clawbackReason: "stripe_refund",
               updatedAt: sql`now()`,
             })
-            .where(eq(commissions.stripeInvoiceId, charge.invoice as string));
+            .where(
+              and(
+                eq(commissions.stripeInvoiceId, charge.invoice as string),
+                notInArray(commissions.status, ["reversed", "clawed_back"]),
+              ),
+            );
 
           await decrementUnsentPayouts(tx, affected);
         });
