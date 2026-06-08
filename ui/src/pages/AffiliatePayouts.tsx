@@ -116,9 +116,10 @@ export function AffiliatePayouts() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Net cash actually received = gross minus any clawback withheld at send time.
   const totalPaidCents = payouts
     .filter((p) => p.status === "paid")
-    .reduce((sum, p) => sum + (p.amountCents || 0), 0);
+    .reduce((sum, p) => sum + Math.max(0, (p.amountCents || 0) - (p.clawbackAppliedCents ?? 0)), 0);
 
   return (
     <CDPage>
@@ -220,8 +221,16 @@ export function AffiliatePayouts() {
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <Mono style={{ color: CD.ink, fontWeight: 600 }}>
-                          {formatDollars(p.amountCents)}
+                          {formatDollars(p.amountCents - (p.clawbackAppliedCents ?? 0))}
                         </Mono>
+                        {(p.clawbackAppliedCents ?? 0) > 0 && (
+                          <Mono
+                            className="block"
+                            style={{ color: CD.danger, fontSize: "0.625rem", fontWeight: 400 }}
+                          >
+                            −{formatDollars(p.clawbackAppliedCents ?? 0)} clawback
+                          </Mono>
+                        )}
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell text-right">
                         <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>

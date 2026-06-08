@@ -24,6 +24,7 @@ import {
 } from "../services/directory-listings.js";
 import { verifyStripeSignature, stripeRequest } from "../services/stripe-client.js";
 import { decrementUnsentPayouts } from "../services/payout-adjust.js";
+import { recordClawback } from "../services/clawback.js";
 import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { logger } from "../middleware/logger.js";
 import { sendTransactional } from "../services/email-templates.js";
@@ -654,6 +655,8 @@ async function handlePartnerStripeEvent(
           // payout adjustment can see which ones were scheduled_for_payout.
           const affected = await tx
             .select({
+              id: commissions.id,
+              affiliateId: commissions.affiliateId,
               status: commissions.status,
               amountCents: commissions.amountCents,
               payoutBatchId: commissions.payoutBatchId,
@@ -678,6 +681,21 @@ async function handlePartnerStripeEvent(
             );
 
           await decrementUnsentPayouts(tx, affected);
+
+          // Rows whose money was already disbursed ('paid' pre-flip → now
+          // 'clawed_back') open a recovery obligation netted against future
+          // payouts. recordClawback is idempotent (unique on source commission),
+          // so a re-delivered refund webhook records nothing the second time.
+          for (const c of affected) {
+            if (c.status === "paid") {
+              await recordClawback(tx, {
+                affiliateId: c.affiliateId,
+                sourceCommissionId: c.id,
+                originAmountCents: c.amountCents,
+                reason: "stripe_refund",
+              });
+            }
+          }
         });
 
         logger.info(

@@ -157,6 +157,31 @@ export interface ListPayoutsAdminFilters {
   affiliateId?: string;
 }
 
+export type ClawbackStatus = "open" | "recovering" | "recovered" | "written_off";
+
+export interface AdminClawback {
+  id: string;
+  affiliateId: string;
+  affiliateName: string | null;
+  sourceCommissionId: string;
+  leadName: string | null;
+  originAmountCents: number;
+  recoveredCents: number;
+  remainingCents: number;
+  status: ClawbackStatus | string;
+  reason: string;
+  notes: string | null;
+  windowExpiresAt: string;
+  createdByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListClawbacksAdminFilters {
+  affiliateId?: string;
+  status?: string;
+}
+
 async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/affiliates/admin${path}`, {
     ...init,
@@ -221,6 +246,21 @@ export const affiliatesAdminApi = {
       method: "PUT",
       body: JSON.stringify({ reason }),
     }),
+
+  clawbackCommission: (id: string, reason: string) =>
+    adminRequest<{ commission: AdminCommission; clawbackId: string | null }>(`/commissions/${id}/clawback`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+
+  // --- Clawbacks ---
+  listClawbacks: (filters: ListClawbacksAdminFilters = {}) =>
+    adminRequest<{ clawbacks: AdminClawback[]; total: number }>(
+      `/clawbacks${buildQuery({
+        affiliateId: filters.affiliateId,
+        status: filters.status,
+      })}`,
+    ),
 
   // --- Payouts ---
   listPayoutsAdmin: (filters: ListPayoutsAdminFilters = {}) =>

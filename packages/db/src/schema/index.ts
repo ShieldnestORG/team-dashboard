@@ -86,6 +86,7 @@ export { affiliates } from "./affiliates.js";
 export { referralAttribution } from "./referral_attribution.js";
 export { payouts } from "./payouts.js";
 export { commissions } from "./commissions.js";
+export { affiliateClawbacks } from "./affiliate_clawbacks.js";
 export { crmActivities } from "./crm_activities.js";
 export { attributionOverrides } from "./attribution_overrides.js";
 export { affiliateTiers } from "./affiliate_tiers.js";

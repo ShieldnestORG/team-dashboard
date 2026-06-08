@@ -496,7 +496,19 @@ function PayoutTable({
                 </td>
                 <td className="px-4 py-3 text-sm font-medium text-foreground">{p.affiliateName}</td>
                 <td className="px-4 py-3 text-right font-semibold text-foreground whitespace-nowrap">
-                  {formatDollars(p.amountCents)}
+                  {(p.clawbackAppliedCents ?? 0) > 0 ? (
+                    <>
+                      {formatDollars(p.amountCents - (p.clawbackAppliedCents ?? 0))}
+                      <span className="block text-[10px] font-normal text-red-500">
+                        −{formatDollars(p.clawbackAppliedCents ?? 0)} clawback
+                      </span>
+                      <span className="block text-[10px] font-normal text-muted-foreground">
+                        gross {formatDollars(p.amountCents)}
+                      </span>
+                    </>
+                  ) : (
+                    formatDollars(p.amountCents)
+                  )}
                 </td>
                 <td className="px-4 py-3 hidden sm:table-cell text-right text-xs text-muted-foreground">
                   {p.commissionCount}
