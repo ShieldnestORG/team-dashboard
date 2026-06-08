@@ -28,6 +28,7 @@ import {
   type AffiliateViolationEvidence,
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { decrementUnsentPayouts } from "../services/payout-adjust.js";
 import { assertBoard } from "./authz.js";
 import { HttpError } from "../errors.js";
 
@@ -244,6 +245,17 @@ export function affiliateComplianceRoutes(db: Db): Router {
           conds.push(eq(commissions.leadId, existing.leadId));
         }
 
+        // Snapshot affected commissions BEFORE the flip so any still-unsent
+        // parent payout totals can be decremented in the same transaction.
+        const affected = await tx
+          .select({
+            status: commissions.status,
+            amountCents: commissions.amountCents,
+            payoutBatchId: commissions.payoutBatchId,
+          })
+          .from(commissions)
+          .where(and(...conds));
+
         const clawedBack = await tx
           .update(commissions)
           .set({
@@ -253,6 +265,8 @@ export function affiliateComplianceRoutes(db: Db): Router {
           })
           .where(and(...conds))
           .returning({ id: commissions.id });
+
+        await decrementUnsentPayouts(tx, affected);
 
         const [updatedViolation] = await tx
           .update(affiliateViolations)

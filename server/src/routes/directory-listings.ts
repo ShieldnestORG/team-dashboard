@@ -23,6 +23,7 @@ import {
   type ListingTierSlug,
 } from "../services/directory-listings.js";
 import { verifyStripeSignature, stripeRequest } from "../services/stripe-client.js";
+import { decrementUnsentPayouts } from "../services/payout-adjust.js";
 import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { logger } from "../middleware/logger.js";
 import { sendTransactional } from "../services/email-templates.js";
@@ -641,15 +642,35 @@ async function handlePartnerStripeEvent(
 
       // If the commission was already paid, flag it 'clawed_back' (requires admin
       // follow-up). Otherwise it's simply 'reversed' — idempotent by state.
+      // If it was already batched (scheduled_for_payout) and the parent payout
+      // hasn't been sent yet, decrement that payout's frozen total in the same
+      // transaction so the batch doesn't pay out a refunded commission.
       try {
-        await db
-          .update(commissions)
-          .set({
-            status: sql`CASE WHEN ${commissions.status} = 'paid' THEN 'clawed_back' ELSE 'reversed' END`,
-            clawbackReason: "stripe_refund",
-            updatedAt: sql`now()`,
-          })
-          .where(eq(commissions.stripeInvoiceId, charge.invoice));
+        await db.transaction(async (tx) => {
+          // Snapshot the affected commissions' state BEFORE the flip so the
+          // payout adjustment can see which ones were scheduled_for_payout.
+          const affected = await tx
+            .select({
+              status: commissions.status,
+              amountCents: commissions.amountCents,
+              payoutBatchId: commissions.payoutBatchId,
+            })
+            .from(commissions)
+            .where(eq(commissions.stripeInvoiceId, charge.invoice as string));
+
+          if (affected.length === 0) return;
+
+          await tx
+            .update(commissions)
+            .set({
+              status: sql`CASE WHEN ${commissions.status} = 'paid' THEN 'clawed_back' ELSE 'reversed' END`,
+              clawbackReason: "stripe_refund",
+              updatedAt: sql`now()`,
+            })
+            .where(eq(commissions.stripeInvoiceId, charge.invoice as string));
+
+          await decrementUnsentPayouts(tx, affected);
+        });
 
         logger.info(
           { chargeId: charge.id, invoiceId: charge.invoice },
