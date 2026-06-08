@@ -402,12 +402,15 @@ export async function getAutomationHealth(
   // --- Warnings ---
   const warnings: string[] = [];
 
-  if (process.env.YT_PIPELINE_ENABLED !== "true") {
+  // The cron gate (yt-crons.ts) is `YT_PIPELINE_ENABLED !== "false"` — i.e.
+  // default-enabled, dormant ONLY when explicitly set to "false". Mirror that
+  // sense here, and match the actual job-name prefix ("yt:", not "youtube:").
+  if (process.env.YT_PIPELINE_ENABLED === "false") {
     const ytJobs = jobSnapshots.filter((j) =>
-      j.jobName.toLowerCase().startsWith("youtube:"),
+      j.jobName.toLowerCase().startsWith("yt:"),
     ).length;
     warnings.push(
-      `YT_PIPELINE_ENABLED is unset — YouTube cron pipeline is dormant${
+      `YT_PIPELINE_ENABLED=false — YouTube cron pipeline is dormant${
         ytJobs ? ` (${ytJobs} jobs affected)` : ""
       }`,
     );

@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   affiliates,
@@ -245,6 +245,12 @@ export function affiliateComplianceRoutes(db: Db): Router {
         if (existing.leadId) {
           conds.push(eq(commissions.leadId, existing.leadId));
         }
+        // Only act on commissions that aren't already in a terminal state.
+        // Without this, re-enforcing a violation rewrites the clawbackReason and
+        // updatedAt of previously reversed/clawed-back rows, falsifying their
+        // audit trail. (decrementUnsentPayouts self-filters to scheduled rows, so
+        // excluding terminal rows from the snapshot is safe.)
+        conds.push(notInArray(commissions.status, ["reversed", "clawed_back", "written_off"]));
 
         // Snapshot affected commissions BEFORE the flip so any still-unsent
         // parent payout totals can be decremented in the same transaction.

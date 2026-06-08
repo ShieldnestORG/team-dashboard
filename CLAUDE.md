@@ -117,3 +117,4 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Tutorials Hub](docs/products/tutorials-hub.md) — `coherencedaddy.com/tutorials/<slug>` content surface: registry, subdirectory-vs-subdomain decision, add-a-tutorial checklist, AdSense behavior.
 - [Launch Monitor](docs/products/launch-monitor.md) — HN/Reddit/dev.to launch-post comment poller + Haiku pattern classifier + human-in-the-loop reply queue at `/socials/launch-monitor`.
 - [Video Edit](docs/products/video-edit.md) — Sibling to the YouTube synth pipeline. Edits **real footage** via browser-use/video-use at `/video-edit`. Backend + UI shipped; engine integration pending `VIDEO_USE_BIN`. Automation TODO list lives in this doc.
+- [Watchtower](docs/products/watchtower.md) — $29/mo brand-mention monitor across five AI answer engines (ChatGPT, Claude, Perplexity, Gemini, Grok). Weekly digest + read-only run viewer; admin at `/watchtower`. In-house alternative to Profound/Peec.

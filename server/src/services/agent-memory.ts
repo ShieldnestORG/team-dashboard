@@ -178,7 +178,8 @@ export function agentMemoryService(db: Db) {
     async expireOldMemories(): Promise<number> {
       const deleted = await db
         .delete(agentMemory)
-        .where(lt(agentMemory.expiresAt, new Date()))
+        // SQL-side now() — never bind a JS Date as a param against the Neon pooler.
+        .where(lt(agentMemory.expiresAt, sql`now()`))
         .returning();
       if (deleted.length > 0) {
         logger.info({ count: deleted.length }, "Agent memory: expired old memories");

@@ -44,6 +44,13 @@ tmp/
 # Doc maintenance cursor
 .doc-review-cursor
 
+# One-off crawl dumps, DB-deletion backups, and scratch artifacts (never commit)
+cellebrite-*
+kg-*-backup-*.jsonl
+CD-og/
+CD-og.zip
+scripts/scratch/
+
 # Playwright
 tests/e2e/test-results/
 tests/e2e/playwright-report/

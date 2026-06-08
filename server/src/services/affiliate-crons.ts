@@ -801,10 +801,10 @@ export function startAffiliateCrons(db: Db): void {
     ownerAgent: "nova",
     sourceFile: "affiliate-crons.ts",
     handler: async () => {
-      const now = new Date();
-      const inactiveCutoff = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
-      const throttleCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
+      // Cutoffs are computed SQL-side (now() - interval) rather than bound as JS
+      // Dates — a JS Date param silently returns wrong/empty rows against the
+      // Neon pooler, which here would defeat the 30-day throttle and double-email
+      // affiliates. See feedback_drizzle_date_neon_pooler.
       const candidates = await db
         .select({
           id: affiliates.id,
@@ -819,7 +819,7 @@ export function startAffiliateCrons(db: Db): void {
             isNull(affiliates.suspendedAt),
             or(
               isNull(affiliates.lastLeadSubmittedAt),
-              lt(affiliates.lastLeadSubmittedAt, inactiveCutoff),
+              lt(affiliates.lastLeadSubmittedAt, sql`now() - interval '45 days'`),
             ),
           ),
         );
@@ -857,7 +857,7 @@ export function startAffiliateCrons(db: Db): void {
               eq(activityLog.action, REENGAGEMENT_ACTIVITY_ACTION),
               eq(activityLog.entityType, "affiliate"),
               eq(activityLog.entityId, aff.id),
-              gte(activityLog.createdAt, throttleCutoff),
+              gte(activityLog.createdAt, sql`now() - interval '30 days'`),
             ),
           )
           .orderBy(desc(activityLog.createdAt))

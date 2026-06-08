@@ -4,6 +4,39 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+## [2026-06-07] — Dashboard audit + production-readiness fixes
+
+Full parallel audit of the control plane (build/test health, routes, UI, crons,
+affiliate program, docs). Build was green throughout (server + UI typecheck clean,
+864 server tests passing). Findings + remaining to-do tracked in
+`docs/operations/dashboard-audit-2026-06-07.md`. Fixes shipped this pass:
+
+- **Affiliate double-email guard** — `affiliate:inactive-reengagement` computed its
+  45-day inactivity and 30-day throttle cutoffs as JS `Date` bound params, which
+  silently return wrong/empty rows against the Neon pooler (the documented footgun).
+  A failed throttle re-emails real affiliates. Converted to SQL-side
+  `now() - interval` (`affiliate-crons.ts`).
+- **`agent-memory.expireOldMemories`** — same footgun in a WHERE comparison; switched
+  to `sql\`now()\`` (`agent-memory.ts`).
+- **SystemHealth Nitter panel 401** — `/api/intel/nitter/*` required the ingest key,
+  but the admin UI authenticates by board cookie. Management endpoints now accept an
+  authenticated board admin OR the ingest key (`intel.ts`).
+- **Automation-health YouTube false alarm** — the warning fired on `!== "true"` while
+  the cron gate is `!== "false"` (default-on), and filtered on `youtube:` while jobs
+  are named `yt:` (matched zero). Both corrected (`automation-health.ts`).
+- **Compliance clawback audit integrity** — re-enforcing a violation rewrote the
+  `clawbackReason`/`updatedAt` of already-terminal commissions. Scoped to non-terminal
+  statuses (`affiliate-compliance.ts`).
+- **Repo hygiene** — gitignored ~13 MB of one-off crawl dumps / DB-deletion backups /
+  scratch artifacts; removed the orphan duplicate `docs/deploy/environment-variables.md`;
+  added Watchtower to the CLAUDE.md reference index.
+
+Documented-but-deferred (risk > reward for a same-day prod push): the broken Drizzle
+migrator (`_journal` stuck at 0050; psql workaround in force) + duplicate `0119`
+migration number; the empirically-working `cron-registry.ts` SET-value Date writes;
+SSRF guards that string-match hostnames without DNS resolution; and orphaned dead UI
+pages. See the audit doc.
+
 ## [2026-05-21] — Crawlee toolbelt (Phases 1-7) + reliability sweep
 
 ### Crawlee + Playwright toolbelt — 7 phases shipped same-day

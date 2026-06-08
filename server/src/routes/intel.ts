@@ -32,6 +32,23 @@ function requireIngestKey(
   next();
 }
 
+// Nitter instance management is reachable two ways: the admin dashboard (board
+// cookie session, set by actorMiddleware) and automated ingest callers (the
+// INTEL_INGEST_KEY header). The UI sends cookies only, so requiring the ingest
+// key alone 401'd the SystemHealth Nitter panel. Accept an authenticated board
+// admin OR a valid ingest key.
+function requireIngestKeyOrBoard(
+  req: import("express").Request,
+  res: import("express").Response,
+  next: import("express").NextFunction,
+) {
+  if (req.actor?.type === "board") {
+    next();
+    return;
+  }
+  requireIngestKey(req, res, next);
+}
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -141,7 +158,7 @@ export function intelRoutes(db: Db) {
 
   // ---- Protected write endpoints (require INTEL_INGEST_KEY) ----
 
-  router.post("/seed", requireIngestKey, async (_req, res) => {
+  router.post("/seed", requireIngestKeyOrBoard, async (_req, res) => {
     try {
       const result = await svc.seedCompanies();
       res.json(result);
@@ -151,7 +168,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/backfill", requireIngestKey, async (_req, res) => {
+  router.post("/backfill", requireIngestKeyOrBoard, async (_req, res) => {
     try {
       const result = await svc.backfillNewCompanies();
       res.json({ success: true, ...result });
@@ -161,7 +178,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/ingest/prices", requireIngestKey, async (req, res) => {
+  router.post("/ingest/prices", requireIngestKeyOrBoard, async (req, res) => {
     const limit = parseInt(req.query.limit as string ?? "90", 10);
     const offset = parseInt(req.query.offset as string ?? "0", 10);
     try {
@@ -173,7 +190,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/ingest/news", requireIngestKey, async (req, res) => {
+  router.post("/ingest/news", requireIngestKeyOrBoard, async (req, res) => {
     const limit = parseInt(req.query.limit as string ?? "30", 10);
     const offset = parseInt(req.query.offset as string ?? "0", 10);
     try {
@@ -185,7 +202,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/ingest/twitter", requireIngestKey, async (req, res) => {
+  router.post("/ingest/twitter", requireIngestKeyOrBoard, async (req, res) => {
     const limit = parseInt(req.query.limit as string ?? "20", 10);
     const offset = parseInt(req.query.offset as string ?? "0", 10);
     try {
@@ -197,7 +214,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/ingest/github", requireIngestKey, async (req, res) => {
+  router.post("/ingest/github", requireIngestKeyOrBoard, async (req, res) => {
     const limit = parseInt(req.query.limit as string ?? "15", 10);
     const offset = parseInt(req.query.offset as string ?? "0", 10);
     try {
@@ -209,7 +226,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/ingest/reddit", requireIngestKey, async (req, res) => {
+  router.post("/ingest/reddit", requireIngestKeyOrBoard, async (req, res) => {
     const limit = parseInt(req.query.limit as string ?? "20", 10);
     const offset = parseInt(req.query.offset as string ?? "0", 10);
     try {
@@ -223,7 +240,7 @@ export function intelRoutes(db: Db) {
 
   // ---- Discovery endpoints ----
 
-  router.get("/discoveries", requireIngestKey, async (_req, res) => {
+  router.get("/discoveries", requireIngestKeyOrBoard, async (_req, res) => {
     try {
       const discoveries = await discovery.listDiscoveries();
       res.json({ discoveries });
@@ -233,7 +250,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/discoveries/:id/approve", requireIngestKey, async (req, res) => {
+  router.post("/discoveries/:id/approve", requireIngestKeyOrBoard, async (req, res) => {
     try {
       const result = await discovery.approveDiscovery(parseInt(req.params.id as string, 10));
       res.json(result);
@@ -243,7 +260,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/discoveries/:id/reject", requireIngestKey, async (req, res) => {
+  router.post("/discoveries/:id/reject", requireIngestKeyOrBoard, async (req, res) => {
     try {
       const result = await discovery.rejectDiscovery(parseInt(req.params.id as string, 10));
       res.json(result);
@@ -253,7 +270,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/discover", requireIngestKey, async (_req, res) => {
+  router.post("/discover", requireIngestKeyOrBoard, async (_req, res) => {
     try {
       const result = await discovery.discoverNewProjects();
       res.json(result);
@@ -367,7 +384,7 @@ export function intelRoutes(db: Db) {
   // ── Nitter instance management ──────────────────────────────────────────────
   const nitterSvc = nitterHealthService(db);
 
-  router.get("/nitter/instances", requireIngestKey, async (_req, res) => {
+  router.get("/nitter/instances", requireIngestKeyOrBoard, async (_req, res) => {
     try {
       res.json({ instances: await nitterSvc.getInstances() });
     } catch (err) {
@@ -375,7 +392,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/nitter/instances", requireIngestKey, async (req, res) => {
+  router.post("/nitter/instances", requireIngestKeyOrBoard, async (req, res) => {
     try {
       const { url } = req.body as { url?: string };
       if (!url || !url.startsWith("http")) { res.status(400).json({ error: "Valid URL required" }); return; }
@@ -386,7 +403,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.delete("/nitter/instances", requireIngestKey, async (req, res) => {
+  router.delete("/nitter/instances", requireIngestKeyOrBoard, async (req, res) => {
     try {
       const { url } = req.body as { url?: string };
       if (!url) { res.status(400).json({ error: "URL required" }); return; }
@@ -397,7 +414,7 @@ export function intelRoutes(db: Db) {
     }
   });
 
-  router.post("/nitter/check", requireIngestKey, async (_req, res) => {
+  router.post("/nitter/check", requireIngestKeyOrBoard, async (_req, res) => {
     try {
       const result = await nitterSvc.runHealthCheck();
       res.json(result);
