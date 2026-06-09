@@ -1,6 +1,6 @@
 # Video Edit Pipeline
 
-Sibling to the [YouTube production pipeline](./tutorials-hub.md). Where YouTube
+Sibling to the YouTube production pipeline (`server/src/services/youtube/`). Where YouTube
 **synthesizes** videos from a topic (script → TTS → slide screenshots → MP4),
 the Video Edit pipeline **edits real footage** using
 [browser-use/video-use](https://github.com/browser-use/video-use).

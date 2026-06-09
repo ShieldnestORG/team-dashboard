@@ -38,7 +38,7 @@ Three GitHub accounts/orgs operate across this ecosystem. Be deliberate about wh
 | Identity | Type | Used for |
 |---|---|---|
 | **`ShieldNEST`** (HEAD_DEV, `nestd@pm.me`) | Personal user | Active dev account; owns no repos directly — admin in both orgs below |
-| **`ShieldnestORG`** | Org (private + public mix) | All ecosystem **infrastructure** repos: `coherencedaddy` (storefront), `team-dashboard` (this repo), `shieldnest_landing_page`, `tokns.fi_landing_page`, `tokns` (app.tokns.fi), validator scripts |
+| **`ShieldnestORG`** | Org (private + public mix) | All ecosystem **infrastructure** repos: `coherencedaddy` (storefront; cloned locally as `coherencedaddy-landing`), `team-dashboard` (this repo), `shieldnest_landing_page`, `tokns.fi_landing_page`, `tokns` (app.tokns.fi), validator scripts |
 | **`Coherence-Daddy`** | Org (public) | Public-facing **share-ready content** repos meant to be discovered, starred, and forked: tutorials, copy-paste prompts, demo code. First repo: [`use-ollama-to-enhance-claude`](https://github.com/Coherence-Daddy/use-ollama-to-enhance-claude) (launched 2026-04-25). |
 
 **Decision rule for a new repo:** infrastructure / private / proprietary → `ShieldnestORG`. Tutorial / hero asset / something we *want* random builders on Twitter to fork → `Coherence-Daddy`.
@@ -75,7 +75,8 @@ Documentation must be updated whenever code structure or behavior changes.
 ## Structure Diagram Rules
 Any structural change must update the company structure diagram.
 - **Triggers**: New/removed backend services, routes, cron jobs, or plugin restructuring.
-- **Required**: Update persisted structure via API, update fallback `DEFAULT_DIAGRAM` in `ui/src/pages/Structure.tsx`, and include a dated changelog summary.
+- **Source of truth**: `docs/architecture/company-structure.mmd`. Edit it, push, and redeploy — the server auto-syncs it to the DB at boot (no API call, no SQL). `DEFAULT_DIAGRAM` in `ui/src/pages/Structure.tsx` is a Vite `?raw` import of that same file, so there is no separate fallback to hand-maintain.
+- **Also**: include a dated changelog summary. The `PUT /api/.../structure` endpoint is a legacy/emergency manual override only.
 - See: [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md)
 
 ## Pre-deploy (mandatory)
