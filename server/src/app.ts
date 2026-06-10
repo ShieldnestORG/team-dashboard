@@ -120,6 +120,7 @@ import { syncSocialAutomations } from "./services/socials/cron-introspect.js";
 import { startYouTubeCrons } from "./services/youtube/yt-crons.js";
 import { startVideoEditCrons } from "./services/video-edit/ve-crons.js";
 import { initVpsMonitor } from "./services/vps-monitor.js";
+import { startSyntheticMonitorCron } from "./services/synthetic-monitor-cron.js";
 import { knowledgeGraphRoutes } from "./routes/knowledge-graph.js";
 import { agentMemoryRoutes } from "./routes/agent-memory.js";
 import { startKnowledgeGraphCrons } from "./services/knowledge-graph-crons.js";
@@ -576,6 +577,9 @@ export async function createApp(
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
   initVpsMonitor(db);
+  // Synthetic uptime canary (Playwright) — NO-OP unless SYNTHETIC_MONITOR_ENABLED=true.
+  // Registers no cron and changes nothing when the flag is unset.
+  startSyntheticMonitorCron(db);
   // Sync registry to DB + start the single cron scheduler
   void syncCronRegistry(db)
     .then(() => {

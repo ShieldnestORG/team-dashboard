@@ -11,8 +11,9 @@
 // and Playwright load lazily, matching the pattern in `crawlee-fallback.ts`,
 // so absence of the libs never crashes the process.
 //
-// Stand-alone for this PR: no cron wiring, no DB writes. A follow-up will
-// schedule it and decide on persistence.
+// Cron wiring lives in `synthetic-monitor-cron.ts` (job
+// `monitor:synthetic-canary`, registered only when SYNTHETIC_MONITOR_ENABLED
+// is true). No DB writes yet — a follow-up will decide on persistence.
 // ---------------------------------------------------------------------------
 
 import { logger } from "../middleware/logger.js";

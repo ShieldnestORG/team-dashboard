@@ -103,11 +103,17 @@ export function agentOpsService(db: Db) {
         activeRunIssueMap = new Map(runIssues.map((r) => [r.agent_id, r]));
       }
 
-      // 5. Cron error counts per owner agent
+      // 5. Cron error counts + dead-man's-switch signal per owner agent.
+      // `lastSuccessAt` is the most recent tick of an ENABLED owned cron that
+      // finished without an error (last_error IS NULL). A cron-only agent that
+      // never sets lastHeartbeatAt drives all its work through these rows, so a
+      // stale/never-set lastSuccessAt is the only signal that it has gone dark.
       const cronRows = await db
         .select({
           ownerAgent: systemCrons.ownerAgent,
           totalErrors: sql<number>`coalesce(sum(${systemCrons.errorCount}), 0)::int`,
+          enabledCount: sql<number>`coalesce(sum(case when ${systemCrons.enabled} then 1 else 0 end), 0)::int`,
+          lastSuccessAt: sql<string | null>`max(case when ${systemCrons.enabled} and ${systemCrons.lastError} is null then ${systemCrons.lastRunAt} end)`,
         })
         .from(systemCrons)
         .where(sql`${systemCrons.ownerAgent} IS NOT NULL`)
@@ -212,6 +218,32 @@ export function agentOpsService(db: Db) {
             message: "No heartbeat in over 2 hours",
             timestamp: a.lastHeartbeatAt.toISOString(),
           });
+        }
+        // Dead-man's-switch for cron-only agents: those that never set a
+        // heartbeat (moltbook, nova, bridge, …) drive work through the cron
+        // registry. The heartbeat-based stale check above can never fire for
+        // them, so flag a never-run or stale-success owned-cron fleet instead.
+        // Only applies when (a) the agent has no heartbeat to judge by, (b) it
+        // owns at least one ENABLED cron, and (c) it isn't already paused/
+        // errored/awaiting approval (those have their own, clearer flags).
+        if (
+          !a.lastHeartbeatAt &&
+          a.status !== "paused" && a.status !== "error" && a.status !== "pending_approval" &&
+          (cronByName?.enabledCount ?? 0) > 0 &&
+          (activeRun?.activeCount ?? 0) === 0
+        ) {
+          const lastSuccess = cronByName?.lastSuccessAt
+            ? new Date(cronByName.lastSuccessAt)
+            : null;
+          if (!lastSuccess || now - lastSuccess.getTime() > STALE_THRESHOLD_MS) {
+            attentionRequired.push({
+              agentId: a.id, agentName: a.name, type: "cron_stale",
+              message: lastSuccess
+                ? "No successful cron run in over 2 hours"
+                : "Cron-only agent has never completed a successful run",
+              timestamp: lastSuccess?.toISOString() ?? null,
+            });
+          }
         }
 
         return entry;
