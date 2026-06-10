@@ -127,32 +127,47 @@ export function Sidebar() {
 
         <SidebarAgents />
 
-        <SidebarSection label="Company">
+        <SidebarSection label="Agents & Org" accentClassName="text-amber-400">
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/agent-ops" label="Agent Ops" icon={Radar} />
-          <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
-          <SidebarNavItem to="/approvals" label="Approvals" icon={CheckSquare} />
-          <SidebarNavItem to="/automation-health" label="Automation Health" icon={Activity} />
-          <SidebarNavItem to="/cities" label="City Collector" icon={MapPin} />
-          <SidebarNavItem to="/creditscore-review" label="CreditScore Review" icon={Gauge} />
-          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-          <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
-          <SidebarNavItem to="/intel" label="Intel" icon={Database} />
-          <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={CreditCard} />
-          <SidebarNavItem to="/watchtower" label="Watchtower" icon={Eye} />
-          <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
           <SidebarNavItem to="/org" label="Org" icon={Building2} />
-          <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
-          <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
-          <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
-          <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
-          <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-          <SidebarNavItem to="/socials" label="Socials & Content" icon={Share2} />
           <SidebarNavItem to="/structure" label="Structure" icon={GitBranch} />
-          <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
+          <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
+        </SidebarSection>
+
+        <SidebarSection label="Intel & Data" accentClassName="text-sky-400">
+          <SidebarNavItem to="/intel" label="Intel" icon={Database} />
+          <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
+          <SidebarNavItem to="/cities" label="City Collector" icon={MapPin} />
+          <SidebarNavItem to="/watchtower" label="Watchtower" icon={Eye} />
+        </SidebarSection>
+
+        <SidebarSection label="Content & Socials" accentClassName="text-violet-400">
+          <SidebarNavItem to="/socials" label="Socials & Content" icon={Share2} />
+        </SidebarSection>
+
+        <SidebarSection label="Products" accentClassName="text-emerald-400">
+          <SidebarNavItem to="/creditscore-review" label="CreditScore Review" icon={Gauge} />
+          <SidebarNavItem to="/video-edit" label="Video Edit" icon={Film} />
           <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />
           <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
-          <SidebarNavItem to="/video-edit" label="Video Edit" icon={Film} />
+        </SidebarSection>
+
+        <SidebarSection label="Monetization" accentClassName="text-rose-400">
+          <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
+          <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
+          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
+          <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={CreditCard} />
+        </SidebarSection>
+
+        <SidebarSection label="Ops & Admin" accentClassName="text-slate-400">
+          <SidebarNavItem to="/automation-health" label="Automation Health" icon={Activity} />
+          <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
+          <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
+          <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
+          <SidebarNavItem to="/approvals" label="Approvals" icon={CheckSquare} />
+          <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
+          <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
 
         <PluginSlotOutlet
