@@ -39,13 +39,33 @@ export function dashboardService(db: Db) {
         running: 0,
         paused: 0,
         error: 0,
+        idle: 0,
       };
       for (const row of agentRows) {
         const count = Number(row.count);
-        // "idle" agents are operational — count them as active
-        const bucket = row.status === "idle" ? "active" : row.status;
-        agentCounts[bucket] = (agentCounts[bucket] ?? 0) + count;
+        // Keep idle distinct from active — a fleet that has gone idle is NOT
+        // the same as a fleet actively working. Folding the two hid dead agents.
+        // Only known operational buckets are surfaced; terminal statuses
+        // (terminated/archived/pending_approval) are intentionally not counted
+        // as "enabled", matching prior behaviour.
+        if (row.status in agentCounts) {
+          agentCounts[row.status] += count;
+        }
       }
+
+      // Stale = no heartbeat in the last 2h while not paused/terminated. Cheap
+      // signal that a silently-stopped agent is not actually doing work.
+      const staleAgents = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.companyId, companyId),
+            sql`${agents.status} not in ('paused', 'terminated', 'archived')`,
+            sql`(${agents.lastHeartbeatAt} is null or ${agents.lastHeartbeatAt} < now() - interval '2 hours')`,
+          ),
+        )
+        .then((rows) => Number(rows[0]?.count ?? 0));
 
       const taskCounts: Record<string, number> = {
         open: 0,
@@ -89,6 +109,8 @@ export function dashboardService(db: Db) {
           running: agentCounts.running,
           paused: agentCounts.paused,
           error: agentCounts.error,
+          idle: agentCounts.idle,
+          stale: staleAgents,
         },
         tasks: taskCounts,
         costs: {

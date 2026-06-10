@@ -34,6 +34,17 @@ const adapterLabels: Record<string, string> = {
 
 const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 
+/** Threshold-color a heartbeat/last-run timestamp: green recent, amber, red >2h. */
+function heartbeatTone(date: Date | string | null | undefined): string {
+  if (!date) return "text-red-600 dark:text-red-400";
+  const ageMs = Date.now() - new Date(date).getTime();
+  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  const TEN_MIN = 10 * 60 * 1000;
+  if (ageMs > TWO_HOURS) return "text-red-600 dark:text-red-400";
+  if (ageMs > TEN_MIN) return "text-amber-600 dark:text-amber-400";
+  return "text-green-600 dark:text-green-400";
+}
+
 type FilterTab = "all" | "active" | "paused" | "error";
 
 function matchesFilter(status: string, tab: FilterTab, showTerminated: boolean): boolean {
@@ -265,8 +276,11 @@ export function Agents() {
                       <span className="text-xs text-muted-foreground font-mono w-14 text-right">
                         {adapterLabels[agent.adapterType] ?? agent.adapterType}
                       </span>
-                      <span className="text-xs text-muted-foreground w-16 text-right">
-                        {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+                      <span
+                        className={cn("text-xs w-16 text-right", heartbeatTone(agent.lastHeartbeatAt))}
+                        title="Last heartbeat"
+                      >
+                        {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "no beat"}
                       </span>
                       <span className="w-20 flex justify-end">
                         <StatusBadge status={agent.status} />
@@ -366,8 +380,11 @@ function OrgTreeNode({
                 <span className="text-xs text-muted-foreground font-mono w-14 text-right">
                   {adapterLabels[agent.adapterType] ?? agent.adapterType}
                 </span>
-                <span className="text-xs text-muted-foreground w-16 text-right">
-                  {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+                <span
+                  className={cn("text-xs w-16 text-right", heartbeatTone(agent.lastHeartbeatAt))}
+                  title="Last heartbeat"
+                >
+                  {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "no beat"}
                 </span>
               </>
             )}

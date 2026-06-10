@@ -44,7 +44,10 @@ export const statusBadge: Record<string, string> = {
   active: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
   running: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300",
   paused: "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300",
-  idle: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300",
+  // Idle is NOT a healthy green — a slate treatment makes "not working" legible.
+  idle: "bg-slate-200 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200",
+  // Stale = heartbeat overdue. Failure-adjacent, so amber not gray.
+  stale: "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300",
   archived: "bg-muted text-muted-foreground",
 
   // Goal statuses
@@ -85,8 +88,13 @@ export const statusBadgeDefault = "bg-muted text-muted-foreground";
 export const agentStatusDot: Record<string, string> = {
   running: "bg-cyan-400 animate-pulse",
   active: "bg-green-400",
-  paused: "bg-yellow-400",
-  idle: "bg-yellow-400",
+  paused: "bg-orange-400",
+  // Idle is distinct from a healthy green — slate signals "not working".
+  idle: "bg-slate-400",
+  // Failure-adjacent statuses get a non-gray, attention-drawing treatment.
+  stale: "bg-amber-400",
+  failed: "bg-red-400",
+  timed_out: "bg-orange-400",
   pending_approval: "bg-amber-400",
   error: "bg-red-400",
   archived: "bg-neutral-400",

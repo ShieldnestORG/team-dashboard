@@ -232,14 +232,29 @@ export function Dashboard() {
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
             <MetricCard
               icon={Bot}
-              value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
+              value={
+                data.agents.active +
+                data.agents.running +
+                data.agents.paused +
+                data.agents.error +
+                data.agents.idle
+              }
               label="Agents Enabled"
               to="/agents"
               description={
                 <span>
                   {data.agents.running} running{", "}
+                  {data.agents.idle} idle{", "}
                   {data.agents.paused} paused{", "}
-                  {data.agents.error} errors
+                  <span className={data.agents.error > 0 ? "text-red-600 dark:text-red-400" : undefined}>
+                    {data.agents.error} errors
+                  </span>
+                  {data.agents.stale > 0 && (
+                    <span className="text-amber-600 dark:text-amber-400">
+                      {" · "}
+                      {data.agents.stale} stale
+                    </span>
+                  )}
                 </span>
               }
             />

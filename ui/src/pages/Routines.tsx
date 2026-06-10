@@ -9,6 +9,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
+import { cn, relativeTime } from "../lib/utils";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -54,7 +55,18 @@ function autoResizeTextarea(element: HTMLTextAreaElement | null) {
 
 function formatLastRunTimestamp(value: Date | string | null | undefined) {
   if (!value) return "Never";
-  return new Date(value).toLocaleString();
+  return relativeTime(value);
+}
+
+/** Threshold-color a last-run timestamp: green recent, amber, red >2h. */
+function lastRunTone(date: Date | string | null | undefined): string {
+  if (!date) return "text-muted-foreground";
+  const ageMs = Date.now() - new Date(date).getTime();
+  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  const TEN_MIN = 10 * 60 * 1000;
+  if (ageMs > TWO_HOURS) return "text-red-600 dark:text-red-400";
+  if (ageMs > TEN_MIN) return "text-amber-600 dark:text-amber-400";
+  return "text-green-600 dark:text-green-400";
 }
 
 function nextRoutineStatus(currentStatus: string, enabled: boolean) {
@@ -569,10 +581,22 @@ export function Routines() {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        <div>{formatLastRunTimestamp(routine.lastRun?.triggeredAt)}</div>
+                      <td className="px-3 py-2.5">
+                        <div className={cn(lastRunTone(routine.lastRun?.triggeredAt))}>
+                          {formatLastRunTimestamp(routine.lastRun?.triggeredAt)}
+                        </div>
                         {routine.lastRun ? (
-                          <div className="mt-1 text-xs">{routine.lastRun.status.replaceAll("_", " ")}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {routine.lastRun.status.replaceAll("_", " ")}
+                          </div>
+                        ) : null}
+                        {routine.lastRun?.failureReason ? (
+                          <div
+                            className="mt-1 inline-flex max-w-[220px] items-center gap-1 truncate rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                            title={routine.lastRun.failureReason}
+                          >
+                            {routine.lastRun.failureReason}
+                          </div>
                         ) : null}
                       </td>
                       <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>

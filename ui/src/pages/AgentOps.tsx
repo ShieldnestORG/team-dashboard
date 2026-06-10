@@ -20,6 +20,17 @@ import { agentStatusDot, agentStatusDotDefault, statusBadge, statusBadgeDefault 
 import { agentUrl, cn, formatCents } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 
+/** Threshold-color a heartbeat/last-run timestamp: green recent, amber, red >2h. */
+function heartbeatTone(date: Date | string | null | undefined): string {
+  if (!date) return "text-red-600 dark:text-red-400";
+  const ageMs = Date.now() - new Date(date).getTime();
+  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  const TEN_MIN = 10 * 60 * 1000;
+  if (ageMs > TWO_HOURS) return "text-red-600 dark:text-red-400";
+  if (ageMs > TEN_MIN) return "text-amber-600 dark:text-amber-400";
+  return "text-green-600 dark:text-green-400";
+}
+
 function StatusDot({ status }: { status: string }) {
   return (
     <span
@@ -224,7 +235,7 @@ function AgentRow({
             <div className="flex items-center gap-2">
               <StatusBadge status={agent.lastRunStatus} />
               {agent.lastRunFinishedAt && (
-                <span className="text-xs text-muted-foreground">
+                <span className={cn("text-xs", heartbeatTone(agent.lastRunFinishedAt))}>
                   {timeAgo(agent.lastRunFinishedAt)}
                 </span>
               )}
@@ -236,7 +247,7 @@ function AgentRow({
 
         {/* Last heartbeat */}
         <td className="py-2.5 pr-3">
-          <span className="text-xs text-muted-foreground">
+          <span className={cn("text-xs", heartbeatTone(agent.lastHeartbeatAt))}>
             {agent.lastHeartbeatAt ? timeAgo(agent.lastHeartbeatAt) : "Never"}
           </span>
         </td>

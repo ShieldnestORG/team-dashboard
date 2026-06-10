@@ -5,6 +5,8 @@ export interface DashboardSummary {
     running: number;
     paused: number;
     error: number;
+    idle: number;
+    stale: number;
   };
   tasks: {
     open: number;
