@@ -2,6 +2,7 @@ import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
 import { sendAlert } from "./alerting.js";
 import { getLatestEval } from "./eval-store.js";
+import { getAutomationHealth } from "./automation-health.js";
 import type { Db } from "@paperclipai/db";
 
 async function checkHealth(): Promise<void> {
@@ -49,6 +50,46 @@ async function dailyDigest(): Promise<void> {
   }
 }
 
+/**
+ * Watchdog: scan automation-health for enabled cron jobs that are either
+ * critically stale (missed multiple expected runs) or erroring on their last
+ * run, and fire a single aggregated alert. Runs ~every 15 min; the
+ * type-level cooldown in sendAlert() dedups so it can't spam.
+ */
+async function cronWatchdog(db: Db): Promise<void> {
+  const health = await getAutomationHealth(db);
+
+  const unhealthy = health.crons.jobs.filter(
+    (j) => j.enabled && (j.staleness === "critical" || j.lastError !== null),
+  );
+
+  if (unhealthy.length === 0) {
+    logger.debug("Cron watchdog: all enabled jobs healthy");
+    return;
+  }
+
+  const lines = unhealthy.map((j) => {
+    const reason =
+      j.staleness === "critical" && j.lastError
+        ? `critically stale + erroring`
+        : j.staleness === "critical"
+          ? `critically stale (no recent run)`
+          : `erroring`;
+    const err = j.lastError ? ` — ${j.lastError}` : "";
+    return `• ${j.jobName} (${j.ownerAgent}): ${reason}${err}`;
+  });
+
+  const body = `${unhealthy.length} enabled cron job${
+    unhealthy.length === 1 ? "" : "s"
+  } unhealthy:\n\n${lines.join("\n")}\n\nReview /automation-health for details.`;
+
+  await sendAlert(
+    "cron_stale",
+    `${unhealthy.length} cron job${unhealthy.length === 1 ? "" : "s"} unhealthy`,
+    body,
+  );
+}
+
 export function startAlertCrons(db?: Db) {
   registerCronJob({ jobName: "alert:health-check", schedule: "*/5 * * * *", ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: checkHealth });
   registerCronJob({ jobName: "alert:digest",       schedule: "0 7 * * *",   ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: dailyDigest });
@@ -80,8 +121,20 @@ export function startAlertCrons(db?: Db) {
         return { checked: true };
       },
     });
+
+    // Self-healing watchdog — every 15 min, alert on stale/erroring cron jobs.
+    registerCronJob({
+      jobName: "alert:cron-watchdog",
+      schedule: "*/15 * * * *",
+      ownerAgent: "nova",
+      sourceFile: "alert-crons.ts",
+      handler: async () => {
+        await cronWatchdog(db);
+        return { checked: true };
+      },
+    });
   }
 
-  const jobCount = db ? 4 : 2;
+  const jobCount = db ? 5 : 2;
   logger.info({ count: jobCount }, "Alert cron jobs registered");
 }

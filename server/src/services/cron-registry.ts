@@ -12,6 +12,7 @@ import type { Db } from "@paperclipai/db";
 import { systemCrons, socialAutomations } from "@paperclipai/db";
 import { parseCron, nextCronTick } from "./cron.js";
 import { logger } from "../middleware/logger.js";
+import { sendAlert } from "./alerting.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,9 +51,45 @@ interface RegisteredJob {
   handler: () => Promise<unknown>;
   running: boolean;
   nextRun: Date | null;
+  // Self-healing: consecutive failures since the last success. Reset to 0 on
+  // any successful run; incremented in the tick's catch. Kept in-memory only
+  // (no migration) — resets on process restart, which is the desired behavior.
+  consecutiveFailures: number;
+  // True once the circuit breaker has auto-disabled this job, so we only fire
+  // one alert + one auto-pause per crash-loop episode (not every tick).
+  breakerTripped: boolean;
 }
 
 const registry = new Map<string, RegisteredJob>();
+
+// ---------------------------------------------------------------------------
+// Circuit breaker config (env-gated, no migration — in-memory state only)
+// ---------------------------------------------------------------------------
+
+const CIRCUIT_BREAKER_THRESHOLD = Math.max(
+  1,
+  Number(process.env.CRON_CIRCUIT_BREAKER_THRESHOLD) || 5,
+);
+// Auto-pause behaviour defaults ON; alert-only when explicitly "false".
+const CIRCUIT_BREAKER_ENABLED =
+  (process.env.CRON_CIRCUIT_BREAKER_ENABLED ?? "true") !== "false";
+
+/**
+ * Safely parse a cron expression. parseCron() THROWS on invalid syntax; this
+ * wrapper converts a throw into null so a single bad schedule degrades only
+ * that one job instead of taking down registration or the tick loop.
+ */
+function safeParseCron(expression: string): ReturnType<typeof parseCron> | null {
+  try {
+    return parseCron(expression);
+  } catch (err) {
+    logger.warn(
+      { err, expression },
+      "Invalid cron expression — job will not be scheduled until corrected",
+    );
+    return null;
+  }
+}
 
 // DB state cache (refreshed from DB on each tick)
 let dbState = new Map<string, {
@@ -71,9 +108,16 @@ let dbState = new Map<string, {
 // ---------------------------------------------------------------------------
 
 export function registerCronJob(def: CronJobDefinition): void {
-  const parsed = parseCron(def.schedule);
+  const parsed = safeParseCron(def.schedule);
   const nextRun = parsed ? nextCronTick(parsed, new Date()) : null;
-  registry.set(def.jobName, { def, handler: def.handler, running: false, nextRun });
+  registry.set(def.jobName, {
+    def,
+    handler: def.handler,
+    running: false,
+    nextRun,
+    consecutiveFailures: 0,
+    breakerTripped: false,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +128,7 @@ export async function syncCronRegistry(db: Db): Promise<void> {
   for (const [jobName, entry] of registry) {
     const { def } = entry;
     const effectiveSchedule = def.schedule;
-    const parsed = parseCron(effectiveSchedule);
+    const parsed = safeParseCron(effectiveSchedule);
     const nextRunAt = parsed ? nextCronTick(parsed, new Date()) : null;
 
     // Upsert: insert if missing, update schedule/owner/source if changed
@@ -175,7 +219,7 @@ export function startCronScheduler(db: Db): () => void {
 
       // Recompute nextRun if schedule changed
       if (!entry.nextRun) {
-        const parsed = parseCron(effectiveSchedule);
+        const parsed = safeParseCron(effectiveSchedule);
         entry.nextRun = parsed ? nextCronTick(parsed, new Date()) : null;
       }
 
@@ -190,6 +234,10 @@ export function startCronScheduler(db: Db): () => void {
         await entry.handler();
         const durationMs = Date.now() - startTime;
         logger.info({ job: jobName, ownerAgent: entry.def.ownerAgent, durationMs }, "Cron job completed");
+
+        // Self-healing: a clean run resets the circuit breaker.
+        entry.consecutiveFailures = 0;
+        entry.breakerTripped = false;
 
         // Update DB state
         await db
@@ -215,6 +263,9 @@ export function startCronScheduler(db: Db): () => void {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.error({ err, job: jobName, ownerAgent: entry.def.ownerAgent }, "Cron job failed");
 
+        // Self-healing: track consecutive failures for the circuit breaker.
+        entry.consecutiveFailures += 1;
+
         await db
           .update(systemCrons)
           .set({
@@ -235,11 +286,17 @@ export function startCronScheduler(db: Db): () => void {
           state.runCount = (state.runCount || 0) + 1;
           state.errorCount = (state.errorCount || 0) + 1;
         }
+
+        // Circuit breaker — must never throw back into the tick.
+        await tripCircuitBreakerIfNeeded(db, jobName, entry, errorMsg).catch(
+          (e) =>
+            logger.error({ e, job: jobName }, "Circuit breaker handler failed"),
+        );
       } finally {
         entry.running = false;
         // Compute next run
         const sched = (state?.scheduleOverride) || entry.def.schedule;
-        const parsed = parseCron(sched);
+        const parsed = safeParseCron(sched);
         entry.nextRun = parsed ? nextCronTick(parsed, new Date()) : null;
 
         // Update nextRunAt in DB
@@ -263,6 +320,73 @@ export function startCronScheduler(db: Db): () => void {
     schedulerInterval = null;
     schedulerDb = null;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Circuit breaker — self-healing for crash-looping jobs
+// ---------------------------------------------------------------------------
+
+/**
+ * Called from the tick's catch block after a failure. When a job crosses the
+ * consecutive-failure threshold, fire ONE alert (and, unless alert-only mode is
+ * configured, auto-disable the job through the registry's normal persisted
+ * update path so it stops re-running). Fires at most once per crash-loop
+ * episode — a later success resets `breakerTripped`.
+ *
+ * This function must never throw back into the tick; the caller also guards it.
+ */
+async function tripCircuitBreakerIfNeeded(
+  db: Db,
+  jobName: string,
+  entry: RegisteredJob,
+  lastError: string,
+): Promise<void> {
+  if (entry.consecutiveFailures < CIRCUIT_BREAKER_THRESHOLD) return;
+  if (entry.breakerTripped) return; // already handled this episode
+
+  entry.breakerTripped = true;
+
+  if (CIRCUIT_BREAKER_ENABLED) {
+    logger.warn(
+      {
+        job: jobName,
+        ownerAgent: entry.def.ownerAgent,
+        consecutiveFailures: entry.consecutiveFailures,
+        threshold: CIRCUIT_BREAKER_THRESHOLD,
+        lastError,
+      },
+      "Circuit breaker tripped — auto-disabling crash-looping cron job",
+    );
+    // Disable via the same persisted path the registry already uses, so it
+    // stops re-running and the change is reflected in DB + cache + UI.
+    const result = await updateCronJob(db, jobName, { enabled: false });
+    if (!result.ok) {
+      logger.error(
+        { job: jobName, error: result.error },
+        "Circuit breaker failed to auto-disable cron job",
+      );
+    }
+  } else {
+    logger.warn(
+      {
+        job: jobName,
+        ownerAgent: entry.def.ownerAgent,
+        consecutiveFailures: entry.consecutiveFailures,
+        threshold: CIRCUIT_BREAKER_THRESHOLD,
+        lastError,
+      },
+      "Circuit breaker threshold reached (auto-disable off) — alerting only",
+    );
+  }
+
+  const action = CIRCUIT_BREAKER_ENABLED
+    ? "Auto-disabled to stop the crash loop. Fix the underlying error, then re-enable from /automation-health."
+    : "Auto-disable is OFF (CRON_CIRCUIT_BREAKER_ENABLED=false); the job is still running. Fix the underlying error.";
+  await sendAlert(
+    "cron_stale",
+    `Cron job "${jobName}" crash-looping`,
+    `Job "${jobName}" (owner: ${entry.def.ownerAgent}, ${entry.def.sourceFile}) failed ${entry.consecutiveFailures} consecutive times (threshold ${CIRCUIT_BREAKER_THRESHOLD}).\n\nLast error: ${lastError}\n\n${action}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +471,7 @@ export async function triggerCronJob(jobName: string): Promise<{ ok: boolean; er
     entry.running = false;
     const state = dbState.get(jobName);
     const sched = state?.scheduleOverride || entry.def.schedule;
-    const parsed = parseCron(sched);
+    const parsed = safeParseCron(sched);
     entry.nextRun = parsed ? nextCronTick(parsed, new Date()) : null;
   }
 }
