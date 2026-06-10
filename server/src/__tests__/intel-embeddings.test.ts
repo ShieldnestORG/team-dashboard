@@ -69,4 +69,44 @@ describe("intel-embeddings request body", () => {
     expect(out).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------------------------
+  // Response-shape regression: the live TEI/BGE-M3 backend (VPS1, port 8080)
+  // returns a BARE `number[][]` array, not the `{ dense }` wrapper the code
+  // originally assumed. Reading `data.dense` yielded undefined and crashed
+  // every caller on `undefined[0]` — silent for weeks on prod ("TypeError:
+  // Cannot read properties of undefined (reading '0')" at getEmbedding,
+  // ~150/hr, embeddings stored NULL). These pin BOTH accepted shapes + the
+  // fail-loud path so the silent-NULL regression cannot return.
+  // -------------------------------------------------------------------------
+  it("getEmbeddings handles a bare TEI array response (number[][])", async () => {
+    fetchMock.mockResolvedValue(jsonResponse([[0.1, 0.2, 0.3]]));
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    const out = await getEmbeddings(["hello world"]);
+    expect(out).toEqual([[0.1, 0.2, 0.3]]);
+  });
+
+  it("getEmbedding returns the vector from a bare TEI array response", async () => {
+    fetchMock.mockResolvedValue(jsonResponse([[0.7, 0.8, 0.9]]));
+
+    const { getEmbedding } = await import("../services/intel-embeddings.js");
+    const vec = await getEmbedding("a single query");
+    expect(vec).toEqual([0.7, 0.8, 0.9]);
+  });
+
+  it("still accepts the legacy { dense } wrapper shape", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ dense: [[1, 2, 3]] }));
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    const out = await getEmbeddings(["x"]);
+    expect(out).toEqual([[1, 2, 3]]);
+  });
+
+  it("throws a clear error (not undefined[0]) on an unexpected response shape", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ unexpected: true }));
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    await expect(getEmbeddings(["x"])).rejects.toThrow(/unexpected shape/i);
+  });
 });

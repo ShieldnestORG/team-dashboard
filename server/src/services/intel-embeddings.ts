@@ -25,11 +25,26 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
     throw new Error(`Embedding service error (${res.status}): ${errorText}`);
   }
 
-  const data: EmbeddingResult = await res.json();
-  return data.dense;
+  // The embedding backend returns either a bare TEI array (`number[][]`) or a
+  // legacy `{ dense: number[][] }` wrapper, depending on which server is live.
+  // The TEI/BGE-M3 server currently in prod (VPS1) returns the bare array, so
+  // reading `data.dense` yields `undefined` and crashes callers on `undefined[0]`.
+  // Accept both shapes and fail loud on anything else.
+  const data = (await res.json()) as unknown;
+  const dense = Array.isArray(data) ? (data as number[][]) : (data as EmbeddingResult | null)?.dense;
+  if (!Array.isArray(dense)) {
+    throw new Error(
+      `Embedding service returned an unexpected shape (expected number[][] or { dense }): ${JSON.stringify(data).slice(0, 200)}`,
+    );
+  }
+  return dense;
 }
 
 export async function getEmbedding(text: string): Promise<number[]> {
   const results = await getEmbeddings([text]);
-  return results[0];
+  const vec = results[0];
+  if (!vec) {
+    throw new Error("Embedding service returned no vector for the input text");
+  }
+  return vec;
 }
