@@ -42,7 +42,7 @@
     "cross-env": "^10.1.0",
     "esbuild": "^0.27.3",
     "typescript": "^5.7.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   },
   "engines": {
     "node": ">=20"
@@ -50,17 +50,22 @@
   "packageManager": "pnpm@9.15.4",
   "pnpm": {
     "overrides": {
-      "axios": ">=1.15.0",
+      "axios": ">=1.16.0",
       "esbuild": ">=0.25.0",
       "follow-redirects": ">=1.16.0",
-      "hono": ">=4.12.14",
+      "hono": ">=4.12.18",
       "rollup": ">=4.59.0",
       "multer": ">=2.1.0",
       "picomatch": ">=4.0.4",
       "path-to-regexp": ">=8.4.0",
       "lodash-es": ">=4.18.0",
-      "kysely": ">=0.28.12",
+      "kysely": ">=0.28.17 <0.29",
       "fast-xml-parser": ">=5.5.7",
+      "fast-xml-builder": ">=1.1.7",
+      "fast-uri": ">=3.1.2 <4",
+      "react-router": ">=7.15.0",
+      "react-router-dom": ">=7.15.0",
+      "vitest": ">=3.2.6",
       "defu": ">=6.1.5"
     },
     "auditConfig": {
