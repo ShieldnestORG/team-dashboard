@@ -5,7 +5,6 @@ import {
   integer,
   numeric,
   timestamp,
-  index,
 } from "drizzle-orm/pg-core";
 
 export const validatorRankHistory = pgTable(
@@ -20,15 +19,7 @@ export const validatorRankHistory = pgTable(
     uptimePct: numeric("uptime_pct"),
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    lookupIdx: index("idx_validator_rank_history_lookup").on(
-      table.network,
-      table.moniker,
-      table.capturedAt,
-    ),
-    networkTimeIdx: index("idx_validator_rank_history_network_time").on(
-      table.network,
-      table.capturedAt,
-    ),
-  }),
+  // Indexes idx_validator_rank_history_lookup / _network_time dropped 2026-06-10:
+  // the table is write-only (inserted by cosmos-lcd.ts, never read), so both
+  // secondary indexes had 0 lifetime scans and only added write overhead.
 );
