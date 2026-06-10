@@ -164,10 +164,10 @@ export function graphQueryService(db: Db) {
         // Step 1: Vector search in intel_companies and knowledge_tags
         const companyMatches = await db.execute(sql`
           SELECT 'company' AS type, slug AS id, name,
-                 1 - (embedding <=> ${embeddingStr}::vector) AS similarity
+                 1 - (embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)) AS similarity
           FROM intel_reports
           WHERE embedding IS NOT NULL
-          ORDER BY embedding <=> ${embeddingStr}::vector
+          ORDER BY embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)
           LIMIT 10
         `) as unknown as Array<{ type: string; id: string; name: string; similarity: number }>;
 

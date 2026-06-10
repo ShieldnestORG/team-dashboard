@@ -432,12 +432,12 @@ export function intelService(db: Db) {
         r.body,
         r.source_url,
         r.captured_at,
-        1 - (r.embedding <=> ${embeddingStr}::vector) AS similarity
+        1 - (r.embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)) AS similarity
       FROM intel_reports r
       JOIN intel_companies c ON c.slug = r.company_slug
       WHERE r.embedding IS NOT NULL
         ${companyFilter}
-      ORDER BY r.embedding <=> ${embeddingStr}::vector
+      ORDER BY r.embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)
       LIMIT ${limit}
     `);
 

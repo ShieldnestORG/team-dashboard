@@ -94,10 +94,10 @@ async function fetchContext(db: Db, topic: string, limit = 5): Promise<string> {
     const results = (await db.execute(sql`
       SELECT
         r.headline, r.body, r.report_type, r.company_slug, r.captured_at,
-        1 - (r.embedding <=> ${embeddingStr}::vector) AS similarity
+        1 - (r.embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)) AS similarity
       FROM intel_reports r
       WHERE r.embedding IS NOT NULL
-      ORDER BY r.embedding <=> ${embeddingStr}::vector
+      ORDER BY r.embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)
       LIMIT ${limit}
     `)) as unknown as Array<Record<string, unknown>>;
 

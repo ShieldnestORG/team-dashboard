@@ -23,13 +23,13 @@ export async function isDuplicate(
 ): Promise<boolean> {
   try {
     const result = await db.execute(sql`
-      SELECT id, 1 - (embedding <=> ${embeddingStr}::vector) AS similarity
+      SELECT id, 1 - (embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)) AS similarity
       FROM intel_reports
       WHERE company_slug = ${companySlug}
         AND report_type = ${reportType}
         AND embedding IS NOT NULL
         AND captured_at > NOW() - INTERVAL '7 days'
-      ORDER BY embedding <=> ${embeddingStr}::vector
+      ORDER BY embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)
       LIMIT 1
     `) as unknown as Array<{ id: number; similarity: number }>;
 
@@ -339,12 +339,12 @@ export async function fetchQualityContext(
         r.report_type,
         r.company_slug,
         r.captured_at,
-        1 - (r.embedding <=> ${embeddingStr}::vector) AS similarity
+        1 - (r.embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)) AS similarity
       FROM intel_reports r
       WHERE r.embedding IS NOT NULL
         AND r.captured_at > NOW() - INTERVAL '7 days'
         AND r.report_type != 'discovery'
-      ORDER BY r.embedding <=> ${embeddingStr}::vector
+      ORDER BY r.embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)
       LIMIT ${limit * 3}
     `) as unknown as Array<Record<string, unknown>>;
 

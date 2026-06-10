@@ -124,7 +124,7 @@ async function fetchContext(db: Db, topic: string, limit = 5): Promise<string> {
         FROM intel_reports r
         WHERE r.embedding IS NOT NULL
           AND r.captured_at > NOW() - INTERVAL '7 days'
-        ORDER BY r.embedding <=> ${embeddingStr}::vector
+        ORDER BY r.embedding::halfvec(1024) <=> ${embeddingStr}::halfvec(1024)
         LIMIT ${limit}
       `) as unknown as Array<Record<string, unknown>>;
 
