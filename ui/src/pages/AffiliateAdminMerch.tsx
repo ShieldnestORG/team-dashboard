@@ -40,7 +40,7 @@ const STATUS_PILL: Record<string, { label: string; className: string }> = {
   approved: { label: "Approved", className: "bg-blue-500/15 text-blue-600 border-blue-500/30" },
   shipped: { label: "Shipped", className: "bg-violet-500/15 text-violet-600 border-violet-500/30" },
   delivered: { label: "Delivered", className: "bg-green-500/15 text-green-600 border-green-500/30" },
-  cancelled: { label: "Cancelled", className: "bg-red-500/15 text-red-600 border-red-500/30" },
+  canceled: { label: "Cancelled", className: "bg-red-500/15 text-red-600 border-red-500/30" },
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -58,7 +58,7 @@ const STATUS_OPTIONS = [
   { value: "approved", label: "Approved" },
   { value: "shipped", label: "Shipped" },
   { value: "delivered", label: "Delivered" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "canceled", label: "Cancelled" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ export function AffiliateAdminMerch() {
       setDialog((d) => ({ ...d, loading: true, error: null }));
       try {
         await affiliatesAdminApi.updateMerchRequest(dialog.request.id, {
-          status: "cancelled",
+          status: "canceled",
           notes: dialog.notes.trim() || undefined,
         });
         await refresh();

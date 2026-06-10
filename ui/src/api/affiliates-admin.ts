@@ -106,12 +106,14 @@ export interface CampaignPayload {
   status: CampaignStatus | string;
 }
 
+// Wire values must match the backend's VALID_MERCH_STATUSES exactly
+// (note: backend spells the canceled state with one "l").
 export type MerchRequestStatus =
   | "requested"
   | "approved"
   | "shipped"
   | "delivered"
-  | "cancelled";
+  | "canceled";
 
 export interface AdminMerchRequest {
   id: string;
@@ -272,8 +274,9 @@ export const affiliatesAdminApi = {
       })}`,
     ),
 
+  // Backend responds with { payout } (no `ok` field).
   markPayoutSent: (id: string, externalId: string, method?: PayoutMethod | string) =>
-    adminRequest<{ ok: boolean; payout?: AdminPayout }>(`/payouts/${id}/mark-sent`, {
+    adminRequest<{ payout?: AdminPayout }>(`/payouts/${id}/mark-sent`, {
       method: "PUT",
       body: JSON.stringify(method ? { externalId, method } : { externalId }),
     }),
@@ -318,10 +321,12 @@ export const affiliatesAdminApi = {
     }),
 
   // --- Engagement ---
-  listEngagementPosts: (status?: string) =>
-    adminRequest<AdminEngagementPost[]>(
+  // Backend returns { posts, total, limit, offset }; unwrap to the array so
+  // callers can iterate the posts directly.
+  listEngagementPosts: (status?: string): Promise<AdminEngagementPost[]> =>
+    adminRequest<{ posts: AdminEngagementPost[]; total: number; limit: number; offset: number }>(
       `/engagement/posts${buildQuery({ status })}`,
-    ),
+    ).then((res) => res.posts),
 
   scoreEngagementPost: (id: string, score: number, giveawayEligible: boolean) =>
     adminRequest<{ ok: boolean }>(`/engagement/posts/${id}/score`, {
@@ -330,8 +335,9 @@ export const affiliatesAdminApi = {
     }),
 
   // --- Tiers ---
-  listTiers: () =>
-    adminRequest<AdminTier[]>("/tiers"),
+  // Backend returns { tiers }; unwrap so callers get the array directly.
+  listTiers: (): Promise<AdminTier[]> =>
+    adminRequest<{ tiers: AdminTier[] }>("/tiers").then((res) => res.tiers),
 
   updateTier: (id: string, payload: UpdateTierPayload) =>
     adminRequest<{ ok: boolean }>(`/tiers/${id}`, {

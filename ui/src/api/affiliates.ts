@@ -156,6 +156,15 @@ export interface AffiliateProspect {
   affiliateNotes: string | null;
   storeNotes: string | null;
   createdAt: string;
+  /** First-touch the affiliate logged at submission. Mirrors the admin lead shape. */
+  firstTouch?: {
+    logged: boolean;
+    type: FirstTouchType | string | null;
+    date: string | null; // ISO
+    notes: string | null;
+    warmth: RelationshipWarmth | string | null;
+    closePath: ClosePreference | string | null;
+  };
 }
 
 // Phase 3 — affiliate-facing lead detail + timeline.

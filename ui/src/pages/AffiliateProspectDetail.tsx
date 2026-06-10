@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "@/lib/router";
 import { affiliatesApi, type AffiliateProspect } from "@/api/affiliates";
-import { ExternalLink, Globe, MapPin, Tag, ArrowLeft } from "lucide-react";
+import { ExternalLink, Globe, MapPin, Tag, ArrowLeft, Handshake, Flame, Calendar } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Tab definitions
@@ -58,6 +58,60 @@ function InfoRow({
   );
 }
 
+const FIRST_TOUCH_TYPE_LABELS: Record<string, string> = {
+  in_person: "In person",
+  call: "Phone call",
+  text: "Text message",
+  email: "Email",
+  social_dm: "Social DM",
+};
+
+const WARMTH_LABELS: Record<string, { label: string; className: string }> = {
+  strong: { label: "Warm intro", className: "bg-green-500/15 text-green-600 border-green-500/30" },
+  medium: { label: "Some rapport", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
+  weak: { label: "First contact", className: "bg-muted text-muted-foreground border-border" },
+};
+
+function FirstTouchCard({ prospect }: { prospect: AffiliateProspect }) {
+  const ft = prospect.firstTouch;
+
+  // Nothing to show unless the affiliate logged a first touch.
+  if (!ft || !ft.logged) return null;
+
+  const warmth = ft.warmth ? WARMTH_LABELS[ft.warmth] : undefined;
+  const typeLabel = ft.type ? FIRST_TOUCH_TYPE_LABELS[ft.type] ?? ft.type : null;
+  const dateLabel = ft.date ? new Date(ft.date).toLocaleDateString() : null;
+
+  return (
+    <div className="bg-card rounded-xl border border-border p-6 space-y-3">
+      <div className="flex items-center gap-2 mb-1">
+        <Handshake className="h-4 w-4 text-[#FF6B4A]" />
+        <h3 className="text-sm font-semibold text-foreground">First touch</h3>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-1 mb-3">
+        Warm intros move faster and help us prioritize outreach.
+      </p>
+      {warmth && (
+        <div className="flex items-center gap-2">
+          <Flame className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-xs text-muted-foreground w-20 shrink-0">Relationship</span>
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${warmth.className}`}>
+            {warmth.label}
+          </span>
+        </div>
+      )}
+      <InfoRow icon={Handshake} label="How" value={typeLabel} />
+      <InfoRow icon={Calendar} label="When" value={dateLabel} />
+      {ft.notes && (
+        <div className="pt-3 border-t border-border">
+          <p className="text-xs text-muted-foreground mb-1">Your notes</p>
+          <p className="text-sm text-foreground">{ft.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tab Content Components
 // ---------------------------------------------------------------------------
@@ -110,6 +164,9 @@ function OverviewTab({
           </div>
         )}
       </div>
+
+      {/* First touch (only when the affiliate logged one) */}
+      <FirstTouchCard prospect={prospect} />
 
       {/* Services */}
       {prospect.services && prospect.services.length > 0 && (

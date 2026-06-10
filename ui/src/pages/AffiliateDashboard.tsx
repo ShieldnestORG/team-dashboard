@@ -82,14 +82,18 @@ const CLOSE_PATH_OPTIONS: { value: ClosePreference; label: string; helper?: stri
   {
     value: "cd_closes",
     label: "Let Coherence Daddy close it.",
-    helper: "Recommended — CD's sales process converts most leads best.",
+    helper: "Coherence Daddy handles the whole sale. Simplest — recommended.",
     recommended: true,
   },
-  { value: "affiliate_assists", label: "We'll close it together." },
+  {
+    value: "affiliate_assists",
+    label: "We'll close it together.",
+    helper: "You help pitch and follow up; we close together.",
+  },
   {
     value: "affiliate_attempts_first",
     label: "I'll attempt first, then hand off.",
-    helper: "Heads up: cold leads tend to do best when CD takes the first swing.",
+    helper: "You lead the conversation, then hand off to us.",
   },
 ];
 
@@ -172,6 +176,24 @@ export function AffiliateDashboard() {
   const [tier, setTier] = useState<TierResponse | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
   const [promoCampaigns, setPromoCampaigns] = useState<PromoCampaign[]>([]);
+
+  // Getting-started panel dismissal (only relevant once the affiliate has graduated)
+  const [gettingStartedDismissed, setGettingStartedDismissed] = useState(() => {
+    try {
+      return localStorage.getItem("affiliateGettingStartedDismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  function dismissGettingStarted() {
+    setGettingStartedDismissed(true);
+    try {
+      localStorage.setItem("affiliateGettingStartedDismissed", "1");
+    } catch {
+      /* ignore storage failures */
+    }
+  }
 
   useEffect(() => {
     if (!getAffiliateToken()) {
@@ -416,6 +438,13 @@ export function AffiliateDashboard() {
   }
 
   const liveCampaign = promoCampaigns.find((c) => c.status === "live") ?? null;
+  const policyAccepted = Boolean(affiliate.policyAcceptedAt);
+  const hasProspects = prospectCount > 0;
+  // A brand-new affiliate still needs orientation until they've both accepted
+  // the rules and sent their first lead. Once they have, the panel collapses to
+  // a small dismissible tip; once dismissed, returning users never see it again.
+  const isBrandNew = !policyAccepted || !hasProspects;
+  const showGettingStarted = isBrandNew || !gettingStartedDismissed;
   const leaderboardTop5 = (leaderboard?.top ?? []).slice(0, 5);
   const meInTop5 = leaderboard?.me
     ? leaderboardTop5.some((r) => r.rank === leaderboard.me?.rank)
@@ -456,6 +485,117 @@ export function AffiliateDashboard() {
       />
 
       <main className="mx-auto w-full max-w-[1200px] px-6 py-10 space-y-8">
+        {/* Getting started — guided onboarding for brand-new affiliates */}
+        {showGettingStarted && (
+          <Cascade index={0}>
+            {isBrandNew ? (
+              <EditorialCard
+                className="p-6 sm:p-7"
+                style={{
+                  backgroundColor: "rgba(255,107,74,0.05)",
+                  border: `1px solid rgba(255,107,74,0.30)`,
+                }}
+              >
+                <LabelCaps color={CD.accent}>Welcome — you're in</LabelCaps>
+                <h2
+                  className="mt-2 text-2xl font-bold"
+                  style={{ color: CD.ink, letterSpacing: "-0.02em" }}
+                >
+                  Let's get your first lead moving.
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed" style={{ color: CD.muted }}>
+                  Three quick steps and you're earning. You bring the relationship —
+                  we handle the analysis, outreach, and closing. Your job is to point us at
+                  great businesses and track them right here.
+                </p>
+
+                <ol className="mt-6 space-y-3">
+                  <GettingStartedStep
+                    n={1}
+                    done={policyAccepted}
+                    active={!policyAccepted}
+                    title="Accept the program rules"
+                    body="A 60-second read so you know exactly how credit and closing work."
+                    action={
+                      !policyAccepted
+                        ? { label: "Review rules →", onClick: () => setShowPolicyModal(true) }
+                        : undefined
+                    }
+                  />
+                  <GettingStartedStep
+                    n={2}
+                    done={hasProspects}
+                    active={policyAccepted && !hasProspects}
+                    title="Submit your first business lead"
+                    body="Drop a website. We scan and analyze it in 30–60 seconds and start the intel profile."
+                    action={
+                      !hasProspects
+                        ? { label: "+ New client", onClick: handleOpenNewClient, primary: true }
+                        : undefined
+                    }
+                  />
+                  <GettingStartedStep
+                    n={3}
+                    done={false}
+                    active={hasProspects}
+                    title="Track it & earn"
+                    body="Watch each lead move from scan → analysis → conversion below. When a client pays, your commission starts."
+                  />
+                </ol>
+
+                {policyAccepted && !hasProspects && (
+                  <div className="mt-6">
+                    <CDPrimaryButton type="button" onClick={handleOpenNewClient}>
+                      + New client
+                    </CDPrimaryButton>
+                  </div>
+                )}
+              </EditorialCard>
+            ) : (
+              <div
+                className="flex items-center justify-between gap-3 px-4 py-3"
+                style={{
+                  backgroundColor: "rgba(255,107,74,0.05)",
+                  border: `1px solid rgba(255,107,74,0.25)`,
+                  borderRadius: 10,
+                }}
+              >
+                <p className="text-sm" style={{ color: CD.muted }}>
+                  <span style={{ color: CD.ink, fontWeight: 600 }}>You're all set.</span>{" "}
+                  Keep the momentum going — submit another lead anytime with{" "}
+                  <button
+                    type="button"
+                    onClick={handleOpenNewClient}
+                    className="underline-offset-4 hover:underline"
+                    style={{ color: CD.accent, background: "transparent", border: "none", cursor: "pointer", padding: 0, font: "inherit", fontWeight: 600 }}
+                  >
+                    + New client
+                  </button>
+                  .
+                </p>
+                <button
+                  type="button"
+                  onClick={dismissGettingStarted}
+                  aria-label="Dismiss tip"
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: "0.6875rem",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: CD.muted,
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </Cascade>
+        )}
+
         {/* Promo banner */}
         {liveCampaign && (
           <Cascade index={0}>
@@ -960,11 +1100,17 @@ export function AffiliateDashboard() {
             </Mono>
           </div>
           {prospects.length === 0 ? (
-            <EditorialCard className="py-12 text-center" style={{ borderStyle: "dashed" }}>
-              <p className="text-sm" style={{ color: CD.muted }}>No prospects yet.</p>
+            <EditorialCard className="px-6 py-12 text-center" style={{ borderStyle: "dashed" }}>
+              <p className="text-base font-semibold" style={{ color: CD.ink }}>
+                No leads yet — let's change that.
+              </p>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed" style={{ color: CD.muted }}>
+                Drop a business website and we'll analyze it in 30–60 seconds. From there
+                we handle the outreach while you track every step right here.
+              </p>
               <button
                 onClick={handleOpenNewClient}
-                className="mt-3 text-sm font-medium underline-offset-4 hover:underline"
+                className="mt-4 text-sm font-medium underline-offset-4 hover:underline"
                 style={{ color: CD.accent, background: "transparent", border: "none", cursor: "pointer" }}
               >
                 Submit your first client →
@@ -1126,8 +1272,11 @@ export function AffiliateDashboard() {
                   style={{ borderTop: `1px solid ${CD.border}` }}
                 >
                   <div>
-                    <p className="mb-1.5" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                    <p className="mb-1" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
                       Have you already spoken with the owner?
+                    </p>
+                    <p className="mb-2 text-xs leading-relaxed" style={{ color: CD.muted }}>
+                      Logging a warm intro helps us coordinate outreach and prioritize your lead.
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {(["yes", "no"] as const).map((opt) => {
@@ -1269,8 +1418,11 @@ export function AffiliateDashboard() {
                   )}
 
                   <div>
-                    <p className="mb-1.5" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
+                    <p className="mb-1" style={{ ...{ fontFamily: FONT_MONO, fontSize: "0.6875rem", letterSpacing: "0.14em", textTransform: "uppercase" }, color: CD.muted }}>
                       Who closes?
+                    </p>
+                    <p className="mb-2 text-xs leading-relaxed" style={{ color: CD.muted }}>
+                      How a deal is closed can affect the commission tier on that deal.
                     </p>
                     <div className="space-y-1.5">
                       {CLOSE_PATH_OPTIONS.map((opt) => {
@@ -1319,7 +1471,14 @@ export function AffiliateDashboard() {
                                 )}
                               </span>
                               {opt.helper && (
-                                <span className="mt-0.5 block" style={{ color: CD.accent, opacity: 0.85, fontSize: "0.625rem" }}>
+                                <span
+                                  className="mt-0.5 block"
+                                  style={{
+                                    color: opt.recommended ? CD.accent : CD.muted,
+                                    opacity: opt.recommended ? 0.85 : 1,
+                                    fontSize: "0.625rem",
+                                  }}
+                                >
                                   {opt.helper}
                                 </span>
                               )}
@@ -1493,6 +1652,101 @@ export function AffiliateDashboard() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Local helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+function GettingStartedStep({
+  n,
+  done,
+  active,
+  title,
+  body,
+  action,
+}: {
+  n: number;
+  done: boolean;
+  active: boolean;
+  title: string;
+  body: string;
+  action?: { label: string; onClick: () => void; primary?: boolean };
+}) {
+  // Marker color: done = success, active = accent, upcoming = muted outline.
+  const markerBg = done ? CD.success : active ? CD.accent : "transparent";
+  const markerBorder = done ? CD.success : active ? CD.accent : CD.borderStrong;
+  const markerText = done || active ? CD.canvas : CD.muted;
+  return (
+    <li className="flex items-start gap-3">
+      <span
+        aria-hidden="true"
+        className="flex shrink-0 items-center justify-center"
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 9999,
+          backgroundColor: markerBg,
+          border: `1.5px solid ${markerBorder}`,
+          color: markerText,
+          fontFamily: FONT_MONO,
+          fontSize: "0.75rem",
+          fontWeight: 600,
+          marginTop: 1,
+        }}
+      >
+        {done ? "✓" : n}
+      </span>
+      <div className="flex-1">
+        <p
+          className="text-sm font-semibold"
+          style={{ color: done ? CD.muted : CD.ink }}
+        >
+          {title}
+        </p>
+        <p className="mt-0.5 text-xs leading-relaxed" style={{ color: CD.muted }}>
+          {body}
+        </p>
+        {action &&
+          (action.primary ? (
+            <button
+              type="button"
+              onClick={action.onClick}
+              className="mt-2"
+              style={{
+                fontFamily: FONT_MONO,
+                fontSize: "0.6875rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: CD.canvas,
+                backgroundColor: CD.accent,
+                border: "none",
+                borderRadius: 8,
+                padding: "6px 14px",
+                cursor: "pointer",
+              }}
+            >
+              {action.label}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={action.onClick}
+              className="mt-1.5"
+              style={{
+                fontFamily: FONT_MONO,
+                fontSize: "0.6875rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: CD.accent,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
+      </div>
+    </li>
+  );
+}
 
 function StatCell({
   label,

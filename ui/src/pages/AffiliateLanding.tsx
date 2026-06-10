@@ -187,6 +187,24 @@ export function AffiliateLanding() {
               How it works
             </button>
             <a
+              href="/learn"
+              className="text-sm font-medium transition-colors"
+              style={{ color: CD.muted }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = CD.ink)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
+            >
+              Learn
+            </a>
+            <a
+              href="/program-rules"
+              className="text-sm font-medium transition-colors"
+              style={{ color: CD.muted }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = CD.ink)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
+            >
+              Program Rules
+            </a>
+            <a
               href="#apply"
               className="text-sm font-medium transition-colors"
               style={{ color: CD.muted }}
@@ -614,7 +632,7 @@ export function AffiliateLanding() {
       {/* Footer */}
       <footer className="py-10">
         <div
-          className="mx-auto w-full max-w-[1200px] px-6 text-center"
+          className="mx-auto flex w-full max-w-[1200px] flex-col items-center gap-4 px-6 text-center"
           style={{
             color: CD.muted,
             fontFamily: FONT_MONO,
@@ -623,7 +641,29 @@ export function AffiliateLanding() {
             textTransform: "uppercase",
           }}
         >
-          Coherence Daddy Affiliates · 508(c)(1)(A) Faith-Driven Technology Ministry
+          <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            <a
+              href="/learn"
+              className="transition-colors"
+              style={{ color: CD.muted }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = CD.ink)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
+            >
+              Learn
+            </a>
+            <a
+              href="/program-rules"
+              className="transition-colors"
+              style={{ color: CD.muted }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = CD.ink)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
+            >
+              Program Rules
+            </a>
+          </nav>
+          <span>
+            Coherence Daddy Affiliates · 508(c)(1)(A) Faith-Driven Technology Ministry
+          </span>
         </div>
       </footer>
 

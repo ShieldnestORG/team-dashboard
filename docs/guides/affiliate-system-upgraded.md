@@ -519,3 +519,47 @@ A complete version of this affiliate system should:
 - create a retention loop through merch, tiers, leaderboards, and giveaways
 
 This turns the program from a simple "refer and hope" model into a real **partner revenue system**.
+
+---
+
+## Changelog — 2026-06-10 production-readiness pass
+
+A parallel audit (user-friendliness / guided onboarding / completeness / connectedness /
+production readiness) drove the following fixes. Server + UI typecheck clean, 22/22 affiliate
+tests passing, UI prod build green after the pass.
+
+**Broken features fixed (were 400-ing in production):**
+- **Attribution override** — the admin UI used a non-existent attribution vocabulary
+  (`affiliate_submitted` / `affiliate_referral` / …). It now uses the 5 canonical values the
+  backend + `rateForAttribution()` actually key on: `affiliate_referred_cd_closed`,
+  `affiliate_assisted_cd_closed`, `affiliate_led_cd_finalized` (25% bonus), `cd_direct` (0%),
+  `admin_override`. The override dialog now shows a one-line commission-impact description per
+  option. **Lesson: UI attribution labels/badges must stay in lockstep with the DB enum because
+  the value drives the payout rate.**
+- **Merch fulfillment** — added the `delivered` terminal status (`shipped → delivered`) the admin
+  UI already had a button for; also fixed a `cancelled`→`canceled` spelling mismatch that was
+  silently 400-ing the Cancel action.
+- **Admin engagement scoring** — `listEngagementPosts` / `listTiers` now unwrap the backend's
+  `{ posts, … }` / `{ tiers }` envelope instead of iterating it as an array (page rendered empty).
+
+**Security:** `POST /reset-password` now has the same per-IP rate limit as `/forgot-password`
+plus a per-token-hash attempt cap (invalidates the token after 5 failures). No migration.
+
+**Completeness / connectedness:**
+- New affiliate-facing **`/clawbacks`** page (`AffiliateClawbacks.tsx`) — the ledger the spec's
+  clawback section already promised; backend `GET /clawbacks` already existed.
+- **First-touch read-back** — `GET /prospects/:slug` now returns the `firstTouch` object and the
+  affiliate prospect page shows what was logged (was capture-only before).
+- **Program Rules** added to the affiliate nav; **Learn** + **Program Rules** linked from the
+  public landing header/footer (Learn is the ungated recruitment surface).
+
+**Guided onboarding (affiliate dashboard):** post-approval "Getting Started" 3-step checklist for
+brand-new affiliates, inline contextual help on the lead-submission form (warm-intro + "who
+closes?" commission impact), a commission-status lifecycle explainer + hold-release dates on the
+Earnings page, and warmer empty states.
+
+**Deploy:** `vercel.json` `/api` rewrite corrected from the stale `http://31.220.61.12` (VPS1) to
+`https://api.coherencedaddy.com` (canonical TLS domain, VPS4), matching the storefront repo's
+pattern. ⚠️ Confirm on the infra side which Vercel project actually serves
+`affiliates.coherencedaddy.com` — the team-dashboard UI is primarily served from VPS4 Express
+(`SERVE_UI=true`), so this rewrite may be the Vercel-served subdomain path only.

@@ -55,7 +55,7 @@ function priorMonthKey(now: Date): string {
   return monthKey(prior);
 }
 
-const VALID_MERCH_STATUSES = ["requested", "approved", "shipped", "canceled"] as const;
+const VALID_MERCH_STATUSES = ["requested", "approved", "shipped", "delivered", "canceled"] as const;
 type MerchStatus = (typeof VALID_MERCH_STATUSES)[number];
 
 // ---------------------------------------------------------------------------
@@ -782,8 +782,8 @@ export function affiliateEngagementAdminRoutes(db: Db): Router {
         return;
       }
 
-      // Enforce transition: requested → approved → shipped (canceled from any
-      // non-shipped state).
+      // Enforce transition: requested → approved → shipped → delivered
+      // (canceled from any non-shipped state). `delivered` is terminal.
       const [existing] = await db
         .select({
           id: merchRequests.id,
@@ -802,7 +802,8 @@ export function affiliateEngagementAdminRoutes(db: Db): Router {
       const allowed: Record<string, MerchStatus[]> = {
         requested: ["approved", "canceled"],
         approved: ["shipped", "canceled"],
-        shipped: [],
+        shipped: ["delivered"],
+        delivered: [],
         canceled: [],
       };
       const nextStates = allowed[existing.status] ?? [];

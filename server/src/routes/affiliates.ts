@@ -80,6 +80,39 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000).unref();
 
+// ── Per-token failed-attempt counter for password reset ─────────────────────
+// Caps brute-force attempts against a single reset-token hash. After 5 bad
+// match attempts the token is invalidated server-side. Entries are pruned on
+// the same TTL window as the IP rate limiter.
+
+interface ResetAttemptBucket {
+  count: number;
+  resetAt: number;
+}
+
+const resetTokenAttempts = new Map<string, ResetAttemptBucket>();
+const RESET_TOKEN_MAX_ATTEMPTS = 5;
+
+// Records a failed attempt for a token hash and returns the running count.
+function recordResetTokenFailure(tokenHash: string): number {
+  const now = Date.now();
+  const bucket = resetTokenAttempts.get(tokenHash);
+  if (!bucket || now > bucket.resetAt) {
+    resetTokenAttempts.set(tokenHash, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return 1;
+  }
+  bucket.count += 1;
+  return bucket.count;
+}
+
+// Cleanup stale token-attempt buckets every 30 minutes.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of resetTokenAttempts) {
+    if (now > bucket.resetAt) resetTokenAttempts.delete(key);
+  }
+}, 30 * 60 * 1000).unref();
+
 // ── Internal password helpers ────────────────────────────────────────────────
 
 function hashPassword(password: string): string {
@@ -859,8 +892,22 @@ export function affiliateRoutes(db: Db): Router {
           storeNotes: partnerCompanies.storeNotes,
           createdAt: partnerCompanies.createdAt,
           updatedAt: partnerCompanies.updatedAt,
+          firstTouchLogged: referralAttribution.firstTouchLogged,
+          firstTouchType: referralAttribution.firstTouchType,
+          firstTouchDate: referralAttribution.firstTouchDate,
+          firstTouchNotes: referralAttribution.firstTouchNotes,
+          relationshipWarmth: referralAttribution.relationshipWarmth,
+          affiliateClosePreference: referralAttribution.affiliateClosePreference,
         })
         .from(partnerCompanies)
+        .leftJoin(
+          referralAttribution,
+          and(
+            eq(referralAttribution.leadId, partnerCompanies.id),
+            eq(referralAttribution.affiliateId, affiliateId),
+            isNull(referralAttribution.lockReleasedAt),
+          ),
+        )
         .where(
           and(
             eq(partnerCompanies.slug, slug),
@@ -875,7 +922,29 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
-      res.json({ prospect });
+      const {
+        firstTouchLogged,
+        firstTouchType,
+        firstTouchDate,
+        firstTouchNotes,
+        relationshipWarmth,
+        affiliateClosePreference,
+        ...prospectFields
+      } = prospect;
+
+      res.json({
+        prospect: {
+          ...prospectFields,
+          firstTouch: {
+            logged: firstTouchLogged ?? false,
+            type: firstTouchType,
+            date: firstTouchDate ? firstTouchDate.toISOString() : null,
+            notes: firstTouchNotes,
+            warmth: relationshipWarmth,
+            closePath: affiliateClosePreference,
+          },
+        },
+      });
     } catch (err) {
       logger.error({ err }, "Failed to get prospect");
       res.status(500).json({ error: "Failed to get prospect" });
@@ -984,6 +1053,12 @@ export function affiliateRoutes(db: Db): Router {
   // ── POST /reset-password — Public password reset confirmation ─────────────
   router.post("/reset-password", async (req, res) => {
     try {
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
+      if (!checkRateLimit(clientIp)) {
+        res.status(429).json({ error: "Too many attempts. Please try again in 15 minutes." });
+        return;
+      }
+
       const { token, password } = req.body as { token?: string; password?: string };
 
       if (!token || !password) {
@@ -1006,9 +1081,23 @@ export function affiliateRoutes(db: Db): Router {
         .limit(1);
 
       if (!affiliate || !affiliate.resetTokenExpiresAt || affiliate.resetTokenExpiresAt < new Date()) {
+        // Count failed match attempts per token hash. After the cap, invalidate
+        // the token so it can't be brute-forced further. Generic response keeps
+        // the no-match / expired cases indistinguishable.
+        const attempts = recordResetTokenFailure(hashedToken);
+        if (attempts >= RESET_TOKEN_MAX_ATTEMPTS) {
+          await db
+            .update(affiliates)
+            .set({ resetToken: null, resetTokenExpiresAt: sql`now()`, updatedAt: sql`now()` })
+            .where(eq(affiliates.resetToken, hashedToken));
+          resetTokenAttempts.delete(hashedToken);
+        }
         res.status(400).json({ error: "Invalid or expired reset link" });
         return;
       }
+
+      // Successful match — clear any recorded failures for this token hash.
+      resetTokenAttempts.delete(hashedToken);
 
       const newPasswordHash = hashPassword(password);
 

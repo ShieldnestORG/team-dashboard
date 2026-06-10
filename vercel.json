@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "http://31.220.61.12:3200/api/:path*"
+      "destination": "https://api.coherencedaddy.com/api/:path*"
     },
     {
       "source": "/((?!api/).*)",

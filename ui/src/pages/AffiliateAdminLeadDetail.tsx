@@ -58,13 +58,40 @@ function formatDate(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const ATTRIBUTION_TYPE_OPTIONS: { value: AttributionType; label: string }[] = [
-  { value: "affiliate_submitted", label: "Affiliate submitted" },
-  { value: "affiliate_referral", label: "Affiliate referral" },
-  { value: "self_generated", label: "Self generated" },
-  { value: "partner_sourced", label: "Partner sourced" },
-  { value: "transferred", label: "Transferred" },
-  { value: "disputed", label: "Disputed" },
+// Canonical attribution choices. The description guides the admin on what each
+// choice means for the affiliate's payout (see rateForAttribution on the
+// backend): "led" pays a 25% bonus, "CD direct" pays no commission, the rest
+// pay the affiliate's standard rate.
+const ATTRIBUTION_TYPE_OPTIONS: {
+  value: AttributionType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "affiliate_referred_cd_closed",
+    label: "Referred — CD closed",
+    description: "They referred them; Coherence Daddy closed the deal. Standard rate.",
+  },
+  {
+    value: "affiliate_assisted_cd_closed",
+    label: "Assisted — CD closed",
+    description: "They helped pitch or follow up; CD closed. Standard rate.",
+  },
+  {
+    value: "affiliate_led_cd_finalized",
+    label: "Led — CD finalized",
+    description: "They led the sale; CD finalized. Pays a 25% bonus over standard rate.",
+  },
+  {
+    value: "cd_direct",
+    label: "CD direct",
+    description: "CD sourced this directly. Pays no affiliate commission.",
+  },
+  {
+    value: "admin_override",
+    label: "Admin override",
+    description: "Manually set by an admin. Pays the standard rate.",
+  },
 ];
 
 function StatusBadge({ status }: { status: string }) {
@@ -898,6 +925,13 @@ export function AffiliateAdminLeadDetail() {
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+              {attributionDialog.attributionType && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {ATTRIBUTION_TYPE_OPTIONS.find(
+                    (o) => o.value === attributionDialog.attributionType,
+                  )?.description}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium mb-1">Reason <span className="text-destructive">*</span></label>

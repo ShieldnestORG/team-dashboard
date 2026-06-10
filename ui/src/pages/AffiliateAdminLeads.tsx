@@ -63,14 +63,15 @@ import { AffiliateAdminTabs } from "@/components/AffiliateAdminTabs";
 // (status is ambiguous across secondary stages); it's a display bucket only.
 const MORE_COLUMN_ID = "__more__";
 
+// Canonical attribution values — must match the backend vocabulary and the
+// maps in @/api/affiliate-admin (badges/labels read from there).
 const ATTRIBUTION_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "All attributions" },
-  { value: "affiliate_submitted", label: "Affiliate submitted" },
-  { value: "affiliate_referral", label: "Affiliate referral" },
-  { value: "self_generated", label: "Self generated" },
-  { value: "partner_sourced", label: "Partner sourced" },
-  { value: "transferred", label: "Transferred" },
-  { value: "disputed", label: "Disputed" },
+  { value: "affiliate_referred_cd_closed", label: "Referred — CD closed" },
+  { value: "affiliate_assisted_cd_closed", label: "Assisted — CD closed" },
+  { value: "affiliate_led_cd_finalized", label: "Led — CD finalized" },
+  { value: "cd_direct", label: "CD direct" },
+  { value: "admin_override", label: "Admin override" },
 ];
 
 function columnIdForDrop(dropId: string, leads: AdminLeadSummary[]): LeadStatus | null {

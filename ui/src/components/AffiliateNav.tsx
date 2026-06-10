@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/promo", label: "Promo" },
   { href: "/merch", label: "Merch" },
+  { href: "/program-rules", label: "Program Rules" },
 ];
 
 interface AffiliateNavProps {
