@@ -451,7 +451,16 @@ export async function createApp(
         res.status(200).set("Content-Type", "text/html").end(indexHtml);
       });
     } else {
-      console.warn("[paperclip] UI dist not found; running in API-only mode");
+      // Fail loud: uiMode="static" means we are expected to serve a built UI.
+      // (An intentional API-only deployment uses uiMode="none" via SERVE_UI=false
+      // and never reaches this branch.) Silently dropping to API-only here would
+      // ship a backend with no admin UI and only a console.warn — so throw and
+      // let the boot crash visibly (container goes unhealthy) instead.
+      throw new Error(
+        `[paperclip] uiMode="static" but no UI build was found (looked in: ${candidates.join(", ")}). ` +
+          `Build the UI before starting in static mode ("cd ui && npm run build"), or set SERVE_UI=false ` +
+          `for an intentional API-only deployment (uiMode="none").`,
+      );
     }
   }
 
