@@ -144,7 +144,10 @@ export function AffiliateDashboard() {
   // Policy acceptance
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const [policyStep, setPolicyStep] = useState(0);
-  const [policyProgress, setPolicyProgress] = useState(0);
+  // Comprehension-check state per rule step: which steps are passed, and which
+  // options were picked wrong on the current step (for inline feedback).
+  const [policyChecksPassed, setPolicyChecksPassed] = useState<Record<number, boolean>>({});
+  const [policyWrongPicks, setPolicyWrongPicks] = useState<number[]>([]);
   const [policyLoading, setPolicyLoading] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [policyReplay, setPolicyReplay] = useState(false);
@@ -152,7 +155,6 @@ export function AffiliateDashboard() {
   function openPolicyReplay() {
     setPolicyReplay(true);
     setPolicyStep(0);
-    setPolicyProgress(0);
     setPolicyError(null);
     setShowPolicyModal(true);
   }
@@ -244,22 +246,13 @@ export function AffiliateDashboard() {
     if (showPolicyModal) {
       setPolicyStep(0);
       setPolicyError(null);
+      setPolicyChecksPassed({});
     }
   }, [showPolicyModal]);
 
-  // 10-second read timer that re-starts on every step transition
+  // Fresh wrong-pick feedback on every step transition.
   useEffect(() => {
-    if (!showPolicyModal) return;
-    const STEP_DURATION_MS = 10_000;
-    setPolicyProgress(0);
-    const startTime = Date.now();
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const p = Math.min(1, elapsed / STEP_DURATION_MS);
-      setPolicyProgress(p);
-      if (p >= 1) clearInterval(interval);
-    }, 50);
-    return () => clearInterval(interval);
+    setPolicyWrongPicks([]);
   }, [policyStep, showPolicyModal]);
 
   async function handleAcceptPolicy() {
@@ -1539,7 +1532,8 @@ export function AffiliateDashboard() {
 
           <div className="mt-1 flex items-center gap-1.5">
             {POLICY_STEPS.map((_, i) => {
-              const fill = i < policyStep ? 1 : i === policyStep ? policyProgress : 0;
+              const fill =
+                i < policyStep ? 1 : i === policyStep ? (policyChecksPassed[i] ? 1 : 0.15) : 0;
               return (
                 <span
                   key={i}
@@ -1565,6 +1559,21 @@ export function AffiliateDashboard() {
             <p className="leading-relaxed" style={{ color: CD.muted }}>
               {POLICY_STEPS[policyStep].body}
             </p>
+
+            {!policyReplay && (
+              <PolicyCheck
+                check={PROGRAM_RULES[policyStep].check}
+                passed={Boolean(policyChecksPassed[policyStep])}
+                wrongPicks={policyWrongPicks}
+                onPick={(i) => {
+                  if (i === PROGRAM_RULES[policyStep].check.correctIndex) {
+                    setPolicyChecksPassed((m) => ({ ...m, [policyStep]: true }));
+                  } else {
+                    setPolicyWrongPicks((w) => (w.includes(i) ? w : [...w, i]));
+                  }
+                }}
+              />
+            )}
 
             {policyStep === POLICY_STEPS.length - 1 && (
               <p className="pt-2">
@@ -1616,8 +1625,7 @@ export function AffiliateDashboard() {
               )}
             </div>
             {(() => {
-              const canProceed = policyReplay || policyProgress >= 1;
-              const secondsLeft = Math.ceil((1 - policyProgress) * 10);
+              const canProceed = policyReplay || Boolean(policyChecksPassed[policyStep]);
               const isFinal = policyStep === POLICY_STEPS.length - 1;
               return (
                 <CDPrimaryButton
@@ -1634,7 +1642,7 @@ export function AffiliateDashboard() {
                   style={{ minWidth: "10rem", opacity: canProceed ? 1 : 0.5 }}
                 >
                   {!canProceed
-                    ? `Keep reading… ${secondsLeft}s`
+                    ? "Answer the quick check"
                     : isFinal
                     ? policyLoading
                       ? "Saving…"
@@ -1655,6 +1663,60 @@ export function AffiliateDashboard() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Local helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+function PolicyCheck({
+  check,
+  passed,
+  wrongPicks,
+  onPick,
+}: {
+  check: { question: string; options: string[]; correctIndex: number; explain: string };
+  passed: boolean;
+  wrongPicks: number[];
+  onPick: (i: number) => void;
+}) {
+  return (
+    <div
+      className="space-y-3 rounded-xl px-4 py-4"
+      style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${CD.borderStrong}` }}
+    >
+      <LabelCaps color={CD.accent}>Quick check</LabelCaps>
+      <p className="text-sm font-semibold leading-snug" style={{ color: CD.ink }}>
+        {check.question}
+      </p>
+      <div className="space-y-2" role="group" aria-label="Answer options">
+        {check.options.map((opt, i) => {
+          const isCorrectPick = passed && i === check.correctIndex;
+          const isWrongPick = wrongPicks.includes(i);
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onPick(i)}
+              disabled={passed}
+              className="block w-full rounded-lg px-3.5 py-2.5 text-left text-sm transition-colors"
+              style={{
+                border: `1px solid ${
+                  isCorrectPick ? CD.success : isWrongPick ? CD.danger : CD.borderStrong
+                }`,
+                background: isCorrectPick ? "rgba(74,157,124,0.08)" : "transparent",
+                color: isWrongPick ? CD.mutedSoft : CD.ink,
+                cursor: passed ? "default" : "pointer",
+              }}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+      {passed && (
+        <p className="text-sm leading-relaxed" style={{ color: CD.muted }}>
+          {check.explain}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function GettingStartedStep({
   n,
