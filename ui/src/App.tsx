@@ -414,8 +414,10 @@ const IS_AFFILIATES_SUBDOMAIN =
       new URLSearchParams(window.location.search).get("affiliate") === "1"));
 
 function AffiliateSite() {
+  // Plain wrapper — the window is the scroller (cdDesign anti-pattern: no h-screen).
+  // AffiliateLearnGuide's scroll reset and the sticky headers rely on window scroll.
   return (
-    <div className="h-screen overflow-y-auto">
+    <div className="min-h-[100dvh]">
       <Routes>
         <Route index element={<AffiliateLanding />} />
         <Route path="dashboard" element={<AffiliateDashboard />} />

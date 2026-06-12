@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "@/lib/router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
 import { AffiliateNav } from "@/components/AffiliateNav";
 import { getAffiliateToken } from "@/api/affiliates";
 import {
@@ -17,137 +17,209 @@ import {
   Lightbulb,
   AlertTriangle,
   Quote,
-  PlayCircle,
   Sparkles,
   CheckCircle2,
 } from "lucide-react";
+import { CDPage } from "@/components/cd/CDPrimitives";
+import { CD, FONT_MONO } from "@/lib/cdDesign";
+import { gsap, useGSAP, prefersReducedMotion } from "@/lib/cdMotion";
 import { LearnVisual } from "./AffiliateLearnVisual";
+import { WalkthroughVisual } from "./AffiliateLearnWalkthrough";
+
+// Step position lives in the URL hash (#1..#N, #done), so browser back/forward
+// step through the guide and deep links keep working.
+function parseStepHash(hash: string, total: number): number | null {
+  const n = parseInt(hash.replace("#", ""), 10);
+  if (Number.isNaN(n) || n < 1 || n > total) return null;
+  return n - 1;
+}
 
 export function AffiliateLearnGuide() {
   const { slug } = useParams<{ slug: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
   const authed = Boolean(getAffiliateToken());
   const guide = slug ? getGuideBySlug(slug) : undefined;
+  const total = guide?.steps.length ?? 0;
 
-  const [idx, setIdx] = useState(0);
-  const [finished, setFinished] = useState(false);
+  const finished = location.hash === "#done";
+  const idx = useMemo(
+    () => (finished ? total - 1 : (parseStepHash(location.hash, total) ?? 0)),
+    [location.hash, finished, total],
+  );
 
+  // Per-step recall-check results for this visit (persisted in Phase 3).
+  const [passedChecks, setPassedChecks] = useState<Record<number, boolean>>({});
+  useEffect(() => setPassedChecks({}), [slug]);
+
+  // Normalize a missing/invalid hash to #1 without stacking a history entry.
   useEffect(() => {
-    // Sync with URL hash for deep links (e.g. /learn/slug#3).
-    if (!guide) return;
-    const fromHash = parseInt(window.location.hash.replace("#", ""), 10);
-    if (!Number.isNaN(fromHash) && fromHash >= 1 && fromHash <= guide.steps.length) {
-      setIdx(fromHash - 1);
-    } else {
-      setIdx(0);
+    if (!guide || finished) return;
+    if (parseStepHash(location.hash, total) === null) {
+      navigate("#1", { replace: true });
     }
-    setFinished(false);
-  }, [guide]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guide, location.hash, finished, total]);
 
   useEffect(() => {
-    if (!guide) return;
-    window.history.replaceState(null, "", `#${idx + 1}`);
     // Browser scroll-anchoring keeps the old scroll position when content swaps;
     // defer past the anchor adjustment, then force top.
-    const t = setTimeout(() => {
-      const scroller = document.querySelector<HTMLElement>(".h-screen.overflow-y-auto");
-      if (scroller) scroller.scrollTop = 0;
-      else window.scrollTo(0, 0);
-    }, 50);
+    const t = setTimeout(() => window.scrollTo(0, 0), 50);
     return () => clearTimeout(t);
-  }, [idx, guide]);
+  }, [idx, finished, guide]);
+
+  const step = guide?.steps[idx];
+  const isLast = idx === total - 1;
+  const checkPassed = !step?.check || Boolean(passedChecks[idx]);
+
+  const goPrev = () => {
+    if (idx > 0) navigate(`#${idx}`);
+  };
+  const goNext = () => {
+    if (!checkPassed) return;
+    if (isLast) navigate("#done");
+    else navigate(`#${idx + 2}`);
+  };
 
   useEffect(() => {
     if (!guide) return;
-    const total = guide.steps.length;
     const onKey = (e: KeyboardEvent) => {
       if (finished) return;
-      if (e.key === "ArrowRight" || e.key === " ") {
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (e.key === "ArrowRight") {
         e.preventDefault();
-        if (idx < total - 1) setIdx((n) => n + 1);
-        else setFinished(true);
+        goNext();
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        if (idx > 0) setIdx((n) => n - 1);
+        goPrev();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [idx, finished, guide]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, finished, guide, checkPassed]);
 
   if (!guide) {
     return (
-      <div className="min-h-screen bg-background text-foreground">
+      <CDPage>
         {authed ? (
           <AffiliateNav active="/learn" subtitle="Affiliate Program" title="Learn & Teach" />
         ) : null}
-        <main className="max-w-3xl mx-auto px-6 py-16 text-center space-y-4">
+        <main className="mx-auto max-w-3xl px-6 py-16 text-center space-y-4">
           <h1 className="text-2xl font-bold">Guide not found</h1>
-          <a
-            href="/learn"
-            className="inline-flex items-center gap-1.5 text-sm text-[#FF6B4A] hover:text-[#FF6B4A]/90 font-medium"
+          <Link
+            to="/learn"
+            className="inline-flex items-center gap-1.5 text-sm font-medium"
+            style={{ color: CD.accent }}
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Learn
-          </a>
+          </Link>
         </main>
-      </div>
+      </CDPage>
     );
   }
 
   const meta = SECTION_META[guide.section];
-  const total = guide.steps.length;
-  const step = guide.steps[idx];
-  const isLast = idx === total - 1;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <CDPage>
       {authed ? (
         <AffiliateNav active="/learn" subtitle="Affiliate Program" title="Learn & Teach" />
       ) : (
-        <header className="bg-card border-b border-border sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground truncate">Affiliate Program · Learn</p>
-              <h1 className="text-lg font-bold text-foreground truncate">{guide.title}</h1>
-            </div>
-            <a href="/" className="text-sm text-[#FF6B4A] font-medium whitespace-nowrap">
-              Apply &rarr;
-            </a>
-          </div>
-        </header>
+        <PublicHeader title={guide.title} />
       )}
 
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-        <a
-          href="/learn"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      <main className="mx-auto max-w-3xl px-6 py-8 space-y-6">
+        <Link
+          to="/learn"
+          className="inline-flex items-center gap-1.5 text-sm transition-colors"
+          style={{ color: CD.muted }}
         >
           <ArrowLeft className="h-4 w-4" />
           All guides
-        </a>
+        </Link>
 
         <GuideHeader guide={guide} sectionLabel={meta.label} sectionOrder={meta.order} />
 
+        {guide.videoEmbedUrl && (
+          <div
+            className="aspect-video w-full overflow-hidden rounded-xl"
+            style={{ border: `1px solid ${CD.borderStrong}`, background: CD.surface }}
+          >
+            <iframe
+              src={guide.videoEmbedUrl}
+              title={`${guide.title} — video walk-through`}
+              className="h-full w-full"
+              allow="autoplay; fullscreen; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        )}
+
+        {/* Screen-reader step announcements */}
+        <div aria-live="polite" className="sr-only">
+          {finished
+            ? `Guide complete: ${guide.title}`
+            : step
+              ? `Step ${idx + 1} of ${total}: ${step.headline}`
+              : null}
+        </div>
+
         {finished ? (
-          <FinishedPanel guide={guide} onRestart={() => { setFinished(false); setIdx(0); }} />
-        ) : (
+          <FinishedPanel guide={guide} onRestart={() => navigate("#1")} />
+        ) : step ? (
           <>
             <ProgressBar current={idx + 1} total={total} />
-            <StepView step={step} />
+            <StepView
+              key={idx}
+              step={step}
+              checkPassed={Boolean(passedChecks[idx])}
+              onCheckPassed={() => setPassedChecks((m) => ({ ...m, [idx]: true }))}
+            />
             <StepNav
               idx={idx}
               total={total}
-              onPrev={() => setIdx((n) => Math.max(0, n - 1))}
-              onNext={() => {
-                if (isLast) setFinished(true);
-                else setIdx((n) => Math.min(total - 1, n + 1));
-              }}
+              onPrev={goPrev}
+              onNext={goNext}
               isLast={isLast}
+              nextLocked={!checkPassed}
             />
           </>
-        )}
+        ) : null}
       </main>
-    </div>
+    </CDPage>
+  );
+}
+
+function PublicHeader({ title }: { title: string }) {
+  return (
+    <header
+      className="sticky top-0 z-20 backdrop-blur-md"
+      style={{ background: "rgba(14,14,16,0.85)", borderBottom: `1px solid ${CD.border}` }}
+    >
+      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
+        <div className="min-w-0">
+          <p
+            className="truncate"
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: "0.6875rem",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: CD.mutedSoft,
+            }}
+          >
+            Affiliate Program · Learn
+          </p>
+          <h1 className="truncate text-lg font-bold">{title}</h1>
+        </div>
+        <a href="/" className="whitespace-nowrap text-sm font-medium" style={{ color: CD.accent }}>
+          Apply &rarr;
+        </a>
+      </div>
+    </header>
   );
 }
 
@@ -162,20 +234,28 @@ function GuideHeader({
 }) {
   return (
     <header className="space-y-3">
-      <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest">
-        <span className="text-[#FF6B4A]">0{sectionOrder}</span>
-        <span className="text-muted-foreground">·</span>
-        <span className="text-muted-foreground">{sectionLabel}</span>
+      <div
+        className="flex items-center gap-2"
+        style={{
+          fontFamily: FONT_MONO,
+          fontSize: "0.6875rem",
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+        }}
+      >
+        <span style={{ color: CD.accent }}>0{sectionOrder}</span>
+        <span style={{ color: CD.mutedSoft }}>·</span>
+        <span style={{ color: CD.mutedSoft }}>{sectionLabel}</span>
       </div>
-      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight">
-        {guide.title}
-      </h1>
-      <p className="text-base text-muted-foreground leading-relaxed">{guide.subtitle}</p>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+      <h1 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">{guide.title}</h1>
+      <p className="text-base leading-relaxed" style={{ color: CD.muted }}>
+        {guide.subtitle}
+      </p>
+      <div className="flex items-center gap-2 pt-1 text-xs" style={{ color: CD.mutedSoft }}>
         <Clock3 className="h-3.5 w-3.5" />
-        <span>{guide.readingMinutes} min</span>
+        <span style={{ fontFamily: FONT_MONO }}>{guide.readingMinutes} min</span>
         <span className="mx-1">·</span>
-        <span>{guide.steps.length} steps</span>
+        <span style={{ fontFamily: FONT_MONO }}>{guide.steps.length} steps</span>
       </div>
     </header>
   );
@@ -185,33 +265,80 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
   const pct = (current / total) * 100;
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+      <div
+        className="flex items-center justify-between"
+        style={{
+          fontFamily: FONT_MONO,
+          fontSize: "0.625rem",
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: CD.mutedSoft,
+        }}
+      >
         <span>
-          Step <span className="text-foreground font-bold">{current}</span> of {total}
+          Step <span style={{ color: CD.ink, fontWeight: 700 }}>{current}</span> of {total}
         </span>
         <span>{Math.round(pct)}%</span>
       </div>
-      <div className="h-1 w-full rounded-full overflow-hidden bg-border">
+      <div className="h-1 w-full overflow-hidden rounded-full" style={{ background: CD.border }}>
         <div
-          className="h-full rounded-full transition-all duration-300"
-          style={{ width: `${pct}%`, background: "#FF6B4A" }}
+          className="h-full rounded-full"
+          style={{
+            width: `${pct}%`,
+            background: CD.accent,
+            transition: "width 480ms cubic-bezier(0.22, 0.61, 0.36, 1)",
+          }}
         />
       </div>
     </div>
   );
 }
 
-function StepView({ step }: { step: GuideStep }) {
+function StepView({
+  step,
+  checkPassed,
+  onCheckPassed,
+}: {
+  step: GuideStep;
+  checkPassed: boolean;
+  onCheckPassed: () => void;
+}) {
+  const scope = useRef<HTMLElement>(null);
+
+  useGSAP(
+    () => {
+      if (prefersReducedMotion() || !scope.current) return;
+      gsap.fromTo(
+        scope.current.querySelectorAll("[data-enter]"),
+        { opacity: 0, y: 16 },
+        { opacity: 1, y: 0, duration: 0.48, ease: "cd", stagger: 0.06 },
+      );
+    },
+    { scope },
+  );
+
   return (
-    <article className="space-y-6 animate-in fade-in-50 duration-200">
-      {step.visual && <LearnVisual visual={step.visual} />}
+    <article ref={scope} className="space-y-6">
+      {step.visual &&
+        (step.visual.kind === "walkthrough" ? (
+          <div data-enter>
+            <WalkthroughVisual visual={step.visual} />
+          </div>
+        ) : (
+          <div data-enter>
+            <LearnVisual visual={step.visual} />
+          </div>
+        ))}
       {!step.visual && step.screenshot && (
-        <figure className="space-y-2">
-          <div className="overflow-hidden rounded-xl border border-border bg-card/40">
-            <img src={step.screenshot.src} alt={step.screenshot.alt} className="w-full h-auto block" />
+        <figure className="space-y-2" data-enter>
+          <div
+            className="overflow-hidden rounded-xl"
+            style={{ border: `1px solid ${CD.border}`, background: CD.surface }}
+          >
+            <img src={step.screenshot.src} alt={step.screenshot.alt} className="block h-auto w-full" />
           </div>
           {step.screenshot.caption && (
-            <figcaption className="text-xs text-muted-foreground italic">
+            <figcaption className="text-xs italic" style={{ color: CD.mutedSoft }}>
               {step.screenshot.caption}
             </figcaption>
           )}
@@ -220,21 +347,52 @@ function StepView({ step }: { step: GuideStep }) {
 
       <div className="space-y-4">
         <div className="space-y-2">
-          <span className="inline-block text-[10px] font-mono uppercase tracking-[0.2em] text-[#FF6B4A]">
+          <span
+            className="inline-block"
+            data-enter
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: "0.625rem",
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              color: CD.accent,
+            }}
+          >
             {step.eyebrow}
           </span>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-[1.05] text-foreground">
+          <h2
+            className="text-3xl font-bold tracking-tight sm:text-4xl"
+            style={{ lineHeight: 1.05 }}
+            data-enter
+          >
             {step.headline}
           </h2>
           {step.kicker && (
-            <p className="text-base sm:text-lg text-muted-foreground leading-snug max-w-[52ch]">
+            <p
+              className="max-w-[52ch] text-base leading-snug sm:text-lg"
+              style={{ color: CD.muted }}
+              data-enter
+            >
               {renderKicker(step.kicker, step.emphasis)}
             </p>
           )}
         </div>
 
-        {step.analogy && <AnalogyCard analogy={step.analogy} />}
-        {step.callout && <Callout callout={step.callout} />}
+        {step.analogy && (
+          <div data-enter>
+            <AnalogyCard analogy={step.analogy} />
+          </div>
+        )}
+        {step.callout && (
+          <div data-enter>
+            <Callout callout={step.callout} />
+          </div>
+        )}
+        {step.check && (
+          <div data-enter>
+            <CheckCard check={step.check} passed={checkPassed} onPassed={onCheckPassed} />
+          </div>
+        )}
       </div>
     </article>
   );
@@ -244,20 +402,24 @@ function AnalogyCard({ analogy }: { analogy: { label?: string; text: string } })
   return (
     <aside
       className="flex gap-3 rounded-xl px-4 py-3.5"
-      style={{
-        background: "rgba(138,180,248,0.06)",
-        border: "1px solid rgba(138,180,248,0.25)",
-      }}
+      style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${CD.borderStrong}` }}
     >
-      <Sparkles className="h-4 w-4 shrink-0 mt-0.5" style={{ color: "#8ab4f8" }} />
-      <div className="space-y-0.5 min-w-0">
+      <Sparkles className="mt-0.5 h-4 w-4 shrink-0" style={{ color: CD.accent }} />
+      <div className="min-w-0 space-y-0.5">
         <div
-          className="text-[10px] font-mono uppercase tracking-widest"
-          style={{ color: "#8ab4f8" }}
+          style={{
+            fontFamily: FONT_MONO,
+            fontSize: "0.625rem",
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: CD.mutedSoft,
+          }}
         >
           {analogy.label ?? "Like"}
         </div>
-        <p className="text-sm leading-relaxed text-foreground/90">{analogy.text}</p>
+        <p className="text-sm leading-relaxed" style={{ color: CD.ink }}>
+          {analogy.text}
+        </p>
       </div>
     </aside>
   );
@@ -270,7 +432,7 @@ function renderKicker(kicker: string, emphasis?: string) {
   return (
     <>
       {kicker.slice(0, idx)}
-      <span className="text-foreground font-semibold">{emphasis}</span>
+      <span style={{ color: CD.ink, fontWeight: 600 }}>{emphasis}</span>
       {kicker.slice(idx + emphasis.length)}
     </>
   );
@@ -280,7 +442,7 @@ function Callout({ callout }: { callout: GuideCallout }) {
   const styles = {
     tip: {
       Icon: Lightbulb,
-      color: "#4A9D7C",
+      color: CD.success,
       bg: "rgba(74,157,124,0.08)",
       border: "rgba(74,157,124,0.3)",
       label: "Tip",
@@ -294,9 +456,9 @@ function Callout({ callout }: { callout: GuideCallout }) {
     },
     example: {
       Icon: Quote,
-      color: "#FF6B4A",
-      bg: "rgba(255,135,109,0.08)",
-      border: "rgba(255,135,109,0.3)",
+      color: CD.accent,
+      bg: "rgba(255,107,74,0.08)",
+      border: "rgba(255,107,74,0.3)",
       label: "Example",
     },
   }[callout.kind];
@@ -306,17 +468,110 @@ function Callout({ callout }: { callout: GuideCallout }) {
       className="flex gap-3 rounded-xl px-4 py-3.5"
       style={{ backgroundColor: styles.bg, border: `1px solid ${styles.border}` }}
     >
-      <Icon className="h-4 w-4 shrink-0 mt-0.5" style={{ color: styles.color }} />
-      <div className="space-y-1 min-w-0">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: styles.color }} />
+      <div className="min-w-0 space-y-1">
         <div
-          className="text-[10px] font-mono uppercase tracking-widest"
-          style={{ color: styles.color }}
+          style={{
+            fontFamily: FONT_MONO,
+            fontSize: "0.625rem",
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: styles.color,
+          }}
         >
           {styles.label}
         </div>
-        <p className="text-sm leading-relaxed text-foreground/90">{callout.text}</p>
+        <p className="text-sm leading-relaxed" style={{ color: CD.ink }}>
+          {callout.text}
+        </p>
       </div>
     </aside>
+  );
+}
+
+function CheckCard({
+  check,
+  passed,
+  onPassed,
+}: {
+  check: NonNullable<GuideStep["check"]>;
+  passed: boolean;
+  onPassed: () => void;
+}) {
+  const scope = useRef<HTMLDivElement>(null);
+  const [wrongPicks, setWrongPicks] = useState<number[]>([]);
+
+  const pick = (i: number) => {
+    if (passed) return;
+    const el = scope.current?.querySelector<HTMLElement>(`[data-option="${i}"]`);
+    if (i === check.correctIndex) {
+      onPassed();
+      if (el && !prefersReducedMotion()) {
+        gsap.fromTo(el, { scale: 0.96 }, { scale: 1, duration: 0.6, ease: "elastic.out(1, 0.45)" });
+      }
+    } else {
+      setWrongPicks((w) => (w.includes(i) ? w : [...w, i]));
+      if (el && !prefersReducedMotion()) {
+        gsap.fromTo(
+          el,
+          { x: 0 },
+          { keyframes: [{ x: -7 }, { x: 6 }, { x: -4 }, { x: 2 }, { x: 0 }], duration: 0.4 },
+        );
+      }
+    }
+  };
+
+  return (
+    <div
+      ref={scope}
+      className="space-y-3 rounded-xl px-4 py-4"
+      style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${CD.borderStrong}` }}
+    >
+      <div
+        style={{
+          fontFamily: FONT_MONO,
+          fontSize: "0.625rem",
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: CD.accent,
+        }}
+      >
+        Quick check
+      </div>
+      <p className="text-sm font-semibold leading-snug">{check.question}</p>
+      <div className="space-y-2" role="group" aria-label="Answer options">
+        {check.options.map((opt, i) => {
+          const isCorrectPick = passed && i === check.correctIndex;
+          const isWrongPick = wrongPicks.includes(i);
+          return (
+            <button
+              key={i}
+              type="button"
+              data-option={i}
+              onClick={() => pick(i)}
+              disabled={passed}
+              className="block w-full rounded-lg px-3.5 py-2.5 text-left text-sm transition-colors"
+              style={{
+                border: `1px solid ${
+                  isCorrectPick ? CD.success : isWrongPick ? CD.danger : CD.borderStrong
+                }`,
+                background: isCorrectPick ? "rgba(74,157,124,0.08)" : "transparent",
+                color: isWrongPick ? CD.mutedSoft : CD.ink,
+                cursor: passed ? "default" : "pointer",
+              }}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+      {passed && check.explain && (
+        <p className="flex items-start gap-2 text-sm leading-relaxed" style={{ color: CD.muted }}>
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" style={{ color: CD.success }} />
+          {check.explain}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -326,17 +581,19 @@ function StepNav({
   onPrev,
   onNext,
   isLast,
+  nextLocked,
 }: {
   idx: number;
   total: number;
   onPrev: () => void;
   onNext: () => void;
   isLast: boolean;
+  nextLocked: boolean;
 }) {
   const dots = useMemo(() => Array.from({ length: total }, (_, i) => i), [total]);
   return (
-    <div className="pt-4 space-y-5">
-      <div className="flex justify-center items-center gap-1.5">
+    <div className="space-y-5 pt-4">
+      <div className="flex items-center justify-center gap-1.5">
         {dots.map((i) => (
           <span
             key={i}
@@ -344,7 +601,8 @@ function StepNav({
             className="h-1.5 rounded-full transition-all"
             style={{
               width: i === idx ? 20 : 6,
-              background: i === idx ? "#FF6B4A" : i < idx ? "rgba(255,135,109,0.4)" : "rgba(255,255,255,0.12)",
+              background:
+                i === idx ? CD.accent : i < idx ? "rgba(255,107,74,0.4)" : "rgba(255,255,255,0.12)",
             }}
           />
         ))}
@@ -355,7 +613,8 @@ function StepNav({
           type="button"
           onClick={onPrev}
           disabled={idx === 0}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2.5 text-sm font-medium transition-colors hover:border-foreground/30 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          style={{ border: `1px solid ${CD.borderStrong}`, background: CD.surface, color: CD.ink }}
         >
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -364,13 +623,28 @@ function StepNav({
         <button
           type="button"
           onClick={onNext}
-          className="group inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold shadow-lg shadow-black/20 transition-all hover:shadow-xl hover:shadow-black/30 hover:-translate-y-px"
-          style={{ background: "#FF6B4A", color: "#18181B" }}
+          disabled={nextLocked}
+          title={nextLocked ? "Answer the quick check to continue" : undefined}
+          className="group inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold transition-all hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: CD.accent, color: CD.canvas }}
         >
           {isLast ? "Finish" : "Next"}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </button>
       </div>
+
+      <p
+        className="hidden text-center sm:block"
+        style={{
+          fontFamily: FONT_MONO,
+          fontSize: "0.625rem",
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: CD.mutedSoft,
+        }}
+      >
+        ← → keys to navigate
+      </p>
     </div>
   );
 }
@@ -379,72 +653,87 @@ function FinishedPanel({ guide, onRestart }: { guide: LearnGuide; onRestart: () 
   const related = guide.relatedSlugs
     .map((s) => getGuideBySlug(s))
     .filter((g): g is LearnGuide => Boolean(g));
+  const scope = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      if (prefersReducedMotion() || !scope.current) return;
+      gsap.fromTo(
+        scope.current.querySelectorAll("[data-enter]"),
+        { opacity: 0, y: 16 },
+        { opacity: 1, y: 0, duration: 0.48, ease: "cd", stagger: 0.06 },
+      );
+    },
+    { scope },
+  );
+
   return (
     <div
-      className="rounded-2xl p-6 sm:p-8 space-y-6"
-      style={{
-        background: "rgba(74,157,124,0.06)",
-        border: "1px solid rgba(74,157,124,0.3)",
-      }}
+      ref={scope}
+      className="space-y-6 rounded-2xl p-6 sm:p-8"
+      style={{ background: "rgba(74,157,124,0.06)", border: "1px solid rgba(74,157,124,0.3)" }}
     >
-      <div className="flex items-center gap-3">
-        <CheckCircle2 className="h-6 w-6" style={{ color: "#4A9D7C" }} />
+      <div className="flex items-center gap-3" data-enter>
+        <CheckCircle2 className="h-6 w-6" style={{ color: CD.success }} />
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest" style={{ color: "#4A9D7C" }}>
+          <div
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: "0.625rem",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: CD.success,
+            }}
+          >
             Guide complete
           </div>
           <div className="text-lg font-bold">You're through it.</div>
         </div>
       </div>
 
-      <p className="text-sm text-muted-foreground leading-relaxed">
+      <p className="text-sm leading-relaxed" style={{ color: CD.muted }} data-enter>
         Keep learning. These guides pair well with what you just read.
       </p>
 
       {related.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" data-enter>
           {related.map((g) => (
-            <a
+            <Link
               key={g.slug}
-              href={`/learn/${g.slug}`}
-              className="group flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-all hover:border-[#FF6B4A]/40"
+              to={`/learn/${g.slug}`}
+              className="group flex items-center justify-between gap-3 rounded-lg px-4 py-3 transition-all"
+              style={{ border: `1px solid ${CD.borderStrong}`, background: CD.surface }}
             >
-              <span className="text-sm font-medium text-foreground group-hover:text-[#FF6B4A] transition-colors line-clamp-2">
+              <span className="line-clamp-2 text-sm font-medium transition-colors group-hover:text-[#FF6B4A]">
                 {g.title}
               </span>
-              <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-[#FF6B4A] transition-colors" />
-            </a>
+              <ArrowUpRight
+                className="h-4 w-4 shrink-0 transition-colors group-hover:text-[#FF6B4A]"
+                style={{ color: CD.mutedSoft }}
+              />
+            </Link>
           ))}
         </div>
       )}
 
-      <div className="flex items-center gap-3 pt-2">
+      <div className="flex items-center gap-3 pt-2" data-enter>
         <button
           type="button"
           onClick={onRestart}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium hover:border-foreground/30"
+          className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium"
+          style={{ border: `1px solid ${CD.borderStrong}`, background: CD.surface, color: CD.ink }}
         >
           <ArrowLeft className="h-4 w-4" />
           Start over
         </button>
-        <a
-          href="/learn"
+        <Link
+          to="/learn"
           className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold"
-          style={{ background: "#FF6B4A", color: "#18181B" }}
+          style={{ background: CD.accent, color: CD.canvas }}
         >
           All guides
-        </a>
+        </Link>
       </div>
-    </div>
-  );
-}
-
-/* Unused but kept to avoid breaking imports from prior versions. */
-function _VideoPlaceholder() {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-card/40 px-5 py-4">
-      <PlayCircle className="h-5 w-5 text-muted-foreground shrink-0" />
-      <div className="text-sm text-muted-foreground">Video walk-through coming soon.</div>
     </div>
   );
 }
