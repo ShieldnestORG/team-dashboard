@@ -76,7 +76,7 @@ Plan: use a Claude browser agent to capture real screenshots from the live produ
 ### Products
 - [x] `placeholder-creditscore-hero.png` — CreditScore report hero view, big numeric score, trend below
 - [x] `placeholder-creditscore-trend.png` — 30-day trend chart on CreditScore report
-- [x] `placeholder-creditscore-tiers.png` — three-column pricing showing $29 / $49 / $149 tiers
+- [x] `placeholder-creditscore-tiers.png` — pricing page showing $19 one-time + $49 / $199 / $499 tiers
 - [x] `placeholder-directory-listing.png` — example live directory listing page for a real client
 - [x] `placeholder-directory-tiers.png` — Directory Listings pricing tiers (Featured / Verified / Boosted)
 - [x] `placeholder-partner-network.png` — example partner microsite editorial page mentioning a business
