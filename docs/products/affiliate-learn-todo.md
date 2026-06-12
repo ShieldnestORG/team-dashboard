@@ -2,12 +2,47 @@
 name: Affiliate Learn & Teach — Running TODO
 description: Iteration list for the /learn curriculum. Screenshot plan, content polish, v2 ideas, and notes discovered during build.
 type: running-todo
-last_updated: 2026-04-23
+last_updated: 2026-06-12
 ---
 
 # Affiliate Learn — Running TODO
 
 Index of everything that's still open, discovered during the v1 build, or lined up for v2. Update this doc whenever a new TODO surfaces.
+
+## Status as of 2026-06-12 — v2 revamp shipped (branch `feat/affiliate-learn-revamp`)
+
+**Shipped (v2):**
+- GSAP motion system: `ui/src/lib/cdMotion.ts` (CD ease, reduced-motion guard); gsap rides
+  in the lazy `/learn/:slug` route chunk, not the main bundle. `tw-animate-css` import in
+  `index.css` revived the ~22 previously-dead `animate-in` call sites repo-wide.
+- Guide player rebuilt on CDPage/CD tokens (design fork eliminated): staggered step
+  entrances, URL-hash history (browser back/forward step through), aria-live + keyboard
+  hints, mobile-clean, video embed renders when `videoEmbedUrl` is set.
+- All 16 visual kinds animate (dial sweeps, trend draws, chat types, rows cascade…).
+- NEW `walkthrough` visual kind: real screenshot + animated camera/spotlight/tap.
+  4 steps converted (creditscore pricing + free-scan-with-tap, directory pricing,
+  partner pricing).
+- Recall checks (`GuideStep.check`): tap-to-answer cards gate Next; objection-guide
+  coverage still TODO (only schema + player shipped).
+- localStorage progress (`ui/src/lib/learnProgress.ts`): resume position, completed
+  states, index shows per-card status + "N of 17 complete" + Continue CTA.
+- Pricing corrected against migration 0088 + PRDs (CS Pro $149→$499, one-time $29→$19,
+  partner mentions 1/3→2/8; bundle savings math recomputed in guides + bundles-prd).
+- Program rules single-sourced in `ui/src/content/affiliate-program-rules.ts`
+  (page + dashboard policy modal); policy modal's 10s timers replaced with per-rule
+  comprehension checks.
+- Dashboard Getting Started gained a "Read the AEO vs SEO guide" step (driven by real
+  learn progress); tiers page $10-instead-of-$1,000 display bug fixed.
+- Screenshots: 8 of 18 captured from live surfaces (see checklist below). Not capturable
+  by automation: google-serp (bot-blocked — the animated SERP visual covers it),
+  chatgpt-answer (needs session), intel-api-docs (no public surface found),
+  aeo bundle set (no public bundle pricing page), objections set (auth/redaction).
+  Unused-but-captured, available for future steps: creditscore-hero, creditscore-trend,
+  directory-listing, partner-network.
+
+**Open after v2:** remaining 10 screenshots (above), recall-check content for the 6
+objection guides, videos (P2 below, unchanged), Sage bio page + commission-reference
+page (P3 below, unchanged).
 
 ## Status as of 2026-04-23
 
@@ -36,16 +71,16 @@ Plan: use a Claude browser agent to capture real screenshots from the live produ
 ### Foundations
 - [ ] `placeholder-google-serp.png` — Google SERP for "best plumber near me" or similar. Shows blue-link era. Real, anonymized.
 - [ ] `placeholder-chatgpt-answer.png` — ChatGPT giving a single-business recommendation for a natural-language query. Real answer, real business (with permission) or a CD client.
-- [ ] `placeholder-creditscore-free-scan.png` — the input field on coherencedaddy.com where a URL is entered for the free scan
+- [x] `placeholder-creditscore-free-scan.png` — the input field on coherencedaddy.com where a URL is entered for the free scan
 
 ### Products
-- [ ] `placeholder-creditscore-hero.png` — CreditScore report hero view, big numeric score, trend below
-- [ ] `placeholder-creditscore-trend.png` — 30-day trend chart on CreditScore report
-- [ ] `placeholder-creditscore-tiers.png` — three-column pricing showing $29 / $49 / $149 tiers
-- [ ] `placeholder-directory-listing.png` — example live directory listing page for a real client
-- [ ] `placeholder-directory-tiers.png` — Directory Listings pricing tiers (Featured / Verified / Boosted)
-- [ ] `placeholder-partner-network.png` — example partner microsite editorial page mentioning a business
-- [ ] `placeholder-partner-tiers.png` — Partner Network tiers (Proof / Performance / Premium)
+- [x] `placeholder-creditscore-hero.png` — CreditScore report hero view, big numeric score, trend below
+- [x] `placeholder-creditscore-trend.png` — 30-day trend chart on CreditScore report
+- [x] `placeholder-creditscore-tiers.png` — three-column pricing showing $29 / $49 / $149 tiers
+- [x] `placeholder-directory-listing.png` — example live directory listing page for a real client
+- [x] `placeholder-directory-tiers.png` — Directory Listings pricing tiers (Featured / Verified / Boosted)
+- [x] `placeholder-partner-network.png` — example partner microsite editorial page mentioning a business
+- [x] `placeholder-partner-tiers.png` — Partner Network tiers (Proof / Performance / Premium)
 - [ ] `placeholder-intel-api-docs.png` — Intel API docs page showing a JSON response example
 
 ### Bundles
