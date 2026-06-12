@@ -23,6 +23,11 @@ export const CD_EASE = CustomEase.create("cd", "0.22,0.61,0.36,1");
 export const ENTRANCE_DURATION = 0.48;
 export const ENTRANCE_STAGGER = 0.06;
 
+// Console/debug access (drive the clock headlessly via gsap.updateRoot).
+if (typeof window !== "undefined") {
+  (window as unknown as { gsap?: typeof gsap }).gsap = gsap;
+}
+
 export function prefersReducedMotion(): boolean {
   return (
     typeof window !== "undefined" &&

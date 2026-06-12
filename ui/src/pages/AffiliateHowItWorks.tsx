@@ -15,28 +15,13 @@ import {
   PenLine,
   Star,
 } from "lucide-react";
-
-const CD = {
-  canvas: "#0E0E10",
-  surface: "#18181B",
-  surfaceAlt: "#1F1F22",
-  ink: "#F2F1ED",
-  muted: "#A1A1A6",
-  border: "rgba(255,255,255,0.08)",
-  borderStrong: "rgba(255,255,255,0.14)",
-  accent: "#FF6B4A",
-  accentPressed: "#E5553A",
-};
-
-const FONT_SANS =
-  '"Geist", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const FONT_MONO =
-  '"Geist Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace';
-
-const LIFT_SHADOW =
-  "0 10px 24px -8px rgba(0,0,0,0.55), 0 2px 6px -1px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.18)";
-const LIFT_SHADOW_HOVER =
-  "0 18px 36px -10px rgba(0,0,0,0.65), 0 4px 12px -2px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.22)";
+import {
+  CD,
+  LIFT_SHADOW,
+  LIFT_SHADOW_HOVER,
+  FONT_SANS,
+  FONT_MONO,
+} from "@/lib/cdDesign";
 
 type Slide = {
   icon: typeof Coffee;

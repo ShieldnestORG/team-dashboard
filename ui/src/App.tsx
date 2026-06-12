@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -77,8 +78,14 @@ import { AffiliateDashboard } from "./pages/AffiliateDashboard";
 import { AffiliateEarnings } from "./pages/AffiliateEarnings";
 import { AffiliatePayouts } from "./pages/AffiliatePayouts";
 import { AffiliateTiers } from "./pages/AffiliateTiers";
-import { AffiliateLearn } from "./pages/AffiliateLearn";
-import { AffiliateLearnGuide } from "./pages/AffiliateLearnGuide";
+// Lazy — the learn surfaces pull gsap (cdMotion); route-splitting keeps it out
+// of the main chunk for everyone else.
+const AffiliateLearn = lazy(() =>
+  import("./pages/AffiliateLearn").then((m) => ({ default: m.AffiliateLearn })),
+);
+const AffiliateLearnGuide = lazy(() =>
+  import("./pages/AffiliateLearnGuide").then((m) => ({ default: m.AffiliateLearnGuide })),
+);
 import { AffiliateProgramRules } from "./pages/AffiliateProgramRules";
 import { AffiliateClawbacks } from "./pages/AffiliateClawbacks";
 import { AffiliateLeaderboard } from "./pages/AffiliateLeaderboard";
@@ -425,8 +432,22 @@ function AffiliateSite() {
         <Route path="payouts" element={<AffiliatePayouts />} />
         <Route path="clawbacks" element={<AffiliateClawbacks />} />
         <Route path="tiers" element={<AffiliateTiers />} />
-        <Route path="learn" element={<AffiliateLearn />} />
-        <Route path="learn/:slug" element={<AffiliateLearnGuide />} />
+        <Route
+          path="learn"
+          element={
+            <Suspense fallback={null}>
+              <AffiliateLearn />
+            </Suspense>
+          }
+        />
+        <Route
+          path="learn/:slug"
+          element={
+            <Suspense fallback={null}>
+              <AffiliateLearnGuide />
+            </Suspense>
+          }
+        />
         <Route path="program-rules" element={<AffiliateProgramRules />} />
         <Route path="affiliate-program-rules" element={<Navigate to="/program-rules" replace />} />
         <Route path="leaderboard" element={<AffiliateLeaderboard />} />
