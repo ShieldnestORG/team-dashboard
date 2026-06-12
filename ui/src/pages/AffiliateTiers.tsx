@@ -133,7 +133,7 @@ export function AffiliateTiers() {
                   >
                     Next: <strong>{formatTierName(currentTier.next.name)}</strong> at{" "}
                     <Mono style={{ color: CD.canvas }}>
-                      {formatDollarsCompact(currentTier.next.minLifetimeCents / 100)}
+                      {formatDollarsCompact(currentTier.next.minLifetimeCents)}
                     </Mono>{" "}
                     lifetime &amp; {currentTier.next.minActivePartners} active partners.
                   </p>

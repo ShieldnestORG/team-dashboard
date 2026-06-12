@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { Link } from "@/lib/router";
 import { AffiliateNav } from "@/components/AffiliateNav";
 import { getAffiliateToken } from "@/api/affiliates";
 import {
@@ -6,7 +8,9 @@ import {
   type LearnGuide,
   type LearnSection,
 } from "@/content/affiliate-learn";
-import { ArrowUpRight, Clock3 } from "lucide-react";
+import { getGuideBySlug } from "@/content/affiliate-learn";
+import { getGuideProgress, getGuideState, getProgressSummary } from "@/lib/learnProgress";
+import { ArrowRight, ArrowUpRight, CheckCircle2, Clock3 } from "lucide-react";
 import {
   CDPage,
   EditorialCard,
@@ -70,6 +74,7 @@ export function AffiliateLearn() {
             products, the bundles, and the real things owners say when you pitch them.
             Step-by-step, plain English, no jargon.
           </p>
+          <ProgressStrip />
         </section>
 
         {SECTION_ORDER.map((section, i) => (
@@ -82,6 +87,43 @@ export function AffiliateLearn() {
         ))}
       </main>
     </CDPage>
+  );
+}
+
+function ProgressStrip() {
+  const summary = useMemo(
+    () => getProgressSummary(LEARN_GUIDES.map((g) => g.slug)),
+    [],
+  );
+  if (summary.completed === 0 && !summary.resumeSlug) return null;
+  const resumeGuide = summary.resumeSlug ? getGuideBySlug(summary.resumeSlug) : undefined;
+  const pct = (summary.completed / summary.total) * 100;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl px-4 py-3"
+      style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${CD.borderStrong}` }}
+    >
+      <Mono style={{ color: CD.ink, fontSize: "0.75rem" }}>
+        {summary.completed} of {summary.total} complete
+      </Mono>
+      <div
+        className="h-1 w-28 overflow-hidden rounded-full"
+        style={{ background: CD.border }}
+        aria-hidden
+      >
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CD.accent }} />
+      </div>
+      {resumeGuide && (
+        <Link
+          to={`/learn/${resumeGuide.slug}`}
+          className="inline-flex items-center gap-1.5 text-sm font-medium"
+          style={{ color: CD.accent }}
+        >
+          Continue: {resumeGuide.title}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      )}
+    </div>
   );
 }
 
@@ -114,9 +156,11 @@ function SectionBlock({ section, guides }: { section: LearnSection; guides: Lear
 }
 
 function GuideCard({ guide }: { guide: LearnGuide }) {
+  const state = getGuideState(guide.slug);
+  const progress = state === "in-progress" ? getGuideProgress(guide.slug) : null;
   return (
-    <a
-      href={`/learn/${guide.slug}`}
+    <Link
+      to={`/learn/${guide.slug}`}
       className="group block transition-colors"
       style={{ textDecoration: "none" }}
     >
@@ -131,10 +175,14 @@ function GuideCard({ guide }: { guide: LearnGuide }) {
           >
             {guide.title}
           </h4>
-          <ArrowUpRight
-            className="h-4 w-4 shrink-0 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-            style={{ color: CD.muted }}
-          />
+          {state === "completed" ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: CD.success }} />
+          ) : (
+            <ArrowUpRight
+              className="h-4 w-4 shrink-0 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+              style={{ color: CD.muted }}
+            />
+          )}
         </div>
         <p className="text-sm leading-relaxed line-clamp-3" style={{ color: CD.muted }}>
           {guide.subtitle}
@@ -144,8 +192,16 @@ function GuideCard({ guide }: { guide: LearnGuide }) {
           <Mono style={{ color: CD.muted, fontSize: "0.6875rem" }}>
             {guide.readingMinutes} min · {guide.steps.length} steps
           </Mono>
+          {state === "completed" && (
+            <Mono style={{ color: CD.success, fontSize: "0.6875rem" }}>· Completed</Mono>
+          )}
+          {state === "in-progress" && progress && (
+            <Mono style={{ color: CD.accent, fontSize: "0.6875rem" }}>
+              · In progress — step {progress.lastStep + 1}
+            </Mono>
+          )}
         </div>
       </EditorialCard>
-    </a>
+    </Link>
   );
 }

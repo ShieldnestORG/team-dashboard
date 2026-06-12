@@ -35,6 +35,7 @@ import {
 } from "@/components/cd/CDPrimitives";
 import { CD, FONT_MONO, formatDollars } from "@/lib/cdDesign";
 import { PROGRAM_RULES } from "@/content/affiliate-program-rules";
+import { getGuideState } from "@/lib/learnProgress";
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; text: string; border: string }> = {
   none:      { label: "Queued",    bg: "rgba(255,255,255,0.04)", text: CD.muted,   border: CD.border },
@@ -424,6 +425,7 @@ export function AffiliateDashboard() {
   const liveCampaign = promoCampaigns.find((c) => c.status === "live") ?? null;
   const policyAccepted = Boolean(affiliate.policyAcceptedAt);
   const hasProspects = prospectCount > 0;
+  const aeoGuideRead = getGuideState("aeo-vs-seo") === "completed";
   // A brand-new affiliate still needs orientation until they've both accepted
   // the rules and sent their first lead. Once they have, the panel collapses to
   // a small dismissible tip; once dismissed, returning users never see it again.
@@ -488,7 +490,7 @@ export function AffiliateDashboard() {
                   Let's get your first lead moving.
                 </h2>
                 <p className="mt-2 max-w-xl text-sm leading-relaxed" style={{ color: CD.muted }}>
-                  Three quick steps and you're earning. You bring the relationship —
+                  Four quick steps and you're earning. You bring the relationship —
                   we handle the analysis, outreach, and closing. Your job is to point us at
                   great businesses and track them right here.
                 </p>
@@ -508,6 +510,23 @@ export function AffiliateDashboard() {
                   />
                   <GettingStartedStep
                     n={2}
+                    done={aeoGuideRead}
+                    active={policyAccepted && !aeoGuideRead}
+                    title="Read the one guide that matters"
+                    body="AEO vs SEO, explained like you're talking to your uncle — the 2-minute read every owner conversation builds on."
+                    action={
+                      !aeoGuideRead
+                        ? {
+                            label: "Open the guide →",
+                            onClick: () => {
+                              window.location.href = "/learn/aeo-vs-seo";
+                            },
+                          }
+                        : undefined
+                    }
+                  />
+                  <GettingStartedStep
+                    n={3}
                     done={hasProspects}
                     active={policyAccepted && !hasProspects}
                     title="Submit your first business lead"
@@ -519,8 +538,8 @@ export function AffiliateDashboard() {
                     }
                   />
                   <GettingStartedStep
-                    n={3}
-                    done={false}
+                    n={4}
+                    done={policyAccepted && hasProspects}
                     active={hasProspects}
                     title="Track it & earn"
                     body="Watch each lead move from scan → analysis → conversion below. When a client pays, your commission starts."

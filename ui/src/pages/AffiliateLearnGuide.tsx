@@ -23,6 +23,12 @@ import {
 import { CDPage } from "@/components/cd/CDPrimitives";
 import { CD, FONT_MONO } from "@/lib/cdDesign";
 import { gsap, useGSAP, prefersReducedMotion } from "@/lib/cdMotion";
+import {
+  getGuideProgress,
+  recordCheckPassed,
+  recordCompleted,
+  recordStep,
+} from "@/lib/learnProgress";
 import { LearnVisual } from "./AffiliateLearnVisual";
 import { WalkthroughVisual } from "./AffiliateLearnWalkthrough";
 
@@ -48,15 +54,24 @@ export function AffiliateLearnGuide() {
     [location.hash, finished, total],
   );
 
-  // Per-step recall-check results for this visit (persisted in Phase 3).
+  // Per-step recall-check results — seeded from stored progress so revisits
+  // don't re-lock Next on already-passed checks.
   const [passedChecks, setPassedChecks] = useState<Record<number, boolean>>({});
-  useEffect(() => setPassedChecks({}), [slug]);
+  useEffect(() => {
+    const stored = slug ? getGuideProgress(slug)?.passedChecks : undefined;
+    setPassedChecks(
+      stored ? Object.fromEntries(stored.map((i) => [i, true])) : {},
+    );
+  }, [slug]);
 
-  // Normalize a missing/invalid hash to #1 without stacking a history entry.
+  // Normalize a missing/invalid hash without stacking a history entry —
+  // resuming at the furthest step reached on a previous unfinished visit.
   useEffect(() => {
     if (!guide || finished) return;
     if (parseStepHash(location.hash, total) === null) {
-      navigate("#1", { replace: true });
+      const stored = slug ? getGuideProgress(slug) : null;
+      const resume = stored && !stored.completedAt ? Math.min(stored.lastStep, total - 1) : 0;
+      navigate(`#${resume + 1}`, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guide, location.hash, finished, total]);
@@ -67,6 +82,13 @@ export function AffiliateLearnGuide() {
     const t = setTimeout(() => window.scrollTo(0, 0), 50);
     return () => clearTimeout(t);
   }, [idx, finished, guide]);
+
+  // Persist progress.
+  useEffect(() => {
+    if (!guide || !slug) return;
+    if (finished) recordCompleted(slug);
+    else recordStep(slug, idx);
+  }, [slug, guide, idx, finished]);
 
   const step = guide?.steps[idx];
   const isLast = idx === total - 1;
@@ -176,7 +198,10 @@ export function AffiliateLearnGuide() {
               key={idx}
               step={step}
               checkPassed={Boolean(passedChecks[idx])}
-              onCheckPassed={() => setPassedChecks((m) => ({ ...m, [idx]: true }))}
+              onCheckPassed={() => {
+                setPassedChecks((m) => ({ ...m, [idx]: true }));
+                if (slug) recordCheckPassed(slug, idx);
+              }}
             />
             <StepNav
               idx={idx}
