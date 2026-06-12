@@ -34,6 +34,7 @@ import {
   CDPrimaryButton,
 } from "@/components/cd/CDPrimitives";
 import { CD, FONT_MONO, formatDollars } from "@/lib/cdDesign";
+import { PROGRAM_RULES } from "@/content/affiliate-program-rules";
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; text: string; border: string }> = {
   none:      { label: "Queued",    bg: "rgba(255,255,255,0.04)", text: CD.muted,   border: CD.border },
@@ -97,28 +98,11 @@ const CLOSE_PATH_OPTIONS: { value: ClosePreference; label: string; helper?: stri
   },
 ];
 
-const POLICY_STEPS: { title: string; body: string }[] = [
-  {
-    title: "Lead Ownership",
-    body: "When you submit a valid new business lead, that lead is reserved under your account for a limited ownership period. If the business signs during that period and your referral stays valid, you receive credit per program rules.",
-  },
-  {
-    title: "Warm Introductions",
-    body: "If you already know the owner or have spoken with them, log that in the lead form. Warm referrals often move faster and help us coordinate the best outreach plan.",
-  },
-  {
-    title: "Closing Support",
-    body: "You can introduce, follow up, or help support a deal — but you cannot promise pricing, discounts, guarantees, or custom terms unless Coherence Daddy approves it.",
-  },
-  {
-    title: "Shared Credit",
-    body: "Many deals close through a mix of your relationship and our sales process. If your referral is valid and tracked correctly, your credit stays protected.",
-  },
-  {
-    title: "Duplicate Leads",
-    body: "The first valid qualified submission usually wins ownership. Duplicates and edge cases are reviewed by admin.",
-  },
-];
+// Derived from the canonical rules module — same copy the /program-rules page shows.
+const POLICY_STEPS: { title: string; body: string }[] = PROGRAM_RULES.map((r) => ({
+  title: r.title,
+  body: r.summary,
+}));
 
 function todayIsoDate(): string {
   const d = new Date();

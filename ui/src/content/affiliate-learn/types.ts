@@ -41,7 +41,24 @@ export type Visual =
   | { kind: "big-statement"; primary: string; secondary?: string }
   | { kind: "question-card"; number: number; question: string }
   | { kind: "vs-split"; left: { label: string; body: string }; right: { label: string; body: string } }
-  | { kind: "emphasis-card"; label?: string; text: string };
+  | { kind: "emphasis-card"; label?: string; text: string }
+  | {
+      /** Real product screenshot with an animated camera over it (zoom, spotlight, tap).
+       *  Consecutive steps sharing the same src get continuous camera moves. */
+      kind: "walkthrough";
+      /** Filename under /affiliate-learn/screenshots/ in ui/public. */
+      src: string;
+      /** Shown in the browser-chrome mock URL bar. */
+      url?: string;
+      /** Natural width/height of the capture, for the stage aspect ratio. */
+      aspect?: { w: number; h: number };
+      /** Camera focus point (percent of image) + zoom scale. Defaults to full view. */
+      camera?: { cx: number; cy: number; scale: number };
+      /** Dim everything except this region (percent of image), with optional label chip. */
+      spotlight?: { x: number; y: number; w: number; h: number; label?: string };
+      /** Simulated cursor glide + tap ripple at this point (percent of image). */
+      tap?: { x: number; y: number };
+    };
 
 export interface GuideStep {
   number: number;
@@ -67,6 +84,15 @@ export interface GuideStep {
     caption?: string;
   };
   callout?: GuideCallout;
+  /** Optional recall check — tap-to-answer card shown after the step content.
+   *  Wrong picks shake and explain; the right pick pops and unlocks Next. */
+  check?: {
+    question: string;
+    options: string[];
+    correctIndex: number;
+    /** Shown once answered correctly — why this is the right move. */
+    explain?: string;
+  };
 }
 
 export interface LearnGuide {

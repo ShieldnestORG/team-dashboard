@@ -35,15 +35,15 @@ export const PRODUCT_GUIDES: LearnGuide[] = [
       {
         number: 3,
         eyebrow: "Three tiers",
-        headline: "$29 · $49/mo · $149/mo.",
+        headline: "$19 · $49/mo · $499/mo.",
         kicker: "Audit. Starter. Pro. Foot-in-door, ongoing, full coaching.",
         emphasis: "Full coaching",
         visual: {
           kind: "tier-cards",
           tiers: [
-            { name: "Audit", price: "$29", blurb: "One-time scan. Static report. Foot-in-door." },
+            { name: "Audit", price: "$19", blurb: "One-time scan. Static report. Foot-in-door." },
             { name: "Starter", price: "$49/mo", blurb: "Ongoing scans. Trend chart. Email alerts." },
-            { name: "Pro", price: "$149/mo", blurb: "+ Competitor tracking. Monthly coaching doc." },
+            { name: "Pro", price: "$499/mo", blurb: "+ Competitor tracking. Monthly coaching doc." },
           ],
         },
         analogy: { text: "Like car insurance — pick your coverage level. Everyone starts somewhere." },
@@ -248,8 +248,8 @@ export const PRODUCT_GUIDES: LearnGuide[] = [
         visual: {
           kind: "tier-cards",
           tiers: [
-            { name: "Proof", price: "$49/mo", blurb: "One mention per month on a partner site." },
-            { name: "Performance", price: "$149/mo", blurb: "3 mentions/mo + own microsite page." },
+            { name: "Proof", price: "$49/mo", blurb: "2 mentions per month on partner sites." },
+            { name: "Performance", price: "$149/mo", blurb: "8 mentions/mo + own microsite page." },
             { name: "Premium", price: "$499/mo", blurb: "+ Editorial feature + inbound form." },
           ],
         },

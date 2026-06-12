@@ -112,7 +112,7 @@ Premium  | 8/mo   | 6/mo  | 4/mo  | 2/mo  | 1x     | 1x
 
 - Proof trial → month 1 report shows clicks/mentions → "Double your reach with Performance" CTA
 - Performance → show month-over-month AEO score improvement (via CreditScore API) → Premium upgrade nudge
-- All tiers → "See how you compare to competitors" → link to CreditScore Audit ($29 one-time)
+- All tiers → "See how you compare to competitors" → link to CreditScore Audit ($19 one-time)
 
 ---
 

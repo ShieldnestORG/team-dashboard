@@ -31,12 +31,12 @@ Pre-packaged combinations of CreditScore, Directory Listings, Partner Network, a
 
 | Included Product | Tier | Standalone Value |
 |-----------------|------|-----------------|
-| CreditScore Monitoring | Pro ($149/mo) | $149/mo |
+| CreditScore Monitoring | Pro ($499/mo) | $499/mo |
 | Directory Listing | Verified ($499/mo) | $499/mo |
 | Partner Network | Performance ($149/mo) | $149/mo |
-| **Bundle Price** | | **$797/mo standalone → $499/mo** |
+| **Bundle Price** | | **$1,147/mo standalone → $499/mo** |
 
-**Savings:** $298/mo (37%)
+**Savings:** $648/mo (56%)
 
 ---
 
@@ -45,13 +45,13 @@ Pre-packaged combinations of CreditScore, Directory Listings, Partner Network, a
 
 | Included Product | Tier | Standalone Value |
 |-----------------|------|-----------------|
-| CreditScore Monitoring | Pro ($149/mo) | $149/mo |
+| CreditScore Monitoring | Pro ($499/mo) | $499/mo |
 | Directory Listing | Boosted ($1,499/mo) | $1,499/mo |
 | Partner Network | Premium ($499/mo) | $499/mo |
 | Intel API | Pro ($49/mo) | $49/mo |
-| **Bundle Price** | | **$2,196/mo standalone → $1,299/mo** |
+| **Bundle Price** | | **$2,546/mo standalone → $1,299/mo** |
 
-**Savings:** $897/mo (41%)
+**Savings:** $1,247/mo (49%)
 
 ---
 
