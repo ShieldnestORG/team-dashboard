@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -421,6 +421,28 @@ const IS_AFFILIATES_SUBDOMAIN =
       new URLSearchParams(window.location.search).get("affiliate") === "1"));
 
 function AffiliateSite() {
+  // The admin shell sets `body { height: 100%; overflow: hidden }` for its
+  // fixed-sidebar layout. The affiliate site scrolls the window instead, so
+  // free the document here (the two never render in the same session — App
+  // short-circuits to one or the other by hostname).
+  useEffect(() => {
+    const html = document.documentElement;
+    const { body } = document;
+    const prev = {
+      htmlHeight: html.style.height,
+      bodyHeight: body.style.height,
+      bodyOverflow: body.style.overflow,
+    };
+    html.style.height = "auto";
+    body.style.height = "auto";
+    body.style.overflow = "visible";
+    return () => {
+      html.style.height = prev.htmlHeight;
+      body.style.height = prev.bodyHeight;
+      body.style.overflow = prev.bodyOverflow;
+    };
+  }, []);
+
   // Plain wrapper — the window is the scroller (cdDesign anti-pattern: no h-screen).
   // AffiliateLearnGuide's scroll reset and the sticky headers rely on window scroll.
   return (
