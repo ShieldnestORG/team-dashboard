@@ -29,6 +29,19 @@ function generateCode(): string {
   return out;
 }
 
+// Normalize an admin-supplied vanity code (e.g. "Remy" → "remy") into a
+// URL-safe slug. Lowercases, collapses runs of non-alphanumerics to a single
+// hyphen, trims stray hyphens, and caps length. Returns "" if nothing usable
+// remains so the caller can fall back to a random code or reject.
+export function slugifyReferralCode(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
+
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
   const hash = scryptSync(password, salt, 64).toString("hex");
@@ -37,6 +50,27 @@ function hashPassword(password: string): string {
 
 export function shareUrlFor(code: string): string {
   return `${SHOP_SHARE_BASE_URL}/?ref=${encodeURIComponent(code)}`;
+}
+
+// Canonical domain for affiliate/influencer links. Defaults to the branded shop
+// face (outrizzd.com) so attributed links match the per-product /p/<id> share
+// links the storefront already emits. Configurable for staging/preview.
+export const SHOP_AFFILIATE_BASE_URL =
+  process.env.SHOP_AFFILIATE_BASE_URL ?? "https://outrizzd.com";
+
+// Build a unified, attributed shop link. `?ref=<code>` is the single global
+// attribution token the storefront ref-beacon reads on every shop page. With a
+// productId it deep-links to one shirt (/p/<id>); without one it lands on the
+// shop home. This is the "one link system" — the same ref param works whether
+// the influencer shares the whole shop or a specific product.
+export function affiliateLinkFor(code: string, productId?: string): string {
+  const ref = encodeURIComponent(code);
+  const base = SHOP_AFFILIATE_BASE_URL.replace(/\/+$/, "");
+  const pid = typeof productId === "string" ? productId.trim() : "";
+  if (pid) {
+    return `${base}/p/${encodeURIComponent(pid)}?ref=${ref}`;
+  }
+  return `${base}/?ref=${ref}`;
 }
 
 export function shopSharersService(db: Db) {
@@ -95,6 +129,50 @@ export function shopSharersService(db: Db) {
         email: normalized,
         referralCode,
         source: input.source ?? "shop_hero",
+      })
+      .returning();
+    return { row: row!, created: true };
+  }
+
+  // Admin-initiated creation (source defaults to 'admin'). Used to mint a
+  // tracking link for a named affiliate/influencer straight from the dashboard
+  // — no shop email-capture, no discount, just a referral link. Idempotent by
+  // email: re-adding an existing sharer returns the existing row untouched.
+  // An optional vanity `referralCode` lets the link read `?ref=remy`; if it is
+  // already taken (or omitted) we fall back accordingly.
+  async function createForAdmin(input: {
+    email: string;
+    referralCode?: string;
+    source?: string;
+  }): Promise<{ row: typeof shopSharers.$inferSelect; created: boolean }> {
+    const normalized = input.email.trim().toLowerCase();
+    const existing = await getByEmail(normalized);
+    if (existing) return { row: existing, created: false };
+
+    let code: string;
+    const requested =
+      typeof input.referralCode === "string" ? input.referralCode.trim() : "";
+    if (requested) {
+      code = slugifyReferralCode(requested);
+      if (!code) {
+        throw new Error(
+          "referralCode must contain at least one letter or number",
+        );
+      }
+      const taken = await getByCode(code);
+      if (taken) {
+        throw new Error(`Referral code "${code}" is already in use`);
+      }
+    } else {
+      code = await mintUniqueCode();
+    }
+
+    const [row] = await db
+      .insert(shopSharers)
+      .values({
+        email: normalized,
+        referralCode: code,
+        source: input.source ?? "admin",
       })
       .returning();
     return { row: row!, created: true };
@@ -230,6 +308,7 @@ export function shopSharersService(db: Db) {
 
   return {
     upsertByEmail,
+    createForAdmin,
     getByEmail,
     getByCode,
     getById,

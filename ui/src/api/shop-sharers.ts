@@ -2,6 +2,9 @@ export interface ShopSharer {
   id: string;
   email: string;
   referralCode: string;
+  shareUrl?: string;
+  // Canonical attributed link on outrizzd.com (?ref=<code>).
+  affiliateUrl?: string;
   affiliateApplicationStatus: string | null;
   affiliateId: string | null;
   sharedMarketingEligible: boolean;
@@ -9,6 +12,19 @@ export interface ShopSharer {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ShopCommission {
+  id: string;
+  referralCode: string;
+  sharerEmail: string | null;
+  orderRef: string;
+  grossAmountCents: number;
+  rate: string;
+  commissionCents: number;
+  currency: string;
+  status: string;
+  createdAt: string;
 }
 
 export interface ShopSharerApproveResult {
@@ -50,4 +66,13 @@ export const shopSharersApi = {
       method: "POST",
       body: JSON.stringify({ notes }),
     }),
+
+  create: (input: { email: string; referralCode?: string }) =>
+    shopRequest<{ sharer: ShopSharer; created: boolean }>(`/admin/sharers`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  listCommissions: () =>
+    shopRequest<{ commissions: ShopCommission[] }>(`/admin/commissions`),
 };
