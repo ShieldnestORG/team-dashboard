@@ -110,8 +110,10 @@ discovery` cron + seed queries), not a connectivity fix.
 
 ## Recommended next actions
 
-- [ ] (Infra) Decide whether agent/web sessions should be tailnet-connected; if yes, provision
-      `TS_AUTHKEY` + network policy + setup script (see §1).
+- [x] (Infra) Tailnet provisioning path documented + scripted →
+      [`docs/deploy/tailnet-session-access.md`](../deploy/tailnet-session-access.md)
+      + `scripts/tailscale-up.sh`. Still requires loosening the env network policy
+      and minting a `TS_AUTHKEY` at environment-creation time.
 - [ ] (Runtime) Run the four checks in §2 on VPS4; record results.
 - [ ] (Harden) Move Firecrawl auth token to `FIRECRAWL_API_KEY` env var.
 - [ ] (Harden) Confirm/seed plugin `apiUrl` in the live instance config.
