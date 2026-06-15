@@ -227,6 +227,10 @@ export function ShopSharersAdmin() {
           <p className="text-xs text-muted-foreground">
             Mint a referral link for an influencer or affiliate. Tracking only —
             the shopper gets <span className="font-medium">no discount</span>.
+            Append <code className="text-[11px]">?ref=&lt;code&gt;</code> to any{" "}
+            <code className="text-[11px]">outrizzd.com</code> link (incl. a
+            single-shirt <code className="text-[11px]">/p/&lt;id&gt;</code> link)
+            to attribute that click.
           </p>
         </div>
         <form
@@ -280,7 +284,7 @@ export function ShopSharersAdmin() {
           <p className="text-xs text-muted-foreground">
             Link preview:{" "}
             <span className="font-mono text-foreground">
-              shop.coherencedaddy.com/?ref={code}
+              outrizzd.com/?ref={code}
             </span>
           </p>
         )}
@@ -318,14 +322,18 @@ export function ShopSharersAdmin() {
           </div>
           <div className="mt-2 flex items-center gap-2">
             <code className="flex-1 text-xs bg-background border border-border rounded p-2 font-mono break-all">
-              {createdSharer.shareUrl ??
-                `https://shop.coherencedaddy.com/?ref=${createdSharer.referralCode}`}
+              {createdSharer.affiliateUrl ??
+                `https://outrizzd.com/?ref=${createdSharer.referralCode}`}
             </code>
             <Button
               size="sm"
               variant="outline"
               onClick={() =>
-                copyLink(createdSharer.id, createdSharer.shareUrl ?? "")
+                copyLink(
+                  createdSharer.id,
+                  createdSharer.affiliateUrl ??
+                    `https://outrizzd.com/?ref=${createdSharer.referralCode}`,
+                )
               }
             >
               {copiedId === createdSharer.id ? (
@@ -392,6 +400,7 @@ export function ShopSharersAdmin() {
                 {rows.map((row) => {
                   const busy = busyId === row.id;
                   const badge = statusBadge(row.affiliateApplicationStatus);
+                  const link = row.affiliateUrl ?? row.shareUrl;
                   return (
                     <tr
                       key={row.id}
@@ -403,11 +412,11 @@ export function ShopSharersAdmin() {
                       <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
                         <div className="flex items-center gap-1.5">
                           <span>{row.referralCode}</span>
-                          {row.shareUrl && (
+                          {link && (
                             <button
                               type="button"
-                              onClick={() => copyLink(row.id, row.shareUrl!)}
-                              title="Copy referral link"
+                              onClick={() => copyLink(row.id, link)}
+                              title="Copy affiliate link (outrizzd.com)"
                               className="text-muted-foreground hover:text-foreground transition-colors"
                             >
                               {copiedId === row.id ? (

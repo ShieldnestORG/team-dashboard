@@ -89,8 +89,23 @@ or a 409. Re-posting an existing email is a no-op that returns the existing row
 The Shop Sharers admin page (`/shop-sharers`) exposes this as an **Add
 affiliate link** form: type a handle and it auto-fills the vanity code and a
 `<handle>@coherencedaddy.com` placeholder email (both editable). Created and
-listed rows surface a copy-to-clipboard `shareUrl`. Admin-created rows have no
+listed rows surface a copy-to-clipboard link. Admin-created rows have no
 `affiliate_application_status`, so they appear under the **All** filter.
+
+#### Canonical link domain
+
+Admin/influencer links use **`outrizzd.com`** (the branded shop face, matching
+the storefront's per-product `/p/<id>` share links), built by
+`affiliateLinkFor(code, productId?)`:
+- base: `https://outrizzd.com/?ref=<code>`
+- per-product: `https://outrizzd.com/p/<id>?ref=<code>`
+
+Responses carry this as `affiliateUrl` (the legacy `shop.coherencedaddy.com`
+`shareUrl` is still returned for back-compat). `?ref=<code>` is the single
+global attribution token, valid on any shop URL. Configurable via
+`SHOP_AFFILIATE_BASE_URL`. The full cross-repo plan (ref persistence cookie,
+deep-link propagation, and the WooCommerce-dependent commission/payout path)
+lives in [affiliate-unified-links.md](./affiliate-unified-links.md).
 
 Approval creates an affiliate with `status='active'`, a random placeholder
 password, and a one-time `reset_token` (14-day TTL). The reset token is

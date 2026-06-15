@@ -52,6 +52,27 @@ export function shareUrlFor(code: string): string {
   return `${SHOP_SHARE_BASE_URL}/?ref=${encodeURIComponent(code)}`;
 }
 
+// Canonical domain for affiliate/influencer links. Defaults to the branded shop
+// face (outrizzd.com) so attributed links match the per-product /p/<id> share
+// links the storefront already emits. Configurable for staging/preview.
+export const SHOP_AFFILIATE_BASE_URL =
+  process.env.SHOP_AFFILIATE_BASE_URL ?? "https://outrizzd.com";
+
+// Build a unified, attributed shop link. `?ref=<code>` is the single global
+// attribution token the storefront ref-beacon reads on every shop page. With a
+// productId it deep-links to one shirt (/p/<id>); without one it lands on the
+// shop home. This is the "one link system" — the same ref param works whether
+// the influencer shares the whole shop or a specific product.
+export function affiliateLinkFor(code: string, productId?: string): string {
+  const ref = encodeURIComponent(code);
+  const base = SHOP_AFFILIATE_BASE_URL.replace(/\/+$/, "");
+  const pid = typeof productId === "string" ? productId.trim() : "";
+  if (pid) {
+    return `${base}/p/${encodeURIComponent(pid)}?ref=${ref}`;
+  }
+  return `${base}/?ref=${ref}`;
+}
+
 export function shopSharersService(db: Db) {
   async function mintUniqueCode(): Promise<string> {
     for (let attempt = 0; attempt < 6; attempt += 1) {

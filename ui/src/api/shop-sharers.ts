@@ -3,6 +3,8 @@ export interface ShopSharer {
   email: string;
   referralCode: string;
   shareUrl?: string;
+  // Canonical attributed link on outrizzd.com (?ref=<code>).
+  affiliateUrl?: string;
   affiliateApplicationStatus: string | null;
   affiliateId: string | null;
   sharedMarketingEligible: boolean;

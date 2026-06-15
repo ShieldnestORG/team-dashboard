@@ -1,7 +1,11 @@
 import { Router, type Request, type Response } from "express";
 import { createHash } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { shopSharersService, shareUrlFor } from "../services/shop-sharers.js";
+import {
+  shopSharersService,
+  shareUrlFor,
+  affiliateLinkFor,
+} from "../services/shop-sharers.js";
 import { logger } from "../middleware/logger.js";
 import { sendTransactional, sendSharerWelcomeEmail } from "../services/email-templates.js";
 import { authRateLimit } from "../middleware/global-rate-limit.js";
@@ -233,10 +237,16 @@ export function shopSharersRoutes(db: Db): Router {
       typeof req.query.status === "string" ? req.query.status : undefined;
     try {
       const rows = await svc.listForAdmin(status);
-      // Surface the ready-to-share link alongside each row so the admin UI can
-      // copy it directly without reconstructing the base URL client-side.
+      // Surface ready-to-share links alongside each row so the admin UI can
+      // copy them directly without reconstructing base URLs client-side.
+      // affiliateUrl is the canonical (outrizzd.com) attributed link; shareUrl
+      // is the legacy shop.coherencedaddy.com form kept for back-compat.
       res.json({
-        sharers: rows.map((r) => ({ ...r, shareUrl: shareUrlFor(r.referralCode) })),
+        sharers: rows.map((r) => ({
+          ...r,
+          shareUrl: shareUrlFor(r.referralCode),
+          affiliateUrl: affiliateLinkFor(r.referralCode),
+        })),
       });
     } catch (err) {
       logger.error({ err }, "shop-sharers: listForAdmin failed");
@@ -277,7 +287,11 @@ export function shopSharersRoutes(db: Db): Router {
         source,
       });
       res.status(created ? 201 : 200).json({
-        sharer: { ...row, shareUrl: shareUrlFor(row.referralCode) },
+        sharer: {
+          ...row,
+          shareUrl: shareUrlFor(row.referralCode),
+          affiliateUrl: affiliateLinkFor(row.referralCode),
+        },
         created,
       });
     } catch (err) {

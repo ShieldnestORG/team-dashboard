@@ -9,7 +9,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { slugifyReferralCode, shareUrlFor } from "../services/shop-sharers.ts";
+import {
+  slugifyReferralCode,
+  shareUrlFor,
+  affiliateLinkFor,
+} from "../services/shop-sharers.ts";
 
 describe("slugifyReferralCode", () => {
   it("lowercases and trims a simple handle", () => {
@@ -53,5 +57,29 @@ describe("shareUrlFor", () => {
 
   it("url-encodes the code", () => {
     expect(shareUrlFor("a b")).toContain("ref=a%20b");
+  });
+});
+
+describe("affiliateLinkFor", () => {
+  it("builds a base attributed link on the affiliate domain", () => {
+    expect(affiliateLinkFor("remy")).toBe("https://outrizzd.com/?ref=remy");
+  });
+
+  it("deep-links to a single product when given a productId", () => {
+    expect(affiliateLinkFor("remy", "abc123")).toBe(
+      "https://outrizzd.com/p/abc123?ref=remy",
+    );
+  });
+
+  it("ignores blank productId and falls back to the base link", () => {
+    expect(affiliateLinkFor("bri", "   ")).toBe(
+      "https://outrizzd.com/?ref=bri",
+    );
+  });
+
+  it("url-encodes both the code and the product id", () => {
+    const url = affiliateLinkFor("a b", "p/d");
+    expect(url).toContain("/p/p%2Fd");
+    expect(url).toContain("?ref=a%20b");
   });
 });
