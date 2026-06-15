@@ -137,10 +137,99 @@ post it after stamping the incoming `cd_ref` (from Phase 2.4) onto the order.
 
 ## How to execute the parts not reachable here
 
-- **Phase 2:** start a Claude Code session on `coherencedaddy-landing` and hand
-  it the Phase 2 spec above.
+- **Phase 2:** start a Claude Code session on `coherencedaddy-landing` and apply
+  the drop-in patches in the appendix below.
 - **Phase 3 Woo side:** needs Hostinger/WooCommerce admin access + a decision on
   the order webhook; not a code-only task in either repo.
+
+## Appendix — Phase 2 drop-in code (coherencedaddy-landing)
+
+Written from the PR #58 file map. **Typecheck in that repo's CI before merge** —
+these were authored without the landing repo available, so treat as a strong
+draft, not CI-verified. File paths assume the layout described in PR #58.
+
+### A. Persist the ref — `components/shop/ref-beacon.tsx`
+
+Add a first-touch cookie write at the top of the existing effect (keep the
+existing `/api/shop/ref/hit` beacon call as-is). Host-only cookie on
+`outrizzd.com` — we deliberately don't set a cross-domain `Domain` (the two shop
+hosts `outrizzd.com` / `coherencedaddy.com` are different registrable domains,
+and the Woo hand-off carries the ref explicitly — see C).
+
+```ts
+const REF_COOKIE = "cd_ref";
+const REF_MAX_AGE = 60 * 60 * 24 * 90; // 90 days
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+// inside the existing useEffect, before the beacon fires:
+const ref = new URLSearchParams(window.location.search).get("ref");
+// First-touch attribution: only set if a ref is present and none stored yet.
+if (ref && !readCookie(REF_COOKIE)) {
+  document.cookie =
+    `${REF_COOKIE}=${encodeURIComponent(ref)}; path=/; max-age=${REF_MAX_AGE}; SameSite=Lax`;
+}
+```
+
+(First-touch chosen so a later un-reffed visit doesn't overwrite the original
+referrer. Switch the `!readCookie` guard to always-set for last-touch.)
+
+### B. Verify `?ref=` survives the deep-link flow
+
+Query strings ride through 307s and Next rewrites, so this is likely already
+fine — confirm with:
+
+```bash
+curl -sI 'https://outrizzd.com/p/<id>?ref=remy' | grep -i location   # ref kept on any redirect
+curl -sI 'https://shop.coherencedaddy.com/p/<id>?ref=remy'           # 200 via middleware rewrite
+```
+
+If `middleware.ts` reconstructs the URL for the `shop.coherencedaddy.com → /shop-home`
+rewrite, ensure it preserves `request.nextUrl.search`.
+
+### C. Carry the ref into the Woo checkout hand-off
+
+The Woo store (`outrizzd.shop`) is a different domain, so the cookie won't cross.
+Append the stored ref to the outbound "Buy"/cart URL so Woo can stamp it as
+`_cd_ref` order meta (feeds Phase 3).
+
+```ts
+// lib/ref.ts
+export function appendRef(url: string): string {
+  if (typeof document === "undefined") return url;
+  const m = document.cookie.match(/(?:^|; )cd_ref=([^;]*)/);
+  const ref = m ? decodeURIComponent(m[1]) : null;
+  if (!ref) return url;
+  const u = new URL(url, window.location.origin);
+  if (!u.searchParams.has("ref")) u.searchParams.set("ref", ref);
+  return u.toString();
+}
+```
+
+Wrap every external Woo checkout/"Buy" link: `href={appendRef(wooCheckoutUrl)}`.
+
+### D. Share-button policy — `components/shop-preview/shop-preview-client.tsx`
+
+Recommendation: the "Share this shirt" button emits a **clean** `outrizzd.com/p/<id>`
+link (do **not** append the current visitor's `cd_ref`). Only an influencer's own
+posted links should carry their ref; propagating an inherited ref would let any
+shopper's re-share credit the original influencer (attribution laundering). No
+code change if the button already builds a clean link.
+
+### E. Woo-side adapter (Hostinger, Phase 3)
+
+On a paid order carrying `_cd_ref`, POST the signed contract from the Phase 3
+section to `https://api.coherencedaddy.com/api/shop/woo/order`. Pseudo:
+
+```
+sig = hmac_sha256_hex(WOO_WEBHOOK_SECRET, `${orderId}|${ref}|${totalCents}|${currency}|${status}`)
+POST {orderRef: orderId, ref, grossAmountCents: totalCents, currency, status}
+  with header X-CD-Signature: sig
+```
 
 ## Cross-references
 - `docs/products/shop-sharers.md` — the ref code / beacon / admin system.
