@@ -2,14 +2,27 @@ import { useEffect, useMemo, useState } from "react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { EmptyState } from "../components/EmptyState";
-import { Users } from "lucide-react";
+import { Users, Check, Copy } from "lucide-react";
 import {
   shopSharersApi,
   type ShopSharer,
   type ShopSharerApproveResult,
 } from "@/api/shop-sharers";
+
+// Mirror of the server-side slugifyReferralCode: lowercases, collapses
+// non-alphanumerics to hyphens, trims, caps at 32 chars. Keeps the vanity
+// code and placeholder email in sync as the admin types a handle.
+function slugifyCode(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
 
 // ---------------------------------------------------------------------------
 // Shop Sharers Admin — approve / reject applications from the shop email
@@ -70,6 +83,72 @@ export function ShopSharersAdmin() {
   const [lastApproval, setLastApproval] = useState<
     ShopSharerApproveResult | null
   >(null);
+
+  // ── Add-affiliate form ───────────────────────────────────────────────────
+  const [handle, setHandle] = useState("");
+  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [codeTouched, setCodeTouched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createdSharer, setCreatedSharer] = useState<ShopSharer | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copyLink(id: string, url: string) {
+    void navigator.clipboard?.writeText(url).then(() => {
+      setCopiedId(id);
+      window.setTimeout(
+        () => setCopiedId((cur) => (cur === id ? null : cur)),
+        1500,
+      );
+    });
+  }
+
+  // Typing the handle auto-fills the vanity code + placeholder email until the
+  // admin overrides either field directly.
+  function handleHandleChange(value: string) {
+    setHandle(value);
+    const slug = slugifyCode(value);
+    if (!codeTouched) setCode(slug);
+    if (!emailTouched) setEmail(slug ? `${slug}@coherencedaddy.com` : "");
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setCreateError("Email is required.");
+      return;
+    }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const res = await shopSharersApi.create({
+        email: trimmedEmail,
+        referralCode: code.trim() || undefined,
+      });
+      setCreatedSharer(res.sharer);
+      if (!res.created) {
+        setCreateError(
+          `${trimmedEmail} already had a link — showing the existing one.`,
+        );
+      }
+      // Reset the form for the next entry.
+      setHandle("");
+      setCode("");
+      setEmail("");
+      setCodeTouched(false);
+      setEmailTouched(false);
+      // Admin-created rows have no application status, so reveal them via "All".
+      if (filter !== "all") setFilter("all");
+      else await refresh();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Failed to create link");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Shop Sharers" }]);
@@ -136,11 +215,77 @@ export function ShopSharersAdmin() {
       <div>
         <h1 className="text-xl font-semibold">Shop Sharers</h1>
         <p className="text-sm text-muted-foreground">
-          Email signups from <code className="text-xs">shop.coherencedaddy.com</code>.
-          Approving a pending application creates an active affiliate row with
-          shared-marketing eligibility.
+          Email signups from <code className="text-xs">shop.coherencedaddy.com</code>,
+          plus affiliate links you mint here. Approving a pending application
+          creates an active affiliate row with shared-marketing eligibility.
         </p>
       </div>
+
+      <Card className="p-4 space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold">Add affiliate link</h2>
+          <p className="text-xs text-muted-foreground">
+            Mint a referral link for an influencer or affiliate. Tracking only —
+            the shopper gets <span className="font-medium">no discount</span>.
+          </p>
+        </div>
+        <form
+          onSubmit={handleCreate}
+          className="grid gap-3 sm:grid-cols-[1fr_1fr_1.4fr_auto] sm:items-end"
+        >
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Name / handle</span>
+            <Input
+              value={handle}
+              onChange={(e) => handleHandleChange(e.target.value)}
+              placeholder="remy"
+              disabled={creating}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Referral code</span>
+            <Input
+              value={code}
+              onChange={(e) => {
+                setCode(slugifyCode(e.target.value));
+                setCodeTouched(true);
+              }}
+              placeholder="remy"
+              disabled={creating}
+              className="font-mono"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Email</span>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setEmailTouched(true);
+              }}
+              placeholder="remy@coherencedaddy.com"
+              disabled={creating}
+            />
+          </label>
+          <Button
+            type="submit"
+            disabled={creating || !email.trim()}
+            className="bg-[#ff876d] hover:bg-[#ff876d]/90 text-white"
+          >
+            {creating ? "Adding…" : "Add link"}
+          </Button>
+        </form>
+        {code && (
+          <p className="text-xs text-muted-foreground">
+            Link preview:{" "}
+            <span className="font-mono text-foreground">
+              shop.coherencedaddy.com/?ref={code}
+            </span>
+          </p>
+        )}
+        {createError && <p className="text-xs text-destructive">{createError}</p>}
+      </Card>
 
       <div className="flex items-center gap-2">
         {FILTERS.map((f) => (
@@ -164,6 +309,41 @@ export function ShopSharersAdmin() {
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           {error}
         </div>
+      )}
+
+      {createdSharer && (
+        <Card className="p-4 bg-[#ff876d]/5 border-[#ff876d]/30">
+          <div className="text-sm font-medium">
+            Affiliate link ready — {createdSharer.email}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="flex-1 text-xs bg-background border border-border rounded p-2 font-mono break-all">
+              {createdSharer.shareUrl ??
+                `https://shop.coherencedaddy.com/?ref=${createdSharer.referralCode}`}
+            </code>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                copyLink(createdSharer.id, createdSharer.shareUrl ?? "")
+              }
+            >
+              {copiedId === createdSharer.id ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            onClick={() => setCreatedSharer(null)}
+          >
+            Dismiss
+          </Button>
+        </Card>
       )}
 
       {lastApproval && (
@@ -221,7 +401,23 @@ export function ShopSharersAdmin() {
                         {row.email}
                       </td>
                       <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
-                        {row.referralCode}
+                        <div className="flex items-center gap-1.5">
+                          <span>{row.referralCode}</span>
+                          {row.shareUrl && (
+                            <button
+                              type="button"
+                              onClick={() => copyLink(row.id, row.shareUrl!)}
+                              title="Copy referral link"
+                              className="text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {copiedId === row.id ? (
+                                <Check className="h-3 w-3" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <span

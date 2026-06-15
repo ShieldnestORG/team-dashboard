@@ -2,6 +2,7 @@ export interface ShopSharer {
   id: string;
   email: string;
   referralCode: string;
+  shareUrl?: string;
   affiliateApplicationStatus: string | null;
   affiliateId: string | null;
   sharedMarketingEligible: boolean;
@@ -49,5 +50,11 @@ export const shopSharersApi = {
     shopRequest<{ sharer: ShopSharer }>(`/admin/sharers/${id}/reject`, {
       method: "POST",
       body: JSON.stringify({ notes }),
+    }),
+
+  create: (input: { email: string; referralCode?: string }) =>
+    shopRequest<{ sharer: ShopSharer; created: boolean }>(`/admin/sharers`, {
+      method: "POST",
+      body: JSON.stringify(input),
     }),
 };

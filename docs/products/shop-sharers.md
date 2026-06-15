@@ -70,9 +70,27 @@ Public view shape:
 
 | Method + path                                 | Purpose                                       |
 |-----------------------------------------------|-----------------------------------------------|
-| `GET  /api/shop/admin/sharers?status=pending` | List sharers, optionally filtered by status.  |
+| `GET  /api/shop/admin/sharers?status=pending` | List sharers, optionally filtered by status. Each row includes a computed `shareUrl`. |
+| `POST /api/shop/admin/sharers`                | Mint a sharer directly (`source='admin'`). Body `{ email, referralCode? }`. Idempotent by email. |
 | `POST /api/shop/admin/sharers/:id/approve`    | Create linked `affiliates` row, flip flags.   |
 | `POST /api/shop/admin/sharers/:id/reject`     | Set status `rejected`, store optional notes.  |
+
+### Admin-created affiliate links
+
+`POST /api/shop/admin/sharers` mints a referral link straight from the
+dashboard for a named influencer/affiliate — no shop email-capture, no welcome
+email, and (like every sharer) **no discount**: the link only attributes the
+visit, the shopper always pays full price. The optional `referralCode` is
+slugified server-side (`slugifyReferralCode`) so the link can read
+`?ref=remy`; if omitted or already taken it falls back to a random 6-char code
+or a 409. Re-posting an existing email is a no-op that returns the existing row
+(`created: false`), so the operation is safe to repeat.
+
+The Shop Sharers admin page (`/shop-sharers`) exposes this as an **Add
+affiliate link** form: type a handle and it auto-fills the vanity code and a
+`<handle>@coherencedaddy.com` placeholder email (both editable). Created and
+listed rows surface a copy-to-clipboard `shareUrl`. Admin-created rows have no
+`affiliate_application_status`, so they appear under the **All** filter.
 
 Approval creates an affiliate with `status='active'`, a random placeholder
 password, and a one-time `reset_token` (14-day TTL). The reset token is

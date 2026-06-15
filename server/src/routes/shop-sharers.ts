@@ -233,10 +233,70 @@ export function shopSharersRoutes(db: Db): Router {
       typeof req.query.status === "string" ? req.query.status : undefined;
     try {
       const rows = await svc.listForAdmin(status);
-      res.json({ sharers: rows });
+      // Surface the ready-to-share link alongside each row so the admin UI can
+      // copy it directly without reconstructing the base URL client-side.
+      res.json({
+        sharers: rows.map((r) => ({ ...r, shareUrl: shareUrlFor(r.referralCode) })),
+      });
     } catch (err) {
       logger.error({ err }, "shop-sharers: listForAdmin failed");
       res.status(500).json({ error: "Failed to list sharers" });
+    }
+  });
+
+  // Admin-created affiliate/influencer link. Mints a sharer row directly
+  // (source 'admin') with an optional vanity referral code. Pure tracking
+  // link — no discount, no email-capture welcome flow. Idempotent by email.
+  router.post("/admin/sharers", async (req: Request, res: Response) => {
+    try {
+      assertBoard(req);
+    } catch {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const body = (req.body ?? {}) as {
+      email?: unknown;
+      referralCode?: unknown;
+      source?: unknown;
+    };
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    if (!email || !EMAIL_RE.test(email)) {
+      res.status(400).json({ error: "Valid email required" });
+      return;
+    }
+    const referralCode =
+      typeof body.referralCode === "string" ? body.referralCode : undefined;
+    const source =
+      typeof body.source === "string" && body.source.length <= 32
+        ? body.source
+        : "admin";
+    try {
+      const { row, created } = await svc.createForAdmin({
+        email,
+        referralCode,
+        source,
+      });
+      res.status(created ? 201 : 200).json({
+        sharer: { ...row, shareUrl: shareUrlFor(row.referralCode) },
+        created,
+      });
+    } catch (err) {
+      // Unique-index violation (race on email/code) → 409.
+      if ((err as { code?: string }).code === "23505") {
+        res.status(409).json({ error: "Email or referral code already in use" });
+        return;
+      }
+      const msg = (err as Error).message ?? "";
+      if (/already in use/.test(msg)) {
+        res.status(409).json({ error: msg });
+        return;
+      }
+      if (/letter or number/.test(msg)) {
+        res.status(400).json({ error: msg });
+        return;
+      }
+      logger.error({ err }, "shop-sharers: admin create failed");
+      res.status(500).json({ error: "Failed to create sharer" });
     }
   });
 
