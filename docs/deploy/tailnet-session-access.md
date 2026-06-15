@@ -71,7 +71,8 @@ In the Tailscale admin console:
    ]
    ```
 
-   Adjust `dst` to however the Firecrawl host is tagged/named in your tailnet.
+   `dst` is the Firecrawl host — **VPS1 (`.12`, tailnet `100.67.128.51`)** — on port `3002`.
+   Use its tailnet tag or name.
 
 ## Step 3 — Add environment secrets / vars
 
@@ -81,12 +82,15 @@ In the web environment config:
 |---|---|---|
 | `TS_AUTHKEY` | the key from Step 2 | **Secret.** Never commit. |
 | `TS_TAGS` | `tag:ci` | matches the ACL tag |
-| `FIRECRAWL_URL` | `http://firecrawl:3002` | **tailnet** address (MagicDNS or `100.x` IP), NOT the public `firecrawl.coherencedaddy.com` |
+| `FIRECRAWL_URL` | `http://100.67.128.51:3002` | **VPS1 (`.12`) tailnet IP** where Firecrawl is bound — NOT `firecrawl.coherencedaddy.com` (that resolves to VPS4 `.14`, the wrong box) |
+| `SSH_PRIVATE_KEY` | the `nestd@pm.me` ed25519 private key | **Secret.** Only for `ssh root@31.220.61.12` ops on the Firecrawl stack (logs, restarts). See "SSH access" below. |
 | `TS_HOSTNAME` | `cc-web` *(optional)* | friendly node name |
 
-> Point `FIRECRAWL_URL` at the **tailnet** endpoint. The public domain
-> (`firecrawl.coherencedaddy.com` → `.14`) is edge-blocked off-tailnet and is
-> not the `:3002` service.
+> **Firecrawl runs on VPS1 (`root@31.220.61.12`), Tailnet-only**, bound to the tailnet IP
+> `100.67.128.51:3002` (not loopback, not public). The public domain
+> `firecrawl.coherencedaddy.com` resolves to VPS4 `.14` — the team-dashboard backend, the
+> *wrong* target. Point `FIRECRAWL_URL` at the tailnet IP. See
+> [`docs/deploy/vps-cheat-sheet.md`](vps-cheat-sheet.md) ("there is no overlap").
 
 ## Step 4 — Wire the setup script
 
@@ -125,6 +129,32 @@ Once `.success == true`, the agent can drive Firecrawl `scrape` / `search` /
 `extract` directly — no more "run it on a tailnet box."
 
 ---
+
+## Optional — SSH to the Firecrawl box (VPS1 `.12`)
+
+Some ops (reading container logs, restarting `firecrawl-api-1`, checking queue depth) need a
+shell on VPS1, not just HTTP. This is what a local laptop session does — to give a *web* session
+the same reach:
+
+1. Add the `nestd@pm.me` **ed25519 private key** as the `SSH_PRIVATE_KEY` secret (Step 3). Per the
+   [cheat sheet](vps-cheat-sheet.md), **both VPS use this same key.**
+2. In the setup script (after `tailscale-up.sh`), install the client and drop the key:
+
+   ```bash
+   apt-get update -y && apt-get install -y openssh-client
+   install -d -m 700 ~/.ssh
+   printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+   chmod 600 ~/.ssh/id_ed25519
+   ssh-keyscan -H 31.220.61.12 >> ~/.ssh/known_hosts 2>/dev/null || true
+   ```
+
+3. Then: `ssh -i ~/.ssh/id_ed25519 root@31.220.61.12`.
+
+> **Reachability still applies.** SSH to `.12` needs both the key *and* a network path to
+> `31.220.61.12:22` — from a sandbox that means either an egress policy permitting port 22 to that
+> host, or reaching it over the tailnet. The Firecrawl HTTP API (`100.67.128.51:3002`)
+> specifically requires the tailnet. The key alone is not enough (this is the cheat sheet's "the
+> key isn't installed where you're calling from" — plus the network boundary).
 
 ## Security notes
 

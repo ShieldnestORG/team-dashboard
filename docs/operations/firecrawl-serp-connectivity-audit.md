@@ -8,7 +8,9 @@ are correctly connected to the rest of the platform.
 > This note was produced from inside an ephemeral, sandboxed agent container that is **not** on
 > the Tailscale network and has **no** project env vars or DB access. Everything marked "static"
 > was verified by reading the source. Everything marked "runtime" still needs to be run from a
-> box that is on the tailnet (VPS4 `.14` or a tailnet laptop).
+> box on the tailnet that can reach **Firecrawl on VPS1 `.12`** (e.g. `ssh root@31.220.61.12`,
+> or a tailnet laptop) — **not** VPS4 `.14`, which is the team-dashboard backend, not the
+> Firecrawl host.
 
 ---
 
@@ -17,7 +19,7 @@ are correctly connected to the rest of the platform.
 | # | Item | Severity | Type |
 |---|---|---|---|
 | 1 | This agent environment is not on the tailnet; can't reach Firecrawl `:3002` | Blocker (for agent-driven scraping) | Infra/config |
-| 2 | Confirm `FIRECRAWL_URL` is set in prod (falls back to edge-blocked public domain) | High | Runtime |
+| 2 | Confirm `FIRECRAWL_URL=http://100.67.128.51:3002` in prod — code default points at the WRONG host (public domain → VPS4 `.14`, but Firecrawl runs on VPS1 `.12`) | High | Runtime |
 | 3 | Confirm self-hosted Firecrawl still accepts the hardcoded `Bearer self-hosted` token | High | Runtime |
 | 4 | Confirm the **plugin's** `apiUrl` config is populated (schema default is blank `""`) | Medium | Runtime |
 | 5 | Confirm embedding service `147.79.78.251:8000` is reachable | Medium | Runtime |
@@ -49,6 +51,17 @@ Ref: https://code.claude.com/docs/en/claude-code-on-the-web
 
 ## 2. Firecrawl — wiring status (static: ✅ correctly connected in code)
 
+> **Where Firecrawl actually runs (corrected 2026-06-15):** the self-hosted Firecrawl /
+> BGE-M3 / Ollama stack lives on **VPS1 (`root@31.220.61.12`), Tailnet-only**, with the API
+> bound to the **Tailnet IP `100.67.128.51:3002`** (not loopback, not public) — confirmed live
+> via SSH and the [VPS cheat sheet](../deploy/vps-cheat-sheet.md) ("if it involves an LLM model,
+> embedding, or web crawl, it's `.12`. There is no overlap"). It is **not** on VPS4 `.14`, which
+> is the team-dashboard backend. **Consequence:** the code default
+> `FIRECRAWL_URL = https://firecrawl.coherencedaddy.com` does **not** reach the real API (that
+> domain resolves to `.14`), so prod must set **`FIRECRAWL_URL=http://100.67.128.51:3002`** — which
+> is why check #2 below is the single most important one. Both VPS use the same SSH key
+> (`nestd@pm.me` ed25519); SSH only works from a box where that key is installed.
+
 Verified by reading source:
 
 - **Admin routes mounted** — `server/src/app.ts:339` → `/api/firecrawl/admin`
@@ -64,22 +77,28 @@ Verified by reading source:
   classify/query/summarize/metrics; jobs `freshness-check` (daily), `directory-sync` (`*/30`).
   Self-hosted via `docker/docker-compose.yml`, documented as `:3002` Tailnet-only.
 
-### Runtime checks still required (run on VPS4 / tailnet box)
+### Runtime checks still required (run on the box noted)
+
+Firecrawl lives on **VPS1 (`.12`)**; the team-dashboard backend that *calls* it is on **VPS4
+(`.14`)**. Run each check on the right box (both use the `nestd@pm.me` ed25519 key).
 
 ```bash
-# 1. Is FIRECRAWL_URL set? (blank => falls back to public edge, which 403s off-tailnet)
-echo "$FIRECRAWL_URL"
+# --- on VPS4 (.14): the team-dashboard backend ---
+# 1. Is FIRECRAWL_URL set, and does it point at the .12 tailnet API (not the public domain)?
+ssh root@31.220.61.14 'grep FIRECRAWL_URL /opt/team-dashboard/.env.production'
+#    expect: FIRECRAWL_URL=http://100.67.128.51:3002   (blank/public domain => misconfigured)
 
-# 2. Server-side view: host mode + scrape counts
-curl -s localhost:4000/api/firecrawl/admin/overview | jq '.host, .metrics'
+# 2. Server-side view: host mode + scrape counts (admin route; may require admin auth)
+ssh root@31.220.61.14 "curl -s localhost:3200/api/firecrawl/admin/overview" | jq '.host, .metrics'
 
+# --- on VPS1 (.12), or any tailnet box that can reach 100.67.128.51 ---
 # 3. Does the self-hosted instance accept the hardcoded token?
-curl -s -X POST "$FIRECRAWL_URL/v1/scrape" \
-  -H "Authorization: Bearer self-hosted" -H 'Content-Type: application/json' \
-  -d '{"url":"https://example.com","formats":["markdown"]}' | jq '.success'
+ssh root@31.220.61.12 'curl -s -X POST http://100.67.128.51:3002/v1/scrape \
+  -H "Authorization: Bearer self-hosted" -H "Content-Type: application/json" \
+  -d "{\"url\":\"https://example.com\",\"formats\":[\"markdown\"]}"' | jq '.success'
 
-# 4. Embedding service reachable?
-curl -s -m 6 -o /dev/null -w '%{http_code}\n' http://147.79.78.251:8000/health || echo unreachable
+# 4. Embedding (BGE-M3) service reachable from the tailnet?
+ssh root@31.220.61.12 "curl -s -m 6 -o /dev/null -w '%{http_code}\n' http://147.79.78.251:8000/health" || echo unreachable
 ```
 
 ### Known risks to harden
@@ -114,7 +133,8 @@ discovery` cron + seed queries), not a connectivity fix.
       [`docs/deploy/tailnet-session-access.md`](../deploy/tailnet-session-access.md)
       + `scripts/tailscale-up.sh`. Still requires loosening the env network policy
       and minting a `TS_AUTHKEY` at environment-creation time.
-- [ ] (Runtime) Run the four checks in §2 on VPS4; record results.
+- [ ] (Runtime) Run the four checks in §2 on the correct boxes (`.14` for #1–2, `.12` for #3–4); record results.
+- [ ] (Fix) If `FIRECRAWL_URL` is blank/public-domain in prod, set it to `http://100.67.128.51:3002` (VPS1 tailnet).
 - [ ] (Harden) Move Firecrawl auth token to `FIRECRAWL_API_KEY` env var.
 - [ ] (Harden) Confirm/seed plugin `apiUrl` in the live instance config.
 - [ ] (Decision) Confirm whether `CRAWLEE_FALLBACK_ENABLED` should be on in prod.
