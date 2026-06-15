@@ -10,7 +10,15 @@ import {
   shopSharersApi,
   type ShopSharer,
   type ShopSharerApproveResult,
+  type ShopCommission,
 } from "@/api/shop-sharers";
+
+function fmtMoney(cents: number, currency = "usd"): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).format((cents ?? 0) / 100);
+}
 
 // Mirror of the server-side slugifyReferralCode: lowercases, collapses
 // non-alphanumerics to hyphens, trims, caps at 32 chars. Keeps the vanity
@@ -94,6 +102,17 @@ export function ShopSharersAdmin() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdSharer, setCreatedSharer] = useState<ShopSharer | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Influencer commission ledger (read-only; populated once the WooCommerce
+  // order webhook is wired — see docs/products/affiliate-unified-links.md).
+  const [commissions, setCommissions] = useState<ShopCommission[]>([]);
+
+  useEffect(() => {
+    shopSharersApi
+      .listCommissions()
+      .then((res) => setCommissions(res.commissions))
+      .catch(() => setCommissions([]));
+  }, []);
 
   function copyLink(id: string, url: string) {
     void navigator.clipboard?.writeText(url).then(() => {
@@ -493,6 +512,65 @@ export function ShopSharersAdmin() {
           </div>
         </Card>
       )}
+
+      <div className="pt-2">
+        <h2 className="text-sm font-semibold">Influencer commissions</h2>
+        <p className="text-xs text-muted-foreground mb-2">
+          Attributed shop sales. Populated once the WooCommerce order webhook is
+          wired (see <code className="text-[11px]">affiliate-unified-links.md</code>).
+        </p>
+        {commissions.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            message="No attributed sales yet."
+          />
+        ) : (
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Code</th>
+                    <th className="px-4 py-3 font-medium">Order</th>
+                    <th className="px-4 py-3 font-medium text-right">Gross</th>
+                    <th className="px-4 py-3 font-medium text-right">Commission</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium hidden lg:table-cell">
+                      Date
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commissions.map((c) => (
+                    <tr key={c.id} className="border-b last:border-0">
+                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
+                        {c.referralCode}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
+                        {c.orderRef}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {fmtMoney(c.grossAmountCents, c.currency)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium">
+                        {fmtMoney(c.commissionCents, c.currency)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border bg-muted text-muted-foreground border-border">
+                          {c.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell text-xs text-muted-foreground whitespace-nowrap">
+                        {fmtDate(c.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

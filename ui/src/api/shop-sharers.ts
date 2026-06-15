@@ -14,6 +14,19 @@ export interface ShopSharer {
   updatedAt: string;
 }
 
+export interface ShopCommission {
+  id: string;
+  referralCode: string;
+  sharerEmail: string | null;
+  orderRef: string;
+  grossAmountCents: number;
+  rate: string;
+  commissionCents: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface ShopSharerApproveResult {
   sharer: ShopSharer;
   affiliate: { id: string; email: string; name: string; status: string };
@@ -59,4 +72,7 @@ export const shopSharersApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  listCommissions: () =>
+    shopRequest<{ commissions: ShopCommission[] }>(`/admin/commissions`),
 };

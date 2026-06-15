@@ -42,6 +42,7 @@ import { creditscoreRoutes, creditscoreWebhookRouter } from "./routes/creditscor
 import { llmsTxtRoutes } from "./routes/llms-txt.js";
 import { houseAdsRoutes } from "./routes/house-ads.js";
 import { shopSharersRoutes } from "./routes/shop-sharers.js";
+import { shopCommissionsRoutes } from "./routes/shop-commissions.js";
 import { contentRoutes } from "./routes/content.js";
 import { visualContentRoutes } from "./routes/visual-content.js";
 import { systemHealthRoutes } from "./routes/system-health.js";
@@ -307,6 +308,7 @@ export async function createApp(
   api.use("/llms-txt", llmsTxtRoutes(db));
   api.use("/house-ads", houseAdsRoutes(db, opts.storageService));
   api.use("/shop", shopSharersRoutes(db));
+  api.use("/shop", shopCommissionsRoutes(db));
   api.use("/owned-sites", ownedSitesRoutes(db));
   api.use("/stripe", directoryListingsWebhookRoutes(db));
   api.use("/content", contentRoutes(db));

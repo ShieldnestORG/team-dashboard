@@ -1,7 +1,8 @@
 # Unified Affiliate Links (one global `?ref=` system)
 
-**Status:** Phase 1 (attribution foundation) shipped in team-dashboard. Phases 2–3
-specced below, pending sessions on the repos/systems they touch.
+**Status:** Phase 1 (attribution links) + the team-dashboard half of Phase 3
+(commission ledger + inert Woo ingest endpoint) shipped. Phase 2 (storefront
+cookie/propagation) and the Woo-side adapter pending sessions on those systems.
 **Started:** 2026-06-15
 
 ## Goal
@@ -88,40 +89,51 @@ forgotten on the next navigation, so a later purchase can't be credited. Tasks
    store, carry `cd_ref` across (querystring on the "Buy"/cart hand-off URL, or
    a hidden field) so Woo can stamp it on the order — see Phase 3.
 
-## Phase 3 — Commission / payout (team-dashboard + WooCommerce) — SPEC, BLOCKED
+## Phase 3 — Commission / payout — dashboard side SHIPPED, Woo side BLOCKED
 
-Paying commission requires a *sale* signal, which lives in WooCommerce, not in
-either repo. This phase is **blocked on Woo integration** that does not exist yet.
+Commission model decision made: **a new lightweight `shop_commissions` ledger**,
+decoupled from the B2B affiliate engine (no entangling merch payouts with SaaS
+clawback/tier logic). The team-dashboard half is built and inert until the Woo
+secret is set. The actual *sale signal* still lives in WooCommerce (Hostinger),
+so end-to-end payout remains **blocked on Woo-side config**.
 
-Design:
-1. **Stamp the ref on the Woo order.** Configure the Woo checkout (Hostinger) to
-   read the incoming `cd_ref` (from Phase 2.4) and store it as order meta
-   (`_cd_ref`). Requires Woo-side config/plugin work — outside both repos.
-2. **Woo → team-dashboard sync.** New inbound webhook (e.g.
-   `POST /api/shop/woo/order` with HMAC verification) or a polling job that, on a
-   paid Woo order carrying `_cd_ref`, writes a `shop_referral_events` row with
-   `event_type='purchase'` + `amount_cents` (the reserved-but-unwired purchase
-   event — see `docs/products/shop-sharers.md`).
-3. **Commission model decision.** Shop Sharers are intentionally *outside* the
-   existing affiliate commission engine (which is B2B: `commissions`/`payouts`
-   keyed off SaaS subscriptions). Two options:
-   - (a) **Reuse** the affiliate finance tables by promoting attributed sharers
-     to `affiliates` (already supported via approve) and writing `commissions`
-     rows from purchase events. Heaviest integration; reuses payout batcher.
-   - (b) **New lightweight ledger** for shop/influencer commissions
-     (`shop_commissions`) decoupled from the B2B engine. Simpler, avoids
-     entangling merch payouts with SaaS clawback/tier logic. **Recommended.**
-4. **Payout path.** Flat % of attributed sale (rate per sharer, default e.g.
-   10%), held until the Woo order clears any refund window, then included in a
-   payout run. Mirror the B2B holdback/clawback discipline at whatever fidelity
-   merch margins justify.
+### Shipped (team-dashboard)
+- **`shop_commissions` table** (migration `0122`) — `sharer_id`, `referral_code`,
+  `referral_event_id`, `order_ref` (unique → idempotency), `gross_amount_cents`,
+  `rate`, `commission_cents`, `currency`, `status` (pending|approved|paid|void).
+- **Ingestion endpoint** `POST /api/shop/woo/order` — **inert until
+  `WOO_WEBHOOK_SECRET` is set** (returns 503). Verifies an HMAC-SHA256 (hex)
+  signature in the `X-CD-Signature` header over the canonical payload, then
+  records the sale: a `shop_referral_events` `purchase` row + a `shop_commissions`
+  row, in one transaction, idempotent on `order_ref`.
+- **`GET /api/shop/admin/commissions`** (board auth) + a read-only "Influencer
+  commissions" table on `/shop-sharers`.
+- Rate from `SHOP_AFFILIATE_COMMISSION_RATE` (default `0.10`), snapshotted per row.
 
-### Phase 3 hard dependencies / open questions
-- Is there an owned, programmable Woo/Stripe order webhook on Hostinger? (Needed
-  for any sale signal.)
-- Commission rate + who sets it (per sharer vs global)?
-- Refund/return clawback policy for physical goods?
-- Reuse B2B `commissions` (3a) vs new `shop_commissions` ledger (3b)?
+### Ingestion contract (what the Woo-side adapter must send)
+```
+POST /api/shop/woo/order
+Header: X-CD-Signature: <hex HMAC-SHA256(WOO_WEBHOOK_SECRET, payload)>
+Body:   { "orderRef": "...", "ref": "<code>", "grossAmountCents": <int>,
+          "currency": "usd", "status": "paid" }
+payload = [orderRef, ref, grossAmountCents, currency, status].join("|")
+```
+Statuses treated as a sale: `paid`, `completed`, `processing`. We use **our own
+clean contract** (not Woo's native payload) so a thin Woo-side adapter/plugin can
+post it after stamping the incoming `cd_ref` (from Phase 2.4) onto the order.
+
+### Still required (outside this repo)
+1. **Woo-side adapter (Hostinger):** on a paid order carrying `_cd_ref`, POST the
+   contract above signed with the shared secret. This is the missing sale signal.
+2. **Payout runner:** nothing yet moves rows out of `pending`. A future cron
+   (hold past the refund window → `approved` → batch → `paid`) + a refund→`void`
+   path. Mirror the B2B holdback/clawback discipline at whatever fidelity merch
+   margins justify.
+
+### Open questions
+- Programmable webhook/adapter available on the Hostinger Woo store? (Gates #1.)
+- Per-sharer commission rate vs the global default?
+- Refund/return clawback policy for physical goods (drives the `void` path)?
 
 ## How to execute the parts not reachable here
 
