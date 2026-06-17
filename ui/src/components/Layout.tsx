@@ -9,6 +9,7 @@ import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
 import { ToastViewport } from "./ToastViewport";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
@@ -462,10 +463,14 @@ export function Layout() {
                 // only the content pane shows the loading fallback — the
                 // sidebar/shell stays mounted (and Layout-local state like
                 // mobileNavVisible survives) instead of the App-level
-                // boundary blanking the whole screen.
-                <Suspense fallback={<PageLoading />}>
-                  <Outlet />
-                </Suspense>
+                // boundary blanking the whole screen. The ErrorBoundary wraps
+                // it so a render or lazy-load error in the content pane is
+                // caught here instead of blanking the whole shell.
+                <ErrorBoundary>
+                  <Suspense fallback={<PageLoading />}>
+                    <Outlet />
+                  </Suspense>
+                </ErrorBoundary>
               )}
             </main>
             <PropertiesPanel />

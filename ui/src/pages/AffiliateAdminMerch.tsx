@@ -20,6 +20,7 @@ import {
   type UpdateMerchPayload,
 } from "@/api/affiliates-admin";
 import { AffiliateAdminTabs } from "@/components/AffiliateAdminTabs";
+import { useToast } from "../context/ToastContext";
 
 function formatShortDate(iso: string | null): string {
   if (!iso) return "—";
@@ -91,6 +92,7 @@ const INITIAL_DIALOG: DialogState = {
 
 export function AffiliateAdminMerch() {
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { pushToast } = useToast();
   const [requests, setRequests] = useState<AdminMerchRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +126,11 @@ export function AffiliateAdminMerch() {
       await affiliatesAdminApi.updateMerchRequest(r.id, payload);
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Update failed");
+      pushToast({
+        title: "Update failed",
+        body: err instanceof Error ? err.message : "Update failed",
+        tone: "error",
+      });
     } finally {
       setActionLoading(null);
     }
