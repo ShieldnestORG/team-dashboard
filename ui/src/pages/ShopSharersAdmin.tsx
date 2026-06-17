@@ -10,6 +10,7 @@ import {
   type ShopSharer,
   type ShopSharerApproveResult,
 } from "@/api/shop-sharers";
+import { useToast } from "../context/ToastContext";
 
 // ---------------------------------------------------------------------------
 // Shop Sharers Admin — approve / reject applications from the shop email
@@ -62,6 +63,7 @@ function statusBadge(status: string | null): { label: string; cls: string } {
 
 export function ShopSharersAdmin() {
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { pushToast } = useToast();
   const [rows, setRows] = useState<ShopSharer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +101,11 @@ export function ShopSharersAdmin() {
       setLastApproval(result);
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Approve failed");
+      pushToast({
+        title: "Approve failed",
+        body: err instanceof Error ? err.message : "Approve failed",
+        tone: "error",
+      });
     } finally {
       setBusyId(null);
     }
@@ -113,7 +119,11 @@ export function ShopSharersAdmin() {
       await shopSharersApi.reject(row.id, notes || undefined);
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Reject failed");
+      pushToast({
+        title: "Reject failed",
+        body: err instanceof Error ? err.message : "Reject failed",
+        tone: "error",
+      });
     } finally {
       setBusyId(null);
     }

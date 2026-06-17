@@ -20,6 +20,7 @@ import {
   type CampaignStatus,
 } from "@/api/affiliates-admin";
 import { AffiliateAdminTabs } from "@/components/AffiliateAdminTabs";
+import { useToast } from "../context/ToastContext";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -97,6 +98,7 @@ const INITIAL_FORM: FormDialogState = {
 
 export function AffiliateAdminCampaigns() {
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { pushToast } = useToast();
   const [campaigns, setCampaigns] = useState<AdminCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -190,7 +192,11 @@ export function AffiliateAdminCampaigns() {
       await affiliatesAdminApi.updateCampaign(c.id, { status: nextStatus });
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Status change failed");
+      pushToast({
+        title: "Status change failed",
+        body: err instanceof Error ? err.message : "Status change failed",
+        tone: "error",
+      });
     } finally {
       setActionLoading(null);
     }

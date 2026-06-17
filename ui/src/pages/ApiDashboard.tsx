@@ -253,7 +253,7 @@ export function ApiDashboard() {
                           variant="ghost"
                           size="sm"
                           className="h-7 w-7 p-0 shrink-0"
-                          disabled={pingMutation.isPending}
+                          disabled={pingMutation.isPending && pingMutation.variables === route.prefix}
                           onClick={() => pingMutation.mutate(route.prefix)}
                           title="Ping this route"
                         >
