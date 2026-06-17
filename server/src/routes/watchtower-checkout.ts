@@ -33,9 +33,9 @@ import {
 } from "../services/watchtower-stripe-handler.js";
 import { logger } from "../middleware/logger.js";
 
-// PRD-default cap; the schema's HARD_PROMPT_CEILING (50) is a separate
+// PRD-default cap; the schema's HARD_PROMPT_CEILING (75) is a separate
 // runtime backstop, NOT what the public route enforces.
-const ROUTE_PROMPT_CAP = 25;
+const ROUTE_PROMPT_CAP = 60;
 const LOOKUP_KEY = "watchtower_monthly";
 
 interface PriceListResponse {
