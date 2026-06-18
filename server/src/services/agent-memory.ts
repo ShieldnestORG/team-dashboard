@@ -212,7 +212,7 @@ export function agentMemoryService(db: Db) {
 
       const removeIds = duplicates.map((d) => d.remove_id);
       const deleted = await db.execute(sql`
-        DELETE FROM agent_memory WHERE id = ANY(${removeIds}::int[])
+        DELETE FROM agent_memory WHERE id = ANY(ARRAY[${sql.join(removeIds.map((n) => sql`${n}`), sql`, `)}]::int[])
       `);
 
       logger.info({ agentName, compacted: removeIds.length }, "Agent memory: compacted duplicates");

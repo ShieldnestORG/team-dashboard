@@ -394,8 +394,8 @@ export async function fetchQualityContext(
         const relationships = await db.execute(sql`
           SELECT source_type, source_id, relationship, target_type, target_id, confidence
           FROM company_relationships
-          WHERE (source_type = 'company' AND source_id = ANY(${companySlugs}::text[]))
-             OR (target_type = 'company' AND target_id = ANY(${companySlugs}::text[]))
+          WHERE (source_type = 'company' AND source_id = ANY(ARRAY[${sql.join(companySlugs.map((s) => sql`${s}`), sql`, `)}]::text[]))
+             OR (target_type = 'company' AND target_id = ANY(ARRAY[${sql.join(companySlugs.map((s) => sql`${s}`), sql`, `)}]::text[]))
           AND (verified = true OR confidence >= 0.5)
           ORDER BY confidence DESC
           LIMIT 20
