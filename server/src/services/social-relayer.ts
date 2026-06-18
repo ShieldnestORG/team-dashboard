@@ -13,7 +13,7 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
-import { getPublisher } from "./platform-publishers/index.js";
+import { resolvePublisher } from "./platform-publishers/index.js";
 import type { PublishResult } from "./platform-publishers/index.js";
 import { canPublish } from "./socials/platform-caps.js";
 import type { StorageService } from "../storage/types.js";
@@ -197,7 +197,9 @@ export async function runSocialRelayerTick(
       logger.warn({ err: capErr, id: row.id, platform: row.platform }, "platform-caps: canPublish threw, proceeding");
     }
 
-    const publisher = getPublisher(row.platform);
+    // Zernio-connected accounts (oauthRef "zernio:…") publish through Zernio for
+    // every platform; only non-Zernio accounts use the native per-platform path.
+    const publisher = resolvePublisher(row.platform, row.oauthRef);
     if (!publisher || !publisher.publishText) {
       await markFailed(
         db,
@@ -247,6 +249,18 @@ export async function runSocialRelayerTick(
       continue;
     }
 
+    // Forward the row's platform so the Zernio publisher targets the right
+    // network (tiktok/youtube/x/instagram) instead of defaulting to instagram.
+    // An explicit payload.platform (set by a caller) wins; native publishers
+    // ignore this field.
+    const basePayload = (row.payload ?? {}) as Record<string, unknown>;
+    const publishPayload = {
+      ...basePayload,
+      platform:
+        typeof basePayload.platform === "string" && basePayload.platform
+          ? basePayload.platform
+          : row.platform,
+    };
     let publishResult: PublishResult;
     try {
       publishResult = await publisher.publishText({
@@ -257,7 +271,7 @@ export async function runSocialRelayerTick(
         socialAccountId: row.socialAccountId,
         oauthRef: row.oauthRef ?? undefined,
         postId: row.id,
-        payload: row.payload ?? {},
+        payload: publishPayload,
       });
     } catch (err) {
       publishResult = { success: false, error: err instanceof Error ? err.message : String(err) };

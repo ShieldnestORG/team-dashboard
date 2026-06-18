@@ -54,6 +54,12 @@ vi.mock("../services/platform-publishers/index.js", () => ({
     publish: async () => ({ success: false }),
     publishText: publishTextMock,
   }),
+  resolvePublisher: () => ({
+    name: "instagram",
+    isConfigured: () => true,
+    publish: async () => ({ success: false }),
+    publishText: publishTextMock,
+  }),
 }));
 vi.mock("../services/socials/platform-caps.js", () => ({
   canPublish: async () => ({ allowed: true, used: 0, cap: 100 }),
