@@ -7,7 +7,7 @@ import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
-import { globalRateLimit } from "./middleware/global-rate-limit.js";
+import { authRateLimit, globalRateLimit } from "./middleware/global-rate-limit.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
@@ -243,7 +243,10 @@ export async function createApp(
     });
   });
   if (opts.betterAuthHandler) {
-    app.all("/api/auth/*authPath", opts.betterAuthHandler);
+    // Stricter limit on auth endpoints (login/signup/reset) to blunt
+    // brute-force / credential-stuffing; the general limiter (300/min) is too
+    // loose for credential checks.
+    app.all("/api/auth/*authPath", authRateLimit, opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
 
