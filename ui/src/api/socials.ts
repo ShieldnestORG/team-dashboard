@@ -10,6 +10,10 @@ export interface SocialAccount {
   profileUrl: string | null;
   connectionType: "oauth" | "api_key" | "manual" | "none";
   oauthRef: string | null;
+  // Derived by GET /socials/accounts: which publisher this account posts through.
+  // "zernio" when oauthRef starts with "zernio:", else "native". Absent on
+  // create/update responses, hence optional.
+  routing?: "zernio" | "native";
   status: "active" | "dormant" | "paused" | "deprecated";
   automationMode: "full_auto" | "assisted" | "manual" | "none";
   automationNotes: string | null;

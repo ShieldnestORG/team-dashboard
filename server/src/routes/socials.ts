@@ -28,7 +28,14 @@ export function socialsRoutes(db: Db) {
       .from(socialAccounts)
       .where(and(...where))
       .orderBy(socialAccounts.brand, socialAccounts.platform);
-    res.json({ accounts: rows });
+    // Derive the publish-routing signal and avoid leaking the raw oauthRef.
+    // An account posts via Zernio exactly when its oauthRef begins with
+    // "zernio:" (see services/platform-publishers/zernio.ts parseZernioAccountId).
+    const accounts = rows.map(({ oauthRef, ...rest }) => ({
+      ...rest,
+      routing: (oauthRef?.startsWith("zernio:") ? "zernio" : "native") as "zernio" | "native",
+    }));
+    res.json({ accounts });
   });
 
   router.post("/accounts", async (req, res) => {

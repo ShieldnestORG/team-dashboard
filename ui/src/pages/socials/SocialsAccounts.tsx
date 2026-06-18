@@ -22,6 +22,9 @@ function automationVariant(m: string): "default" | "secondary" | "outline" {
   if (m === "assisted") return "secondary";
   return "outline";
 }
+function routingVariant(r: string): "default" | "outline" {
+  return r === "zernio" ? "default" : "outline";
+}
 
 export function SocialsAccounts() {
   const qc = useQueryClient();
@@ -170,6 +173,9 @@ export function SocialsAccounts() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <Badge variant={routingVariant(a.routing ?? "native")}>
+                    {a.routing === "zernio" ? "Zernio" : "Native"}
+                  </Badge>
                   <Badge variant={connectionVariant(a.connectionType)}>{a.connectionType}</Badge>
                   <Badge variant={automationVariant(a.automationMode)}>{a.automationMode}</Badge>
                   <Badge variant="outline">{a.status}</Badge>
