@@ -189,5 +189,12 @@ export type {
   WatchtowerPromptVersion,
   NewWatchtowerPromptVersion,
 } from "./watchtower.js";
+export { universityMembers, universitySubscriptions } from "./university.js";
+export type {
+  UniversityMember,
+  NewUniversityMember,
+  UniversitySubscription,
+  NewUniversitySubscription,
+} from "./university.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

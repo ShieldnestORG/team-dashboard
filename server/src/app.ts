@@ -92,6 +92,10 @@ import {
   watchtowerWebhookRouter,
 } from "./routes/watchtower-checkout.js";
 import { watchtowerAdminRoutes } from "./routes/watchtower-admin.js";
+import {
+  universityCheckoutRoutes,
+  universityWebhookRouter,
+} from "./routes/university-checkout.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -196,6 +200,7 @@ export async function createApp(
   app.use("/api/bundles", bundleWebhookRouter(db));
   app.use("/api/creditscore", creditscoreWebhookRouter(db));
   app.use("/api/watchtower", watchtowerWebhookRouter(db));
+  app.use("/api/university", universityWebhookRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
@@ -325,6 +330,7 @@ export async function createApp(
   api.use("/watchtower", watchtowerRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
+  api.use("/university", universityCheckoutRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));

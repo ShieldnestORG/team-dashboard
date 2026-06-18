@@ -20,6 +20,7 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 | Product | Price ID prefix | $ | Cadence | lookup_key | Code |
 |---|---|---|---|---|---|
 | **Watchtower** | `price_1TVOu6Q…0GsG` | $29 | monthly | ✅ `watchtower_monthly` | `server/src/services/watchtower-monitor.ts` |
+| **Coherent Ones University** | _pending — not yet created_ | $50 | monthly | ✅ `university_monthly` | `server/src/services/university-stripe-handler.ts` |
 | CreditScore — Report (one-time) | `price_1TPd1zQ…fP7vP` | $19 | one-time | (none) | `services/creditscore.ts` |
 | CreditScore — Starter | `price_1TPd20Q…A82g0` | $49 | monthly | (none) | same |
 | CreditScore — Growth (Monthly) | `price_1TPd21Q…6jHVk` | $199 | monthly | (none) | same |
@@ -42,6 +43,7 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 | Endpoint URL | Stripe ID prefix | Events | Secret env var | Purpose |
 |---|---|---|---|---|
 | `https://api.coherencedaddy.com/api/watchtower/webhook` | `we_1TVP0qQ…BvpSk` | checkout.session.completed, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_WATCHTOWER` (falls back to global) | Watchtower subscription provisioning |
+| `https://api.coherencedaddy.com/api/university/webhook` | _pending — not yet registered_ | checkout.session.completed, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_UNIVERSITY` (falls back to global) | Coherent Ones University membership provisioning |
 | `https://api.coherencedaddy.com/api/creditscore/webhook` | `we_1TPdKFQ…4PyKd` | checkout.session.completed, invoice.paid, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_CREDITSCORE` | CreditScore subscriptions + reports |
 | `https://api.coherencedaddy.com/api/intel-billing/webhook` | `we_1TMFpeQ…2M26sN` | checkout.session.completed, invoice.payment_succeeded, invoice.payment_failed, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET` (global default) | Intel API metered billing |
 | `https://api.coherencedaddy.com/api/stripe/webhook` | `we_1TMGBAQ…UnKlSc` | checkout.session.completed, invoice.paid, invoice.payment_failed, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_DIRECTORY` | Directory Listings |
@@ -62,12 +64,16 @@ Vercel = the public storefront's Vercel project env settings.
 | `STRIPE_WEBHOOK_SECRET_CREDITSCORE` | VPS | ✅ set | CreditScore webhook signature verification |
 | `STRIPE_WEBHOOK_SECRET_DIRECTORY` | VPS | ✅ set | Directory Listings webhook signature verification |
 | `STRIPE_WEBHOOK_SECRET_WATCHTOWER` | VPS | ⚠️ **TO ADD** (`whsec_xyfUNOcT9nJJ1EQ55lxL2nY9mgBLE5Pt`, captured 2026-05-09) | Watchtower webhook signature verification. **Without this, Stripe's POST gets rejected as invalid signature** because the global secret is for the Intel API endpoint, not Watchtower. |
+| `STRIPE_WEBHOOK_SECRET_UNIVERSITY` | VPS | ⛔ **TO ADD** (capture `whsec_…` when the `/api/university/webhook` endpoint is registered) | Coherent Ones University webhook signature verification. Falls back to the global secret if unset, but the global is for the Intel API endpoint — set this once the dedicated webhook exists. |
 | `STRIPE_PRICE_*` (all bare price IDs) | VPS | ✅ all set | Direct price-ID resolution for non-Watchtower products. Must be hand-updated if a price is rotated. |
 | `WATCHTOWER_STRIPE_PRICE_ID` | VPS | ⛔ deliberately unset | Watchtower resolves by lookup_key first — this env var is only the fallback. Leaving unset keeps the lookup_key path canonical. |
 | `WATCHTOWER_ENABLED` | VPS | ⚠️ **`false` — must flip to `true` to launch** | Master gate on the Watchtower service + cron. When false, the cron skips and the checkout endpoint returns 503. |
 | `WATCHTOWER_SUCCESS_URL` | VPS | (default in code) | Default success_url base for Stripe checkout. Falls back to `https://app.coherencedaddy.com/dashboard` (customer portal). |
 | `WATCHTOWER_CANCEL_URL` | VPS | (default in code) | Default cancel_url base. Falls back to `https://coherencedaddy.com/watchtower-home`. |
 | `WATCHTOWER_RETURN_URL` | VPS | (legacy) | Single-URL knob for both success + cancel — only used when SUCCESS_URL/CANCEL_URL are unset. Don't set this for new deployments. |
+| `UNIVERSITY_STRIPE_PRICE_ID` | VPS | ⛔ deliberately unset | Coherent Ones University resolves by lookup_key (`university_monthly`) first — this env var is only the fallback. Leave unset to keep the lookup_key path canonical. |
+| `UNIVERSITY_SUCCESS_URL` | VPS | (default in code) | Default success_url base for University checkout. Falls back to `https://app.coherencedaddy.com/university` (customer portal). |
+| `UNIVERSITY_CANCEL_URL` | VPS | (default in code) | Default cancel_url base for University checkout. Falls back to `https://coherencedaddy.com/university` (storefront signup). |
 | `WATCHTOWER_CALLBACK_KEY` | VPS + Vercel (storefront) | ✅ set on VPS | HMAC shared secret signing `/api/email/watchtower` envelopes (digest + answer-check report). **Must match on both ends or emails fail signature.** Verify the same value is in the Vercel storefront's env. |
 | `WATCHTOWER_EMAIL_CALLBACK_URL` | VPS | ✅ set | Storefront receiver for HMAC-signed email envelopes (default falls back to the freetools.* alias which 301-redirects to coherencedaddy.com). |
 | `WATCHTOWER_CHECKOUT_PUBLIC_URL` | VPS | (default in code) | URL embedded in 429 rate-limit responses for `/api/public/answer-check/run`. Falls back to `coherencedaddy.com/watchtower-home#pricing`. |

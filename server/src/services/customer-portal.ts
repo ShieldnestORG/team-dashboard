@@ -10,6 +10,7 @@ import {
   customerCredentials,
   customerMagicLinks,
   watchtowerSubscriptions,
+  universityMembers,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
 import type { CustomerCredentialKind } from "@paperclipai/db";
@@ -172,6 +173,11 @@ export interface CustomerEntitlements {
     brandName: string;
     domain: string | null;
     subscriptionId: string;
+  } | null;
+  university: {
+    status: string;
+    memberSince: string | null;
+    plan: string;
   } | null;
 }
 
@@ -451,6 +457,43 @@ export function customerPortalService(db: Db) {
       };
     }
 
+    // University: a member is its OWN entity (university_members), not just an
+    // access flag — we detect membership here for the portal but the member
+    // stays a real row. Matched on email first (the durable join key set at
+    // checkout) then by account_id once the customer-account-linker has fired.
+    // Surface only the newest active/past_due membership.
+    let university: CustomerEntitlements["university"] = null;
+    const uniRows = await db
+      .select({
+        status: universityMembers.status,
+        plan: universityMembers.plan,
+        joinedAt: universityMembers.joinedAt,
+        createdAt: universityMembers.createdAt,
+      })
+      .from(universityMembers)
+      .where(
+        and(
+          or(
+            sql`LOWER(${universityMembers.email}) = ${email}`,
+            eq(universityMembers.accountId, account.id),
+          ),
+          or(
+            eq(universityMembers.status, "active"),
+            eq(universityMembers.status, "past_due"),
+          ),
+        ),
+      )
+      .orderBy(desc(universityMembers.createdAt))
+      .limit(1);
+    if (uniRows.length) {
+      const row = uniRows[0];
+      university = {
+        status: row.status,
+        memberSince: (row.joinedAt ?? row.createdAt)?.toISOString() ?? null,
+        plan: row.plan,
+      };
+    }
+
     return {
       account: {
         id: account.id,
@@ -459,7 +502,7 @@ export function customerPortalService(db: Db) {
         createdAt: account.createdAt,
         lastLoginAt: account.lastLoginAt,
       },
-      entitlements: { creditscore, bundles, watchtower },
+      entitlements: { creditscore, bundles, watchtower, university },
     };
   }
 
