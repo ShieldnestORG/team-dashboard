@@ -16,8 +16,82 @@ import { logger } from "../middleware/logger.js";
 import { getPublisher } from "./platform-publishers/index.js";
 import type { PublishResult } from "./platform-publishers/index.js";
 import { canPublish } from "./socials/platform-caps.js";
+import type { StorageService } from "../storage/types.js";
+import {
+  isAlreadyPublicUrl,
+  isR2StagingConfigured,
+  stageBufferToR2,
+} from "../storage/r2-staging.js";
 
 const BATCH_SIZE = 5;
+
+// Company prefix StorageService.getObject() requires the media objectKey to
+// begin with. team-dashboard is single-company; the relayer has no per-row
+// companyId column, so we use the configured company id to satisfy the
+// ownership check when resolving an internal objectKey to bytes.
+// Read at CALL TIME (not cached at import) so a late-set env var is honored.
+function companyId(): string {
+  return process.env.TEAM_DASHBOARD_COMPANY_ID ?? "";
+}
+
+async function readStreamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Resolve a post's media entries to PUBLIC absolute URLs Zernio can fetch.
+ *
+ * - Entries that are ALREADY a public http(s) URL pass through unchanged
+ *   (never re-staged — idempotent, and avoids touching URLs from prior runs).
+ * - Any other entry is treated as an INTERNAL storage objectKey: its bytes are
+ *   fetched via storageService and staged to the public R2 bucket; the entry is
+ *   replaced with the resulting `*.r2.dev` URL.
+ *
+ * FAIL LOUD: if R2 is needed but unconfigured, or any fetch/stage fails, this
+ * throws. The caller marks the post failed and NEVER dispatches a non-public
+ * URL. The publisher's own non-public-URL guard remains the backstop.
+ *
+ * Returns null when no entry needed staging (caller can skip the row update),
+ * else the fully-resolved public URL array to persist + dispatch.
+ */
+async function resolveMediaUrls(
+  storageService: StorageService,
+  mediaUrls: string[],
+): Promise<string[] | null> {
+  if (mediaUrls.length === 0) return null;
+  let changed = false;
+  const resolved: string[] = [];
+  for (const entry of mediaUrls) {
+    if (isAlreadyPublicUrl(entry)) {
+      resolved.push(entry);
+      continue;
+    }
+    // Needs staging → R2 must be configured. Fail loud otherwise.
+    if (!isR2StagingConfigured()) {
+      throw new Error(
+        `media '${entry}' is not a public URL and R2 staging is not configured`,
+      );
+    }
+    const company = companyId();
+    if (!company) {
+      throw new Error("TEAM_DASHBOARD_COMPANY_ID is not set; cannot resolve internal media objectKey");
+    }
+    const obj = await storageService.getObject(company, entry);
+    const buffer = await readStreamToBuffer(obj.stream);
+    const publicUrl = await stageBufferToR2(
+      buffer,
+      obj.contentType ?? "application/octet-stream",
+      entry,
+    );
+    resolved.push(publicUrl);
+    changed = true;
+  }
+  return changed ? resolved : null;
+}
 
 interface DueRow {
   id: string;
@@ -30,6 +104,7 @@ interface DueRow {
   maxAttempts: number;
   payload: Record<string, unknown>;
   platform: string;
+  oauthRef: string | null;
   accountStatus: string;
 }
 
@@ -42,7 +117,10 @@ export interface RelayerResult {
   overCap: number;
 }
 
-export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
+export async function runSocialRelayerTick(
+  db: Db,
+  storageService: StorageService,
+): Promise<RelayerResult> {
   const result: RelayerResult = { picked: 0, posted: 0, failed: 0, retrying: 0, skipped: 0, overCap: 0 };
 
   const due = await db.execute(sql`
@@ -57,6 +135,7 @@ export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
       sp.max_attempts         AS "maxAttempts",
       sp.payload,
       sa.platform,
+      sa.oauth_ref            AS "oauthRef",
       sa.status               AS "accountStatus"
     FROM social_posts sp
     JOIN social_accounts sa ON sa.id = sp.social_account_id
@@ -133,14 +212,42 @@ export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
       continue;
     }
 
+    // Resolve media to PUBLIC URLs Zernio can fetch. Non-public entries (internal
+    // storage objectKeys) are staged to R2 and the resolved URLs persisted back
+    // to the row so retries reuse them (no re-staging). FAIL LOUD on any failure:
+    // mark the post failed; never dispatch a non-public URL. The publisher's
+    // non-public-URL guard remains the backstop.
+    const rowMediaUrls = Array.isArray(row.mediaUrls) ? row.mediaUrls : [];
+    let mediaUrls = rowMediaUrls;
+    try {
+      const resolved = await resolveMediaUrls(storageService, rowMediaUrls);
+      if (resolved) {
+        mediaUrls = resolved;
+        await db.execute(sql`
+          UPDATE social_posts
+             SET media_urls = ${JSON.stringify(resolved)}::jsonb,
+                 updated_at = now()
+           WHERE id = ${row.id}
+        `);
+      }
+    } catch (stageErr) {
+      const msg = stageErr instanceof Error ? stageErr.message : String(stageErr);
+      await markFailed(db, row.id, `media staging failed: ${msg}`, row.attempts + 1, row.maxAttempts);
+      result.failed += 1;
+      logger.error({ id: row.id, platform: row.platform, err: stageErr }, "social-relayer media staging failed");
+      continue;
+    }
+
     let publishResult: PublishResult;
     try {
       publishResult = await publisher.publishText({
         text: row.text,
-        mediaUrls: Array.isArray(row.mediaUrls) ? row.mediaUrls : [],
+        mediaUrls,
         altTexts: Array.isArray(row.altTexts) ? row.altTexts : [],
         replyToUrl: row.replyToUrl ?? undefined,
         socialAccountId: row.socialAccountId,
+        oauthRef: row.oauthRef ?? undefined,
+        postId: row.id,
         payload: row.payload ?? {},
       });
     } catch (err) {

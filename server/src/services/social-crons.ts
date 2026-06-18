@@ -9,15 +9,16 @@ import type { Db } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import { runSocialRelayerTick } from "./social-relayer.js";
 import { logger } from "../middleware/logger.js";
+import type { StorageService } from "../storage/types.js";
 
-export function startSocialCrons(db: Db): void {
+export function startSocialCrons(db: Db, storageService: StorageService): void {
   registerCronJob({
     jobName: "socials:relay",
     schedule: "* * * * *",
     ownerAgent: "system",
     sourceFile: "social-crons.ts",
     handler: async () => {
-      const result = await runSocialRelayerTick(db);
+      const result = await runSocialRelayerTick(db, storageService);
       if (result.picked > 0) {
         logger.info(result, "socials:relay tick");
       }
