@@ -71,6 +71,13 @@ export function isAlreadyPublicUrl(url: string): boolean {
   }
   if (host === "localhost" || host.endsWith(".localhost")) return false;
   if (host.endsWith(".internal") || host.endsWith(".local")) return false;
+  // IPv6 literals in loopback / link-local / ULA ranges are not public. Mirrors
+  // the publisher's isNonPublicMediaUrl (services/platform-publishers/zernio.ts).
+  // Node's URL keeps the brackets on hostname (`[::1]`), so strip them first.
+  const v6 = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  if (v6 === "::1" || v6 === "::") return false; // loopback / unspecified
+  if (/^fe80:/.test(v6)) return false; // fe80::/10 link-local
+  if (/^f[cd][0-9a-f][0-9a-f]:/.test(v6)) return false; // fc00::/7 ULA
   // IPv4 literals in private/loopback/link-local ranges are not public.
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   if (m) {

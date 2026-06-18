@@ -91,6 +91,7 @@ describe("r2-staging helper", () => {
       "https://pub-test.r2.dev/staged/abc.mp4",
       "https://cdn.example.com/photo.jpg",
       "http://images.example.org/a.png",
+      "http://[2606:4700::1]/x.jpg", // public IPv6 must still pass
     ];
     for (const url of publicCases) {
       it(`true for public url: ${url}`, () => {
@@ -106,6 +107,9 @@ describe("r2-staging helper", () => {
       "https://10.1.2.3/x.jpg",
       "https://192.168.1.5/x.jpg",
       "https://foo.internal/x.jpg",
+      "http://[::1]:8000/x.jpg", // IPv6 loopback (matches publisher guard)
+      "http://[fe80::1]/x.jpg", // IPv6 link-local
+      "http://[fc00::1]/x.jpg", // IPv6 ULA
     ];
     for (const url of nonPublicCases) {
       it(`false for non-public/objectKey: ${url}`, () => {

@@ -29,7 +29,10 @@ const BATCH_SIZE = 5;
 // begin with. team-dashboard is single-company; the relayer has no per-row
 // companyId column, so we use the configured company id to satisfy the
 // ownership check when resolving an internal objectKey to bytes.
-const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID ?? "";
+// Read at CALL TIME (not cached at import) so a late-set env var is honored.
+function companyId(): string {
+  return process.env.TEAM_DASHBOARD_COMPANY_ID ?? "";
+}
 
 async function readStreamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -73,10 +76,11 @@ async function resolveMediaUrls(
         `media '${entry}' is not a public URL and R2 staging is not configured`,
       );
     }
-    if (!COMPANY_ID) {
+    const company = companyId();
+    if (!company) {
       throw new Error("TEAM_DASHBOARD_COMPANY_ID is not set; cannot resolve internal media objectKey");
     }
-    const obj = await storageService.getObject(COMPANY_ID, entry);
+    const obj = await storageService.getObject(company, entry);
     const buffer = await readStreamToBuffer(obj.stream);
     const publicUrl = await stageBufferToR2(
       buffer,
