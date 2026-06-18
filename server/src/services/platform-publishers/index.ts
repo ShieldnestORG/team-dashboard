@@ -4,6 +4,7 @@ import { tiktokPublisher } from "./tiktok.js";
 import { twitterVideoPublisher } from "./twitter-video.js";
 import { instagramPublisher } from "./instagram.js";
 import { blueskyPublisher } from "./bluesky.js";
+import { zernioPublisher } from "./zernio.js";
 import { logger } from "../../middleware/logger.js";
 
 const ALL_PUBLISHERS: PlatformPublisher[] = [
@@ -12,6 +13,10 @@ const ALL_PUBLISHERS: PlatformPublisher[] = [
   twitterVideoPublisher,
   instagramPublisher,
   blueskyPublisher,
+  // Routes social_accounts.platform === "instagram" to Zernio (the working IG
+  // publish path). The native `instagramPublisher` above (name "instagram_reels")
+  // is the dead Meta-Graph stub and answers to a different platform string.
+  zernioPublisher,
 ];
 
 export function getPublisher(platform: string): PlatformPublisher | undefined {

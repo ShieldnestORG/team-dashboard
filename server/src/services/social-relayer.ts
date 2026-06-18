@@ -30,6 +30,7 @@ interface DueRow {
   maxAttempts: number;
   payload: Record<string, unknown>;
   platform: string;
+  oauthRef: string | null;
   accountStatus: string;
 }
 
@@ -57,6 +58,7 @@ export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
       sp.max_attempts         AS "maxAttempts",
       sp.payload,
       sa.platform,
+      sa.oauth_ref            AS "oauthRef",
       sa.status               AS "accountStatus"
     FROM social_posts sp
     JOIN social_accounts sa ON sa.id = sp.social_account_id
@@ -141,6 +143,7 @@ export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
         altTexts: Array.isArray(row.altTexts) ? row.altTexts : [],
         replyToUrl: row.replyToUrl ?? undefined,
         socialAccountId: row.socialAccountId,
+        oauthRef: row.oauthRef ?? undefined,
         payload: row.payload ?? {},
       });
     } catch (err) {

@@ -26,6 +26,10 @@ export interface PublishTextOptions {
   replyToUrl?: string;
   /** social_accounts.id — publisher uses this to resolve credentials. */
   socialAccountId: string;
+  /** social_accounts.oauth_ref — pointer the publisher uses to resolve a
+   * provider-side account id (e.g. "zernio:<accountId>"). Forwarded by the
+   * relayer so stateless publishers need no db handle. */
+  oauthRef?: string;
   /** Platform-specific extras (link card, langs, visibility, etc.). */
   payload?: Record<string, unknown>;
 }
