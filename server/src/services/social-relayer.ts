@@ -155,7 +155,7 @@ export async function runSocialRelayerTick(
     UPDATE social_posts
        SET status = 'publishing',
            updated_at = now()
-     WHERE id = ANY(${ids})
+     WHERE id = ANY(${ids}::uuid[])
   `);
 
   for (const row of rows) {
