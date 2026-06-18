@@ -31,6 +31,35 @@ function getTransporter(): Transporter | null {
   return _transporter;
 }
 
+/**
+ * Send a password-reset link (better-auth `sendResetPassword` callback).
+ * Silently skips if SMTP is not configured — better-auth still returns success
+ * to the caller regardless, which avoids leaking whether an email is registered.
+ */
+export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
+  const transport = getTransporter();
+  if (!transport) {
+    logger.warn({ to }, "email-templates: SMTP not configured — password reset email skipped");
+    return;
+  }
+  const from = process.env.ALERT_EMAIL_FROM ?? "noreply@coherencedaddy.com";
+  const safeUrl = String(resetUrl)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  await transport.sendMail({
+    from,
+    to,
+    subject: "Reset your team dashboard password",
+    html: [
+      "<p>We received a request to reset your team dashboard password.</p>",
+      `<p><a href="${safeUrl}">Click here to choose a new password</a>.</p>`,
+      "<p>This link expires shortly. If you didn't request a reset, you can safely ignore this email.</p>",
+    ].join(""),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
 import { Sparkles } from "lucide-react";
 
-type AuthMode = "sign_in" | "sign_up";
+type AuthMode = "sign_in" | "sign_up" | "forgot";
 
 export function AuthPage() {
   const queryClient = useQueryClient();
@@ -18,6 +18,24 @@ export function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [forgotSent, setForgotSent] = useState(false);
+
+  const forgotMutation = useMutation({
+    mutationFn: () =>
+      authApi.requestPasswordReset({
+        email: email.trim(),
+        redirectTo: `${window.location.origin}/reset-password`,
+      }),
+    onSuccess: () => {
+      setError(null);
+      setForgotSent(true);
+    },
+    // Neutral confirmation regardless of outcome (don't reveal account existence).
+    onError: () => {
+      setError(null);
+      setForgotSent(true);
+    },
+  });
 
   const nextPath = useMemo(() => searchParams.get("next") || "/", [searchParams]);
   const { data: session, isLoading: isSessionLoading } = useQuery({
@@ -79,14 +97,85 @@ export function AuthPage() {
           </div>
 
           <h1 className="text-xl font-semibold">
-            {mode === "sign_in" ? "Sign in to Team Dashboard" : "Create your Team Dashboard account"}
+            {mode === "sign_in"
+              ? "Sign in to Team Dashboard"
+              : mode === "sign_up"
+                ? "Create your Team Dashboard account"
+                : "Reset your password"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "sign_in"
               ? "Use your email and password to access this instance."
-              : "Create an account for this instance. Email confirmation is not required in v1."}
+              : mode === "sign_up"
+                ? "Create an account for this instance. Email confirmation is not required in v1."
+                : "Enter your email and we'll send you a link to reset your password."}
           </p>
 
+          {mode === "forgot" ? (
+            forgotSent ? (
+              <div className="mt-6 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  If that email exists, a reset link has been sent.
+                </p>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-foreground underline underline-offset-2"
+                  onClick={() => {
+                    setError(null);
+                    setForgotSent(false);
+                    setMode("sign_in");
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </div>
+            ) : (
+              <form
+                className="mt-6 space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (forgotMutation.isPending) return;
+                  if (email.trim().length === 0) {
+                    setError("Please enter your email.");
+                    return;
+                  }
+                  forgotMutation.mutate();
+                }}
+              >
+                <div>
+                  <label htmlFor="forgot-email" className="text-xs text-muted-foreground mb-1 block">Email</label>
+                  <input
+                    id="forgot-email"
+                    name="email"
+                    className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                    autoFocus
+                  />
+                </div>
+                {error && <p className="text-xs text-destructive">{error}</p>}
+                <Button
+                  type="submit"
+                  disabled={forgotMutation.isPending}
+                  className="w-full"
+                >
+                  {forgotMutation.isPending ? "Working…" : "Send reset link"}
+                </Button>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-foreground underline underline-offset-2"
+                  onClick={() => {
+                    setError(null);
+                    setMode("sign_in");
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </form>
+            )
+          ) : (
           <form
             className="mt-6 space-y-4"
             onSubmit={(event) => {
@@ -152,20 +241,39 @@ export function AuthPage() {
                   : "Create Account"}
             </Button>
           </form>
+          )}
 
-          <div className="mt-5 text-sm text-muted-foreground">
-            {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
-            <button
-              type="button"
-              className="font-medium text-foreground underline underline-offset-2"
-              onClick={() => {
-                setError(null);
-                setMode(mode === "sign_in" ? "sign_up" : "sign_in");
-              }}
-            >
-              {mode === "sign_in" ? "Create one" : "Sign in"}
-            </button>
-          </div>
+          {mode === "sign_in" && (
+            <div className="mt-3 text-sm">
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2"
+                onClick={() => {
+                  setError(null);
+                  setForgotSent(false);
+                  setMode("forgot");
+                }}
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
+
+          {mode !== "forgot" && (
+            <div className="mt-5 text-sm text-muted-foreground">
+              {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2"
+                onClick={() => {
+                  setError(null);
+                  setMode(mode === "sign_in" ? "sign_up" : "sign_in");
+                }}
+              >
+                {mode === "sign_in" ? "Create one" : "Sign in"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

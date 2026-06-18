@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { socialsApi, type SocialPost } from "../../api/socials";
+import { accessApi } from "../../api/access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-const STATUS_OPTIONS = ["all", "scheduled", "publishing", "posted", "failed", "canceled"] as const;
+const STATUS_OPTIONS = ["all", "pending_approval", "scheduled", "publishing", "posted", "failed", "canceled"] as const;
 type StatusFilter = typeof STATUS_OPTIONS[number];
 
 function statusVariant(s: string): "default" | "secondary" | "outline" | "destructive" {
@@ -13,6 +14,10 @@ function statusVariant(s: string): "default" | "secondary" | "outline" | "destru
   if (s === "failed") return "destructive";
   if (s === "scheduled" || s === "publishing") return "secondary";
   return "outline";
+}
+
+function authorLabel(p: SocialPost): string {
+  return p.authorName || p.authorEmail || p.createdByUserId || "—";
 }
 
 function formatWhen(iso: string): string {
@@ -26,6 +31,7 @@ function formatWhen(iso: string): string {
 export function SocialsQueue() {
   const qc = useQueryClient();
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["socials", "posts", status],
@@ -33,9 +39,28 @@ export function SocialsQueue() {
     refetchInterval: 5000,
   });
 
+  // Instance-admin signal (GET /cli-auth/me → isInstanceAdmin). Returns 401 for
+  // non-board sessions; treat any failure as "not admin" so Approve stays hidden.
+  const { data: access } = useQuery({
+    queryKey: ["board-access"],
+    queryFn: () => accessApi.getBoardAccess(),
+    retry: false,
+  });
+  const isAdmin = access?.isInstanceAdmin ?? false;
+
   const cancelMut = useMutation({
     mutationFn: (id: string) => socialsApi.cancelPost(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["socials", "posts"] }),
+    onError: (err) => setActionError(err instanceof Error ? err.message : String(err)),
+  });
+
+  const approveMut = useMutation({
+    mutationFn: (id: string) => socialsApi.approvePost(id),
+    onSuccess: () => {
+      setActionError(null);
+      qc.invalidateQueries({ queryKey: ["socials", "posts"] });
+    },
+    onError: (err) => setActionError(err instanceof Error ? err.message : String(err)),
   });
 
   const relayMut = useMutation({
@@ -66,6 +91,8 @@ export function SocialsQueue() {
         </Button>
       </div>
 
+      {actionError && <div className="text-sm text-destructive">{actionError}</div>}
+
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
       ) : posts.length === 0 ? (
@@ -91,6 +118,7 @@ export function SocialsQueue() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm space-y-2">
+                <div className="text-xs text-muted-foreground">by {authorLabel(p)}</div>
                 <div className="whitespace-pre-wrap font-mono text-xs">{p.text}</div>
                 {p.mediaUrls.length > 0 && (
                   <div className="text-xs text-muted-foreground">
@@ -115,16 +143,27 @@ export function SocialsQueue() {
                   ) : (
                     <span />
                   )}
-                  {p.status === "scheduled" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => cancelMut.mutate(p.id)}
-                      disabled={cancelMut.isPending}
-                    >
-                      Cancel
-                    </Button>
-                  )}
+                  <div className="flex gap-2">
+                    {p.status === "pending_approval" && isAdmin && (
+                      <Button
+                        size="sm"
+                        onClick={() => approveMut.mutate(p.id)}
+                        disabled={approveMut.isPending}
+                      >
+                        Approve
+                      </Button>
+                    )}
+                    {(p.status === "scheduled" || p.status === "pending_approval") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => cancelMut.mutate(p.id)}
+                        disabled={cancelMut.isPending}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

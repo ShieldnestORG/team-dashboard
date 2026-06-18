@@ -12,6 +12,7 @@ import {
   authVerifications,
 } from "@paperclipai/db";
 import type { Config } from "../config.js";
+import { sendPasswordResetEmail } from "../services/email-templates.js";
 
 export type BetterAuthSessionUser = {
   id: string;
@@ -68,7 +69,15 @@ export function deriveAuthTrustedOrigins(config: Config): string[] {
 
 export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?: string[]): BetterAuthInstance {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
-  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.PAPERCLIP_AGENT_JWT_SECRET ?? "paperclip-dev-secret";
+  // No hardcoded dev-secret fallback: a shared default would let anyone forge
+  // sessions. createBetterAuthInstance is only invoked in authenticated mode,
+  // where boot already requires this secret — fail loud if it is somehow absent.
+  const secret = process.env.BETTER_AUTH_SECRET?.trim() || process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
+  if (!secret) {
+    throw new Error(
+      "BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) must be set to initialise authentication",
+    );
+  }
   const effectiveTrustedOrigins = trustedOrigins ?? deriveAuthTrustedOrigins(config);
 
   const publicUrl = process.env.PAPERCLIP_PUBLIC_URL ?? baseUrl;
@@ -100,6 +109,12 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       enabled: true,
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
+      // Enables the /request-password-reset + /reset-password endpoints. The
+      // emailed `url` is better-auth's reset link (carries the token); it lands
+      // on the frontend reset page via the request's redirectTo.
+      sendResetPassword: async ({ user, url }) => {
+        if (user.email) await sendPasswordResetEmail(user.email, url);
+      },
     },
     ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
   };

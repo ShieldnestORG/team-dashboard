@@ -7,7 +7,7 @@ import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
-import { globalRateLimit } from "./middleware/global-rate-limit.js";
+import { authRateLimit, globalRateLimit } from "./middleware/global-rate-limit.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
@@ -183,6 +183,17 @@ export async function createApp(
 ) {
   const app = express();
 
+  // Behind a reverse proxy (nginx), Express must trust the proxy hop(s) so
+  // req.ip reflects the real client — otherwise the auth/global rate limiters
+  // key every client to the single proxy IP. Off by default (direct/local);
+  // set PAPERCLIP_TRUST_PROXY to the hop count (e.g. 1 for one nginx in front)
+  // in proxied deployments. Do not over-set it: too many trusted hops lets a
+  // client spoof X-Forwarded-For to evade rate limits.
+  const trustProxyHops = Number(process.env.PAPERCLIP_TRUST_PROXY);
+  if (Number.isFinite(trustProxyHops) && trustProxyHops > 0) {
+    app.set("trust proxy", trustProxyHops);
+  }
+
   app.use(cors({
     origin: [
       /\.vercel\.app$/,
@@ -243,7 +254,10 @@ export async function createApp(
     });
   });
   if (opts.betterAuthHandler) {
-    app.all("/api/auth/*authPath", opts.betterAuthHandler);
+    // Stricter limit on auth endpoints (login/signup/reset) to blunt
+    // brute-force / credential-stuffing; the general limiter (300/min) is too
+    // loose for credential checks.
+    app.all("/api/auth/*authPath", authRateLimit, opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
 

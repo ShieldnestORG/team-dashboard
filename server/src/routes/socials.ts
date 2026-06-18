@@ -1,7 +1,8 @@
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { socialAccounts, socialAutomations, socialPosts, platformCaps } from "@paperclipai/db";
+import { socialAccounts, socialAutomations, socialPosts, platformCaps, authUsers } from "@paperclipai/db";
 import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
 import { runSocialRelayerTick } from "../services/social-relayer.js";
@@ -12,8 +13,46 @@ import type { StorageService } from "../storage/types.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
+/** True when the actor is an authenticated instance admin. */
+function isAdminActor(req: Request): boolean {
+  return req.actor.type === "board" && Boolean(req.actor.isInstanceAdmin);
+}
+
+/**
+ * The authoring auth-user id for attribution, or null. Excludes the
+ * local_trusted implicit board principal ("local-board"), which is not a real
+ * user row.
+ */
+function actorUserId(req: Request): string | null {
+  if (req.actor.type !== "board") return null;
+  if (req.actor.source === "local_implicit") return null;
+  return req.actor.userId ?? null;
+}
+
 export function socialsRoutes(db: Db, storageService: StorageService) {
   const router = Router();
+
+  // Socials is a logged-in dashboard surface — only the authenticated UI calls
+  // these endpoints. Require a board actor: this rejects unauthenticated
+  // requests in authenticated mode (previously NONE of these routes checked the
+  // actor) and is satisfied implicitly by the local_trusted dev principal.
+  router.use((req, res, next) => {
+    if (req.actor.type !== "board") {
+      res.status(401).json({ error: "authentication required" });
+      return;
+    }
+    next();
+  });
+
+  // Publishing is admin-gated: employees create drafts (pending_approval); an
+  // instance admin approves them into the relayer queue.
+  const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
+    if (!isAdminActor(req)) {
+      res.status(403).json({ error: "admin role required to approve/publish" });
+      return;
+    }
+    next();
+  };
 
   // ----- Accounts -----
   router.get("/accounts", async (req, res) => {
@@ -39,7 +78,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ accounts });
   });
 
-  router.post("/accounts", async (req, res) => {
+  router.post("/accounts", requireAdmin, async (req, res) => {
     const body = req.body ?? {};
     if (!body.brand || !body.platform || !body.handle) {
       return res.status(400).json({ error: "brand, platform, handle required" });
@@ -65,7 +104,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.status(201).json({ account: inserted[0] });
   });
 
-  router.patch("/accounts/:id", async (req, res) => {
+  router.patch("/accounts/:id", requireAdmin, async (req, res) => {
     const id = req.params.id as string;
     const patch: Record<string, unknown> = {};
     const fields = [
@@ -86,7 +125,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ account: updated[0] });
   });
 
-  router.delete("/accounts/:id", async (req, res) => {
+  router.delete("/accounts/:id", requireAdmin, async (req, res) => {
     const id = req.params.id as string;
     // Soft-delete via archived flag.
     const updated = await db
@@ -110,7 +149,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ automations: rows });
   });
 
-  router.post("/automations/sync", async (_req, res) => {
+  router.post("/automations/sync", requireAdmin, async (_req, res) => {
     try {
       const result = await syncSocialAutomations(db, COMPANY_ID);
       res.json(result);
@@ -152,9 +191,13 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
         platform: socialAccounts.platform,
         brand: socialAccounts.brand,
         handle: socialAccounts.handle,
+        createdByUserId: socialPosts.createdByUserId,
+        authorEmail: authUsers.email,
+        authorName: authUsers.name,
       })
       .from(socialPosts)
       .innerJoin(socialAccounts, eq(socialAccounts.id, socialPosts.socialAccountId))
+      .leftJoin(authUsers, eq(authUsers.id, socialPosts.createdByUserId))
       .where(and(...where))
       .orderBy(desc(socialPosts.scheduledAt))
       .limit(limit);
@@ -185,6 +228,10 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
       return res.status(400).json({ error: "scheduledAt is invalid" });
     }
 
+    // Two-tier publishing: non-admin employees create DRAFTS that wait for an
+    // admin to approve (status 'pending_approval' — the relayer only drains
+    // 'scheduled'). Admins publish directly. Either way we attribute the author.
+    const status = isAdminActor(req) ? "scheduled" : "pending_approval";
     const inserted = await db
       .insert(socialPosts)
       .values({
@@ -194,26 +241,77 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
         altTexts: Array.isArray(body.altTexts) ? body.altTexts.map(String) : [],
         replyToUrl: body.replyToUrl ? String(body.replyToUrl) : null,
         scheduledAt,
+        status,
         maxAttempts: typeof body.maxAttempts === "number" ? body.maxAttempts : 3,
         payload: body.payload && typeof body.payload === "object" ? body.payload : {},
+        createdByUserId: actorUserId(req),
       })
       .returning();
-    res.status(201).json({ post: inserted[0] });
+    res.status(201).json({ post: inserted[0], pendingApproval: status === "pending_approval" });
   });
 
-  // Cancel a queued post (only if still scheduled).
-  router.delete("/posts/:id", async (req, res) => {
+  // Approve a pending draft → enqueue it for the relayer (admins only).
+  // Optional scheduledAt override lets the approver set/adjust the publish time.
+  router.post("/posts/:id/approve", requireAdmin, async (req, res) => {
     const id = req.params.id as string;
+    const body = req.body ?? {};
+    // Confirm the post belongs to this company and is awaiting approval.
+    const existing = await db
+      .select({ status: socialPosts.status })
+      .from(socialPosts)
+      .innerJoin(socialAccounts, eq(socialAccounts.id, socialPosts.socialAccountId))
+      .where(and(eq(socialPosts.id, id), eq(socialAccounts.companyId, COMPANY_ID)))
+      .limit(1);
+    if (!existing[0]) return res.status(404).json({ error: "post not found" });
+    if (existing[0].status !== "pending_approval") {
+      return res.status(409).json({ error: "post is not pending approval" });
+    }
+    const patch: Record<string, unknown> = { status: "scheduled", updatedAt: sql`now()` };
+    if (body.scheduledAt) {
+      const when = new Date(String(body.scheduledAt));
+      if (Number.isNaN(when.getTime())) return res.status(400).json({ error: "scheduledAt is invalid" });
+      patch.scheduledAt = when;
+    }
     const updated = await db
       .update(socialPosts)
-      .set({ status: "canceled", updatedAt: sql`now()` })
-      .where(and(eq(socialPosts.id, id), eq(socialPosts.status, "scheduled")))
+      .set(patch)
+      .where(and(eq(socialPosts.id, id), eq(socialPosts.status, "pending_approval")))
       .returning();
-    if (!updated[0]) return res.status(409).json({ error: "post is not in scheduled status" });
+    if (!updated[0]) return res.status(409).json({ error: "post is not pending approval" });
+    res.json({ post: updated[0] });
+  });
+
+  // Cancel a queued post or reject a pending draft. Authors may cancel their
+  // own scheduled/pending posts; admins may cancel any.
+  router.delete("/posts/:id", async (req, res) => {
+    const id = req.params.id as string;
+    const rows = await db
+      .select({
+        status: socialPosts.status,
+        createdByUserId: socialPosts.createdByUserId,
+      })
+      .from(socialPosts)
+      .innerJoin(socialAccounts, eq(socialAccounts.id, socialPosts.socialAccountId))
+      .where(and(eq(socialPosts.id, id), eq(socialAccounts.companyId, COMPANY_ID)))
+      .limit(1);
+    const post = rows[0];
+    if (!post) return res.status(404).json({ error: "post not found" });
+    if (post.status !== "scheduled" && post.status !== "pending_approval") {
+      return res.status(409).json({ error: "post can only be canceled while scheduled or pending approval" });
+    }
+    if (!isAdminActor(req) && post.createdByUserId !== actorUserId(req)) {
+      return res.status(403).json({ error: "not allowed to cancel this post" });
+    }
+    await db
+      .update(socialPosts)
+      .set({ status: "canceled", updatedAt: sql`now()` })
+      .where(eq(socialPosts.id, id));
     res.json({ ok: true });
   });
 
-  router.post("/posts/enqueue-from-content", async (req, res) => {
+  // Admin-only: this enqueues directly as 'scheduled' (bypasses the draft
+  // approval gate), so it must not be reachable by a non-admin employee.
+  router.post("/posts/enqueue-from-content", requireAdmin, async (req, res) => {
     const contentItemId = req.body?.contentItemId;
     if (typeof contentItemId !== "string" || !contentItemId) {
       return res.status(400).json({ error: "contentItemId required" });
@@ -234,8 +332,8 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     }
   });
 
-  // Manual relayer tick for testing — runs one drain pass right now.
-  router.post("/posts/relay-now", async (_req, res) => {
+  // Manual relayer tick — force-drains the queue now; admin-only ops action.
+  router.post("/posts/relay-now", requireAdmin, async (_req, res) => {
     try {
       const result = await runSocialRelayerTick(db, storageService);
       res.json(result);
@@ -251,7 +349,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ caps: rows });
   });
 
-  router.patch("/platform-caps/:platform", async (req, res) => {
+  router.patch("/platform-caps/:platform", requireAdmin, async (req, res) => {
     const platform = req.params.platform as string;
     const body = req.body ?? {};
     const patch: Record<string, unknown> = {};

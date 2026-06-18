@@ -855,6 +855,13 @@
       "when": 1775606471000,
       "tag": "0121_affiliate_clawbacks",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1781811276965,
+      "tag": "0122_flat_vanisher",
+      "breakpoints": true
     }
   ]
 }

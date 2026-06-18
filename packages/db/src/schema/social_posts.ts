@@ -24,7 +24,9 @@ export const socialPosts = pgTable(
     platformPostId: text("platform_post_id"),
     error: text("error"),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
-    createdByUserId: uuid("created_by_user_id"),
+    // text (not uuid) to match auth user ids (better-auth ids are non-uuid
+    // strings), consistent with created_by_user_id on every other table.
+    createdByUserId: text("created_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     postedAt: timestamp("posted_at", { withTimezone: true }),
