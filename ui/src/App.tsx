@@ -102,6 +102,7 @@ import { ShopSharersAdmin } from "./pages/ShopSharersAdmin";
 import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
+import { ResetPasswordPage } from "./pages/ResetPassword";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
@@ -448,6 +449,7 @@ export function App() {
     <>
       <Routes>
         <Route path="auth" element={<AuthPage />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route path="board-claim/:token" element={<BoardClaimPage />} />
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
