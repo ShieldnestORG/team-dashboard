@@ -65,7 +65,7 @@ export function graphQueryService(db: Db) {
     ): Promise<GraphEdge[]> {
       const depth = Math.min(maxDepth, 4); // cap at 4 to prevent runaway
       const relFilter = relationshipFilter && relationshipFilter.length > 0
-        ? sql`AND cr.relationship = ANY(${relationshipFilter}::text[])`
+        ? sql`AND cr.relationship = ANY(ARRAY[${sql.join(relationshipFilter.map((r) => sql`${r}`), sql`, `)}]::text[])`
         : sql``;
 
       const rows = await db.execute(sql`

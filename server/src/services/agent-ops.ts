@@ -97,7 +97,7 @@ export function agentOpsService(db: Db) {
           SELECT hr.agent_id, i.title AS issue_title, i.identifier AS issue_identifier
           FROM heartbeat_runs hr
           JOIN issues i ON i.id = (hr.context_snapshot->>'issueId')::uuid
-          WHERE hr.id = ANY(${activeRunIds}::uuid[])
+          WHERE hr.id = ANY(ARRAY[${sql.join(activeRunIds.map((u) => sql`${u}`), sql`, `)}]::uuid[])
             AND hr.context_snapshot->>'issueId' IS NOT NULL
         `) as unknown as RunIssueRow[];
         activeRunIssueMap = new Map(runIssues.map((r) => [r.agent_id, r]));
