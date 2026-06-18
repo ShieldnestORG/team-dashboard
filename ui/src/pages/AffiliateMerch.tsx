@@ -8,6 +8,14 @@ import {
   type MerchShippingAddress,
 } from "@/api/affiliates";
 import { AffiliateNav } from "@/components/AffiliateNav";
+import {
+  CDPage,
+  CDPrimaryButton,
+  EditorialCard,
+  LabelCaps,
+  Mono,
+} from "@/components/cd/CDPrimitives";
+import { CD, FONT_MONO } from "@/lib/cdDesign";
 
 const ITEM_OPTIONS: { value: MerchItemType; label: string; needsSize: boolean }[] = [
   { value: "starter_shirt", label: "Starter Shirt", needsSize: true },
@@ -25,19 +33,39 @@ function formatShortDate(iso: string): string {
   });
 }
 
-function statusClass(status: string): string {
-  switch (status) {
-    case "approved":
-    case "shipped":
-    case "delivered":
-      return "bg-green-500/15 text-green-500 border-green-500/30";
-    case "pending":
-      return "bg-yellow-500/15 text-yellow-500 border-yellow-500/30";
-    case "rejected":
-      return "bg-red-500/15 text-red-500 border-red-500/30";
-    default:
-      return "bg-muted text-muted-foreground border-border";
-  }
+// Narrowed palette — Verdant for fulfilled, Rizz Coral for in-flight, Flare for
+// rejected. Neutral fallback for anything unmapped.
+const STATUS_PILL: Record<string, { bg: string; fg: string; border: string }> = {
+  approved: { bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  shipped: { bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  delivered: { bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  pending: { bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  rejected: { bg: "rgba(217,67,67,0.10)", fg: CD.danger, border: "rgba(217,67,67,0.35)" },
+};
+
+function StatusPill({ status }: { status: string }) {
+  const cfg = STATUS_PILL[status] ?? {
+    bg: "rgba(255,255,255,0.04)",
+    fg: CD.muted,
+    border: CD.border,
+  };
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5"
+      style={{
+        fontFamily: FONT_MONO,
+        fontSize: "0.625rem",
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        backgroundColor: cfg.bg,
+        color: cfg.fg,
+        border: `1px solid ${cfg.border}`,
+        borderRadius: 4,
+      }}
+    >
+      {status}
+    </span>
+  );
 }
 
 function formatItemType(t: string): string {
@@ -45,6 +73,18 @@ function formatItemType(t: string): string {
   if (match) return match.label;
   return t.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
+
+// Shared input styling for the shipping form — dark surface, hairline border,
+// coral focus ring matching the rest of the CD affiliate surfaces.
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  borderRadius: 10,
+  border: `1px solid ${CD.border}`,
+  backgroundColor: "rgba(255,255,255,0.025)",
+  color: CD.ink,
+  padding: "8px 12px",
+  fontSize: "0.875rem",
+};
 
 /**
  * Compute cooldown based on the most recent approved/shipped/delivered request.
@@ -170,47 +210,54 @@ export function AffiliateMerch() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AffiliateNav active="/merch" subtitle="Affiliate Program" title="Merch" />
+    <CDPage>
+      <AffiliateNav active="/merch" subtitle="Affiliate" title="Merch" />
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+      <main className="mx-auto w-full max-w-5xl px-6 py-10 space-y-6">
         {loading ? (
-          <div className="rounded-xl border border-border bg-card py-12 text-center">
-            <p className="text-muted-foreground text-sm">Loading…</p>
-          </div>
+          <EditorialCard className="py-12 text-center">
+            <LabelCaps>Loading merch…</LabelCaps>
+          </EditorialCard>
         ) : error ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <div
+            className="p-4 text-sm"
+            style={{
+              backgroundColor: "rgba(217,67,67,0.08)",
+              border: `1px solid rgba(217,67,67,0.35)`,
+              color: CD.danger,
+              borderRadius: 10,
+            }}
+          >
             {error}
           </div>
         ) : (
           <>
             {formShouldHide ? (
-              <section className="rounded-xl border border-border bg-card p-5">
-                <h2 className="text-base font-semibold text-foreground">
-                  Cooldown active
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
+              <EditorialCard className="p-5">
+                <LabelCaps color={CD.accent}>Cooldown active</LabelCaps>
+                <p className="mt-2 text-sm" style={{ color: CD.muted }}>
                   You recently received merch. You'll be eligible to request again on{" "}
-                  <span className="font-medium text-foreground">
+                  <span className="font-medium" style={{ color: CD.ink }}>
                     {formatShortDate(cooldownUntil!)}
                   </span>
                   .
                 </p>
-              </section>
+              </EditorialCard>
             ) : (
-              <section className="rounded-xl border border-border bg-card p-5 space-y-4">
+              <EditorialCard className="p-5 space-y-4">
                 <div>
-                  <h2 className="text-base font-semibold text-foreground">
-                    Request merch
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <LabelCaps color={CD.accent}>Request merch</LabelCaps>
+                  <p className="mt-1 text-xs" style={{ color: CD.muted }}>
                     One request per {COOLDOWN_DAYS} days. Shipping is on us for active
                     affiliates.
                   </p>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
+                    <label
+                      className="block text-xs font-medium mb-1"
+                      style={{ color: CD.ink }}
+                    >
                       Item
                     </label>
                     <select
@@ -221,7 +268,7 @@ export function AffiliateMerch() {
                         setSizeOrVariant("");
                       }}
                       disabled={submitLoading}
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                      style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                     >
                       <option value="">Select item…</option>
                       {ITEM_OPTIONS.map((opt) => (
@@ -234,7 +281,10 @@ export function AffiliateMerch() {
 
                   {selectedItem?.needsSize && (
                     <div>
-                      <label className="block text-xs font-medium text-foreground mb-1">
+                      <label
+                        className="block text-xs font-medium mb-1"
+                        style={{ color: CD.ink }}
+                      >
                         Size
                       </label>
                       <input
@@ -244,17 +294,18 @@ export function AffiliateMerch() {
                         onChange={(e) => setSizeOrVariant(e.target.value)}
                         placeholder="S / M / L / XL / 2XL"
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                        style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                       />
                     </div>
                   )}
 
-                  <div className="pt-2 border-t border-border space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Shipping address
-                    </p>
+                  <div className="pt-2 space-y-3" style={{ borderTop: `1px solid ${CD.border}` }}>
+                    <LabelCaps>Shipping address</LabelCaps>
                     <div>
-                      <label className="block text-xs font-medium text-foreground mb-1">
+                      <label
+                        className="block text-xs font-medium mb-1"
+                        style={{ color: CD.ink }}
+                      >
                         Full name
                       </label>
                       <input
@@ -263,11 +314,14 @@ export function AffiliateMerch() {
                         value={address.name}
                         onChange={(e) => updateAddress("name", e.target.value)}
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                        style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-foreground mb-1">
+                      <label
+                        className="block text-xs font-medium mb-1"
+                        style={{ color: CD.ink }}
+                      >
                         Street address
                       </label>
                       <input
@@ -276,11 +330,14 @@ export function AffiliateMerch() {
                         value={address.street1}
                         onChange={(e) => updateAddress("street1", e.target.value)}
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                        style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-foreground mb-1">
+                      <label
+                        className="block text-xs font-medium mb-1"
+                        style={{ color: CD.ink }}
+                      >
                         Apartment, suite, etc. (optional)
                       </label>
                       <input
@@ -288,12 +345,15 @@ export function AffiliateMerch() {
                         value={address.street2 ?? ""}
                         onChange={(e) => updateAddress("street2", e.target.value)}
                         disabled={submitLoading}
-                        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                        style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                       />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-foreground mb-1">
+                        <label
+                          className="block text-xs font-medium mb-1"
+                          style={{ color: CD.ink }}
+                        >
                           City
                         </label>
                         <input
@@ -302,11 +362,14 @@ export function AffiliateMerch() {
                           value={address.city}
                           onChange={(e) => updateAddress("city", e.target.value)}
                           disabled={submitLoading}
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                          style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-foreground mb-1">
+                        <label
+                          className="block text-xs font-medium mb-1"
+                          style={{ color: CD.ink }}
+                        >
                           State / Region
                         </label>
                         <input
@@ -315,13 +378,16 @@ export function AffiliateMerch() {
                           value={address.region}
                           onChange={(e) => updateAddress("region", e.target.value)}
                           disabled={submitLoading}
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                          style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                         />
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-foreground mb-1">
+                        <label
+                          className="block text-xs font-medium mb-1"
+                          style={{ color: CD.ink }}
+                        >
                           Postal code
                         </label>
                         <input
@@ -330,11 +396,14 @@ export function AffiliateMerch() {
                           value={address.postalCode}
                           onChange={(e) => updateAddress("postalCode", e.target.value)}
                           disabled={submitLoading}
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                          style={{ ...inputStyle, opacity: submitLoading ? 0.6 : 1 }}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-foreground mb-1">
+                        <label
+                          className="block text-xs font-medium mb-1"
+                          style={{ color: CD.ink }}
+                        >
                           Country
                         </label>
                         <input
@@ -345,92 +414,97 @@ export function AffiliateMerch() {
                           disabled={submitLoading}
                           maxLength={2}
                           placeholder="US"
-                          className="w-full rounded-lg border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] disabled:opacity-60"
+                          style={{
+                            ...inputStyle,
+                            fontFamily: FONT_MONO,
+                            opacity: submitLoading ? 0.6 : 1,
+                          }}
                         />
                       </div>
                     </div>
                   </div>
 
                   {submitError && (
-                    <p className="text-xs text-destructive">{submitError}</p>
+                    <p className="text-xs" style={{ color: CD.danger }}>
+                      {submitError}
+                    </p>
                   )}
                   {submitSuccess && (
-                    <p className="text-xs text-green-600">{submitSuccess}</p>
+                    <p className="text-xs" style={{ color: CD.success }}>
+                      {submitSuccess}
+                    </p>
                   )}
 
                   <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={submitLoading || !itemType}
-                      className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
-                    >
+                    <CDPrimaryButton type="submit" disabled={submitLoading || !itemType}>
                       {submitLoading ? "Submitting…" : "Submit Request"}
-                    </button>
+                    </CDPrimaryButton>
                   </div>
                 </form>
-              </section>
+              </EditorialCard>
             )}
 
             {/* Request history */}
             <section className="space-y-3">
-              <h2 className="text-base font-semibold text-foreground">
-                Your requests
-              </h2>
+              <LabelCaps as="div">Your requests</LabelCaps>
               {requests.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center">
-                  <p className="text-sm text-muted-foreground">
+                <EditorialCard className="py-12 text-center" style={{ borderStyle: "dashed" }}>
+                  <p className="text-sm" style={{ color: CD.muted }}>
                     No merch requests yet.
                   </p>
-                </div>
+                </EditorialCard>
               ) : (
-                <div className="bg-card rounded-xl border border-border overflow-hidden">
+                <EditorialCard style={{ overflow: "hidden" }}>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                          <th className="px-4 py-3 font-medium">Requested</th>
-                          <th className="px-4 py-3 font-medium">Item</th>
-                          <th className="px-4 py-3 font-medium hidden sm:table-cell">Size</th>
-                          <th className="px-4 py-3 font-medium">Status</th>
-                          <th className="px-4 py-3 font-medium hidden md:table-cell">Tracking</th>
+                        <tr style={{ borderBottom: `1px solid ${CD.border}`, textAlign: "left" }}>
+                          <th className="px-4 py-3"><LabelCaps>Requested</LabelCaps></th>
+                          <th className="px-4 py-3"><LabelCaps>Item</LabelCaps></th>
+                          <th className="px-4 py-3 hidden sm:table-cell"><LabelCaps>Size</LabelCaps></th>
+                          <th className="px-4 py-3"><LabelCaps>Status</LabelCaps></th>
+                          <th className="px-4 py-3 hidden md:table-cell"><LabelCaps>Tracking</LabelCaps></th>
                         </tr>
                       </thead>
                       <tbody>
                         {requests.map((r) => (
-                          <tr
-                            key={r.id}
-                            className="border-b border-border last:border-0 hover:bg-background transition-colors"
-                          >
-                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                              {formatShortDate(r.createdAt)}
+                          <tr key={r.id} style={{ borderBottom: `1px solid ${CD.border}` }}>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                                {formatShortDate(r.createdAt)}
+                              </Mono>
                             </td>
-                            <td className="px-4 py-3 text-sm font-medium text-foreground">
+                            <td className="px-4 py-3 text-sm font-medium" style={{ color: CD.ink }}>
                               {formatItemType(r.itemType)}
                             </td>
-                            <td className="px-4 py-3 hidden sm:table-cell text-xs text-muted-foreground">
-                              {r.sizeOrVariant ?? "—"}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusClass(r.status)}`}
-                              >
-                                {r.status}
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                              <span style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                                {r.sizeOrVariant ?? "—"}
                               </span>
                             </td>
-                            <td className="px-4 py-3 hidden md:table-cell text-xs font-mono text-muted-foreground">
-                              {r.trackingNumber ?? "—"}
+                            <td className="px-4 py-3">
+                              <StatusPill status={r.status} />
+                            </td>
+                            <td className="px-4 py-3 hidden md:table-cell">
+                              {r.trackingNumber ? (
+                                <Mono style={{ color: CD.muted, fontSize: "0.75rem" }}>
+                                  {r.trackingNumber}
+                                </Mono>
+                              ) : (
+                                <span style={{ color: CD.muted, fontSize: "0.75rem" }}>—</span>
+                              )}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </div>
+                </EditorialCard>
               )}
             </section>
           </>
         )}
       </main>
-    </div>
+    </CDPage>
   );
 }

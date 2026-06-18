@@ -6,25 +6,35 @@ import {
   type TimelineActivity,
 } from "@/api/affiliates";
 import { ArrowLeft, Clock, Globe, MapPin, Tag } from "lucide-react";
+import { AffiliateNav } from "@/components/AffiliateNav";
+import {
+  CDPage,
+  EditorialCard,
+  LabelCaps,
+  Mono,
+} from "@/components/cd/CDPrimitives";
+import { CD, FONT_MONO } from "@/lib/cdDesign";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const PIPELINE_STAGE_LABELS: Record<string, { label: string; className: string }> = {
-  draft: { label: "Draft", className: "bg-muted text-muted-foreground border-border" },
-  submitted: { label: "Submitted", className: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
-  under_review: { label: "Under Review", className: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
-  contacted: { label: "Contacted", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
-  qualified: { label: "Qualified", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
-  demo_booked: { label: "Demo Booked", className: "bg-purple-500/15 text-purple-500 border-purple-500/30" },
-  proposal: { label: "Proposal Sent", className: "bg-purple-500/15 text-purple-500 border-purple-500/30" },
-  negotiation: { label: "In Negotiation", className: "bg-purple-500/15 text-purple-500 border-purple-500/30" },
-  won: { label: "Won", className: "bg-green-500/15 text-green-500 border-green-500/30" },
-  onboarding: { label: "Onboarding", className: "bg-green-500/15 text-green-500 border-green-500/30" },
-  active: { label: "Active Client", className: "bg-green-500/15 text-green-500 border-green-500/30" },
-  lost: { label: "Lost", className: "bg-muted text-muted-foreground border-border" },
-  expired: { label: "Expired", className: "bg-destructive/15 text-destructive border-destructive/30" },
+// Narrowed palette — Verdant for won/active, Rizz Coral for in-progress,
+// Flare for expired, neutral for draft/lost. No blue/purple neon.
+const PIPELINE_STAGE_LABELS: Record<string, { label: string; bg: string; fg: string; border: string }> = {
+  draft: { label: "Draft", bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.border },
+  submitted: { label: "Submitted", bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.borderStrong },
+  under_review: { label: "Under Review", bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.borderStrong },
+  contacted: { label: "Contacted", bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  qualified: { label: "Qualified", bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  demo_booked: { label: "Demo Booked", bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  proposal: { label: "Proposal Sent", bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  negotiation: { label: "In Negotiation", bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  won: { label: "Won", bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  onboarding: { label: "Onboarding", bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  active: { label: "Active Client", bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  lost: { label: "Lost", bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.border },
+  expired: { label: "Expired", bg: "rgba(217,67,67,0.10)", fg: CD.danger, border: "rgba(217,67,67,0.35)" },
 };
 
 const ACTOR_LABEL: Record<string, string> = {
@@ -37,10 +47,20 @@ const ACTOR_LABEL: Record<string, string> = {
 function PipelineStagePill({ stage }: { stage: string }) {
   const cfg =
     PIPELINE_STAGE_LABELS[stage] ??
-    { label: stage.replace(/_/g, " "), className: "bg-muted text-muted-foreground border-border" };
+    { label: stage.replace(/_/g, " "), bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.border };
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${cfg.className}`}
+      className="inline-flex items-center px-2.5 py-1"
+      style={{
+        fontFamily: FONT_MONO,
+        fontSize: "0.625rem",
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        backgroundColor: cfg.bg,
+        color: cfg.fg,
+        border: `1px solid ${cfg.border}`,
+        borderRadius: 4,
+      }}
     >
       {cfg.label}
     </span>
@@ -87,11 +107,11 @@ function humanizeActivityType(type: string): string {
 function TimelineList({ activities }: { activities: TimelineActivity[] }) {
   if (activities.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center">
-        <p className="text-muted-foreground text-sm">
+      <EditorialCard className="py-12 text-center" style={{ borderStyle: "dashed" }}>
+        <p className="text-sm" style={{ color: CD.muted }}>
           No activity yet. We'll post updates here as the lead moves through the pipeline.
         </p>
-      </div>
+      </EditorialCard>
     );
   }
 
@@ -100,28 +120,27 @@ function TimelineList({ activities }: { activities: TimelineActivity[] }) {
       {activities.map((a) => {
         const actor = ACTOR_LABEL[a.actorType] ?? a.actorType;
         return (
-          <li
-            key={a.id}
-            className="bg-card rounded-xl border border-border p-4 space-y-2"
-          >
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-semibold text-foreground">
-                  {humanizeActivityType(a.activityType)}
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  · {actor}
-                </span>
+          <li key={a.id}>
+            <EditorialCard className="p-4 space-y-2">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold" style={{ color: CD.ink }}>
+                    {humanizeActivityType(a.activityType)}
+                  </span>
+                  <span className="text-[11px]" style={{ color: CD.muted }}>
+                    · {actor}
+                  </span>
+                </div>
+                <Mono className="text-[11px] whitespace-nowrap" style={{ color: CD.muted }}>
+                  {formatTimestamp(a.timestamp)}
+                </Mono>
               </div>
-              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                {formatTimestamp(a.timestamp)}
-              </span>
-            </div>
-            {a.note && (
-              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                {a.note}
-              </p>
-            )}
+              {a.note && (
+                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: CD.muted }}>
+                  {a.note}
+                </p>
+              )}
+            </EditorialCard>
           </li>
         );
       })}
@@ -168,42 +187,55 @@ export function AffiliateLeadDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
+      <CDPage>
+        <AffiliateNav subtitle="Affiliate" title="Lead" />
+        <main className="mx-auto w-full max-w-3xl px-6 py-10">
+          <EditorialCard className="py-12 text-center">
+            <LabelCaps>Loading lead…</LabelCaps>
+          </EditorialCard>
+        </main>
+      </CDPage>
     );
   }
 
   if (error || !lead) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <p className="text-destructive mb-3">{error ?? "Lead not found."}</p>
-          <a href="/dashboard" className="text-sm text-[#FF6B4A] hover:underline">
-            Back to Dashboard
-          </a>
-        </div>
-      </div>
+      <CDPage>
+        <AffiliateNav subtitle="Affiliate" title="Lead" />
+        <main className="mx-auto w-full max-w-3xl px-6 py-10">
+          <EditorialCard className="py-16 text-center">
+            <p className="mb-3" style={{ color: CD.danger }}>{error ?? "Lead not found."}</p>
+            <a href="/dashboard" className="text-sm hover:underline" style={{ color: CD.accent }}>
+              Back to Dashboard
+            </a>
+          </EditorialCard>
+        </main>
+      </CDPage>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <CDPage>
+      <AffiliateNav subtitle="Affiliate" title="Lead" />
+
       {/* Header */}
-      <header className="bg-card border-b border-border sticky top-0 z-10">
+      <header style={{ borderBottom: `1px solid ${CD.border}` }}>
         <div className="max-w-3xl mx-auto px-6 py-4">
           <a
             href="/dashboard"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs mb-2 transition-colors"
+            style={{ color: CD.muted }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = CD.ink)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Dashboard
           </a>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-xl font-bold text-foreground">{lead.name}</h1>
+            <h1 className="text-xl font-bold" style={{ color: CD.ink }}>{lead.name}</h1>
             <PipelineStagePill stage={lead.pipelineStage} />
           </div>
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="mt-1 flex items-center gap-1.5 text-xs" style={{ color: CD.muted }}>
             <Clock className="h-3 w-3" />
             Last activity: {formatRelativeTime(lead.lastActivityAt)}
           </div>
@@ -213,17 +245,18 @@ export function AffiliateLeadDetail() {
       {/* Body */}
       <main className="max-w-3xl mx-auto px-6 py-8 space-y-6">
         {/* Lead summary card */}
-        <section className="bg-card rounded-xl border border-border p-5 space-y-2">
-          <h2 className="text-sm font-semibold text-foreground mb-2">Lead</h2>
+        <EditorialCard className="p-5 space-y-2">
+          <h2 className="text-sm font-semibold mb-2" style={{ color: CD.ink }}>Lead</h2>
           {lead.website && (
             <div className="flex items-start gap-2 text-sm">
-              <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-              <span className="text-xs text-muted-foreground w-20 shrink-0">Website</span>
+              <Globe className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: CD.muted }} />
+              <span className="text-xs w-20 shrink-0" style={{ color: CD.muted }}>Website</span>
               <a
                 href={lead.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#FF6B4A] hover:underline break-all"
+                className="hover:underline break-all"
+                style={{ color: CD.accent }}
               >
                 {lead.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
               </a>
@@ -231,22 +264,22 @@ export function AffiliateLeadDetail() {
           )}
           {lead.location && (
             <div className="flex items-start gap-2 text-sm">
-              <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-              <span className="text-xs text-muted-foreground w-20 shrink-0">Location</span>
-              <span className="text-foreground">{lead.location}</span>
+              <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: CD.muted }} />
+              <span className="text-xs w-20 shrink-0" style={{ color: CD.muted }}>Location</span>
+              <span style={{ color: CD.ink }}>{lead.location}</span>
             </div>
           )}
           {lead.industry && (
             <div className="flex items-start gap-2 text-sm">
-              <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-              <span className="text-xs text-muted-foreground w-20 shrink-0">Industry</span>
-              <span className="text-foreground">{lead.industry}</span>
+              <Tag className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: CD.muted }} />
+              <span className="text-xs w-20 shrink-0" style={{ color: CD.muted }}>Industry</span>
+              <span style={{ color: CD.ink }}>{lead.industry}</span>
             </div>
           )}
           <div className="flex items-start gap-2 text-sm pt-1">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-            <span className="text-xs text-muted-foreground w-20 shrink-0">Submitted</span>
-            <span className="text-foreground">
+            <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: CD.muted }} />
+            <span className="text-xs w-20 shrink-0" style={{ color: CD.muted }}>Submitted</span>
+            <span style={{ color: CD.ink }}>
               {new Date(lead.createdAt).toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
@@ -254,17 +287,17 @@ export function AffiliateLeadDetail() {
               })}
             </span>
           </div>
-        </section>
+        </EditorialCard>
 
         {/* Timeline */}
         <section className="space-y-3">
-          <h2 className="text-base font-semibold text-foreground">Activity Timeline</h2>
-          <p className="text-xs text-muted-foreground">
+          <LabelCaps as="div">Activity Timeline</LabelCaps>
+          <p className="text-xs" style={{ color: CD.muted }}>
             Updates from our team on this lead. Internal notes are hidden.
           </p>
           <TimelineList activities={activities} />
         </section>
       </main>
-    </div>
+    </CDPage>
   );
 }
