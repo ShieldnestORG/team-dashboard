@@ -19,6 +19,7 @@
 import { and, eq, gt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  affiliates,
   affiliateViolations,
   crmActivities,
   partnerCompanies,
@@ -28,7 +29,6 @@ import {
 import { logger } from "../middleware/logger.js";
 import {
   sendTransactional,
-  type EmailTemplate,
   type EmailVars,
 } from "./email-templates.js";
 import { registerCronJob } from "./cron-registry.js";
@@ -236,24 +236,39 @@ export async function scanAffiliateText(
       });
       violationCount += 1;
 
-      // Email admin — template owner is the email-templates author. Cast the
-      // template name so this compiles before that template lands.
+      // Email the compliance alert. `affiliate-violation-warning` is an
+      // admin-facing template (greeting "Compliance alert for {recipientName}",
+      // CTA "Open Compliance Queue", actions acknowledge/overturn/enforce), so
+      // it goes to the ops inbox — NOT the affiliate. The prior bug was passing
+      // the raw affiliate UUID as `affiliateName` (rendering an unreadable
+      // alert) and leaving rule/severity/excerpt unpopulated. Resolve the
+      // affiliate's real name and populate the evidence vars the template
+      // renders. Non-blocking.
       const adminEmail =
         process.env.AFFILIATE_SUPPORT_EMAIL ??
         process.env.ALERT_EMAIL_TO ??
         process.env.SMTP_USER;
       if (adminEmail) {
+        const [affiliateRow] = await db
+          .select({ name: affiliates.name })
+          .from(affiliates)
+          .where(eq(affiliates.id, affiliateId))
+          .limit(1);
+
         const vars: EmailVars = {
           recipientName: "Team",
           recipientEmail: adminEmail,
-          affiliateName: affiliateId,
+          affiliateName: affiliateRow?.name ?? affiliateId,
+          ruleCode: rule.rule,
+          severity: rule.severity,
+          evidenceExcerpt: excerpt,
         };
         sendTransactional(
-          "affiliate-violation-warning" as EmailTemplate,
+          "affiliate-violation-warning",
           adminEmail,
           vars,
         ).catch((err) =>
-          logger.warn({ err }, "compliance-scanner: admin email failed"),
+          logger.warn({ err }, "compliance-scanner: violation email failed"),
         );
       }
     } catch (err) {

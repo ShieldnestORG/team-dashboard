@@ -28,6 +28,7 @@ import {
   type AffiliateViolationEvidence,
 } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { sendTransactional } from "../services/email-templates.js";
 import { decrementUnsentPayouts } from "../services/payout-adjust.js";
 import { recordClawback } from "../services/clawback.js";
 import { assertBoard } from "./authz.js";
@@ -347,7 +348,11 @@ export function affiliateComplianceRoutes(db: Db): Router {
       }
 
       const [existing] = await db
-        .select({ id: affiliates.id })
+        .select({
+          id: affiliates.id,
+          name: affiliates.name,
+          email: affiliates.email,
+        })
         .from(affiliates)
         .where(eq(affiliates.id, id))
         .limit(1);
@@ -372,6 +377,18 @@ export function affiliateComplianceRoutes(db: Db): Router {
           suspensionReason: affiliates.suspensionReason,
           status: affiliates.status,
         });
+
+      // Notify the affiliate that their account was suspended, including the
+      // reason and an appeal/contact line (the template's supportEmail default
+      // renders "reply or reach us at info@coherencedaddy.com"). Non-blocking.
+      sendTransactional("affiliate-suspended", existing.email, {
+        recipientName: existing.name,
+        recipientEmail: existing.email,
+        affiliateName: existing.name,
+        suspensionReason: reason,
+      }).catch((err) =>
+        logger.warn({ err, id }, "affiliate-compliance: suspend email failed"),
+      );
 
       res.json({ affiliate: updated });
     } catch (err) {
