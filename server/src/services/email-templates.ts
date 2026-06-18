@@ -43,7 +43,11 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
     return;
   }
   const from = process.env.ALERT_EMAIL_FROM ?? "noreply@coherencedaddy.com";
-  const safeUrl = String(resetUrl);
+  const safeUrl = String(resetUrl)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
   await transport.sendMail({
     from,
     to,

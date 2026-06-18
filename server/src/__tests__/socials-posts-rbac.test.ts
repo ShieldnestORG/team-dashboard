@@ -117,4 +117,18 @@ describe("socials post routes — auth + draft/approve RBAC", () => {
     expect(res.status).toBe(200);
     expect(res.body.post.status).toBe("scheduled");
   });
+
+  it("a non-admin cannot bypass approval via enqueue-from-content (403)", async () => {
+    const app = createApp(boardMember, {});
+    const res = await request(app)
+      .post("/api/socials/posts/enqueue-from-content")
+      .send({ contentItemId: "c1" });
+    expect(res.status).toBe(403);
+  });
+
+  it("a non-admin cannot force-drain the queue via relay-now (403)", async () => {
+    const app = createApp(boardMember, {});
+    const res = await request(app).post("/api/socials/posts/relay-now").send({});
+    expect(res.status).toBe(403);
+  });
 });

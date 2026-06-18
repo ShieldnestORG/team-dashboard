@@ -78,7 +78,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ accounts });
   });
 
-  router.post("/accounts", async (req, res) => {
+  router.post("/accounts", requireAdmin, async (req, res) => {
     const body = req.body ?? {};
     if (!body.brand || !body.platform || !body.handle) {
       return res.status(400).json({ error: "brand, platform, handle required" });
@@ -104,7 +104,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.status(201).json({ account: inserted[0] });
   });
 
-  router.patch("/accounts/:id", async (req, res) => {
+  router.patch("/accounts/:id", requireAdmin, async (req, res) => {
     const id = req.params.id as string;
     const patch: Record<string, unknown> = {};
     const fields = [
@@ -125,7 +125,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ account: updated[0] });
   });
 
-  router.delete("/accounts/:id", async (req, res) => {
+  router.delete("/accounts/:id", requireAdmin, async (req, res) => {
     const id = req.params.id as string;
     // Soft-delete via archived flag.
     const updated = await db
@@ -149,7 +149,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ automations: rows });
   });
 
-  router.post("/automations/sync", async (_req, res) => {
+  router.post("/automations/sync", requireAdmin, async (_req, res) => {
     try {
       const result = await syncSocialAutomations(db, COMPANY_ID);
       res.json(result);
@@ -309,7 +309,9 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ ok: true });
   });
 
-  router.post("/posts/enqueue-from-content", async (req, res) => {
+  // Admin-only: this enqueues directly as 'scheduled' (bypasses the draft
+  // approval gate), so it must not be reachable by a non-admin employee.
+  router.post("/posts/enqueue-from-content", requireAdmin, async (req, res) => {
     const contentItemId = req.body?.contentItemId;
     if (typeof contentItemId !== "string" || !contentItemId) {
       return res.status(400).json({ error: "contentItemId required" });
@@ -330,8 +332,8 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     }
   });
 
-  // Manual relayer tick for testing — runs one drain pass right now.
-  router.post("/posts/relay-now", async (_req, res) => {
+  // Manual relayer tick — force-drains the queue now; admin-only ops action.
+  router.post("/posts/relay-now", requireAdmin, async (_req, res) => {
     try {
       const result = await runSocialRelayerTick(db, storageService);
       res.json(result);
@@ -347,7 +349,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     res.json({ caps: rows });
   });
 
-  router.patch("/platform-caps/:platform", async (req, res) => {
+  router.patch("/platform-caps/:platform", requireAdmin, async (req, res) => {
     const platform = req.params.platform as string;
     const body = req.body ?? {};
     const patch: Record<string, unknown> = {};

@@ -183,6 +183,17 @@ export async function createApp(
 ) {
   const app = express();
 
+  // Behind a reverse proxy (nginx), Express must trust the proxy hop(s) so
+  // req.ip reflects the real client — otherwise the auth/global rate limiters
+  // key every client to the single proxy IP. Off by default (direct/local);
+  // set PAPERCLIP_TRUST_PROXY to the hop count (e.g. 1 for one nginx in front)
+  // in proxied deployments. Do not over-set it: too many trusted hops lets a
+  // client spoof X-Forwarded-For to evade rate limits.
+  const trustProxyHops = Number(process.env.PAPERCLIP_TRUST_PROXY);
+  if (Number.isFinite(trustProxyHops) && trustProxyHops > 0) {
+    app.set("trust proxy", trustProxyHops);
+  }
+
   app.use(cors({
     origin: [
       /\.vercel\.app$/,
