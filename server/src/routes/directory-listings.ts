@@ -430,6 +430,9 @@ async function handlePartnerStripeEvent(
             leadId: referralAttribution.leadId,
             rate: affiliates.commissionRate,
             attributionType: referralAttribution.attributionType,
+            affiliateEmail: affiliates.email,
+            affiliateName: affiliates.name,
+            leadName: partnerCompanies.name,
           })
           .from(referralAttribution)
           .innerJoin(partnerCompanies, eq(partnerCompanies.id, referralAttribution.leadId))
@@ -454,7 +457,10 @@ async function handlePartnerStripeEvent(
             const rateNum = Number(effectiveRate);
             const amountCents = Math.round(basisCents * rateNum);
 
-            await db
+            // `.returning()` gates the notification: a replayed webhook hits the
+            // unique stripeInvoiceId index, onConflictDoNothing inserts no row,
+            // and `inserted` is empty — so we never double-email the affiliate.
+            const inserted = await db
               .insert(commissions)
               .values({
                 affiliateId: attribution.affiliateId,
@@ -470,7 +476,8 @@ async function handlePartnerStripeEvent(
                 stripeInvoiceId: session.invoice ?? session.id,
                 holdExpiresAt: sql`now() + interval '30 days'`,
               })
-              .onConflictDoNothing();
+              .onConflictDoNothing()
+              .returning({ id: commissions.id });
 
             logger.info(
               {
@@ -483,6 +490,20 @@ async function handlePartnerStripeEvent(
               },
               "partner-network: initial commission created",
             );
+
+            // Notify the affiliate a new commission landed. Fire-and-forget —
+            // never blocks or throws out of the money path (mirrors the
+            // affiliate-approved send in routes/affiliates.ts).
+            if (inserted.length > 0 && attribution.affiliateEmail) {
+              sendTransactional("affiliate-commission-created", attribution.affiliateEmail, {
+                recipientName: attribution.affiliateName ?? undefined,
+                recipientEmail: attribution.affiliateEmail,
+                affiliateName: attribution.affiliateName ?? undefined,
+                leadName: attribution.leadName ?? undefined,
+                amountCents,
+                type: "initial",
+              }).catch(() => {});
+            }
           }
         }
       } catch (err) {
@@ -547,6 +568,9 @@ async function handlePartnerStripeEvent(
             affiliateId: referralAttribution.affiliateId,
             rate: affiliates.commissionRate,
             attributionType: referralAttribution.attributionType,
+            affiliateEmail: affiliates.email,
+            affiliateName: affiliates.name,
+            leadName: partnerCompanies.name,
           })
           .from(partnerCompanies)
           .innerJoin(
@@ -575,7 +599,10 @@ async function handlePartnerStripeEvent(
         const rateNum = Number(effectiveRate);
         const amountCents = Math.round(basisCents * rateNum);
 
-        await db
+        // `.returning()` gates the notification: a replayed renewal webhook
+        // conflicts on the unique stripeInvoiceId index and inserts no row, so
+        // `inserted` is empty and we never double-email the affiliate.
+        const inserted = await db
           .insert(commissions)
           .values({
             affiliateId: row.affiliateId,
@@ -591,7 +618,8 @@ async function handlePartnerStripeEvent(
             stripeInvoiceId: inv.id,
             holdExpiresAt: sql`now() + interval '30 days'`,
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: commissions.id });
 
         logger.info(
           {
@@ -603,6 +631,19 @@ async function handlePartnerStripeEvent(
           },
           "partner-network: recurring commission created",
         );
+
+        // Notify the affiliate a new recurring commission landed. Fire-and-forget
+        // — never blocks or throws out of the money path.
+        if (inserted.length > 0 && row.affiliateEmail) {
+          sendTransactional("affiliate-commission-created", row.affiliateEmail, {
+            recipientName: row.affiliateName ?? undefined,
+            recipientEmail: row.affiliateEmail,
+            affiliateName: row.affiliateName ?? undefined,
+            leadName: row.leadName ?? undefined,
+            amountCents,
+            type: "recurring",
+          }).catch(() => {});
+        }
       } catch (err) {
         logger.error(
           { err, subscriptionId: inv.subscription, invoiceId: inv.id },
@@ -714,6 +755,69 @@ async function handlePartnerStripeEvent(
 }
 
 // ---------------------------------------------------------------------------
+// Partner-event detection for metadata-less Stripe events.
+//
+// Stripe only stamps `metadata.source = 'partner_network'` on the Checkout
+// Session. Recurring `invoice.*`, `customer.subscription.deleted`, and
+// `charge.refunded` events carry no such marker, so we identify them by the
+// IDs we persisted at checkout:
+//   - invoice.* / customer.subscription.deleted → match the subscription id
+//     against `partnerCompanies.stripeSubscriptionId`.
+//   - charge.refunded → no subscription on the object; match the refunded
+//     invoice id against an existing `commissions.stripeInvoiceId` (the only
+//     definitive partner signal available, and the same key the refund handler
+//     uses to reverse/claw back).
+// Returns false for events that aren't partner-relevant (e.g.
+// checkout.session.completed, which is routed by metadata above).
+// ---------------------------------------------------------------------------
+async function eventBelongsToPartner(
+  db: Db,
+  event: { type: string; data: { object: Record<string, unknown> } },
+): Promise<boolean> {
+  const obj = event.data.object;
+
+  switch (event.type) {
+    case "invoice.payment_succeeded":
+    case "invoice.paid":
+    case "invoice.payment_failed": {
+      const subscription = (obj as { subscription?: string }).subscription;
+      if (!subscription) return false;
+      const [row] = await db
+        .select({ id: partnerCompanies.id })
+        .from(partnerCompanies)
+        .where(eq(partnerCompanies.stripeSubscriptionId, subscription))
+        .limit(1);
+      return !!row;
+    }
+
+    case "customer.subscription.deleted": {
+      const subId = (obj as { id?: string }).id;
+      if (!subId) return false;
+      const [row] = await db
+        .select({ id: partnerCompanies.id })
+        .from(partnerCompanies)
+        .where(eq(partnerCompanies.stripeSubscriptionId, subId))
+        .limit(1);
+      return !!row;
+    }
+
+    case "charge.refunded": {
+      const invoice = (obj as { invoice?: string }).invoice;
+      if (!invoice) return false;
+      const [row] = await db
+        .select({ id: commissions.id })
+        .from(commissions)
+        .where(eq(commissions.stripeInvoiceId, invoice))
+        .limit(1);
+      return !!row;
+    }
+
+    default:
+      return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Stripe webhook — separate mount, reads req.rawBody (captured by global
 // express.json({ verify }) middleware in app.ts). No admin auth — signature
 // is the auth.
@@ -749,10 +853,26 @@ export function directoryListingsWebhookRoutes(db: Db): Router {
         type: string;
         data: { object: Record<string, unknown> };
       };
-      // Route to the right handler based on metadata.source.
+      // Route to the right handler.
+      //
+      // `metadata.source` only exists on the Checkout Session — Stripe never
+      // copies it onto the invoice / charge / subscription objects of the same
+      // subscription, so recurring `invoice.paid` and `charge.refunded` events
+      // arrive with NO source. Routing purely by `metadata.source` therefore
+      // dropped every recurring commission and refund clawback. For those
+      // metadata-less events we instead match the partner by the
+      // `partnerCompanies.stripeSubscriptionId` we persisted at
+      // checkout.session.completed (or by an existing commission row for the
+      // refunded invoice). See `eventBelongsToPartner` below.
       const src = (event.data.object as { metadata?: Record<string, string> })?.metadata?.source;
 
       if (src === "partner_network") {
+        await handlePartnerStripeEvent(db, event);
+        res.json({ received: true });
+        return;
+      }
+
+      if (await eventBelongsToPartner(db, event)) {
         await handlePartnerStripeEvent(db, event);
         res.json({ received: true });
         return;

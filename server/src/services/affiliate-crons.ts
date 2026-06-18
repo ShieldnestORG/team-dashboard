@@ -114,8 +114,8 @@ export function startAffiliateCrons(db: Db): void {
 
   // ---------------------------------------------------------------------------
   // affiliate:commission-maturation — daily 03:15 UTC
-  // Promote pending_activation commissions whose hold window has lapsed.
-  // Email notifications are owned by Agent D (not triggered here).
+  // Promote pending_activation commissions whose hold window has lapsed, then
+  // email each affiliate a per-affiliate digest of what just matured.
   // ---------------------------------------------------------------------------
   registerCronJob({
     jobName: "affiliate:commission-maturation",
@@ -132,10 +132,64 @@ export function startAffiliateCrons(db: Db): void {
             lt(commissions.holdExpiresAt, sql`NOW()`),
           ),
         )
-        .returning({ id: commissions.id });
+        .returning({
+          id: commissions.id,
+          affiliateId: commissions.affiliateId,
+          amountCents: commissions.amountCents,
+        });
 
       logger.info({ count: matured.length }, "affiliate:commission-maturation released");
-      return { released: matured.length };
+
+      // Roll the matured rows up per affiliate so each gets a single
+      // "X commissions totaling $Y approved" email rather than one per row.
+      let emailsSent = 0;
+      let emailsFailed = 0;
+      if (matured.length > 0) {
+        const byAffiliate = new Map<string, { totalCents: number; count: number }>();
+        for (const row of matured) {
+          const agg = byAffiliate.get(row.affiliateId) ?? { totalCents: 0, count: 0 };
+          agg.totalCents += row.amountCents;
+          agg.count += 1;
+          byAffiliate.set(row.affiliateId, agg);
+        }
+
+        const affiliateIds = [...byAffiliate.keys()];
+        const recipients = await db
+          .select({ id: affiliates.id, name: affiliates.name, email: affiliates.email })
+          .from(affiliates)
+          .where(inArray(affiliates.id, affiliateIds));
+
+        const affiliateDashboardUrl =
+          process.env.AFFILIATE_DASHBOARD_URL ?? "https://affiliates.coherencedaddy.com";
+        const supportEmail =
+          process.env.AFFILIATE_SUPPORT_EMAIL ?? process.env.SMTP_USER ?? "info@coherencedaddy.com";
+
+        for (const aff of recipients) {
+          const agg = byAffiliate.get(aff.id);
+          if (!agg || !aff.email) continue;
+          try {
+            await sendTransactional("affiliate-commission-approved", aff.email, {
+              recipientName: aff.name,
+              recipientEmail: aff.email,
+              affiliateName: aff.name,
+              totalCents: agg.totalCents,
+              count: agg.count,
+              supportEmail,
+              affiliateDashboardUrl,
+              dashboardUrl: affiliateDashboardUrl,
+            });
+            emailsSent += 1;
+          } catch (err) {
+            emailsFailed += 1;
+            logger.warn(
+              { err, affiliateId: aff.id },
+              "affiliate:commission-maturation email delivery failed",
+            );
+          }
+        }
+      }
+
+      return { released: matured.length, emailsSent, emailsFailed };
     },
   });
 
@@ -202,7 +256,11 @@ export function startAffiliateCrons(db: Db): void {
                   eq(commissions.affiliateId, candidate.affiliateId),
                   eq(commissions.status, "approved"),
                 ),
-              );
+              )
+              // Lock the rows for the duration of the tx so a concurrent
+              // reverse/clawback can't flip one out of 'approved' after we've
+              // summed it — which would overstate the payout's frozen total.
+              .for("update");
 
             if (approvedRows.length === 0) return;
 
@@ -628,7 +686,9 @@ export function startAffiliateCrons(db: Db): void {
         const lifetimeCents = lifetimeRow?.lifetimeCents ?? 0;
 
         // Active paying partners — distinct leads with commissions
-        // joined to a partnerCompanies row where is_paying = true.
+        // joined to a partnerCompanies row where is_paying = true. Mirror the
+        // lifetime query's status filter so a reversed/clawed-back/held
+        // commission can't keep counting a partner toward the active count.
         const [activeRow] = await db
           .select({
             activeCount: sql<number>`count(distinct ${commissions.leadId})::int`,
@@ -638,6 +698,7 @@ export function startAffiliateCrons(db: Db): void {
           .where(
             and(
               eq(commissions.affiliateId, aff.id),
+              inArray(commissions.status, ["paid", "approved", "scheduled_for_payout"]),
               eq(partnerCompanies.isPaying, true),
             ),
           );

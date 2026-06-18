@@ -49,6 +49,8 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 **No webhook for:** Bundles (no Stripe product registered yet — see open follow-ups), Partners (route exists but provisioning is manual today).
 
+> **Affiliate refund clawbacks require `charge.refunded`.** The Partner Network shares the `/api/stripe/webhook` endpoint above, and affiliate refund reversals/clawbacks only fire on `charge.refunded` (consider also `charge.dispute.created`). That event is **not** in this endpoint's current subscription list — add it in the Stripe dashboard (operator config) or no refund will ever reverse a partner commission. No code change needed; the handler already routes refunds by matching the refunded invoice to a partner commission.
+
 ## Env var contract — what each var does, where it must be set
 
 VPS = `/opt/team-dashboard/.env.production` on **VPS4 (`31.220.61.14`)** — NOT VPS1 (`.12`). Always confirm with `dig +short api.coherencedaddy.com` before SSHing.
