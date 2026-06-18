@@ -46,6 +46,11 @@ export const FONT_SANS =
 export const FONT_MONO =
   '"Geist Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace';
 
+// Single source of truth for the affiliate application review SLA, surfaced on
+// both the public landing (post-apply confirmation) and the pending-dashboard.
+// Approval is manual with no enforced SLA — keep this conservative and in one place.
+export const APPLICATION_SLA = "within 1–2 business days";
+
 // labelCaps style — DESIGN.md typography.labelCaps.
 export const LABEL_CAPS_STYLE: React.CSSProperties = {
   fontFamily: FONT_MONO,

@@ -88,19 +88,19 @@ export const TIER_LADDER: TierDefinition[] = [
       "Custom co-branded merch",
     ],
     color: {
-      text: "text-indigo-500",
-      bg: "bg-indigo-500/10",
-      border: "border-indigo-500/40",
-      badge: "bg-indigo-500/20 text-indigo-500 border-indigo-500/40",
+      text: "text-orange-500",
+      bg: "bg-orange-500/10",
+      border: "border-orange-500/40",
+      badge: "bg-orange-500/20 text-orange-500 border-orange-500/40",
     },
   },
 ];
 
 const DEFAULT_COLOR = {
-  text: "text-muted-foreground",
-  bg: "bg-muted",
-  border: "border-border",
-  badge: "bg-muted text-muted-foreground border-border",
+  text: "text-zinc-400",
+  bg: "bg-zinc-400/10",
+  border: "border-zinc-400/40",
+  badge: "bg-zinc-400/20 text-zinc-400 border-zinc-400/40",
 };
 
 export function tierColorFor(name: string | null | undefined): TierDefinition["color"] {
@@ -112,9 +112,4 @@ export function tierColorFor(name: string | null | undefined): TierDefinition["c
 export function formatTierName(name: string | null | undefined): string {
   if (!name) return "—";
   return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-}
-
-export function formatDollarsCompact(cents: number): string {
-  const dollars = (cents || 0) / 100;
-  return `$${dollars.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }

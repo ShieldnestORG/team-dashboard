@@ -9,8 +9,8 @@ import {
   Mono,
   Cascade,
 } from "@/components/cd/CDPrimitives";
-import { CD, FONT_MONO } from "@/lib/cdDesign";
-import { TIER_LADDER, formatDollarsCompact, formatTierName } from "@/lib/affiliateTiers";
+import { CD, FONT_MONO, formatDollarsCompact } from "@/lib/cdDesign";
+import { TIER_LADDER, formatTierName } from "@/lib/affiliateTiers";
 
 export function AffiliateTiers() {
   const [currentTier, setCurrentTier] = useState<TierResponse | null>(null);
