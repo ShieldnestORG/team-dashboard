@@ -143,7 +143,7 @@ interface Step {
 - **Steps (proposed):**
   1. **What it is in one sentence.** It's a score between 0 and 100 that tells a business owner how visible and trustworthy their site looks to an AI.
   2. **How it works (we do the work, they do nothing).** Every 6 hours we scan their site and rescore. They don't touch it. They get an email when the score changes.
-  3. **What the three tiers get them.** One-time $29 audit (one scan, static report). $49/mo Starter (ongoing scans, trend chart, email alerts). $149/mo Pro (everything + competitor tracking + monthly coaching doc). Screenshot the actual report at each tier so the affiliate can recognize it.
+  3. **What the four tiers get them.** One-time $19 audit (one scan, static report). $49/mo Starter (ongoing scans, trend chart, email alerts). $199/mo Growth (Starter + AI-optimized pages + schema + competitor breakdown). $499/mo Pro (everything + weekly reporting + dedicated strategist). Screenshot the actual report at each tier so the affiliate can recognize it.
   4. **What the owner actually does each month.** Opens one email. Maybe forwards a note to their web person. That's it.
   5. **What a good pitch sounds like.** Keep it about the owner, not the tech. "Want to see what your site looks like through ChatGPT's eyes? Takes 60 seconds, costs nothing." Let the product do the selling.
   6. **Where to send them to try it free.** coherencedaddy.com — the free scan is a real thing, not a trap. They don't even need to sign up.
