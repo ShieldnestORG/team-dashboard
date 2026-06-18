@@ -261,6 +261,24 @@ export function shopSharersRoutes(db: Db): Router {
           res.status(404).json({ error: "Sharer not found" });
           return;
         }
+        // A freshly-minted affiliate comes back as { sharer, affiliate,
+        // resetToken } with a one-time set-password token. Auto-send the
+        // existing affiliate-reset-password email (same pattern as
+        // affiliates.ts forgot-password) so the new affiliate can set a
+        // password without the admin manually relaying the token.
+        // Already-promoted sharers return a bare row with neither field.
+        if ("affiliate" in result && "resetToken" in result) {
+          sendTransactional("affiliate-reset-password", result.affiliate.email, {
+            recipientName: result.affiliate.name,
+            recipientEmail: result.affiliate.email,
+            resetToken: result.resetToken,
+          }).catch((err) =>
+            logger.warn(
+              { err, id },
+              "shop-sharers: set-password email failed",
+            ),
+          );
+        }
         res.json(result);
       } catch (err) {
         logger.error({ err, id }, "shop-sharers: approve failed");
