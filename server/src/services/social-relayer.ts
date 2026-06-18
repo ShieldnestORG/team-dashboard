@@ -151,12 +151,21 @@ export async function runSocialRelayerTick(
   if (rows.length === 0) return result;
 
   const ids = rows.map((r) => r.id);
-  await db.execute(sql`
-    UPDATE social_posts
-       SET status = 'publishing',
-           updated_at = now()
-     WHERE id = ANY(${ids}::uuid[])
-  `);
+  // Claim the picked rows by marking them 'publishing'. Bind each id as a
+  // SCALAR param in a loop: drizzle expands an interpolated JS array into
+  // comma-separated params, which is wrong for ANY(array) — it produced
+  // `ANY(($1)::uuid[])` with $1 bound to a single uuid string and threw
+  // PostgresError "malformed array literal". The scalar `${id}` form is the
+  // proven-correct binding used by every other write in this file (BATCH_SIZE
+  // caps this at 5 rows/tick).
+  for (const id of ids) {
+    await db.execute(sql`
+      UPDATE social_posts
+         SET status = 'publishing',
+             updated_at = now()
+       WHERE id = ${id}
+    `);
+  }
 
   for (const row of rows) {
     if (row.accountStatus !== "active") {
