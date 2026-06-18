@@ -144,6 +144,7 @@ export async function runSocialRelayerTick(db: Db): Promise<RelayerResult> {
         replyToUrl: row.replyToUrl ?? undefined,
         socialAccountId: row.socialAccountId,
         oauthRef: row.oauthRef ?? undefined,
+        postId: row.id,
         payload: row.payload ?? {},
       });
     } catch (err) {

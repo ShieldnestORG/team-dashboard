@@ -147,7 +147,11 @@ export const zernioPublisher: PlatformPublisher = {
         headers: {
           Authorization: `Bearer ${key}`,
           "Content-Type": "application/json",
-          "x-request-id": randomUUID(),
+          // Stable per-row request id so Zernio can de-dupe retries: when the
+          // relayer retries a row whose 2xx was lost, the same social_posts.id
+          // (forwarded as opts.postId) yields the same x-request-id. Fallback to
+          // randomUUID() only when postId is absent (backward compatibility).
+          "x-request-id": opts.postId || randomUUID(),
         },
         body: JSON.stringify(body),
       });

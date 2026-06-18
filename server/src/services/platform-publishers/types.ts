@@ -30,6 +30,10 @@ export interface PublishTextOptions {
    * provider-side account id (e.g. "zernio:<accountId>"). Forwarded by the
    * relayer so stateless publishers need no db handle. */
   oauthRef?: string;
+  /** social_posts.id — used by publishers to generate a stable request ID for
+   * idempotent retries. Forwarded by the relayer so publishers can correlate
+   * retries with the original post row. */
+  postId?: string;
   /** Platform-specific extras (link card, langs, visibility, etc.). */
   payload?: Record<string, unknown>;
 }
