@@ -631,6 +631,7 @@ export function affiliateRoutes(db: Db): Router {
           .select({
             id: referralAttribution.id,
             affiliateId: referralAttribution.affiliateId,
+            lockExpiresAt: referralAttribution.lockExpiresAt,
           })
           .from(referralAttribution)
           .where(
@@ -642,15 +643,27 @@ export function affiliateRoutes(db: Db): Router {
           )
           .limit(1);
 
+        const DUPLICATE_LEAD_MESSAGE = "This business is already in our system.";
+        const lockExpiresAtIso = activeAttribution?.lockExpiresAt?.toISOString() ?? null;
+
         if (activeAttribution && activeAttribution.affiliateId !== affiliateId) {
-          // Actively locked by another affiliate — block
-          res.status(409).json({ error: "This business is already in our system.", slug: dup.slug });
+          // Actively locked by ANOTHER affiliate — don't leak which prospect.
+          res.status(409).json({
+            error: DUPLICATE_LEAD_MESSAGE,
+            kind: "other",
+            lockExpiresAt: lockExpiresAtIso,
+          });
           return;
         }
 
         if (activeAttribution && activeAttribution.affiliateId === affiliateId) {
-          // Same affiliate already has an active attribution — treat as duplicate of their own prospect
-          res.status(409).json({ error: "This business is already in our system.", slug: dup.slug });
+          // Same affiliate already has an active attribution — it's their own prospect.
+          res.status(409).json({
+            error: DUPLICATE_LEAD_MESSAGE,
+            kind: "own",
+            slug: dup.slug,
+            lockExpiresAt: lockExpiresAtIso,
+          });
           return;
         }
 
@@ -675,39 +688,49 @@ export function affiliateRoutes(db: Db): Router {
 
         // Fall through: the existing partner_companies row was never successfully owned
         // by an active attribution. Re-own it under this affiliate and create a fresh
-        // attribution row.
-        await db
-          .update(partnerCompanies)
-          .set({ affiliateId, updatedAt: sql`now()` })
-          .where(eq(partnerCompanies.id, dup.id));
+        // attribution row. Wrapped in a transaction so the re-own + attribution +
+        // status update + crm_activity + lastLeadSubmittedAt stamp commit atomically
+        // (mirrors the reverse/clawback/payout transaction style in this file).
+        await db.transaction(async (tx) => {
+          await tx
+            .update(partnerCompanies)
+            .set({ affiliateId, updatedAt: sql`now()` })
+            .where(eq(partnerCompanies.id, dup.id));
 
-        await db.insert(referralAttribution).values({
-          leadId: dup.id,
-          affiliateId,
-          attributionType: "affiliate_referred_cd_closed",
-          lockStartAt: sql`now()`,
-          lockExpiresAt: sql`now() + interval '30 days'`,
-          firstTouchLogged: firstTouchStatus ?? false,
-          firstTouchType: firstTouchType ?? null,
-          firstTouchDate: firstTouchDateParsed,
-          firstTouchNotes: firstTouchNotes ?? null,
-          relationshipWarmth: relationshipWarmth ?? null,
-          affiliateClosePreference: closePreference ?? null,
-        });
+          await tx.insert(referralAttribution).values({
+            leadId: dup.id,
+            affiliateId,
+            attributionType: "affiliate_referred_cd_closed",
+            lockStartAt: sql`now()`,
+            lockExpiresAt: sql`now() + interval '30 days'`,
+            firstTouchLogged: firstTouchStatus ?? false,
+            firstTouchType: firstTouchType ?? null,
+            firstTouchDate: firstTouchDateParsed,
+            firstTouchNotes: firstTouchNotes ?? null,
+            relationshipWarmth: relationshipWarmth ?? null,
+            affiliateClosePreference: closePreference ?? null,
+          });
 
-        await db
-          .update(partnerCompanies)
-          .set({ leadStatus: "submitted", pipelineEnteredAt: sql`now()`, lastActivityAt: sql`now()`, updatedAt: sql`now()` })
-          .where(eq(partnerCompanies.id, dup.id));
+          await tx
+            .update(partnerCompanies)
+            .set({ leadStatus: "submitted", pipelineEnteredAt: sql`now()`, lastActivityAt: sql`now()`, updatedAt: sql`now()` })
+            .where(eq(partnerCompanies.id, dup.id));
 
-        await db.insert(crmActivities).values({
-          leadId: dup.id,
-          actorType: "affiliate",
-          actorId: affiliateId,
-          activityType: "status_change",
-          toStatus: "submitted",
-          note: "Lead resubmitted",
-          visibleToAffiliate: true,
+          await tx.insert(crmActivities).values({
+            leadId: dup.id,
+            actorType: "affiliate",
+            actorId: affiliateId,
+            activityType: "status_change",
+            toStatus: "submitted",
+            note: "Lead resubmitted",
+            visibleToAffiliate: true,
+          });
+
+          // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
+          await tx
+            .update(affiliates)
+            .set({ lastLeadSubmittedAt: sql`now()`, updatedAt: sql`now()` })
+            .where(eq(affiliates.id, affiliateId));
         });
 
         if (closePreference === "affiliate_attempts_first") {
@@ -716,12 +739,6 @@ export function affiliateRoutes(db: Db): Router {
             "affiliate-prospect: affiliate_attempts_first close preference — admin review needed",
           );
         }
-
-        // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
-        await db
-          .update(affiliates)
-          .set({ lastLeadSubmittedAt: sql`now()`, updatedAt: sql`now()` })
-          .where(eq(affiliates.id, affiliateId));
 
         res.status(201).json({
           prospect: {
@@ -774,39 +791,51 @@ export function affiliateRoutes(db: Db): Router {
         return;
       }
 
-      // Create referral attribution row for this new prospect
-      await db.insert(referralAttribution).values({
-        leadId: partner.id,
-        affiliateId,
-        attributionType: "affiliate_referred_cd_closed",
-        lockStartAt: sql`now()`,
-        lockExpiresAt: sql`now() + interval '30 days'`,
-        firstTouchLogged: firstTouchStatus ?? false,
-        firstTouchType: firstTouchType ?? null,
-        firstTouchDate: firstTouchDateParsed,
-        firstTouchNotes: firstTouchNotes ?? null,
-        relationshipWarmth: relationshipWarmth ?? null,
-        affiliateClosePreference: closePreference ?? null,
-      });
+      // Create the referral attribution + initial pipeline state for this new
+      // prospect atomically (attribution + status update + crm_activity +
+      // lastLeadSubmittedAt stamp). Mirrors the reverse/clawback/payout
+      // transaction style in this file. The partner row insert above keeps its
+      // own slug-conflict retry loop and stays outside the transaction.
+      await db.transaction(async (tx) => {
+        await tx.insert(referralAttribution).values({
+          leadId: partner!.id,
+          affiliateId,
+          attributionType: "affiliate_referred_cd_closed",
+          lockStartAt: sql`now()`,
+          lockExpiresAt: sql`now() + interval '30 days'`,
+          firstTouchLogged: firstTouchStatus ?? false,
+          firstTouchType: firstTouchType ?? null,
+          firstTouchDate: firstTouchDateParsed,
+          firstTouchNotes: firstTouchNotes ?? null,
+          relationshipWarmth: relationshipWarmth ?? null,
+          affiliateClosePreference: closePreference ?? null,
+        });
 
-      await db
-        .update(partnerCompanies)
-        .set({
-          leadStatus: "submitted",
-          pipelineEnteredAt: sql`now()`,
-          lastActivityAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(partnerCompanies.id, partner.id));
+        await tx
+          .update(partnerCompanies)
+          .set({
+            leadStatus: "submitted",
+            pipelineEnteredAt: sql`now()`,
+            lastActivityAt: sql`now()`,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(partnerCompanies.id, partner!.id));
 
-      await db.insert(crmActivities).values({
-        leadId: partner.id,
-        actorType: "affiliate",
-        actorId: affiliateId,
-        activityType: "status_change",
-        toStatus: "submitted",
-        note: "Lead submitted",
-        visibleToAffiliate: true,
+        await tx.insert(crmActivities).values({
+          leadId: partner!.id,
+          actorType: "affiliate",
+          actorId: affiliateId,
+          activityType: "status_change",
+          toStatus: "submitted",
+          note: "Lead submitted",
+          visibleToAffiliate: true,
+        });
+
+        // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
+        await tx
+          .update(affiliates)
+          .set({ lastLeadSubmittedAt: sql`now()`, updatedAt: sql`now()` })
+          .where(eq(affiliates.id, affiliateId));
       });
 
       if (closePreference === "affiliate_attempts_first") {
@@ -816,16 +845,10 @@ export function affiliateRoutes(db: Db): Router {
         );
       }
 
-      // Fire-and-forget onboarding
+      // Fire-and-forget onboarding (after the pipeline state has committed).
       runPartnerOnboarding(db, partner.slug).catch((err) =>
         logger.error({ err, slug: partner!.slug }, "Affiliate prospect onboarding failed"),
       );
-
-      // Phase 4 — stamp lastLeadSubmittedAt for inactive-reengagement cron.
-      await db
-        .update(affiliates)
-        .set({ lastLeadSubmittedAt: sql`now()`, updatedAt: sql`now()` })
-        .where(eq(affiliates.id, affiliateId));
 
       res.status(201).json({
         prospect: {
@@ -1968,7 +1991,12 @@ export function affiliateAdminRoutes(db: Db): Router {
       }
 
       const [existing] = await db
-        .select({ id: commissions.id, status: commissions.status })
+        .select({
+          id: commissions.id,
+          status: commissions.status,
+          affiliateId: commissions.affiliateId,
+          amountCents: commissions.amountCents,
+        })
         .from(commissions)
         .where(eq(commissions.id, id))
         .limit(1);
@@ -2000,6 +2028,24 @@ export function affiliateAdminRoutes(db: Db): Router {
         { commissionId: id, priorStatus: existing.status, reason },
         "Commission put on hold by admin",
       );
+
+      // Notify the affiliate their pending payout is on hold. Fire-and-forget —
+      // never blocks or throws out of the response (mirrors affiliate-approved).
+      db.select({ name: affiliates.name, email: affiliates.email })
+        .from(affiliates)
+        .where(eq(affiliates.id, existing.affiliateId))
+        .limit(1)
+        .then(([aff]) => {
+          if (!aff?.email) return;
+          return sendTransactional("affiliate-payout-held", aff.email, {
+            recipientName: aff.name,
+            recipientEmail: aff.email,
+            affiliateName: aff.name,
+            amountCents: existing.amountCents,
+            reason,
+          });
+        })
+        .catch(() => {});
 
       res.json({ commission: updated });
     } catch (err) {
@@ -2145,6 +2191,31 @@ export function affiliateAdminRoutes(db: Db): Router {
           { payoutId: id, clawbackAppliedCents: outcome.applied },
           "Clawback recovery applied to payout at mark-sent",
         );
+      }
+
+      // Notify the affiliate their payout is on its way. Fire-and-forget,
+      // outside the tx — never blocks or throws out of the money path (mirrors
+      // the affiliate-approved send above). netCents = gross - clawback applied.
+      {
+        const payout = outcome.payout;
+        const netCents = (payout.amountCents ?? 0) - outcome.applied;
+        db.select({ name: affiliates.name, email: affiliates.email })
+          .from(affiliates)
+          .where(eq(affiliates.id, payout.affiliateId))
+          .limit(1)
+          .then(([aff]) => {
+            if (!aff?.email) return;
+            return sendTransactional("affiliate-payout-sent", aff.email, {
+              recipientName: aff.name,
+              recipientEmail: aff.email,
+              affiliateName: aff.name,
+              amountCents: netCents,
+              commissionCount: payout.commissionCount ?? 0,
+              method: payout.method,
+              externalId: payout.externalId ?? undefined,
+            });
+          })
+          .catch(() => {});
       }
 
       res.json({ payout: outcome.payout });
@@ -2508,8 +2579,14 @@ export function affiliateAdminRoutes(db: Db): Router {
       const toDb = toDbStatus(toStatus);
 
       const [cur] = await db
-        .select({ leadStatus: partnerCompanies.leadStatus })
+        .select({
+          leadStatus: partnerCompanies.leadStatus,
+          leadName: partnerCompanies.name,
+          affiliateName: affiliates.name,
+          affiliateEmail: affiliates.email,
+        })
         .from(partnerCompanies)
+        .leftJoin(affiliates, eq(affiliates.id, partnerCompanies.affiliateId))
         .where(eq(partnerCompanies.id, id))
         .limit(1);
       if (!cur) {
@@ -2526,6 +2603,10 @@ export function affiliateAdminRoutes(db: Db): Router {
         });
         return;
       }
+
+      // This transition is surfaced to the affiliate timeline (crm_activities
+      // row below is visibleToAffiliate), so it also gates the notification.
+      const visibleToAffiliate = true;
 
       await db.transaction(async (tx) => {
         await tx
@@ -2546,9 +2627,23 @@ export function affiliateAdminRoutes(db: Db): Router {
           fromStatus: from,
           toStatus: toDb,
           note: note ?? null,
-          visibleToAffiliate: true,
+          visibleToAffiliate,
         });
       });
+
+      // Notify the referring affiliate of the status change. Gated on
+      // visibleToAffiliate; fire-and-forget so it never blocks the response.
+      if (visibleToAffiliate && from !== toDb && cur.affiliateEmail) {
+        sendTransactional("affiliate-lead-status-change", cur.affiliateEmail, {
+          recipientName: cur.affiliateName ?? undefined,
+          recipientEmail: cur.affiliateEmail,
+          affiliateName: cur.affiliateName ?? undefined,
+          leadName: cur.leadName,
+          statusLabel: toUiStatus(toDb),
+          fromStatus: from ?? undefined,
+          toStatus: toDb,
+        }).catch(() => {});
+      }
 
       res.json({ ok: true });
     } catch (err) {

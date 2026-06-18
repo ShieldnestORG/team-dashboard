@@ -17,8 +17,15 @@
  * We assert on the captured calls — not on SQL output — which is the same
  * compromise used in `affiliate-crons.test.ts`.
  *
- * Event payloads include `metadata.source = 'partner_network'` so the router
- * dispatches to handlePartnerStripeEvent.
+ * Routing note: only the Checkout Session carries
+ * `metadata.source = 'partner_network'`. Stripe never copies it onto the
+ * invoice / charge / subscription objects of the same subscription, so the
+ * recurring `invoice.*` and `charge.refunded` tests below deliberately OMIT it
+ * and rely on the router matching the partner by `stripeSubscriptionId` (or, for
+ * refunds, by an existing commission on the refunded invoice). An earlier
+ * version of these tests hand-injected `metadata.source` everywhere, which
+ * masked the prod bug where every recurring commission and refund clawback was
+ * silently dropped.
  */
 
 import express from "express";
@@ -359,9 +366,12 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
 
   // ---- case 3 ---------------------------------------------------------------
   it("invoice.payment_succeeded with billing_reason='subscription_create' does NOT insert a commission", async () => {
-    // First select is the partnerCompanies lookup (needed by the is_paying
-    // update guard). Returning one row lets the handler continue to the
-    // billing_reason check where it bails.
+    // No metadata.source on this invoice (Stripe never copies it past the
+    // Checkout Session). Routing therefore relies on eventBelongsToPartner
+    // matching partnerCompanies by stripeSubscriptionId. Select sequence:
+    //   0) eventBelongsToPartner — partnerCompanies match on sub      -> row
+    //   1) handler is_paying update guard — partnerCompanies lookup   -> row
+    // Then the handler hits the billing_reason check and bails before insert.
     let selectCallIndex = 0;
     const partnerRow = {
       id: "partner-1",
@@ -371,7 +381,8 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
     const { db, calls } = createDbStub({
       selectRows: () => {
         const idx = selectCallIndex++;
-        if (idx === 0) return [partnerRow];
+        if (idx === 0) return [{ id: "partner-1" }]; // routing match
+        if (idx === 1) return [partnerRow];
         return [];
       },
     });
@@ -388,7 +399,6 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
           period_start: 1_700_000_000,
           period_end: 1_702_500_000,
           billing_reason: "subscription_create",
-          metadata: { source: "partner_network" },
         },
       },
     };
@@ -400,7 +410,11 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
   });
 
   // ---- case 4 ---------------------------------------------------------------
-  it("invoice.payment_succeeded for a renewal inserts a recurring commission", async () => {
+  // REGRESSION: a real renewal invoice carries NO metadata.source. This test
+  // omits it (unlike the old version, which hand-injected it and masked the
+  // routing bug). The recurring commission must still be created because the
+  // webhook routes the event by matching partnerCompanies.stripeSubscriptionId.
+  it("invoice.payment_succeeded renewal WITHOUT metadata.source still inserts a recurring commission (routed by subscription id)", async () => {
     const partnerRow = {
       id: "partner-1",
       currentPeriodEnd: null,
@@ -411,15 +425,24 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       attributionId: "attr-1",
       affiliateId: "aff-1",
       rate: "0.15",
+      affiliateEmail: "aff@example.com",
+      affiliateName: "Aff One",
+      leadName: "Acme",
     };
+    // Select sequence with metadata-less routing:
+    //   0) eventBelongsToPartner — partnerCompanies match on sub  -> row
+    //   1) handler is_paying update guard — partnerCompanies      -> row
+    //   2) recurring attribution join                             -> row
     let selectCallIndex = 0;
     const { db, calls } = createDbStub({
       selectRows: () => {
         const idx = selectCallIndex++;
-        if (idx === 0) return [partnerRow];
-        if (idx === 1) return [attributionRow];
+        if (idx === 0) return [{ id: "partner-1" }]; // routing match
+        if (idx === 1) return [partnerRow];
+        if (idx === 2) return [attributionRow];
         return [];
       },
+      insertResult: [{ id: "comm-new" }],
     });
 
     const { app } = makeApp(db);
@@ -436,7 +459,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
           period_start: periodStartSec,
           period_end: periodEndSec,
           billing_reason: "subscription_cycle",
-          metadata: { source: "partner_network" },
+          // NOTE: intentionally NO metadata — mirrors a real Stripe renewal.
         },
       },
     };
@@ -455,10 +478,20 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
   });
 
   // ---- case 5 ---------------------------------------------------------------
-  it("charge.refunded updates commissions via CASE expression (reverses pending rows)", async () => {
+  // REGRESSION: a real charge.refunded carries NO metadata.source. The webhook
+  // must still route it to the partner handler — it does so by matching an
+  // existing commission on stripeInvoiceId. Select sequence:
+  //   0) eventBelongsToPartner — commissions match on invoice  -> row
+  //   1+) handler tx snapshot of affected commissions          -> row(s)
+  it("charge.refunded WITHOUT metadata.source still reverses pending rows (routed by commission invoice id)", async () => {
     // Non-batched commission: handler snapshots it, flips it, no payout to touch.
+    let selectCallIndex = 0;
     const { db, calls } = createDbStub({
-      selectRows: () => [{ status: "approved", amountCents: 1000, payoutBatchId: null }],
+      selectRows: () => {
+        const idx = selectCallIndex++;
+        if (idx === 0) return [{ id: "comm-1" }]; // routing match
+        return [{ id: "comm-1", affiliateId: "aff-1", status: "approved", amountCents: 1000, payoutBatchId: null }];
+      },
     });
     const { app } = makeApp(db);
 
@@ -468,7 +501,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
         object: {
           id: "ch_refund_1",
           invoice: "in_abc",
-          metadata: { source: "partner_network" },
+          // NOTE: intentionally NO metadata — mirrors a real Stripe refund.
         },
       },
     };
@@ -498,8 +531,10 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
   // ---- case 6 ---------------------------------------------------------------
   it("charge.refunded SQL CASE maps already-paid commissions to 'clawed_back' AND opens a clawback obligation", async () => {
     // Same handler path as case 5, but the commission was already 'paid' (money
-    // disbursed). Besides the CASE flip, the handler must open a recovery
-    // obligation in affiliate_clawbacks for the now-clawed-back commission.
+    // disbursed). No metadata.source on the charge — routing matches the
+    // commission by invoice id (first select) then the tx snapshots it. Besides
+    // the CASE flip, the handler must open a recovery obligation in
+    // affiliate_clawbacks for the now-clawed-back commission.
     const { db, calls } = createDbStub({
       selectRows: () => [
         { id: "comm-9", affiliateId: "aff-9", status: "paid", amountCents: 1000, payoutBatchId: null },
@@ -513,7 +548,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
         object: {
           id: "ch_refund_2",
           invoice: "in_paid_already",
-          metadata: { source: "partner_network" },
+          // NOTE: intentionally NO metadata — mirrors a real Stripe refund.
         },
       },
     };
@@ -558,7 +593,9 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
     // live DB, so we inspect the WHERE condition's SQL tree for the guard.
     const { db, calls } = createDbStub({
       // Simulate the row as it exists on the SECOND delivery: already terminal.
-      selectRows: () => [{ status: "clawed_back", amountCents: 1000, payoutBatchId: null }],
+      // (Also serves as the routing match — eventBelongsToPartner only needs a
+      // truthy commission row for this invoice.)
+      selectRows: () => [{ id: "comm-c", status: "clawed_back", amountCents: 1000, payoutBatchId: null }],
     });
     const { app } = makeApp(db);
 
@@ -568,7 +605,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
         object: {
           id: "ch_refund_redeliver",
           invoice: "in_already_clawed",
-          metadata: { source: "partner_network" },
+          // NOTE: intentionally NO metadata — mirrors a real Stripe refund redelivery.
         },
       },
     };

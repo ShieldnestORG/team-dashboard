@@ -134,6 +134,9 @@ function createDbStub(opts: {
             innerJoin: () => chain,
             where: () => chain,
             groupBy: () => chain,
+            // Production now locks the re-read approved rows with .for("update")
+            // so a concurrent reverse/clawback can't overstate the batch.
+            for: () => chain,
             async limit() {
               const rows = opts.approvedByAffiliate[record.affiliateId] ?? [];
               record.selectedApprovedIds = rows.map((r) => r.id);
