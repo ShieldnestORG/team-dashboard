@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "@/lib/router";
 import { affiliatesApi, type AffiliateProspect } from "@/api/affiliates";
 import { ExternalLink, Globe, MapPin, Tag, ArrowLeft, Handshake, Flame, Calendar } from "lucide-react";
+import { AffiliateNav } from "@/components/AffiliateNav";
+import {
+  CDPage,
+  CDPrimaryButton,
+  EditorialCard,
+  LabelCaps,
+} from "@/components/cd/CDPrimitives";
+import { CD, FONT_MONO } from "@/lib/cdDesign";
 
 // ---------------------------------------------------------------------------
 // Tab definitions
@@ -14,12 +22,24 @@ type Tab = (typeof TABS)[number];
 // Helpers
 // ---------------------------------------------------------------------------
 
-const ONBOARDING_BADGE: Record<string, { label: string; className: string }> = {
-  none: { label: "Queued", className: "bg-muted text-muted-foreground border-border" },
-  scraping: { label: "Scanning", className: "bg-blue-100 text-blue-700 border-blue-200" },
-  analyzing: { label: "Analyzing", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
-  complete: { label: "Ready", className: "bg-green-500/15 text-green-500 border-green-500/30" },
-  failed: { label: "Failed", className: "bg-destructive/15 text-destructive border-destructive/30" },
+// Shared input styling — dark surface, hairline border, matches the CD affiliate
+// surfaces. Coral focus is conveyed via the consistent accent system elsewhere.
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  borderRadius: 10,
+  border: `1px solid ${CD.border}`,
+  backgroundColor: "rgba(255,255,255,0.025)",
+  color: CD.ink,
+  padding: "8px 12px",
+  fontSize: "0.875rem",
+};
+
+const ONBOARDING_BADGE: Record<string, { label: string; bg: string; fg: string; border: string }> = {
+  none: { label: "Queued", bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.border },
+  scraping: { label: "Scanning", bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.borderStrong },
+  analyzing: { label: "Analyzing", bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  complete: { label: "Ready", bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  failed: { label: "Failed", bg: "rgba(217,67,67,0.10)", fg: CD.danger, border: "rgba(217,67,67,0.35)" },
 };
 
 const ONBOARDING_DESCRIPTIONS: Record<string, string> = {
@@ -33,7 +53,19 @@ const ONBOARDING_DESCRIPTIONS: Record<string, string> = {
 function StatusBadge({ status }: { status: string }) {
   const cfg = ONBOARDING_BADGE[status] ?? ONBOARDING_BADGE.none;
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${cfg.className}`}>
+    <span
+      className="inline-flex items-center px-2 py-0.5"
+      style={{
+        fontFamily: FONT_MONO,
+        fontSize: "0.625rem",
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        backgroundColor: cfg.bg,
+        color: cfg.fg,
+        border: `1px solid ${cfg.border}`,
+        borderRadius: 4,
+      }}
+    >
       {cfg.label}
     </span>
   );
@@ -51,9 +83,9 @@ function InfoRow({
   if (!value) return null;
   return (
     <div className="flex items-start gap-2">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-      <span className="text-xs text-muted-foreground w-20 shrink-0">{label}</span>
-      <span className="text-sm text-foreground">{value}</span>
+      <Icon className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: CD.muted }} />
+      <span className="text-xs w-20 shrink-0" style={{ color: CD.muted }}>{label}</span>
+      <span className="text-sm" style={{ color: CD.ink }}>{value}</span>
     </div>
   );
 }
@@ -66,10 +98,10 @@ const FIRST_TOUCH_TYPE_LABELS: Record<string, string> = {
   social_dm: "Social DM",
 };
 
-const WARMTH_LABELS: Record<string, { label: string; className: string }> = {
-  strong: { label: "Warm intro", className: "bg-green-500/15 text-green-600 border-green-500/30" },
-  medium: { label: "Some rapport", className: "bg-[#FF6B4A]/15 text-[#FF6B4A] border-[#FF6B4A]/30" },
-  weak: { label: "First contact", className: "bg-muted text-muted-foreground border-border" },
+const WARMTH_LABELS: Record<string, { label: string; bg: string; fg: string; border: string }> = {
+  strong: { label: "Warm intro", bg: "rgba(74,157,124,0.10)", fg: CD.success, border: "rgba(74,157,124,0.35)" },
+  medium: { label: "Some rapport", bg: "rgba(255,107,74,0.10)", fg: CD.accent, border: "rgba(255,107,74,0.35)" },
+  weak: { label: "First contact", bg: "rgba(255,255,255,0.04)", fg: CD.muted, border: CD.border },
 };
 
 function FirstTouchCard({ prospect }: { prospect: AffiliateProspect }) {
@@ -83,19 +115,31 @@ function FirstTouchCard({ prospect }: { prospect: AffiliateProspect }) {
   const dateLabel = ft.date ? new Date(ft.date).toLocaleDateString() : null;
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6 space-y-3">
+    <EditorialCard className="p-6 space-y-3">
       <div className="flex items-center gap-2 mb-1">
-        <Handshake className="h-4 w-4 text-[#FF6B4A]" />
-        <h3 className="text-sm font-semibold text-foreground">First touch</h3>
+        <Handshake className="h-4 w-4" style={{ color: CD.accent }} />
+        <h3 className="text-sm font-semibold" style={{ color: CD.ink }}>First touch</h3>
       </div>
-      <p className="text-xs text-muted-foreground -mt-1 mb-3">
+      <p className="text-xs -mt-1 mb-3" style={{ color: CD.muted }}>
         Warm intros move faster and help us prioritize outreach.
       </p>
       {warmth && (
         <div className="flex items-center gap-2">
-          <Flame className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="text-xs text-muted-foreground w-20 shrink-0">Relationship</span>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${warmth.className}`}>
+          <Flame className="h-3.5 w-3.5 shrink-0" style={{ color: CD.muted }} />
+          <span className="text-xs w-20 shrink-0" style={{ color: CD.muted }}>Relationship</span>
+          <span
+            className="inline-flex items-center px-2 py-0.5"
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: "0.625rem",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              backgroundColor: warmth.bg,
+              color: warmth.fg,
+              border: `1px solid ${warmth.border}`,
+              borderRadius: 4,
+            }}
+          >
             {warmth.label}
           </span>
         </div>
@@ -103,12 +147,12 @@ function FirstTouchCard({ prospect }: { prospect: AffiliateProspect }) {
       <InfoRow icon={Handshake} label="How" value={typeLabel} />
       <InfoRow icon={Calendar} label="When" value={dateLabel} />
       {ft.notes && (
-        <div className="pt-3 border-t border-border">
-          <p className="text-xs text-muted-foreground mb-1">Your notes</p>
-          <p className="text-sm text-foreground">{ft.notes}</p>
+        <div className="pt-3" style={{ borderTop: `1px solid ${CD.border}` }}>
+          <p className="text-xs mb-1" style={{ color: CD.muted }}>Your notes</p>
+          <p className="text-sm" style={{ color: CD.ink }}>{ft.notes}</p>
         </div>
       )}
-    </div>
+    </EditorialCard>
   );
 }
 
@@ -130,8 +174,8 @@ function OverviewTab({
   return (
     <div className="space-y-6">
       {/* Business Info */}
-      <div className="bg-card rounded-xl border border-border p-6 space-y-3">
-        <h3 className="text-sm font-semibold text-foreground mb-4">Business Info</h3>
+      <EditorialCard className="p-6 space-y-3">
+        <h3 className="text-sm font-semibold mb-4" style={{ color: CD.ink }}>Business Info</h3>
         <InfoRow
           icon={Globe}
           label="Website"
@@ -141,7 +185,8 @@ function OverviewTab({
                 href={prospect.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#FF6B4A] hover:underline flex items-center gap-1"
+                className="hover:underline flex items-center gap-1"
+                style={{ color: CD.accent }}
               >
                 {prospect.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                 <ExternalLink className="h-3 w-3" />
@@ -152,62 +197,58 @@ function OverviewTab({
         <InfoRow icon={MapPin} label="Location" value={prospect.location} />
         <InfoRow icon={Tag} label="Industry" value={prospect.industry} />
         {prospect.description && (
-          <div className="pt-3 border-t border-border">
-            <p className="text-xs text-muted-foreground mb-1">Description</p>
-            <p className="text-sm text-foreground">{prospect.description}</p>
+          <div className="pt-3" style={{ borderTop: `1px solid ${CD.border}` }}>
+            <p className="text-xs mb-1" style={{ color: CD.muted }}>Description</p>
+            <p className="text-sm" style={{ color: CD.ink }}>{prospect.description}</p>
           </div>
         )}
         {prospect.baselineAnalytics?.businessSummary && !prospect.description && (
-          <div className="pt-3 border-t border-border">
-            <p className="text-xs text-muted-foreground mb-1">AI Summary</p>
-            <p className="text-sm text-muted-foreground italic">{prospect.baselineAnalytics.businessSummary}</p>
+          <div className="pt-3" style={{ borderTop: `1px solid ${CD.border}` }}>
+            <p className="text-xs mb-1" style={{ color: CD.muted }}>AI Summary</p>
+            <p className="text-sm italic" style={{ color: CD.muted }}>{prospect.baselineAnalytics.businessSummary}</p>
           </div>
         )}
-      </div>
+      </EditorialCard>
 
       {/* First touch (only when the affiliate logged one) */}
       <FirstTouchCard prospect={prospect} />
 
       {/* Services */}
       {prospect.services && prospect.services.length > 0 && (
-        <div className="bg-card rounded-xl border border-border p-6">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Services</h3>
+        <EditorialCard className="p-6">
+          <h3 className="text-sm font-semibold mb-3" style={{ color: CD.ink }}>Services</h3>
           <div className="flex flex-wrap gap-2">
             {prospect.services.map((s) => (
               <span
                 key={s}
-                className="px-2.5 py-1 rounded-full bg-muted text-foreground text-xs font-medium"
+                className="px-2.5 py-1 rounded-full text-xs font-medium"
+                style={{ backgroundColor: "rgba(255,255,255,0.04)", color: CD.ink }}
               >
                 {s}
               </span>
             ))}
           </div>
-        </div>
+        </EditorialCard>
       )}
 
       {/* Onboarding Status */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Analysis Status</h3>
+      <EditorialCard className="p-6">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: CD.ink }}>Analysis Status</h3>
         <div className="flex items-start gap-3 flex-wrap">
           <StatusBadge status={prospect.onboardingStatus} />
-          <p className="text-sm text-muted-foreground flex-1 min-w-[12rem]">
+          <p className="text-sm flex-1 min-w-[12rem]" style={{ color: CD.muted }}>
             {ONBOARDING_DESCRIPTIONS[prospect.onboardingStatus] ?? ""}
           </p>
           {prospect.onboardingStatus === "failed" && (
-            <button
-              type="button"
-              onClick={onRetry}
-              disabled={retrying}
-              className="px-4 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
-            >
+            <CDPrimaryButton type="button" onClick={onRetry} disabled={retrying}>
               {retrying ? "Retrying…" : "Retry analysis"}
-            </button>
+            </CDPrimaryButton>
           )}
         </div>
         {retryError && (
-          <p className="mt-3 text-xs text-destructive">{retryError}</p>
+          <p className="mt-3 text-xs" style={{ color: CD.danger }}>{retryError}</p>
         )}
-      </div>
+      </EditorialCard>
     </div>
   );
 }
@@ -217,39 +258,40 @@ function CompetitorsTab({ prospect }: { prospect: AffiliateProspect }) {
 
   if (prospect.onboardingStatus !== "complete" || competitors.length === 0) {
     return (
-      <div className="bg-card rounded-xl border border-border py-16 text-center">
-        <p className="text-muted-foreground text-sm">
+      <EditorialCard className="py-16 text-center">
+        <p className="text-sm" style={{ color: CD.muted }}>
           Competitor analysis is still being generated. Check back in a minute.
         </p>
-      </div>
+      </EditorialCard>
     );
   }
 
   return (
     <div className="space-y-4">
       {competitors.map((c) => (
-        <div key={c.url} className="bg-card rounded-xl border border-border p-5 space-y-2">
+        <EditorialCard key={c.url} className="p-5 space-y-2">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-foreground">{c.name}</h3>
+            <h3 className="font-semibold" style={{ color: CD.ink }}>{c.name}</h3>
             <a
               href={c.url}
               target="_blank"
               rel="noopener noreferrer"
               className="shrink-0 mt-0.5"
             >
-              <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-muted-foreground" />
+              <ExternalLink className="h-4 w-4" style={{ color: CD.muted }} />
             </a>
           </div>
           <a
             href={c.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-xs text-[#FF6B4A] hover:underline"
+            className="block text-xs hover:underline"
+            style={{ color: CD.accent }}
           >
             {c.url.replace(/^https?:\/\//, "")}
           </a>
-          <p className="text-sm text-muted-foreground leading-relaxed">{c.summary}</p>
-        </div>
+          <p className="text-sm leading-relaxed" style={{ color: CD.muted }}>{c.summary}</p>
+        </EditorialCard>
       ))}
     </div>
   );
@@ -288,10 +330,10 @@ function NotesTab({ prospect }: { prospect: AffiliateProspect }) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+      <EditorialCard className="p-6 space-y-4">
         <div>
-          <label className="block text-sm font-semibold text-foreground mb-1">Your Notes</label>
-          <p className="text-xs text-muted-foreground mb-2">
+          <label className="block text-sm font-semibold mb-1" style={{ color: CD.ink }}>Your Notes</label>
+          <p className="text-xs mb-2" style={{ color: CD.muted }}>
             What do you know about this business? What's your relationship? Notes from your visits.
           </p>
           <textarea
@@ -299,14 +341,14 @@ function NotesTab({ prospect }: { prospect: AffiliateProspect }) {
             onChange={(e) => setAffiliateNotes(e.target.value)}
             rows={5}
             placeholder="Add your notes here..."
-            className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] resize-none"
+            style={{ ...inputStyle, resize: "none" }}
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-foreground mb-1">
-            Store Notes <span className="text-muted-foreground font-normal">(Shared with Team)</span>
+          <label className="block text-sm font-semibold mb-1" style={{ color: CD.ink }}>
+            Store Notes <span className="font-normal" style={{ color: CD.muted }}>(Shared with Team)</span>
           </label>
-          <p className="text-xs text-muted-foreground mb-2">
+          <p className="text-xs mb-2" style={{ color: CD.muted }}>
             What does the store owner want and need? Visible to the Coherence Daddy team.
           </p>
           <textarea
@@ -314,28 +356,24 @@ function NotesTab({ prospect }: { prospect: AffiliateProspect }) {
             onChange={(e) => setStoreNotes(e.target.value)}
             rows={5}
             placeholder="Add notes about what the owner wants..."
-            className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A] resize-none"
+            style={{ ...inputStyle, resize: "none" }}
           />
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleSave}
-            disabled={saving || !isDirty}
-            className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
-          >
+          <CDPrimaryButton onClick={handleSave} disabled={saving || !isDirty}>
             {saving ? "Saving..." : "Save Notes"}
-          </button>
+          </CDPrimaryButton>
           {isDirty && !saving && (
-            <span className="text-xs text-muted-foreground">(unsaved changes)</span>
+            <span className="text-xs" style={{ color: CD.muted }}>(unsaved changes)</span>
           )}
           {saved && (
-            <span className="text-xs text-green-600 font-medium">Saved!</span>
+            <span className="text-xs font-medium" style={{ color: CD.success }}>Saved!</span>
           )}
           {saveError && (
-            <span className="text-xs text-destructive">{saveError}</span>
+            <span className="text-xs" style={{ color: CD.danger }}>{saveError}</span>
           )}
         </div>
-      </div>
+      </EditorialCard>
     </div>
   );
 }
@@ -371,62 +409,58 @@ function UpdatesTab({ prospect }: { prospect: AffiliateProspect }) {
   return (
     <div className="space-y-6">
       {/* Edit Fields */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h3 className="text-sm font-semibold text-foreground mb-4">Update Business Info</h3>
+      <EditorialCard className="p-6">
+        <h3 className="text-sm font-semibold mb-4" style={{ color: CD.ink }}>Update Business Info</h3>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-foreground mb-1">Business Name</label>
+            <label className="block text-xs font-medium mb-1" style={{ color: CD.ink }}>Business Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A]"
+              style={inputStyle}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-foreground mb-1">Location</label>
+            <label className="block text-xs font-medium mb-1" style={{ color: CD.ink }}>Location</label>
             <input
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="City, State"
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A]"
+              style={inputStyle}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-foreground mb-1">Website</label>
+            <label className="block text-xs font-medium mb-1" style={{ color: CD.ink }}>Website</label>
             <input
               type="url"
               value={website}
               onChange={(e) => setWebsite(e.target.value)}
               placeholder="https://example.com"
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B4A]"
+              style={inputStyle}
             />
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-5 py-2 rounded-lg bg-[#FF6B4A] hover:bg-[#FF6B4A]/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
-            >
+            <CDPrimaryButton type="submit" disabled={saving}>
               {saving ? "Saving..." : "Save Changes"}
-            </button>
-            {saved && <span className="text-xs text-green-600 font-medium">Saved!</span>}
-            {saveError && <span className="text-xs text-destructive">{saveError}</span>}
+            </CDPrimaryButton>
+            {saved && <span className="text-xs font-medium" style={{ color: CD.success }}>Saved!</span>}
+            {saveError && <span className="text-xs" style={{ color: CD.danger }}>{saveError}</span>}
           </div>
         </form>
-      </div>
+      </EditorialCard>
 
       {/* Onboarding Status */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Analysis Status</h3>
+      <EditorialCard className="p-6">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: CD.ink }}>Analysis Status</h3>
         <div className="flex items-center gap-3 mb-2">
           <StatusBadge status={prospect.onboardingStatus} />
         </div>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm" style={{ color: CD.muted }}>
           {ONBOARDING_DESCRIPTIONS[prospect.onboardingStatus] ?? ""}
         </p>
-      </div>
+      </EditorialCard>
     </div>
   );
 }
@@ -488,42 +522,55 @@ export function AffiliateProspectDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
+      <CDPage>
+        <AffiliateNav subtitle="Affiliate" title="Prospect" />
+        <main className="mx-auto w-full max-w-3xl px-6 py-10">
+          <EditorialCard className="py-12 text-center">
+            <LabelCaps>Loading prospect…</LabelCaps>
+          </EditorialCard>
+        </main>
+      </CDPage>
     );
   }
 
   if (error || !prospect) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <p className="text-destructive mb-3">{error ?? "Prospect not found."}</p>
-          <a href="/dashboard" className="text-sm text-[#FF6B4A] hover:underline">
-            Back to Dashboard
-          </a>
-        </div>
-      </div>
+      <CDPage>
+        <AffiliateNav subtitle="Affiliate" title="Prospect" />
+        <main className="mx-auto w-full max-w-3xl px-6 py-10">
+          <EditorialCard className="py-16 text-center">
+            <p className="mb-3" style={{ color: CD.danger }}>{error ?? "Prospect not found."}</p>
+            <a href="/dashboard" className="text-sm hover:underline" style={{ color: CD.accent }}>
+              Back to Dashboard
+            </a>
+          </EditorialCard>
+        </main>
+      </CDPage>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <CDPage>
+      <AffiliateNav subtitle="Affiliate" title="Prospect" />
+
       {/* Header */}
-      <header className="bg-card border-b border-border sticky top-0 z-10">
+      <header style={{ borderBottom: `1px solid ${CD.border}` }}>
         <div className="max-w-3xl mx-auto px-6 py-4">
           <a
             href="/dashboard"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs mb-2 transition-colors"
+            style={{ color: CD.muted }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = CD.ink)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Dashboard
           </a>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-xl font-bold text-foreground">{prospect.name}</h1>
+            <h1 className="text-xl font-bold" style={{ color: CD.ink }}>{prospect.name}</h1>
             <StatusBadge status={prospect.onboardingStatus} />
             {(prospect.onboardingStatus === "scraping" || prospect.onboardingStatus === "analyzing" || prospect.onboardingStatus === "none") && (
-              <span className="text-xs text-muted-foreground animate-pulse">Updating automatically...</span>
+              <span className="text-xs animate-pulse" style={{ color: CD.muted }}>Updating automatically...</span>
             )}
           </div>
           {prospect.website && (
@@ -531,7 +578,10 @@ export function AffiliateProspectDetail() {
               href={prospect.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-[#FF6B4A] mt-0.5 transition-colors"
+              className="inline-flex items-center gap-1 text-xs mt-0.5 transition-colors"
+              style={{ color: CD.muted }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = CD.accent)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = CD.muted)}
             >
               <Globe className="h-3 w-3" />
               {prospect.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
@@ -542,22 +592,33 @@ export function AffiliateProspectDetail() {
       </header>
 
       {/* Tab Bar */}
-      <div className="bg-card border-b border-border">
+      <div style={{ borderBottom: `1px solid ${CD.border}` }}>
         <div className="max-w-3xl mx-auto px-6">
           <div className="flex gap-1">
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab
-                    ? "border-[#FF6B4A] text-[#FF6B4A]"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className="px-4 py-3 text-sm font-medium transition-colors"
+                  style={{
+                    borderBottom: `2px solid ${isActive ? CD.accent : "transparent"}`,
+                    color: isActive ? CD.accent : CD.muted,
+                    background: "transparent",
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) e.currentTarget.style.color = CD.ink;
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) e.currentTarget.style.color = CD.muted;
+                  }}
+                >
+                  {tab}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -576,6 +637,6 @@ export function AffiliateProspectDetail() {
         {activeTab === "Notes" && <NotesTab prospect={prospect} />}
         {activeTab === "Updates" && <UpdatesTab prospect={prospect} />}
       </main>
-    </div>
+    </CDPage>
   );
 }
