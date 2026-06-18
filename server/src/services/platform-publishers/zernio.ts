@@ -47,6 +47,44 @@ function mediaType(url: string): "video" | "image" {
   return /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url) ? "video" : "image";
 }
 
+// Defense-in-depth on the media URLs Zernio fetches SERVER-SIDE. Beyond the
+// `^https?://` shape check, reject hosts that are obviously internal/non-public
+// so they fail fast HERE with a clear local error instead of confusingly at
+// Zernio (or as an SSRF-adjacent footgun). Public CDN hosts (R2 `.r2.dev`, the
+// public reels-stream URL) must still pass.
+function isNonPublicMediaUrl(u: string): boolean {
+  if (!/^https?:\/\//i.test(u)) return true;
+  let host: string;
+  try {
+    host = new URL(u).hostname.toLowerCase();
+  } catch {
+    return true; // unparseable → reject
+  }
+  // IPv6 loopback (URL strips the surrounding brackets from hostname).
+  if (host === "::1") return true;
+  // Hostname suffixes that are never publicly routable.
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".local")
+  ) {
+    return true;
+  }
+  // IPv4 literals in private / loopback / link-local / unspecified ranges.
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 0) return true; // 0.0.0.0/8 (incl. 0.0.0.0)
+    if (a === 127) return true; // 127.0.0.0/8 loopback
+    if (a === 10) return true; // 10.0.0.0/8
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+    if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local
+  }
+  return false;
+}
+
 export const zernioPublisher: PlatformPublisher = {
   // Matches social_accounts.platform === "instagram" so existing IG rows route
   // here. No collision with the dead native stub, whose name is
@@ -110,7 +148,7 @@ export const zernioPublisher: PlatformPublisher = {
       //    post fails. Adding an in-publisher R2/S3 public-upload step is a
       //    separate decision (needs new creds) — do NOT improvise it here.
       const mediaUrls = opts.mediaUrls || [];
-      const nonPublic = mediaUrls.find((u) => !/^https?:\/\//i.test(u));
+      const nonPublic = mediaUrls.find(isNonPublicMediaUrl);
       if (nonPublic) {
         return {
           success: false,
