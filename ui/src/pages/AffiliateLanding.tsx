@@ -1,22 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { HandCoins, BarChart2, DollarSign, ArrowUpRight, CheckCircle2, PlayCircle } from "lucide-react";
 import { affiliatesApi, setAffiliateToken } from "@/api/affiliates";
+import { CD, useGeistFonts, APPLICATION_SLA } from "@/lib/cdDesign";
 import { AffiliateHowItWorksModal } from "./AffiliateHowItWorks";
-
-// Coherence Daddy design tokens — mirrors coherencedaddy-landing/DESIGN.md
-const CD = {
-  canvas: "#0E0E10",
-  surface: "#18181B",
-  surfaceAlt: "#1F1F22",
-  ink: "#F2F1ED",
-  muted: "#A1A1A6",
-  border: "rgba(255,255,255,0.08)",
-  borderStrong: "rgba(255,255,255,0.14)",
-  accent: "#FF6B4A",
-  accentPressed: "#E5553A",
-  success: "#4A9D7C",
-  danger: "#D94343",
-};
 
 // Neutral "lift" shadow — mirrors .btn-lift in coherencedaddy-landing/app/globals.css.
 // Dark drops + subtle inset top highlight. NO colored glow (see DESIGN.md §4 — buttons use neutral lift, never accent shadow).
@@ -53,26 +39,6 @@ const BENEFITS = [
       "A percentage of every monthly subscription from clients you referred. The bigger they get, the bigger your check.",
   },
 ];
-
-function useGeistFonts() {
-  useEffect(() => {
-    const id = "cd-geist-fonts";
-    if (document.getElementById(id)) return;
-    const pre1 = document.createElement("link");
-    pre1.rel = "preconnect";
-    pre1.href = "https://fonts.googleapis.com";
-    const pre2 = document.createElement("link");
-    pre2.rel = "preconnect";
-    pre2.href = "https://fonts.gstatic.com";
-    pre2.crossOrigin = "anonymous";
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href =
-      "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap";
-    document.head.append(pre1, pre2, link);
-  }, []);
-}
 
 export function AffiliateLanding() {
   useGeistFonts();
@@ -498,7 +464,7 @@ export function AffiliateLanding() {
                         Application submitted
                       </p>
                       <p className="mt-1 text-sm" style={{ color: CD.muted }}>
-                        We review every application by hand. Expect a decision within 48 hours.
+                        We review every application by hand. Expect a decision {APPLICATION_SLA}.
                       </p>
                     </div>
                   ) : (

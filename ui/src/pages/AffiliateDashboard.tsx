@@ -33,7 +33,7 @@ import {
   Cascade,
   CDPrimaryButton,
 } from "@/components/cd/CDPrimitives";
-import { CD, FONT_MONO, formatDollars } from "@/lib/cdDesign";
+import { CD, FONT_MONO, formatDollars, APPLICATION_SLA } from "@/lib/cdDesign";
 import { PROGRAM_RULES } from "@/content/affiliate-program-rules";
 import { getGuideState } from "@/lib/learnProgress";
 
@@ -306,6 +306,38 @@ export function AffiliateDashboard() {
         setShowModal(false);
         setShowPolicyModal(true);
         setSubmitError(null);
+      } else if (err instanceof AffiliateApiError && err.status === 409) {
+        // Duplicate-lead contract: backend returns { error, kind, slug?, lockExpiresAt? }.
+        // (`kind`/`slug`/`lockExpiresAt` ride along on the error instance once the
+        // affiliates API client surfaces them; until then `kind` is undefined and we
+        // fall through to the raw error string — back-compat.)
+        const dup = err as AffiliateApiError & {
+          kind?: "own" | "other";
+          slug?: string;
+          lockExpiresAt?: string;
+        };
+        if (dup.kind === "own" && dup.slug) {
+          // It's already in the affiliate's own pipeline — take them straight to it.
+          setShowModal(false);
+          resetProspectForm();
+          window.location.href = `/prospects/${dup.slug}`;
+        } else if (dup.kind === "other") {
+          const lockMsg = dup.lockExpiresAt
+            ? `Another affiliate has the first-touch lock on this business until ${new Date(
+                dup.lockExpiresAt,
+              ).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}.`
+            : "Another affiliate already has the first-touch lock on this business.";
+          setSubmitError(
+            `${lockMsg} Under the 30-day first-touch policy, the lead stays with whoever logged it first.` +
+              " If you believe this is a mistake, email info@coherencedaddy.com.",
+          );
+        } else {
+          setSubmitError(err.message || "This business has already been submitted.");
+        }
       } else {
         setSubmitError(err instanceof Error ? err.message : "Failed to submit prospect");
       }
@@ -393,7 +425,7 @@ export function AffiliateDashboard() {
               We're reviewing your application.
             </h1>
             <p className="mt-4 text-base leading-relaxed" style={{ color: CD.muted }}>
-              Our team typically responds within 1–2 business days. We'll email you the
+              Our team typically responds {APPLICATION_SLA}. We'll email you the
               moment you're approved.
             </p>
             <p className="mt-6" style={{ color: CD.mutedSoft, fontFamily: FONT_MONO, fontSize: "0.75rem" }}>
