@@ -28,6 +28,12 @@ vi.mock("../services/platform-publishers/index.js", () => ({
     publish: async () => ({ success: false }),
     publishText: publishTextMock,
   }),
+  resolvePublisher: () => ({
+    name: "instagram",
+    isConfigured: () => true,
+    publish: async () => ({ success: false }),
+    publishText: publishTextMock,
+  }),
 }));
 
 vi.mock("../services/socials/platform-caps.js", () => ({
@@ -148,5 +154,16 @@ describe("social-relayer media staging", () => {
     expect(res.posted).toBe(0);
     expect(publishTextMock).not.toHaveBeenCalled();
     expect(stageBufferToR2Mock).not.toHaveBeenCalled();
+  });
+
+  it("forwards the row's platform into the publisher payload (Zernio multi-platform)", async () => {
+    const { db } = makeDb([dueRow({ platform: "x", mediaUrls: ["https://cdn.example.com/a.jpg"] })]);
+    const { storageService } = makeStorage();
+
+    const res = await runSocialRelayerTick(db, storageService);
+
+    expect(res.posted).toBe(1);
+    const opts = publishTextMock.mock.calls[0]![0] as { payload: { platform?: string } };
+    expect(opts.payload.platform).toBe("x");
   });
 });
