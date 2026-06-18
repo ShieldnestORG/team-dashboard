@@ -8,10 +8,11 @@ import { runSocialRelayerTick } from "../services/social-relayer.js";
 import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
 import { invalidatePlatformCapCache, listCounters } from "../services/socials/platform-caps.js";
 import { logger } from "../middleware/logger.js";
+import type { StorageService } from "../storage/types.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
-export function socialsRoutes(db: Db) {
+export function socialsRoutes(db: Db, storageService: StorageService) {
   const router = Router();
 
   // ----- Accounts -----
@@ -217,8 +218,14 @@ export function socialsRoutes(db: Db) {
     if (typeof contentItemId !== "string" || !contentItemId) {
       return res.status(400).json({ error: "contentItemId required" });
     }
+    // Optional explicit media reference (internal storage objectKeys). The
+    // relayer stages these to public R2 before publishing. content_items has no
+    // media link, so this must be supplied by the caller — see EnqueueOptions.
+    const mediaObjectKeys = Array.isArray(req.body?.mediaObjectKeys)
+      ? req.body.mediaObjectKeys.map(String)
+      : undefined;
     try {
-      const result = await enqueueApprovedContent(db, contentItemId);
+      const result = await enqueueApprovedContent(db, contentItemId, { mediaObjectKeys });
       const status = result.enqueued ? 201 : 200;
       return res.status(status).json(result);
     } catch (err) {
@@ -230,7 +237,7 @@ export function socialsRoutes(db: Db) {
   // Manual relayer tick for testing — runs one drain pass right now.
   router.post("/posts/relay-now", async (_req, res) => {
     try {
-      const result = await runSocialRelayerTick(db);
+      const result = await runSocialRelayerTick(db, storageService);
       res.json(result);
     } catch (err) {
       logger.error({ err }, "relay-now failed");

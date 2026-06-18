@@ -98,9 +98,30 @@ export async function resolveAccountForContent(
   };
 }
 
+export interface EnqueueOptions {
+  /**
+   * Internal storage objectKeys for media to attach to this post. The relayer
+   * stages each non-public entry to the public R2 bucket and replaces it with
+   * the resulting public URL before dispatch (see social-relayer.ts).
+   *
+   * Seeded into socialPosts.mediaUrls. When omitted, the post has no media
+   * (text-only) — preserving the prior `mediaUrls: []` behavior.
+   *
+   * TODO(media-source-decision): content_items has no column or FK linking a
+   * content row to its media (no content_items.media_drop_id, no join table to
+   * media_drops). So the bridge cannot AUTO-derive which uploaded media belongs
+   * to a given content item — that needs a product decision about which source
+   * is canonical (media_drops? a new content_items column? the visual pipeline?).
+   * Until that's decided, the media reference must be supplied EXPLICITLY here by
+   * the caller. This is the clean single path; auto-linkage is deferred.
+   */
+  mediaObjectKeys?: string[];
+}
+
 export async function enqueueApprovedContent(
   db: Db,
   contentItemId: string,
+  opts: EnqueueOptions = {},
 ): Promise<EnqueueResult> {
   const [item] = await db
     .select()
@@ -134,12 +155,16 @@ export async function enqueueApprovedContent(
     return { enqueued: false, reason: `account status is ${account.status}` };
   }
 
+  const mediaUrls = (opts.mediaObjectKeys ?? []).filter(
+    (k): k is string => typeof k === "string" && k.length > 0,
+  );
+
   const [inserted] = await db
     .insert(socialPosts)
     .values({
       socialAccountId: account.id,
       text: item.content,
-      mediaUrls: [],
+      mediaUrls,
       altTexts: [],
       scheduledAt: new Date(),
       status: "scheduled",

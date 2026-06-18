@@ -321,7 +321,7 @@ export async function createApp(
   api.use("/x/oauth", xOauthRoutes(db));
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/canva/oauth", canvaOauthRoutes(db));
-  api.use("/socials", socialsRoutes(db));
+  api.use("/socials", socialsRoutes(db, opts.storageService));
   api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/watchtower", watchtowerRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
@@ -506,7 +506,7 @@ export async function createApp(
   startEvalCrons();
   startAlertCrons(db);
   startContentCrons(db);
-  startSocialCrons(db);
+  startSocialCrons(db, opts.storageService);
   startTrendCrons(db);
   startMaintenanceCrons(db);
   startRetentionCron(db);
