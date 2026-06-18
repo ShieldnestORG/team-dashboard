@@ -32,6 +32,12 @@ export interface SubmitProspectOptions {
 export class AffiliateApiError extends Error {
   status: number;
   code?: string;
+  /** Duplicate-lead (409) discriminator: the affiliate's own lead vs another affiliate's active lock. */
+  kind?: "own" | "other";
+  /** Slug of the affiliate's existing prospect (only present on kind === "own"). */
+  slug?: string;
+  /** ISO timestamp the existing attribution lock expires (duplicate-lead 409). */
+  lockExpiresAt?: string;
   constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "AffiliateApiError";
@@ -305,12 +311,18 @@ async function affiliateRequest<T>(path: string, init?: RequestInit): Promise<T>
     throw new Error("Session expired");
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => null) as { error?: string; code?: string } | null;
-    throw new AffiliateApiError(
+    const body = await res.json().catch(() => null) as
+      | { error?: string; code?: string; kind?: "own" | "other"; slug?: string; lockExpiresAt?: string }
+      | null;
+    const apiErr = new AffiliateApiError(
       body?.error ?? `Request failed: ${res.status}`,
       res.status,
       body?.code,
     );
+    if (body?.kind) apiErr.kind = body.kind;
+    if (body?.slug) apiErr.slug = body.slug;
+    if (body?.lockExpiresAt) apiErr.lockExpiresAt = body.lockExpiresAt;
+    throw apiErr;
   }
   return res.json() as Promise<T>;
 }
