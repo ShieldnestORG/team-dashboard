@@ -34,9 +34,9 @@ export const PRODUCT_GUIDES: LearnGuide[] = [
       },
       {
         number: 3,
-        eyebrow: "Three tiers",
-        headline: "$19 · $49/mo · $499/mo.",
-        kicker: "Audit. Starter. Pro. Foot-in-door, ongoing, full coaching.",
+        eyebrow: "Four tiers",
+        headline: "$19 · $49/mo · $199/mo · $499/mo.",
+        kicker: "Audit. Starter. Growth. Pro. Foot-in-door, ongoing, growth, full coaching.",
         emphasis: "Full coaching",
         visual: {
           kind: "walkthrough",
