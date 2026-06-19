@@ -526,6 +526,139 @@ export function portalRoutes(db: Db): Router {
     }
   });
 
+  // -- University notes (in-lesson "write this down") -------------------------
+  //
+  // Persists the in-lesson note prompts so they survive across sessions and
+  // devices. Gated to University members via requireUniversityMember() — same
+  // gate as the rep-log — and writes are blocked under impersonation
+  // (read-only), exactly like POST /university/progress.
+  //
+  // A note is keyed by (lessonSlug, noteKey): noteKey is the stable slot for an
+  // in-lesson field, so saving the same field again upserts the row in place.
+  //
+  // GET    /university/notes?lessonSlug=<slug>  (lessonSlug optional → all the
+  //          member's notes) → { notes: [{ lessonSlug, noteKey, body, updatedAt }] }
+  // POST   /university/notes { lessonSlug, noteKey, body } → upsert; returns the
+  //          saved note. 400 on missing lessonSlug/noteKey.
+  // DELETE /university/notes { lessonSlug, noteKey } → remove.
+  //
+  // FUTURE: these member notes are the input corpus for a planned "smart
+  // pattern recognition" feature ported from the Optimize Me / architect app —
+  // it will analyze members' notes to surface what to work on + best
+  // suggestions. Not built yet.
+
+  const NOTE_BODY_MAX = 20_000;
+
+  router.get("/university/notes", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    const lessonSlugRaw = req.query.lessonSlug;
+    const lessonSlug =
+      typeof lessonSlugRaw === "string" ? lessonSlugRaw.trim() : undefined;
+    try {
+      const notes = await svc.getNotes({ accountId, lessonSlug });
+      res.json({
+        notes: notes.map((n) => ({
+          lessonSlug: n.lessonSlug,
+          noteKey: n.noteKey,
+          body: n.body,
+          updatedAt: n.updatedAt.toISOString(),
+        })),
+      });
+    } catch (err) {
+      logger.error({ err, accountId }, "portal/university/notes: list failed");
+      res.status(500).json({ error: "Failed to load notes" });
+    }
+  });
+
+  router.post("/university/notes", async (req: Request, res: Response) => {
+    // Saving a note mutates state — block under impersonation (read-only).
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as {
+      lessonSlug?: unknown;
+      noteKey?: unknown;
+      body?: unknown;
+    };
+    const lessonSlug =
+      typeof body.lessonSlug === "string" ? body.lessonSlug.trim() : "";
+    if (!lessonSlug || lessonSlug.length > 200) {
+      res.status(400).json({ error: "lessonSlug required" });
+      return;
+    }
+    const noteKey = typeof body.noteKey === "string" ? body.noteKey.trim() : "";
+    if (!noteKey || noteKey.length > 200) {
+      res.status(400).json({ error: "noteKey required" });
+      return;
+    }
+    const noteBody = typeof body.body === "string" ? body.body : "";
+    if (noteBody.length > NOTE_BODY_MAX) {
+      res
+        .status(400)
+        .json({ error: `body must be at most ${NOTE_BODY_MAX} characters` });
+      return;
+    }
+
+    try {
+      const saved = await svc.upsertNote({
+        accountId,
+        lessonSlug,
+        noteKey,
+        body: noteBody,
+      });
+      res.status(200).json({
+        note: {
+          lessonSlug: saved.lessonSlug,
+          noteKey: saved.noteKey,
+          body: saved.body,
+          updatedAt: saved.updatedAt.toISOString(),
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId, lessonSlug, noteKey },
+        "portal/university/notes: upsert failed",
+      );
+      res.status(500).json({ error: "Failed to save note" });
+    }
+  });
+
+  router.delete("/university/notes", async (req: Request, res: Response) => {
+    // Deleting a note mutates state — block under impersonation (read-only).
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as {
+      lessonSlug?: unknown;
+      noteKey?: unknown;
+    };
+    const lessonSlug =
+      typeof body.lessonSlug === "string" ? body.lessonSlug.trim() : "";
+    const noteKey = typeof body.noteKey === "string" ? body.noteKey.trim() : "";
+    if (!lessonSlug) {
+      res.status(400).json({ error: "lessonSlug required" });
+      return;
+    }
+    if (!noteKey) {
+      res.status(400).json({ error: "noteKey required" });
+      return;
+    }
+
+    try {
+      await svc.deleteNote({ accountId, lessonSlug, noteKey });
+      res.status(200).json({ ok: true });
+    } catch (err) {
+      logger.error(
+        { err, accountId, lessonSlug, noteKey },
+        "portal/university/notes: delete failed",
+      );
+      res.status(500).json({ error: "Failed to delete note" });
+    }
+  });
+
   // -- List credentials -------------------------------------------------------
   router.get("/credentials", async (req: Request, res: Response) => {
     const accountId = requireSession(req, res);

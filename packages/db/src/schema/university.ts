@@ -159,6 +159,61 @@ export const universityProgress = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University member NOTES — persisted in-lesson "write this down" prompts.
+//
+// A note is one piece of saved text for a member, a lesson, and a note slot
+// (`note_key`). Notes are idempotent PER (member, lesson, note_key):
+// re-saving the same slot updates the existing row in place rather than
+// appending a duplicate, so an in-lesson note field maps 1:1 to a row.
+//
+// The member is identified the same way the rest of University is — by the
+// shared customer_accounts login (account_id once the linker has fired) joined
+// on the lowercased `email` as the durable fallback. Both are stored on the
+// note so the lookup works before AND after the account link resolves.
+//
+// FUTURE: these member notes are the input corpus for a planned "smart pattern
+// recognition" feature ported from the Optimize Me / architect app — it will
+// analyze members' notes to surface what to work on + best suggestions. Not
+// built yet.
+// ---------------------------------------------------------------------------
+
+export const universityNotes = pgTable(
+  "university_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    lessonSlug: text("lesson_slug").notNull(),
+    // The in-lesson note slot — stable per "write this down" field.
+    noteKey: text("note_key").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One note per member+lesson+note_key. Re-saving the same slot upserts this
+    // row (ON CONFLICT in the service). We key on email (the durable identity)
+    // so the constraint holds before the account link resolves; account_id is
+    // carried for query convenience but is NOT part of the uniqueness key.
+    noteUq: uniqueIndex("university_notes_note_uq").on(
+      table.email,
+      table.lessonSlug,
+      table.noteKey,
+    ),
+    emailIdx: index("university_notes_email_idx").on(table.email),
+    accountIdx: index("university_notes_account_idx").on(table.accountId),
+    lessonIdx: index("university_notes_lesson_idx").on(table.lessonSlug),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -167,3 +222,5 @@ export type NewUniversitySubscription =
   typeof universitySubscriptions.$inferInsert;
 export type UniversityProgress = typeof universityProgress.$inferSelect;
 export type NewUniversityProgress = typeof universityProgress.$inferInsert;
+export type UniversityNote = typeof universityNotes.$inferSelect;
+export type NewUniversityNote = typeof universityNotes.$inferInsert;

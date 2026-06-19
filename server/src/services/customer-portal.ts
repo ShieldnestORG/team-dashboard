@@ -13,6 +13,7 @@ import {
   universityMembers,
   universitySubscriptions,
   universityProgress,
+  universityNotes,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
 import type { CustomerCredentialKind } from "@paperclipai/db";
@@ -911,6 +912,143 @@ export function customerPortalService(db: Db) {
     return { currentStreak, weekCount, weekGoal: weekGoal(), recent };
   }
 
+  // -------------------------------------------------------------------------
+  // University member NOTES — persisted in-lesson "write this down" prompts.
+  //
+  // FUTURE: these member notes are the input corpus for a planned "smart
+  // pattern recognition" feature ported from the Optimize Me / architect app —
+  // it will analyze members' notes to surface what to work on + best
+  // suggestions. Not built yet.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Idempotent upsert of a member's note for a lesson + note slot. Re-saving
+   * the same (lesson, note_key) updates the existing row (ON CONFLICT on the
+   * (email, lesson_slug, note_key) unique index) and bumps updated_at, rather
+   * than appending a duplicate. Returns the saved note.
+   */
+  async function upsertNote(args: {
+    accountId: string;
+    lessonSlug: string;
+    noteKey: string;
+    body: string;
+  }): Promise<{
+    lessonSlug: string;
+    noteKey: string;
+    body: string;
+    updatedAt: Date;
+  }> {
+    const identity = await resolveProgressIdentity(args.accountId);
+    if (!identity) throw new Error("Account not found");
+    const lessonSlug = args.lessonSlug.trim();
+    if (!lessonSlug) throw new Error("lessonSlug required");
+    const noteKey = args.noteKey.trim();
+    if (!noteKey) throw new Error("noteKey required");
+    const body = args.body;
+
+    const now = new Date();
+    const [row] = await db
+      .insert(universityNotes)
+      .values({
+        accountId: identity.accountId,
+        email: identity.email,
+        lessonSlug,
+        noteKey,
+        body,
+      })
+      .onConflictDoUpdate({
+        target: [
+          universityNotes.email,
+          universityNotes.lessonSlug,
+          universityNotes.noteKey,
+        ],
+        set: {
+          // Backfill the account link if it resolved after the first save, and
+          // refresh the body + updated_at on a re-save.
+          accountId: identity.accountId,
+          body,
+          updatedAt: now,
+        },
+      })
+      .returning({
+        lessonSlug: universityNotes.lessonSlug,
+        noteKey: universityNotes.noteKey,
+        body: universityNotes.body,
+        updatedAt: universityNotes.updatedAt,
+      });
+    return row;
+  }
+
+  /**
+   * The member's notes, newest first. Optionally filtered to a single lesson.
+   * Scoped to the durable identity (email OR account_id), same as the rep-log.
+   */
+  async function getNotes(args: {
+    accountId: string;
+    lessonSlug?: string;
+  }): Promise<
+    Array<{
+      lessonSlug: string;
+      noteKey: string;
+      body: string;
+      updatedAt: Date;
+    }>
+  > {
+    const identity = await resolveProgressIdentity(args.accountId);
+    if (!identity) return [];
+
+    const lessonSlug =
+      typeof args.lessonSlug === "string" ? args.lessonSlug.trim() : "";
+    const identityWhere = or(
+      sql`LOWER(${universityNotes.email}) = ${identity.email}`,
+      eq(universityNotes.accountId, identity.accountId),
+    );
+    const where = lessonSlug
+      ? and(identityWhere, eq(universityNotes.lessonSlug, lessonSlug))
+      : identityWhere;
+
+    return db
+      .select({
+        lessonSlug: universityNotes.lessonSlug,
+        noteKey: universityNotes.noteKey,
+        body: universityNotes.body,
+        updatedAt: universityNotes.updatedAt,
+      })
+      .from(universityNotes)
+      .where(where)
+      .orderBy(desc(universityNotes.updatedAt));
+  }
+
+  /**
+   * Remove a member's note for a lesson + note slot. Scoped to the durable
+   * identity so a member can only delete their own notes.
+   */
+  async function deleteNote(args: {
+    accountId: string;
+    lessonSlug: string;
+    noteKey: string;
+  }): Promise<void> {
+    const identity = await resolveProgressIdentity(args.accountId);
+    if (!identity) throw new Error("Account not found");
+    const lessonSlug = args.lessonSlug.trim();
+    const noteKey = args.noteKey.trim();
+    if (!lessonSlug) throw new Error("lessonSlug required");
+    if (!noteKey) throw new Error("noteKey required");
+
+    await db
+      .delete(universityNotes)
+      .where(
+        and(
+          or(
+            sql`LOWER(${universityNotes.email}) = ${identity.email}`,
+            eq(universityNotes.accountId, identity.accountId),
+          ),
+          eq(universityNotes.lessonSlug, lessonSlug),
+          eq(universityNotes.noteKey, noteKey),
+        ),
+      );
+  }
+
   return {
     createMagicLink,
     previewMagicLink,
@@ -930,6 +1068,9 @@ export function customerPortalService(db: Db) {
     recordRep,
     getProgressSummary,
     computeStreak,
+    upsertNote,
+    getNotes,
+    deleteNote,
     logAction,
   };
 }
