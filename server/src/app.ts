@@ -87,6 +87,7 @@ import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { socialsRoutes } from "./routes/socials.js";
 import { launchMonitorRoutes } from "./routes/launch-monitor.js";
 import { watchtowerRoutes } from "./routes/watchtower.js";
+import { watchtowerExportRoutes } from "./routes/watchtower-export.js";
 import {
   watchtowerCheckoutRoutes,
   watchtowerWebhookRouter,
@@ -338,6 +339,7 @@ export async function createApp(
   api.use("/socials", socialsRoutes(db, opts.storageService));
   api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/watchtower", watchtowerRoutes(db));
+  api.use("/watchtower", watchtowerExportRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
