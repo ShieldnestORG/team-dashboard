@@ -18,6 +18,19 @@ import {
   type ImpersonationSession,
 } from "../services/admin-impersonation.js";
 import { logActivity } from "../services/activity-log.js";
+import {
+  mintBridgeToken,
+  type BridgeStatus,
+} from "../services/optimize-me-bridge.js";
+
+// Optimize Me ("architect") app surface. The bridge handoff lands at
+// /api/sso/bridge there. Overridable via env for staging/local.
+function optimizeMeAppUrl(): string {
+  return (
+    process.env.OPTIMIZE_ME_APP_URL?.trim() ||
+    "https://app.optimize-me.coherencedaddy.com"
+  );
+}
 
 const TEAM_DASHBOARD_COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID ||
@@ -779,6 +792,62 @@ export function portalRoutes(db: Db): Router {
       res.status(500).json({ error: "Failed to create billing portal session" });
     }
   });
+
+  // -- Optimize Me SSO bridge: issue a launch assertion -----------------------
+  //
+  // Mints a short-lived (120s), single-use, audience-pinned, HMAC-signed
+  // assertion proving this member's email + entitlement status to the Optimize
+  // Me app, and returns the launchUrl the portal opens in a new tab. The
+  // assertion carries ONLY { email, status } — never the accountId or any
+  // portal identifier (keeps University identity out of Optimize Me's activity
+  // zone; see the integration spec).
+  //
+  // Gating uses the STRICT rule: status ∈ {active, past_due}, read from
+  // getAccountWithEntitlements (whose `university` block is already strict-
+  // gated) — NOT the lax isUniversityAccount(), which lets cancelled members
+  // through. A cancelled member with a live portal session gets 403 here.
+  router.post(
+    "/optimize-me/launch",
+    async (req: Request, res: Response) => {
+      // Minting a cross-org access assertion is a privileged action; block it
+      // while an admin is impersonating a customer (read-only mode).
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = requireSession(req, res);
+      if (!accountId) return;
+      try {
+        const result = await svc.getAccountWithEntitlements(accountId);
+        if (!result) {
+          clearSessionCookie(res);
+          res.status(401).json({ error: "Account not found" });
+          return;
+        }
+        const uni = result.entitlements.university;
+        // Strict gate: non-null only for active/past_due. Anything else
+        // (no membership, pending, cancelled) is not entitled.
+        if (!uni) {
+          res.status(403).json({ error: "not_a_member" });
+          return;
+        }
+        const { token } = mintBridgeToken(
+          result.account.email,
+          uni.status as BridgeStatus,
+        );
+        const launchUrl = `${optimizeMeAppUrl()}/api/sso/bridge?token=${encodeURIComponent(
+          token,
+        )}`;
+        void svc.logAction(accountId, "optimize_me_launch", {
+          status: uni.status,
+        });
+        res.json({ launchUrl });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/optimize-me/launch: mint failed",
+        );
+        res.status(500).json({ error: "Failed to create launch link" });
+      }
+    },
+  );
 
   // -- Admin impersonation: exchange nonce → session cookie ------------------
   router.post("/admin-impersonate", async (req: Request, res: Response) => {
