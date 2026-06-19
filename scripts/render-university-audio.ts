@@ -39,9 +39,33 @@
  *                 v2-chunked) for the given slug(s) — defaults to the-leak —
  *                 and skip the normal lesson render. Used to tune for the
  *                 least-robotic sentence-ends before batching all 10.
+ *   --timings     render the CHOSEN natural read (whole-lesson, single request,
+ *                 eleven_multilingual_v2, the tuned v2 settings) via the
+ *                 /with-timestamps endpoint and emit EXACT per-sentence timings
+ *                 so the on-screen transcript never drifts. For the given
+ *                 slug(s), or ALL lessons with no slug args. Writes BOTH the
+ *                 served MP3 (<slug>.mark.mp3) and <slug>.timings.json. Skips
+ *                 the normal paragraph-concat lesson render.
+ *
+ *                 Why whole-lesson + with-timestamps: only one HTTP request, so
+ *                 there are no concat seams to throw off the alignment, and
+ *                 eleven_multilingual_v2 is the only timestamp-capable model
+ *                 (eleven_v3 returns NO alignment). The returned char-level
+ *                 alignment is mapped onto the portal reader's OWN sentence
+ *                 segments (segmentLesson) so audio and transcript stay locked.
+ *                 Mirrors the owner's tts.py with-timestamps handling.
  *
  * Output: <repo>/output/university-audio/<slug>.mp3   (gitignored; never committed)
+ *         <repo>/output/university-audio/<slug>.mark.mp3        (ElevenLabs clone)
+ *         <repo>/output/university-audio/<slug>.timings.json    (--timings)
  *         <repo>/output/university-audio/_ab-sample-{rex,elevenlabs,google}.mp3
+ *
+ * Timings JSON shape (shared across all slugs):
+ *   { slug, voice, model, durationMs,
+ *     segments: [{ i, text, startMs, endMs }] }
+ *   Segments are SENTENCE-level (portal split), in order, contiguous (each
+ *   endMs === next startMs), covering the entire narration; first startMs is 0,
+ *   last endMs is the audio duration.
  */
 
 import { exec } from "node:child_process";
@@ -69,6 +93,23 @@ const PRESENCE_LESSONS: PresenceLesson[] =
 if (PRESENCE_LESSONS.length === 0) {
   throw new Error("Failed to load PRESENCE_LESSONS from portal-presence — import shape unexpected.");
 }
+
+// segmentLesson is the portal reader's OWN sentence/drill splitter — the single
+// source of truth for how the on-screen transcript is chunked. We import it
+// (same dual CJS/ESM shape handling as PRESENCE_LESSONS above) so the timings
+// segments line up 1:1 with what the reader renders, instead of re-deriving a
+// near-identical split that could silently drift. See lib/curriculum/segment.ts.
+import * as presenceSegment from "/Users/exe/Downloads/Claude/portal-presence/lib/curriculum/segment.ts";
+type LessonSegment = { index: number; kind: "prose" | "drill"; text: string };
+const segmentMod = presenceSegment as unknown as {
+  default?: { segmentLesson: (markdown: string) => LessonSegment[] };
+  segmentLesson?: (markdown: string) => LessonSegment[];
+};
+const segmentLesson: (markdown: string) => LessonSegment[] =
+  segmentMod.default?.segmentLesson ?? segmentMod.segmentLesson ??
+  (() => {
+    throw new Error("Failed to load segmentLesson from portal-presence — import shape unexpected.");
+  });
 
 const execAsync = promisify(exec);
 
@@ -621,6 +662,216 @@ async function renderCandidates(slug: string): Promise<void> {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Exact per-sentence timings (--timings) — the production transcript-sync path.
+//
+// Renders the CHOSEN natural read (the same whole-lesson, single-request v2
+// profile as candidate [v2] above: eleven_multilingual_v2, the tuned settings)
+// through the /with-timestamps endpoint, then maps the returned char-level
+// alignment onto the portal reader's OWN sentence segments (segmentLesson). The
+// served MP3 IS this render, so the timings describe the exact bytes shipped.
+//
+// Reference: 6-2026-new-youtube-automation/tools/tts.py — synth() hits
+// {voice}/with-timestamps and segs_from_alignment() walks the char arrays. We
+// reuse its arrays (characters / character_start_times_seconds /
+// character_end_times_seconds) but segment with the PORTAL splitter instead of
+// a naive .!? scan, so the timing boundaries match the on-screen taps exactly.
+// ───────────────────────────────────────────────────────────────────────────
+
+// The chosen natural settings: same as the [v2] candidate (whole-lesson, single
+// request, lower stability for expressive sentence-ends), which the owner picked
+// as the served read. Speaker_boost stays on (v2 accepts it).
+const TIMINGS_STABILITY = CANDIDATE_V2_STABILITY; // 0.35
+const TIMINGS_SIMILARITY = ELEVENLABS_SIMILARITY; // 0.8
+const TIMINGS_STYLE = ELEVENLABS_STYLE; // 0.0
+
+interface SegmentTiming {
+  i: number;
+  text: string;
+  startMs: number;
+  endMs: number;
+}
+
+interface LessonTimings {
+  slug: string;
+  voice: string;
+  model: string;
+  durationMs: number;
+  segments: SegmentTiming[];
+}
+
+interface ElevenAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+/**
+ * Call the with-timestamps endpoint for the whole-lesson blob in ONE request.
+ * Returns the raw MP3 bytes + the char-level alignment. eleven_multilingual_v2
+ * only (the timestamp-capable model); speaker_boost on (v2 accepts it).
+ */
+async function synthWithTimestamps(
+  text: string,
+): Promise<{ audio: Buffer; alignment: ElevenAlignment }> {
+  if (!ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not set.");
+
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}/with-timestamps?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: ELEVENLABS_MODEL, // eleven_multilingual_v2 — the only model with alignment
+        voice_settings: {
+          stability: TIMINGS_STABILITY,
+          similarity_boost: TIMINGS_SIMILARITY,
+          style: TIMINGS_STYLE,
+          use_speaker_boost: true,
+        },
+      }),
+      signal: AbortSignal.timeout(180_000),
+    },
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`ElevenLabs with-timestamps failed (${res.status}): ${errBody.slice(0, 500)}`);
+  }
+
+  const data = (await res.json()) as {
+    audio_base64?: string;
+    alignment?: ElevenAlignment;
+    normalized_alignment?: ElevenAlignment;
+  };
+  if (!data.audio_base64) throw new Error("with-timestamps returned no audio_base64.");
+  // Prefer `alignment` (literal input chars, joins back to the sent blob exactly)
+  // over normalized_alignment, matching tts.py's preference order.
+  const alignment = data.alignment ?? data.normalized_alignment;
+  if (!alignment) throw new Error("with-timestamps returned no alignment.");
+
+  return { audio: Buffer.from(data.audio_base64, "base64"), alignment };
+}
+
+/**
+ * Map the portal reader's sentence segments onto the char-level alignment.
+ *
+ * The alignment's `characters` array joins back to EXACTLY the blob we sent
+ * (verified: alignment chars are the literal input). So blob char index i ↔
+ * alignment index i. For each portal segment we sanitize its raw-markdown text
+ * the SAME way the blob was built, then locate that sanitized text in the blob
+ * (sequentially, cursor-advanced — segments are in document order). The first
+ * matched char gives startMs; the last gives endMs.
+ *
+ * Output segments are forced contiguous: each segment's startMs is snapped to
+ * the previous segment's endMs (no gaps, no overlaps), the first starts at 0,
+ * and the last endMs is pinned to the audio duration — so the on-screen
+ * transcript can binary-search the current time with no dead zones.
+ */
+function alignmentToSegments(
+  markdown: string,
+  blob: string,
+  alignment: ElevenAlignment,
+  durationMs: number,
+): SegmentTiming[] {
+  const chars = alignment.characters;
+  const starts = alignment.character_start_times_seconds;
+  const ends = alignment.character_end_times_seconds;
+
+  // Sanity: the alignment must describe the blob we sent, char-for-char.
+  const joined = chars.join("");
+  if (joined !== blob) {
+    throw new Error(
+      `Alignment chars (${joined.length}) do not match sent blob (${blob.length}); ` +
+        `cannot map timings reliably.`,
+    );
+  }
+
+  const portalSegments = segmentLesson(markdown);
+
+  const raw: Array<{ text: string; startSec: number; endSec: number }> = [];
+  let cursor = 0;
+  for (const seg of portalSegments) {
+    const san = sanitizeTextForTTS(seg.text);
+    if (!san) continue;
+    const idx = blob.indexOf(san, cursor);
+    if (idx === -1) {
+      throw new Error(
+        `Segment ${seg.index} not found in blob after cursor ${cursor}: "${san.slice(0, 80)}…"`,
+      );
+    }
+    const startChar = idx;
+    const endChar = idx + san.length - 1; // inclusive index of the last char
+    raw.push({ text: seg.text, startSec: starts[startChar], endSec: ends[endChar] });
+    cursor = idx + san.length;
+  }
+
+  if (raw.length === 0) throw new Error("No segments produced from alignment.");
+
+  // Force contiguity: startMs of each = endMs of the previous; first = 0; last
+  // endMs = audio duration. Boundaries come straight from the alignment, only
+  // snapped so the timeline has no gaps/overlaps for the reader.
+  const segments: SegmentTiming[] = raw.map((r, i) => ({
+    i,
+    text: r.text,
+    startMs: i === 0 ? 0 : Math.round(raw[i - 1].endSec * 1000),
+    endMs: Math.round(r.endSec * 1000),
+  }));
+  // Pin the last segment to the true audio duration so endMs ≈ duration exactly.
+  segments[segments.length - 1].endMs = durationMs;
+  // Re-snap starts to the (possibly adjusted) previous endMs, and guard against
+  // any non-monotonic boundary (clamp so start ≤ end and start ≥ prev end).
+  for (let i = 1; i < segments.length; i++) {
+    segments[i].startMs = segments[i - 1].endMs;
+    if (segments[i].endMs < segments[i].startMs) segments[i].endMs = segments[i].startMs;
+  }
+
+  return segments;
+}
+
+/**
+ * Full --timings render for one slug: synth whole-lesson with timestamps, write
+ * the served MP3 (<slug>.mark.mp3), compute sentence timings, write the JSON.
+ */
+async function renderTimings(slug: string): Promise<void> {
+  const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
+  if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
+
+  const blob = lessonToSingleBlob(lesson.markdown);
+  const mp3Path = join(OUTPUT_DIR, `${slug}.mark.mp3`);
+  const jsonPath = join(OUTPUT_DIR, `${slug}.timings.json`);
+
+  console.log(`\n▶ ${lesson.order}. ${slug} — "${lesson.title}" (timings)`);
+  console.log(
+    `  voice: ${ELEVENLABS_VOICE_ID} | model: ${ELEVENLABS_MODEL} | ` +
+      `stab ${TIMINGS_STABILITY} · sim ${TIMINGS_SIMILARITY} · style ${TIMINGS_STYLE} · boost on`,
+  );
+  console.log(`  whole-lesson single request · ${blob.length} chars (cost) · /with-timestamps`);
+
+  const { audio, alignment } = await synthWithTimestamps(blob);
+  await writeFile(mp3Path, audio);
+
+  const durationSec = await getAudioDuration(mp3Path);
+  const durationMs = Math.round(durationSec * 1000);
+
+  const segments = alignmentToSegments(lesson.markdown, blob, alignment, durationMs);
+
+  const timings: LessonTimings = {
+    slug,
+    voice: ELEVENLABS_VOICE_ID,
+    model: ELEVENLABS_MODEL,
+    durationMs,
+    segments,
+  };
+  await writeFile(jsonPath, `${JSON.stringify(timings, null, 2)}\n`);
+
+  console.log(`  ✓ ${mp3Path}  (${durationSec.toFixed(1)}s)`);
+  console.log(
+    `  ✓ ${jsonPath}  (${segments.length} segments, last endMs ${segments[segments.length - 1].endMs} ≈ ${durationMs}ms)`,
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // A/B voice sample — same excerpt, three providers.
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -750,9 +1001,21 @@ async function main() {
   // --candidates: render naturalness A/B variants (v2 whole-lesson / v3 /
   // v2-chunked) for the given slug(s) instead of the production lesson render.
   const doCandidates = args.includes("--candidates");
+  // --timings: render the chosen natural read with /with-timestamps and emit
+  // exact per-sentence timings (the production transcript-sync path).
+  const doTimings = args.includes("--timings");
   const slugArgs = args.filter((a) => !a.startsWith("--"));
 
   await ensureDir(OUTPUT_DIR);
+
+  if (doTimings) {
+    const slugs = slugArgs.length > 0 ? slugArgs : PRESENCE_LESSONS.map((l) => l.slug);
+    console.log("Coherent Ones University — timed render (whole-lesson + with-timestamps)");
+    console.log(`  output: ${OUTPUT_DIR}`);
+    for (const slug of slugs) await renderTimings(slug);
+    console.log("\nDone (timings).");
+    return;
+  }
 
   if (doCandidates) {
     const slugs = slugArgs.length > 0 ? slugArgs : ["the-leak"];
