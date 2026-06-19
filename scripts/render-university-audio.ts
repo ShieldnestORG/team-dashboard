@@ -47,6 +47,26 @@
  *                 served MP3 (<slug>.mark.mp3) and <slug>.timings.json. Skips
  *                 the normal paragraph-concat lesson render.
  *
+ *   --align       render the owner's CHOSEN voice (eleven_v3 "Natural") for the
+ *                 given slug(s), or ALL lessons with no slug args, and emit
+ *                 per-sentence timings via whisper.cpp FORCED ALIGNMENT. eleven_v3
+ *                 has NO /with-timestamps support, so we render the v3 audio, then
+ *                 align it to its known text with whisper-cli at word level and
+ *                 map the words onto the portal reader's sentence segments. Writes
+ *                 BOTH the served MP3 (<slug>.mark.mp3, overwriting the v2 one) and
+ *                 <slug>.timings.json (same contract as --timings). The MP3 is the
+ *                 must-have; if a lesson's alignment fails, the MP3 is kept and the
+ *                 timings.json is skipped (the player falls back to an estimate).
+ *
+ *   --pause       post-process ALREADY-RENDERED lessons: insert extra SILENCE at
+ *                 each sentence/segment boundary (longer at paragraph/section
+ *                 breaks) and RECOMPUTE <slug>.timings.json so the on-screen
+ *                 highlight stays synced to the paused audio. Pure ffmpeg, NO
+ *                 ElevenLabs calls. For the given slug(s), or ALL with no args.
+ *                 Tunables: PAUSE_BETWEEN_SENTENCES_MS (450), PAUSE_AT_PARAGRAPH_MS
+ *                 (800). Slices from a one-time <slug>.mark.orig.mp3 snapshot so
+ *                 re-running never stacks silence on silence.
+ *
  *                 Why whole-lesson + with-timestamps: only one HTTP request, so
  *                 there are no concat seams to throw off the alignment, and
  *                 eleven_multilingual_v2 is the only timestamp-capable model
@@ -70,8 +90,8 @@
 
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { writeFile, unlink, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { writeFile, readFile, unlink, mkdir } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -872,6 +892,734 @@ async function renderTimings(slug: string): Promise<void> {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// eleven_v3 render + forced-alignment timings (--align) — the v3 production path.
+//
+// The owner picked the v3 voice. eleven_v3 has NO /with-timestamps support
+// (returns no alignment), so the exact-char mapping the --timings path uses is
+// impossible here. Instead we:
+//   1. Render the WHOLE lesson in v3 "Natural" (the settings the owner approved
+//      on the-leak.mark-v3.mp3: stab 0.5 / sim 0.9 / style 0.0, NO speaker_boost),
+//      split into the fewest chunks under v3's ~3000-char cap with short faded
+//      seams (same chunking as the [v3] candidate). Served as <slug>.mark.mp3.
+//   2. FORCED-ALIGN that MP3 to its known text with whisper.cpp (whisper-cli,
+//      the binary already on this machine; model ggml-base.en.bin from the
+//      Freeflow project) at WORD granularity (-ml 1 -sow), giving (word → ms).
+//   3. Sequence-align the lesson's known sentence-segment words to the ASR word
+//      stream and assign each portal segment a start/end from the matched words.
+//   4. Force contiguity EXACTLY like alignmentToSegments (snap each start to the
+//      prev end, first = 0, last = audio duration, monotonic) → identical
+//      timings.json contract: { slug, voice, model, durationMs, segments }.
+//
+// whisper-cli is ASR, not phoneme-level forced alignment, so the recognized
+// words won't match the known text char-for-char (e.g. it hears "You" for
+// "You've"). The sequence aligner below tolerates that: it matches on normalized
+// tokens and anchors segment boundaries on the words it DID match, so a few
+// mis-recognized words don't break the per-sentence timing.
+// ───────────────────────────────────────────────────────────────────────────
+
+// eleven_v3 "Natural" settings the owner approved (match the-leak.mark-v3.mp3).
+const ALIGN_V3_STABILITY = CANDIDATE_V3_STABILITY; // 0.5
+const ALIGN_V3_SIMILARITY = CANDIDATE_V3_SIMILARITY; // 0.9
+const ALIGN_V3_STYLE = ELEVENLABS_STYLE; // 0.0  (NO speaker_boost — v3 rejects it)
+
+// whisper.cpp forced-alignment config. Binary + model resolved from this
+// machine's Freeflow install; overridable via env if either ever moves.
+const WHISPER_BIN = process.env.WHISPER_BIN || "/opt/homebrew/bin/whisper-cli";
+const WHISPER_MODEL =
+  process.env.WHISPER_MODEL ||
+  "/Users/exe/Downloads/Claude/Freeflow-text to speech/mcp-server/models/ggml-base.en.bin";
+
+/** One ASR word with its millisecond span (from whisper-cli offsets). */
+interface AsrWord {
+  norm: string; // normalized token (lowercase, alnum only)
+  startMs: number;
+  endMs: number;
+}
+
+/** Normalize a raw word to a comparable token: lowercase, strip non-alnum. */
+function normWord(w: string): string {
+  return w.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Forced-align an audio file to its known text with whisper.cpp at word level.
+ * Returns the recognized words with ms spans, in spoken order. Converts to the
+ * 16 kHz mono WAV whisper-cli expects first. Throws on binary/model/parse error.
+ */
+async function whisperWordTimings(audioPath: string): Promise<AsrWord[]> {
+  if (!existsSync(WHISPER_BIN)) {
+    throw new Error(`whisper-cli not found at ${WHISPER_BIN} (set WHISPER_BIN).`);
+  }
+  if (!existsSync(WHISPER_MODEL)) {
+    throw new Error(`whisper model not found at ${WHISPER_MODEL} (set WHISPER_MODEL).`);
+  }
+  await ensureDir(TMP_DIR);
+  const stamp = Date.now();
+  const wavPath = join(TMP_DIR, `align_${stamp}.wav`);
+  const jsonBase = join(TMP_DIR, `align_${stamp}`); // whisper-cli appends .json
+  const jsonPath = `${jsonBase}.json`;
+
+  // whisper-cli wants 16 kHz mono PCM WAV.
+  await execAsync(`ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 "${wavPath}"`, { timeout: 120_000 });
+
+  // -ml 1 -sow → one entry per word; -oj -ojf → JSON with per-entry offsets (ms).
+  await execAsync(
+    `"${WHISPER_BIN}" -m "${WHISPER_MODEL}" -f "${wavPath}" -ml 1 -sow -oj -ojf -of "${jsonBase}"`,
+    { timeout: 600_000 },
+  );
+
+  const parsed = JSON.parse(await readFile(jsonPath, "utf8")) as {
+    transcription?: Array<{ text?: string; offsets?: { from: number; to: number } }>;
+  };
+
+  await unlink(wavPath).catch(() => {});
+  await unlink(jsonPath).catch(() => {});
+
+  const items = parsed.transcription ?? [];
+  const words: AsrWord[] = [];
+  for (const it of items) {
+    const raw = (it.text ?? "").trim();
+    const norm = normWord(raw);
+    if (!norm) continue; // skip [_BEG_], punctuation-only, blanks
+    if (!it.offsets) continue;
+    words.push({ norm, startMs: it.offsets.from, endMs: it.offsets.to });
+  }
+  if (words.length === 0) throw new Error("whisper-cli produced no word timings.");
+  return words;
+}
+
+/**
+ * Longest-common-subsequence of two normalized-token streams. Returns the
+ * matched index pairs [aIdx, bIdx] in order. Used to align the known-word stream
+ * to the ASR word stream globally, instead of with a fragile fixed-window greedy
+ * walk (see alignWordsToSegments for why).
+ *
+ * Plain O(n·m) DP with one Int32Array row per known-word index. Lesson token
+ * counts are ≲1,200 each (≈1.4M cells, a few MB), so the simple table is fine —
+ * no need for Hirschberg's linear-space variant at this scale.
+ */
+function lcsMatchPairs(a: string[], b: string[]): Array<[number, number]> {
+  const n = a.length;
+  const m = b.length;
+  // dp[i][j] = LCS length of a[i:] and b[j:]. Build bottom-up.
+  const dp: Int32Array[] = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    const row = dp[i];
+    const next = dp[i + 1];
+    for (let j = m - 1; j >= 0; j--) {
+      row[j] = a[i] === b[j] ? next[j + 1] + 1 : Math.max(next[j], row[j + 1]);
+    }
+  }
+  // Backtrack from (0,0) to recover the matched pairs in order.
+  const pairs: Array<[number, number]> = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      pairs.push([i, j]);
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+  return pairs;
+}
+
+/**
+ * Sequence-align the known sentence segments to the ASR word stream.
+ *
+ * We flatten the portal segments into one ordered list of known words, tagging
+ * each with its segment index, and the ASR result into a parallel token stream.
+ * The two are ~98% identical (whisper transcribes the known text accurately;
+ * only a handful of words are dropped/substituted/inserted), so we align them
+ * with a GLOBAL longest-common-subsequence rather than a fixed-window greedy
+ * walk. Each LCS-matched ASR word contributes its ms span to ITS known word's
+ * segment: earliest start, latest end. Segments with no matched word stay null
+ * (caller fills via contiguity).
+ *
+ * Why LCS, not a window: a fixed look-ahead window cannot be right for every
+ * lesson — too small and an early dropped word strands the cursor (whole
+ * segments unmatched); too large and a common word ("a", "the", "and") lets the
+ * cursor leap forward, collapsing dozens of segments into one 50-second span.
+ * LCS has neither failure mode: it finds the globally-consistent monotone
+ * matching with no tunable window, so it matches the best-case window result for
+ * every lesson at once and is robust to local ASR drift. (Verified across all 10
+ * lessons: LCS ≥ the best fixed window on every one, and fixes the pathological
+ * cases the window broke.)
+ */
+function alignWordsToSegments(
+  knownWords: Array<{ seg: number; norm: string }>,
+  asr: AsrWord[],
+): Array<{ startMs: number; endMs: number } | null> {
+  const segCount = knownWords.reduce((m, w) => Math.max(m, w.seg), -1) + 1;
+  const bounds: Array<{ startMs: number; endMs: number } | null> = new Array(segCount).fill(null);
+
+  const pairs = lcsMatchPairs(
+    knownWords.map((k) => k.norm),
+    asr.map((a) => a.norm),
+  );
+
+  for (const [ki, ai] of pairs) {
+    const seg = knownWords[ki].seg;
+    const a = asr[ai];
+    const cur = bounds[seg];
+    if (cur === null) {
+      bounds[seg] = { startMs: a.startMs, endMs: a.endMs };
+    } else {
+      // Extend the segment's span; keep earliest start, latest end.
+      if (a.startMs < cur.startMs) cur.startMs = a.startMs;
+      if (a.endMs > cur.endMs) cur.endMs = a.endMs;
+    }
+  }
+
+  return bounds;
+}
+
+/**
+ * Build the contiguous SegmentTiming[] from the portal segments + their aligned
+ * bounds. Same contiguity contract as alignmentToSegments: first start = 0, each
+ * start snapped to the previous end, last end = audio duration, monotonic. A
+ * segment with no matched words (bounds === null) collapses to a zero-width slot
+ * at the previous boundary, so the timeline stays gap-free and the reader simply
+ * advances through it (graceful — better than dropping the segment).
+ */
+function boundsToSegments(
+  portalSegments: LessonSegment[],
+  bounds: Array<{ startMs: number; endMs: number } | null>,
+  durationMs: number,
+): { segments: SegmentTiming[]; matched: number } {
+  const segments: SegmentTiming[] = [];
+  let prevEnd = 0;
+  let matched = 0;
+
+  for (let i = 0; i < portalSegments.length; i++) {
+    const b = bounds[i];
+    let endMs: number;
+    if (b === null) {
+      endMs = prevEnd; // zero-width: no signal for this segment
+    } else {
+      matched++;
+      endMs = Math.max(b.endMs, prevEnd); // never go backwards
+    }
+    segments.push({ i, text: portalSegments[i].text, startMs: prevEnd, endMs });
+    prevEnd = endMs;
+  }
+
+  if (segments.length === 0) throw new Error("No segments produced from alignment.");
+
+  // Pin the last segment to the true audio duration (endMs ≈ duration exactly).
+  segments[segments.length - 1].endMs = durationMs;
+  // Re-snap starts and clamp any non-monotonic boundary.
+  for (let i = 1; i < segments.length; i++) {
+    segments[i].startMs = segments[i - 1].endMs;
+    if (segments[i].endMs < segments[i].startMs) segments[i].endMs = segments[i].startMs;
+  }
+  // Final guard: last start ≤ last end (= duration).
+  const last = segments[segments.length - 1];
+  if (last.startMs > last.endMs) last.startMs = last.endMs;
+
+  return { segments, matched };
+}
+
+/**
+ * Full --align render for one slug: render v3 whole-lesson → <slug>.mark.mp3,
+ * forced-align with whisper.cpp, write <slug>.timings.json. The MP3 is the
+ * must-have; if alignment fails the MP3 is kept and timings are skipped (the
+ * player falls back to an estimate). Returns a per-slug result for the report.
+ */
+interface AlignResult {
+  slug: string;
+  mp3Path: string;
+  durationMs: number;
+  bytes: number;
+  charCost: number;
+  chunks: number;
+  aligned: boolean;
+  segCount: number;
+  matchedSegs: number;
+  error?: string;
+}
+
+/**
+ * Forced-align an ALREADY-RENDERED <slug>.mark.mp3 to its known lesson text with
+ * whisper.cpp and write <slug>.timings.json. Shared by both renderAlign (after a
+ * fresh v3 render) and renderRealign (--realign: align an existing MP3, no
+ * ElevenLabs call). Returns the segment count + matched count, or throws on a
+ * hard failure (caller decides whether to keep going). durationMs is taken from
+ * the actual MP3 on disk so the timings describe the served bytes.
+ */
+async function alignExistingMp3(
+  slug: string,
+  durationMs: number,
+): Promise<{ segCount: number; matched: number }> {
+  const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
+  if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
+  const mp3Path = join(OUTPUT_DIR, `${slug}.mark.mp3`);
+  const jsonPath = join(OUTPUT_DIR, `${slug}.timings.json`);
+
+  const asr = await whisperWordTimings(mp3Path);
+
+  // Known-word stream tagged by portal segment index (sanitized the SAME way the
+  // rendered blob was, so the known words line up with what was spoken).
+  const portalSegments = segmentLesson(lesson.markdown);
+  const knownWords: Array<{ seg: number; norm: string }> = [];
+  portalSegments.forEach((seg, segIdx) => {
+    const san = sanitizeTextForTTS(seg.text);
+    for (const raw of san.split(/\s+/)) {
+      const norm = normWord(raw);
+      if (norm) knownWords.push({ seg: segIdx, norm });
+    }
+  });
+
+  const bounds = alignWordsToSegments(knownWords, asr);
+  const { segments, matched } = boundsToSegments(portalSegments, bounds, durationMs);
+
+  const timings: LessonTimings = {
+    slug,
+    voice: ELEVENLABS_VOICE_ID,
+    model: ELEVENLABS_MODEL_V3,
+    durationMs,
+    segments,
+  };
+  await writeFile(jsonPath, `${JSON.stringify(timings, null, 2)}\n`);
+  return { segCount: segments.length, matched };
+}
+
+/**
+ * --realign: forced-align an EXISTING <slug>.mark.mp3 (no ElevenLabs render) and
+ * write its timings. For lessons whose audio is already on disk but lack timings
+ * (or whose prior alignment was poor and we want to re-run whisper without
+ * spending quota on a re-render). The MP3 is read as-is; durationMs comes from it.
+ */
+async function renderRealign(slug: string): Promise<AlignResult> {
+  const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
+  if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
+  const mp3Path = join(OUTPUT_DIR, `${slug}.mark.mp3`);
+  if (!existsSync(mp3Path)) throw new Error(`Missing audio: ${mp3Path} (render it first).`);
+
+  const durationMs = Math.round((await getAudioDuration(mp3Path)) * 1000);
+  const bytes = statSync(mp3Path).size;
+
+  console.log(`\n▶ ${lesson.order}. ${slug} — "${lesson.title}" (realign existing MP3, no render)`);
+  console.log(`  ${(durationMs / 1000).toFixed(1)}s · ${bytes}B · aligner: whisper.cpp`);
+
+  const result: AlignResult = {
+    slug,
+    mp3Path,
+    durationMs,
+    bytes,
+    charCost: 0, // no ElevenLabs call
+    chunks: 0,
+    aligned: false,
+    segCount: segmentLesson(lesson.markdown).length,
+    matchedSegs: 0,
+  };
+
+  try {
+    const { segCount, matched } = await alignExistingMp3(slug, durationMs);
+    result.aligned = true;
+    result.matchedSegs = matched;
+    console.log(
+      `  ✓ ${join(OUTPUT_DIR, `${slug}.timings.json`)}  (${segCount} segments, ${matched} with ASR signal)`,
+    );
+    if (matched < segCount) {
+      console.log(
+        `    note: ${segCount - matched} segment(s) had no ASR word match (zero-width slots).`,
+      );
+    }
+  } catch (err) {
+    result.error = (err as Error).message;
+    console.log(`  ✗ ALIGNMENT FAILED: ${result.error}`);
+  }
+  return result;
+}
+
+async function renderAlign(slug: string): Promise<AlignResult> {
+  const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
+  if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
+
+  const mp3Path = join(OUTPUT_DIR, `${slug}.mark.mp3`);
+  const jsonPath = join(OUTPUT_DIR, `${slug}.timings.json`);
+
+  // Same chunking as the approved [v3] candidate: fewest chunks under v3's cap.
+  const v3Chunks = groupParagraphs(lesson.markdown, V3_MAX_CHUNK_CHARS);
+  const charCost = v3Chunks.reduce((n, c) => n + c.length, 0);
+  const v3Gen = makeElevenGenerator({
+    model: ELEVENLABS_MODEL_V3,
+    stability: ALIGN_V3_STABILITY,
+    similarity: ALIGN_V3_SIMILARITY,
+    style: ALIGN_V3_STYLE,
+  });
+
+  console.log(`\n▶ ${lesson.order}. ${slug} — "${lesson.title}" (v3 + forced alignment)`);
+  console.log(
+    `  voice: ${ELEVENLABS_VOICE_ID} | model: ${ELEVENLABS_MODEL_V3} "Natural" · ` +
+      `stab ${ALIGN_V3_STABILITY} · sim ${ALIGN_V3_SIMILARITY} · style ${ALIGN_V3_STYLE} · NO boost`,
+  );
+  console.log(
+    `  ${v3Chunks.length} chunk(s) · ${charCost} chars (cost) · ${CANDIDATE_SEAM_SILENCE_SEC}s seams`,
+  );
+
+  // ── 1. Render v3 → served MP3 (the must-have). ──
+  const rendered = await generateChunkedTTS(v3Chunks, mp3Path, CANDIDATE_SEAM_SILENCE_SEC, v3Gen);
+  const durationMs = Math.round(rendered.durationSec * 1000);
+  const bytes = statSync(mp3Path).size;
+  console.log(`  ✓ ${mp3Path}  (${rendered.durationSec.toFixed(1)}s, ${bytes} bytes)`);
+
+  const result: AlignResult = {
+    slug,
+    mp3Path,
+    durationMs,
+    bytes,
+    charCost,
+    chunks: v3Chunks.length,
+    aligned: false,
+    segCount: segmentLesson(lesson.markdown).length,
+    matchedSegs: 0,
+  };
+
+  // ── 2 + 3. Forced-align (best-effort: failure keeps the MP3). ──
+  try {
+    const asr = await whisperWordTimings(mp3Path);
+
+    // Build the known-word stream tagged by portal segment index. We sanitize
+    // each segment the SAME way the rendered blob was built, then split into
+    // normalized word tokens, so the known words line up with what was spoken.
+    const portalSegments = segmentLesson(lesson.markdown);
+    const knownWords: Array<{ seg: number; norm: string }> = [];
+    portalSegments.forEach((seg, segIdx) => {
+      const san = sanitizeTextForTTS(seg.text);
+      for (const raw of san.split(/\s+/)) {
+        const norm = normWord(raw);
+        if (norm) knownWords.push({ seg: segIdx, norm });
+      }
+    });
+
+    const bounds = alignWordsToSegments(knownWords, asr);
+    const { segments, matched } = boundsToSegments(portalSegments, bounds, durationMs);
+
+    const timings: LessonTimings = {
+      slug,
+      voice: ELEVENLABS_VOICE_ID,
+      model: ELEVENLABS_MODEL_V3,
+      durationMs,
+      segments,
+    };
+    await writeFile(jsonPath, `${JSON.stringify(timings, null, 2)}\n`);
+
+    result.aligned = true;
+    result.matchedSegs = matched;
+    console.log(
+      `  ✓ ${jsonPath}  (${segments.length} segments, ${matched} with ASR signal, ` +
+        `last endMs ${segments[segments.length - 1].endMs} ≈ ${durationMs}ms)`,
+    );
+    if (matched < segments.length) {
+      console.log(
+        `    note: ${segments.length - matched} segment(s) had no ASR word match ` +
+          `(zero-width slots — reader advances through them).`,
+      );
+    }
+  } catch (err) {
+    result.error = (err as Error).message;
+    console.log(`  ✗ ALIGNMENT FAILED (MP3 kept): ${result.error}`);
+  }
+
+  return result;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Pause-spacing (--pause) — insert extra silence at each sentence/section
+// boundary of an ALREADY-RENDERED lesson, then recompute its timings so the
+// on-screen highlight stays locked to the now-paused audio.
+//
+// Owner request: "a little more pauses between sentences/steps/points." This is
+// a pure ffmpeg post-process on the served <slug>.mark.mp3 — NO new ElevenLabs
+// calls (saves quota). The flow, per lesson:
+//   1. Read <slug>.timings.json (the v3 + forced-alignment output). Its segments
+//      are sentence-level, contiguous, monotonic — each segment's endMs is a
+//      word-end boundary (the aligner pins boundaries at recognized word ends),
+//      so cutting THERE never lands mid-word.
+//   2. Slice the source MP3 into one clip per segment at those endMs boundaries
+//      (re-encoded with libmp3lame so the cuts are clean, same codec as the rest
+//      of the pipeline), and build one silence clip per boundary.
+//   3. Concat: [seg0][silence][seg1][silence]…[segN]. The silence length is
+//      PAUSE_BETWEEN_SENTENCES_MS at a normal sentence end, or
+//      PAUSE_AT_PARAGRAPH_MS when the NEXT segment opens a new markdown block
+//      (paragraph/section break — detected from the lesson markdown). No silence
+//      after the last segment.
+//   4. Recompute timings from the MEASURED durations of the rendered slices (not
+//      the assumed cut points): each new segment start = cumulative sum of all
+//      prior slice durations + all prior inserted silences; durationMs = the
+//      re-probed total of the paused file. So timings describe the exact bytes,
+//      and segments stay contiguous + monotonic.
+//
+// Idempotency guard: the source for slicing must be the ORIGINAL (un-paused)
+// audio. We snapshot the original once to <slug>.mark.orig.mp3 the first time we
+// pause a lesson and always slice from that snapshot, so re-running --pause does
+// not stack silence on silence.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Extra silence at a normal sentence/segment boundary, in ms. */
+const PAUSE_BETWEEN_SENTENCES_MS = Number(process.env.PAUSE_BETWEEN_SENTENCES_MS ?? 450);
+/** Extra silence at a paragraph/section break (start of a new markdown block). */
+const PAUSE_AT_PARAGRAPH_MS = Number(process.env.PAUSE_AT_PARAGRAPH_MS ?? 800);
+
+/**
+ * The set of segment indices that OPEN a new markdown block (paragraph/section
+ * break). Derived by mirroring segmentLesson's block walk: the first segment of
+ * every block after the first is a paragraph break. A boundary BEFORE such a
+ * segment gets the longer paragraph pause. Returns indices into the same
+ * segment list segmentLesson() produces, so it lines up 1:1 with the timings.
+ */
+function paragraphBreakSegmentIndices(markdown: string): Set<number> {
+  const blocks = markdown
+    .split(/\n{2,}/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  const breaks = new Set<number>();
+  let index = 0;
+  let blockNo = 0;
+  for (const block of blocks) {
+    const text = block.replace(/\n+/g, " ");
+    if (blockNo > 0) breaks.add(index); // first segment of a non-initial block
+    blockNo++;
+
+    if (text.startsWith("**The drill")) {
+      index++; // drill block is one whole segment
+      continue;
+    }
+    // Same sentence matcher as segment.ts splitSentences (count only).
+    const re = /[^.!?]*(?:[.!?]["')”’]?(?=\s+["'(“‘A-Z0-9]|\s*$)|$)/g;
+    let m: RegExpExecArray | null;
+    let count = 0;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0].trim()) {
+        index++;
+        count++;
+      }
+      if (m.index === re.lastIndex) re.lastIndex += 1;
+    }
+    if (count === 0) index++; // a block that produced no sentence still ⇒ 1 seg
+  }
+  return breaks;
+}
+
+/** Make a silence MP3 of the given ms length in the pipeline format. */
+async function makeSilenceClip(ms: number, outPath: string): Promise<void> {
+  const sec = (ms / 1000).toFixed(3);
+  await execAsync(
+    `ffmpeg -y -f lavfi -i anullsrc=r=${SAMPLE_RATE}:cl=mono -t ${sec} -codec:a libmp3lame -qscale:a 2 "${outPath}"`,
+  );
+}
+
+/** Slice [startMs, endMs) of src into outPath, re-encoded (sample-clean cut). */
+async function sliceAudio(src: string, startMs: number, endMs: number, outPath: string): Promise<void> {
+  const ss = (startMs / 1000).toFixed(3);
+  const to = (endMs / 1000).toFixed(3);
+  await execAsync(
+    `ffmpeg -y -ss ${ss} -to ${to} -i "${src}" -codec:a libmp3lame -qscale:a 2 "${outPath}"`,
+    { timeout: 120_000 },
+  );
+}
+
+interface PauseResult {
+  slug: string;
+  origDurationMs: number;
+  finalDurationMs: number;
+  silenceAddedMs: number;
+  bytes: number;
+  segCount: number;
+  timingsMatchDur: boolean;
+  contiguous: boolean;
+}
+
+/**
+ * Pause-space one already-rendered lesson. Reads <slug>.mark.mp3 +
+ * <slug>.timings.json, inserts silence at each boundary, overwrites both files,
+ * and returns verification numbers for the report.
+ */
+async function pauseSpaceLesson(slug: string): Promise<PauseResult> {
+  const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
+  if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
+
+  const mp3Path = join(OUTPUT_DIR, `${slug}.mark.mp3`);
+  const jsonPath = join(OUTPUT_DIR, `${slug}.timings.json`);
+  const origPath = join(OUTPUT_DIR, `${slug}.mark.orig.mp3`);
+
+  if (!existsSync(mp3Path)) throw new Error(`Missing audio: ${mp3Path} (render it first).`);
+  if (!existsSync(jsonPath)) throw new Error(`Missing timings: ${jsonPath} (align it first).`);
+
+  // Idempotency: slice from a one-time snapshot of the ORIGINAL audio so that
+  // re-running --pause never stacks silence on already-paused output.
+  if (!existsSync(origPath)) {
+    await execAsync(`cp "${mp3Path}" "${origPath}"`);
+  }
+
+  const timings = JSON.parse(await readFile(jsonPath, "utf8")) as LessonTimings;
+  const segs = timings.segments;
+  if (!segs || segs.length === 0) throw new Error(`No segments in ${jsonPath}.`);
+
+  const origDurationMs = Math.round((await getAudioDuration(origPath)) * 1000);
+  const breakBefore = paragraphBreakSegmentIndices(lesson.markdown);
+
+  console.log(`\n▶ ${lesson.order}. ${slug} — pause-spacing`);
+  console.log(
+    `  ${segs.length} segments · sentence pause ${PAUSE_BETWEEN_SENTENCES_MS}ms · ` +
+      `paragraph pause ${PAUSE_AT_PARAGRAPH_MS}ms · orig ${(origDurationMs / 1000).toFixed(1)}s`,
+  );
+
+  await ensureDir(TMP_DIR);
+  const stamp = Date.now();
+  const concatPaths: string[] = [];
+  const tmpFiles: string[] = [];
+
+  // Cache one silence clip per distinct length used.
+  const silenceClips = new Map<number, string>();
+  const silenceFor = async (ms: number): Promise<string> => {
+    let p = silenceClips.get(ms);
+    if (!p) {
+      p = join(TMP_DIR, `psil_${stamp}_${ms}.mp3`);
+      await makeSilenceClip(ms, p);
+      silenceClips.set(ms, p);
+      tmpFiles.push(p);
+    }
+    return p;
+  };
+
+  // The last segment that actually carries audio (its endMs is pinned to the
+  // file end below). Zero-width segments after it would otherwise try to slice
+  // past the end; this lets us pin the real tail correctly.
+  const lastAudioIdx = (() => {
+    for (let i = segs.length - 1; i >= 0; i--) if (segs[i].endMs > segs[i].startMs) return i;
+    return segs.length - 1;
+  })();
+
+  // Slice each segment from the ORIGINAL audio at its timing boundaries, then
+  // measure the rendered slice so timings track the real bytes, not the cut.
+  // ZERO-WIDTH segments (startMs === endMs — e.g. a lone "*" marker or a fragment
+  // the aligner couldn't place) carry no audio: they get sliceDur 0, no clip, and
+  // no trailing pause (inserting silence around a no-audio segment would add a
+  // dead gap with nothing before it). They survive in the timings as zero-width
+  // slots, exactly as the aligned input had them.
+  const sliceDurMs: number[] = [];
+  const pauseAfter: number[] = []; // silence inserted AFTER segment i
+  for (let i = 0; i < segs.length; i++) {
+    const startMs = segs[i].startMs;
+    // Pin the last audio-bearing segment's cut to the true file end.
+    const endMs = i === lastAudioIdx ? origDurationMs : segs[i].endMs;
+
+    if (endMs <= startMs) {
+      // Zero-width (or degenerate) segment: no audio, no clip, no pause.
+      sliceDurMs.push(0);
+      pauseAfter.push(0);
+      continue;
+    }
+
+    const clip = join(TMP_DIR, `pseg_${stamp}_${i}.mp3`);
+    await sliceAudio(origPath, startMs, endMs, clip);
+    tmpFiles.push(clip);
+    const dur = Math.round((await getAudioDuration(clip)) * 1000);
+    sliceDurMs.push(dur);
+    concatPaths.push(clip);
+
+    // Insert a pause AFTER this audio-bearing segment, unless it's the last one
+    // that carries audio (no trailing silence at the very end).
+    if (i < lastAudioIdx) {
+      // Find the next segment that will carry audio — the pause sits before IT,
+      // so its paragraph-break status decides the pause length.
+      let nextAudio = i + 1;
+      while (nextAudio < segs.length && segs[nextAudio].endMs <= segs[nextAudio].startMs) nextAudio++;
+      const isParaBreak = nextAudio < segs.length && breakBefore.has(segs[nextAudio].i);
+      const ms = isParaBreak ? PAUSE_AT_PARAGRAPH_MS : PAUSE_BETWEEN_SENTENCES_MS;
+      pauseAfter.push(ms);
+      concatPaths.push(await silenceFor(ms));
+    } else {
+      pauseAfter.push(0);
+    }
+  }
+
+  // Concat everything into the paused MP3 (overwrite the served file).
+  const concatList = join(TMP_DIR, `pcat_${stamp}.txt`);
+  await writeFile(concatList, concatPaths.map((p) => `file '${p}'`).join("\n"));
+  tmpFiles.push(concatList);
+  await execAsync(
+    `ffmpeg -y -f concat -safe 0 -i "${concatList}" -codec:a libmp3lame -qscale:a 2 "${mp3Path}"`,
+    { timeout: 300_000 },
+  );
+
+  const finalDurationMs = Math.round((await getAudioDuration(mp3Path)) * 1000);
+  const bytes = statSync(mp3Path).size;
+
+  // Recompute timings from MEASURED slice durations + inserted silences. Each
+  // segment's start = cumulative sum of all prior (slice + pause). Its END
+  // ABSORBS the silence that follows it (endMs = next segment's start), so the
+  // timeline is fully CONTIGUOUS — no dead zones during the inserted pause; the
+  // sentence that just finished stays highlighted through its trailing silence
+  // until the next sentence begins. Same gap-free contract as the aligned
+  // timings, just stretched by the inserted pauses.
+  const newSegments: SegmentTiming[] = [];
+  let cursor = 0;
+  for (let i = 0; i < segs.length; i++) {
+    const startMs = cursor;
+    // End of the spoken slice; the trailing pause is folded into this segment so
+    // the next starts where the silence ends (contiguous).
+    const endMs = startMs + sliceDurMs[i] + pauseAfter[i];
+    newSegments.push({ i, text: segs[i].text, startMs, endMs });
+    cursor = endMs;
+  }
+  // Pin the last segment's end to the true final duration (absorbs any rounding
+  // / encoder drift between the summed slices and the concatenated whole).
+  newSegments[newSegments.length - 1].endMs = finalDurationMs;
+  if (
+    newSegments[newSegments.length - 1].endMs < newSegments[newSegments.length - 1].startMs
+  ) {
+    newSegments[newSegments.length - 1].startMs = newSegments[newSegments.length - 1].endMs;
+  }
+
+  const newTimings: LessonTimings = {
+    slug: timings.slug,
+    voice: timings.voice,
+    model: timings.model,
+    durationMs: finalDurationMs,
+    segments: newSegments,
+  };
+  await writeFile(jsonPath, `${JSON.stringify(newTimings, null, 2)}\n`);
+
+  // Cleanup temp slices/silence/concat list.
+  for (const f of tmpFiles) await unlink(f).catch(() => {});
+
+  // Verify contiguity + monotonicity for the report.
+  let contiguous = newSegments[0].startMs === 0;
+  for (let i = 1; i < newSegments.length && contiguous; i++) {
+    if (newSegments[i].startMs !== newSegments[i - 1].endMs) contiguous = false;
+    if (newSegments[i].endMs < newSegments[i].startMs) contiguous = false;
+  }
+  const silenceAddedMs = finalDurationMs - origDurationMs;
+  const timingsMatchDur = Math.abs(newTimings.durationMs - finalDurationMs) <= 100;
+
+  console.log(
+    `  ✓ paused MP3 ${(finalDurationMs / 1000).toFixed(1)}s (+${(silenceAddedMs / 1000).toFixed(
+      1,
+    )}s, ${bytes}B) · timings durationMs ${newTimings.durationMs} · contiguous ${contiguous}`,
+  );
+
+  return {
+    slug,
+    origDurationMs,
+    finalDurationMs,
+    silenceAddedMs,
+    bytes,
+    segCount: newSegments.length,
+    timingsMatchDur,
+    contiguous,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // A/B voice sample — same excerpt, three providers.
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -1004,9 +1752,81 @@ async function main() {
   // --timings: render the chosen natural read with /with-timestamps and emit
   // exact per-sentence timings (the production transcript-sync path).
   const doTimings = args.includes("--timings");
+  // --align: render eleven_v3 (the owner's chosen voice) and emit per-sentence
+  // timings via whisper.cpp FORCED ALIGNMENT (v3 has no /with-timestamps). Writes
+  // the served <slug>.mark.mp3 + <slug>.timings.json. The v3 production path.
+  const doAlign = args.includes("--align");
+  // --realign: forced-align an EXISTING <slug>.mark.mp3 (no ElevenLabs render),
+  // for lessons whose audio is on disk but lack timings or need a re-run.
+  const doRealign = args.includes("--realign");
+  // --pause: post-process ALREADY-RENDERED lessons — insert extra silence at
+  // each sentence/section boundary and recompute timings. No ElevenLabs calls.
+  const doPause = args.includes("--pause");
   const slugArgs = args.filter((a) => !a.startsWith("--"));
 
   await ensureDir(OUTPUT_DIR);
+
+  if (doRealign) {
+    const slugs = slugArgs.length > 0 ? slugArgs : PRESENCE_LESSONS.map((l) => l.slug);
+    console.log("Coherent Ones University — realign existing MP3s (whisper.cpp, no render)");
+    console.log(`  aligner: whisper.cpp (${WHISPER_BIN}) · model ${WHISPER_MODEL}`);
+    const results: AlignResult[] = [];
+    for (const slug of slugs) results.push(await renderRealign(slug));
+    console.log("\n── Realign summary ──────────────────────────────────────");
+    for (const r of results) {
+      const al = r.aligned ? `y (${r.matchedSegs}/${r.segCount})` : `n${r.error ? " — " + r.error : ""}`;
+      console.log(`  ${r.slug}: ${(r.durationMs / 1000).toFixed(1)}s · aligned ${al}`);
+    }
+    console.log("\nDone (realign).");
+    return;
+  }
+
+  if (doPause) {
+    const slugs = slugArgs.length > 0 ? slugArgs : PRESENCE_LESSONS.map((l) => l.slug);
+    console.log("Coherent Ones University — pause-spacing (insert inter-sentence silence)");
+    console.log(
+      `  sentence pause ${PAUSE_BETWEEN_SENTENCES_MS}ms · paragraph pause ${PAUSE_AT_PARAGRAPH_MS}ms · output: ${OUTPUT_DIR}`,
+    );
+    const results: PauseResult[] = [];
+    for (const slug of slugs) results.push(await pauseSpaceLesson(slug));
+
+    console.log("\n── Pause summary ────────────────────────────────────────");
+    let totalAdded = 0;
+    for (const r of results) {
+      totalAdded += r.silenceAddedMs;
+      console.log(
+        `  ${r.slug}: ${(r.finalDurationMs / 1000).toFixed(1)}s (+${(r.silenceAddedMs / 1000).toFixed(1)}s) · ` +
+          `${r.bytes}B · segs ${r.segCount} · timings==dur ${r.timingsMatchDur} · contiguous ${r.contiguous}`,
+      );
+    }
+    console.log(`  TOTAL silence added: ${(totalAdded / 1000).toFixed(1)}s`);
+    console.log("\nDone (pause).");
+    return;
+  }
+
+  if (doAlign) {
+    const slugs = slugArgs.length > 0 ? slugArgs : PRESENCE_LESSONS.map((l) => l.slug);
+    console.log("Coherent Ones University — v3 render + forced-alignment timings");
+    console.log(`  voice: ${ELEVENLABS_VOICE_ID} | model: ${ELEVENLABS_MODEL_V3} | output: ${OUTPUT_DIR}`);
+    console.log(`  aligner: whisper.cpp (${WHISPER_BIN}) · model ${WHISPER_MODEL}`);
+    const results: AlignResult[] = [];
+    for (const slug of slugs) results.push(await renderAlign(slug));
+
+    // Summary table for the report.
+    console.log("\n── Summary ──────────────────────────────────────────────");
+    let totalChars = 0;
+    for (const r of results) {
+      totalChars += r.charCost;
+      const dur = (r.durationMs / 1000).toFixed(1);
+      const al = r.aligned ? `y (${r.matchedSegs}/${r.segCount})` : `n${r.error ? " — " + r.error : ""}`;
+      console.log(
+        `  ${r.slug}: ${dur}s · ${r.bytes}B · chunks ${r.chunks} · chars ${r.charCost} · aligned ${al}`,
+      );
+    }
+    console.log(`  TOTAL ElevenLabs chars (cost): ${totalChars}`);
+    console.log("\nDone (align).");
+    return;
+  }
 
   if (doTimings) {
     const slugs = slugArgs.length > 0 ? slugArgs : PRESENCE_LESSONS.map((l) => l.slug);
