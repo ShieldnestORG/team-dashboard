@@ -60,12 +60,18 @@ const GROK_TTS_VOICE = process.env.GROK_TTS_VOICE || "rex";
 const GROK_TTS_URL = "https://api.x.ai/v1/tts";
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
-// Brian — "Deep, Resonant and Comforting", premade male voice. Chosen because
-// it is the warmest meditative-leaning *premade* voice (premade voices work on
-// the free tier; "professional"/library voices like Milo return HTTP 402
-// paid_plan_required on this account). Override with ELEVENLABS_VOICE_ID.
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "nPczCjzI2devNBz1zQrb";
-const ELEVENLABS_MODEL = "eleven_multilingual_v2";
+// Default voice: "Mark_new_2026" — the OWNER's cloned voice (professional,
+// fine_tuned on eleven_multilingual_v2). This is the production voice for the
+// University lessons. The account that owns this voice is the one whose key
+// lives in 6-2026-new-youtube-automation/.env — use THAT key, not the
+// team-dashboard key (different account). Override with ELEVENLABS_VOICE_ID.
+// (Previous A/B default was the "Brian" premade voice nPczCjzI2devNBz1zQrb.)
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "n45mfBjBoGc0McY8O2Aw";
+const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2";
+// Settings mirror the owner's own youtube tts.py "v2" profile.
+const ELEVENLABS_STABILITY = Number(process.env.ELEVENLABS_STABILITY ?? 0.45);
+const ELEVENLABS_SIMILARITY = Number(process.env.ELEVENLABS_SIMILARITY ?? 0.8);
+const ELEVENLABS_STYLE = Number(process.env.ELEVENLABS_STYLE ?? 0.0);
 
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || "";
 const GOOGLE_TTS_VOICE = process.env.GOOGLE_TTS_VOICE || "en-US-Neural2-D"; // calm male neural
@@ -235,7 +241,48 @@ async function generateGrokChunk(text: string, outputPath: string): Promise<void
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Chunked TTS — port of generateChunkedTTS with a tunable silence gap.
+// ElevenLabs TTS — single chunk. Same request shape as abElevenLabs, used as
+// the production voice path (owner's cloned "Mark_new_2026" voice by default).
+// ───────────────────────────────────────────────────────────────────────────
+
+async function generateElevenLabsChunk(text: string, outputPath: string): Promise<void> {
+  if (!ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not set.");
+
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: ELEVENLABS_MODEL,
+        voice_settings: {
+          stability: ELEVENLABS_STABILITY,
+          similarity_boost: ELEVENLABS_SIMILARITY,
+          style: ELEVENLABS_STYLE,
+          use_speaker_boost: true,
+        },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    },
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`ElevenLabs TTS failed (${res.status}): ${errBody.slice(0, 500)}`);
+  }
+
+  // ElevenLabs returns 44.1kHz/128k; re-encode to the pipeline's 24kHz mono so
+  // the silence gaps and concat below stay format-consistent with the Grok path.
+  const raw = `${outputPath}.raw.mp3`;
+  await writeFile(raw, Buffer.from(await res.arrayBuffer()));
+  await normalizeMp3(raw, outputPath);
+  await unlink(raw).catch(() => {});
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Chunked TTS — port of generateChunkedTTS with a tunable silence gap and a
+// pluggable per-chunk generator (Grok or ElevenLabs).
 // ───────────────────────────────────────────────────────────────────────────
 
 interface ChunkedResult {
@@ -245,10 +292,13 @@ interface ChunkedResult {
   silenceGapSec: number;
 }
 
-async function generateChunkedGrokTTS(
+type ChunkGenerator = (text: string, outputPath: string) => Promise<void>;
+
+async function generateChunkedTTS(
   chunks: string[],
   outputPath: string,
   silenceGapSec: number,
+  generateChunk: ChunkGenerator,
 ): Promise<ChunkedResult> {
   await ensureDir(TMP_DIR);
 
@@ -267,7 +317,7 @@ async function generateChunkedGrokTTS(
 
     const chunkFile = join(TMP_DIR, `chunk_${stamp}_${i}.mp3`);
     process.stdout.write(`    section ${i + 1}/${chunks.length} (${text.length} chars)… `);
-    await generateGrokChunk(text, chunkFile);
+    await generateChunk(text, chunkFile);
     const dur = await getAudioDuration(chunkFile);
     await applyEdgeFades(chunkFile, dur);
     process.stdout.write(`${dur.toFixed(1)}s\n`);
@@ -313,17 +363,39 @@ function lessonToSections(markdown: string): string[] {
     .filter((p) => p.length > 0);
 }
 
+/**
+ * Lesson TTS engine. Default is "elevenlabs" — the owner's cloned
+ * "Mark_new_2026" voice, the production voice for the University. Set
+ * LESSON_TTS_ENGINE=grok to fall back to the xAI Grok `rex` path.
+ * The output filename suffix keeps engines from overwriting each other:
+ * ElevenLabs lessons write <slug>.mark.mp3; Grok lessons write <slug>.mp3.
+ */
+const LESSON_TTS_ENGINE = (process.env.LESSON_TTS_ENGINE || "elevenlabs").toLowerCase();
+
 async function renderLesson(slug: string): Promise<void> {
   const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
   if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
 
   const sections = lessonToSections(lesson.markdown);
-  const outputPath = join(OUTPUT_DIR, `${slug}.mp3`);
+
+  const useEleven = LESSON_TTS_ENGINE === "elevenlabs";
+  const generateChunk: ChunkGenerator = useEleven ? generateElevenLabsChunk : generateGrokChunk;
+  const engineLabel = useEleven
+    ? `ElevenLabs ${ELEVENLABS_VOICE_ID} (${ELEVENLABS_MODEL})`
+    : `Grok ${GROK_TTS_VOICE}`;
+  // ElevenLabs (production clone) → <slug>.mark.mp3; Grok → <slug>.mp3.
+  const outputPath = join(OUTPUT_DIR, useEleven ? `${slug}.mark.mp3` : `${slug}.mp3`);
 
   console.log(`\n▶ ${lesson.order}. ${slug} — "${lesson.title}"`);
+  console.log(`  engine: ${engineLabel}`);
   console.log(`  ${sections.length} sections, ${INTER_SECTION_SILENCE_SEC}s walking-pace gaps`);
 
-  const result = await generateChunkedGrokTTS(sections, outputPath, INTER_SECTION_SILENCE_SEC);
+  const result = await generateChunkedTTS(
+    sections,
+    outputPath,
+    INTER_SECTION_SILENCE_SEC,
+    generateChunk,
+  );
   console.log(`  ✓ ${outputPath}  (${result.durationSec.toFixed(1)}s)`);
 }
 
@@ -366,7 +438,12 @@ async function abElevenLabs(text: string, outPath: string): Promise<void> {
       body: JSON.stringify({
         text,
         model_id: ELEVENLABS_MODEL,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true },
+        voice_settings: {
+          stability: ELEVENLABS_STABILITY,
+          similarity_boost: ELEVENLABS_SIMILARITY,
+          style: ELEVENLABS_STYLE,
+          use_speaker_boost: true,
+        },
       }),
       signal: AbortSignal.timeout(120_000),
     },
@@ -453,8 +530,12 @@ async function main() {
 
   await ensureDir(OUTPUT_DIR);
 
+  const lessonVoice =
+    LESSON_TTS_ENGINE === "elevenlabs"
+      ? `ElevenLabs ${ELEVENLABS_VOICE_ID} (${ELEVENLABS_MODEL})`
+      : `Grok ${GROK_TTS_VOICE}`;
   console.log("Coherent Ones University — walk/breathe/learn audio render");
-  console.log(`  voice: Grok ${GROK_TTS_VOICE} | format: MP3 ${SAMPLE_RATE / 1000}kHz ${BIT_RATE / 1000}kbps`);
+  console.log(`  lesson voice: ${lessonVoice} | format: MP3 ${SAMPLE_RATE / 1000}kHz ${BIT_RATE / 1000}kbps`);
   console.log(`  silence gap: ${INTER_SECTION_SILENCE_SEC}s | output: ${OUTPUT_DIR}`);
 
   if (!abOnly) {
