@@ -3,6 +3,9 @@ import {
   uuid,
   text,
   timestamp,
+  integer,
+  boolean,
+  date,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -102,9 +105,65 @@ export const universitySubscriptions = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University rep-log / progress — the "Practice" half of the learning loop.
+//
+// A "rep" is one completed practice on a lesson for a given day. Reps are
+// idempotent PER (member, lesson, day): re-submitting the same lesson on the
+// same day updates the existing row in place rather than logging a duplicate,
+// so streak math (counting distinct rep-days) stays honest no matter how many
+// times the client POSTs. The day bucket is an explicit `rep_day` DATE column
+// (UTC) rather than deriving from created_at — making the day boundary
+// deterministic and the unique constraint trivial to express.
+//
+// The member is identified the same way the rest of University is — by the
+// shared customer_accounts login (account_id once the linker has fired) joined
+// on the lowercased `email` as the durable fallback. Both are stored on the
+// rep so the streak query works before AND after the account link resolves.
+// ---------------------------------------------------------------------------
+
+export const universityProgress = pgTable(
+  "university_progress",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    lessonSlug: text("lesson_slug").notNull(),
+    // A rep always implies the drill was done; column is explicit for future
+    // partial-completion states. Defaults true.
+    drillDone: boolean("drill_done").notNull().default(true),
+    reflection: text("reflection"),
+    quizScore: integer("quiz_score"),
+    // The day bucket (UTC) this rep counts for. Idempotency + streak math key.
+    repDay: date("rep_day").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One rep per member+lesson+day. Re-submitting the same lesson on the same
+    // day upserts this row. We key on email (the durable identity) so the
+    // constraint holds before the account link resolves; account_id is carried
+    // for query convenience but is NOT part of the uniqueness key.
+    repUq: uniqueIndex("university_progress_rep_uq").on(
+      table.email,
+      table.lessonSlug,
+      table.repDay,
+    ),
+    emailIdx: index("university_progress_email_idx").on(table.email),
+    accountIdx: index("university_progress_account_idx").on(table.accountId),
+    lessonIdx: index("university_progress_lesson_idx").on(table.lessonSlug),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
   typeof universitySubscriptions.$inferSelect;
 export type NewUniversitySubscription =
   typeof universitySubscriptions.$inferInsert;
+export type UniversityProgress = typeof universityProgress.$inferSelect;
+export type NewUniversityProgress = typeof universityProgress.$inferInsert;

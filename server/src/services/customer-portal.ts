@@ -11,6 +11,8 @@ import {
   customerMagicLinks,
   watchtowerSubscriptions,
   universityMembers,
+  universitySubscriptions,
+  universityProgress,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
 import type { CustomerCredentialKind } from "@paperclipai/db";
@@ -678,6 +680,46 @@ export function customerPortalService(db: Db) {
     return rows.length > 0;
   }
 
+  /**
+   * The Starwise (University-account) Stripe customer id for an account.
+   *
+   * University bills on a SEPARATE Stripe account, so its customer id is NOT
+   * interchangeable with the shared `customer_accounts.stripe_customer_id`
+   * column (which the customer-account-linker overwrites last-writer-wins for
+   * CreditScore/Watchtower). The Starwise customer id is written ONLY by the
+   * University checkout flow (which authenticates with universityStripeKey()),
+   * so reading it from `university_subscriptions` guarantees the id and the key
+   * always come from the same Stripe account — the fix for the dual-customer
+   * edge in /stripe-portal.
+   *
+   * Matches on account_id OR email (same durable join keys as
+   * isUniversityAccount / getAccountWithEntitlements), ignores status (a
+   * past_due/cancelled member still has a Starwise customer they may manage),
+   * and returns the most recently created subscription's customer id.
+   */
+  async function getUniversityStripeCustomerId(
+    accountId: string,
+  ): Promise<string | null> {
+    const account = await getAccount(accountId);
+    if (!account) return null;
+    const email = normalizeEmail(account.email);
+    const rows = await db
+      .select({ stripeCustomerId: universitySubscriptions.stripeCustomerId })
+      .from(universitySubscriptions)
+      .where(
+        and(
+          or(
+            sql`LOWER(${universitySubscriptions.email}) = ${email}`,
+            eq(universitySubscriptions.accountId, account.id),
+          ),
+          sql`${universitySubscriptions.stripeCustomerId} IS NOT NULL`,
+        ),
+      )
+      .orderBy(desc(universitySubscriptions.createdAt))
+      .limit(1);
+    return rows[0]?.stripeCustomerId ?? null;
+  }
+
   async function setStripeCustomerId(
     accountId: string,
     stripeCustomerId: string,
@@ -686,6 +728,187 @@ export function customerPortalService(db: Db) {
       .update(customerAccounts)
       .set({ stripeCustomerId })
       .where(eq(customerAccounts.id, accountId));
+  }
+
+  // -------------------------------------------------------------------------
+  // University rep-log / progress — the "Practice" half of the learning loop.
+  // -------------------------------------------------------------------------
+
+  // Default weekly goal (number of rep-days in the current 7-day window). The
+  // portal renders weekCount / weekGoal as a ring. Overridable via env.
+  function weekGoal(): number {
+    const raw = process.env.UNIVERSITY_WEEK_GOAL;
+    const n = raw ? Number(raw) : 5;
+    if (!Number.isFinite(n) || n < 1 || n > 7) return 5;
+    return Math.floor(n);
+  }
+
+  // Format a Date as a UTC YYYY-MM-DD day bucket. Postgres `date` columns come
+  // back as 'YYYY-MM-DD' strings already; this matches that for the rep_day we
+  // write and for the streak comparison below.
+  function utcDayString(d: Date): string {
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Add `n` UTC days to a YYYY-MM-DD string, returning a YYYY-MM-DD string.
+  function addUtcDays(day: string, n: number): string {
+    const ms = Date.parse(`${day}T00:00:00.000Z`);
+    return utcDayString(new Date(ms + n * 24 * 60 * 60 * 1000));
+  }
+
+  /**
+   * Deterministic streak from a set of distinct rep-day strings (YYYY-MM-DD,
+   * UTC). The current streak is the run of consecutive days ending at `today`
+   * or `yesterday` — a streak is NOT broken until a full day is missed, so a
+   * member who repped yesterday but not yet today still holds their streak.
+   * Returns 0 if the most recent rep is older than yesterday. Pure function of
+   * its inputs (Rule 5 — code-graded, not model-graded).
+   */
+  function computeStreak(repDays: Iterable<string>, today: string): number {
+    const set = new Set(repDays);
+    if (set.size === 0) return 0;
+    const yesterday = addUtcDays(today, -1);
+    // Anchor: today if repped today, else yesterday if repped then, else broken.
+    let anchor: string;
+    if (set.has(today)) anchor = today;
+    else if (set.has(yesterday)) anchor = yesterday;
+    else return 0;
+    let streak = 0;
+    let cursor = anchor;
+    while (set.has(cursor)) {
+      streak += 1;
+      cursor = addUtcDays(cursor, -1);
+    }
+    return streak;
+  }
+
+  // Resolve the durable identity (lowercased email + optional accountId) used
+  // to scope a member's reps. Mirrors the email-OR-account_id join keys the
+  // rest of University uses.
+  async function resolveProgressIdentity(
+    accountId: string,
+  ): Promise<{ email: string; accountId: string } | null> {
+    const account = await getAccount(accountId);
+    if (!account) return null;
+    return { email: normalizeEmail(account.email), accountId: account.id };
+  }
+
+  /**
+   * Idempotent upsert of TODAY's rep for this member+lesson. Re-submitting the
+   * same lesson the same day updates the existing row (ON CONFLICT on the
+   * (email, lesson_slug, rep_day) unique index) rather than logging a duplicate.
+   * Returns the recomputed streak + this-week count.
+   */
+  async function recordRep(
+    accountId: string,
+    lessonSlugRaw: string,
+    opts: { reflection?: string | null; quizScore?: number | null } = {},
+    now: Date = new Date(),
+  ): Promise<{ currentStreak: number; weekCount: number; weekGoal: number }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    const lessonSlug = lessonSlugRaw.trim();
+    if (!lessonSlug) throw new Error("lessonSlug required");
+
+    const repDay = utcDayString(now);
+    const reflection =
+      typeof opts.reflection === "string" && opts.reflection.length
+        ? opts.reflection
+        : null;
+    const quizScore =
+      typeof opts.quizScore === "number" && Number.isFinite(opts.quizScore)
+        ? Math.trunc(opts.quizScore)
+        : null;
+
+    await db
+      .insert(universityProgress)
+      .values({
+        accountId: identity.accountId,
+        email: identity.email,
+        lessonSlug,
+        drillDone: true,
+        reflection,
+        quizScore,
+        repDay,
+      })
+      .onConflictDoUpdate({
+        target: [
+          universityProgress.email,
+          universityProgress.lessonSlug,
+          universityProgress.repDay,
+        ],
+        set: {
+          // Backfill the account link if it resolved after the first rep, and
+          // let a same-day re-submit refresh the reflection / quiz score.
+          accountId: identity.accountId,
+          reflection,
+          quizScore,
+          drillDone: true,
+        },
+      });
+
+    return getProgressSummary(accountId, now);
+  }
+
+  /**
+   * The member's progress summary: current streak, this-week rep count, the
+   * weekly goal, and a recent rep list. Streak is computed in code from the
+   * distinct rep-days (Rule 5).
+   */
+  async function getProgressSummary(
+    accountId: string,
+    now: Date = new Date(),
+  ): Promise<{
+    currentStreak: number;
+    weekCount: number;
+    weekGoal: number;
+    recent: Array<{
+      lessonSlug: string;
+      createdAt: Date;
+      reflection: string | null;
+    }>;
+  }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) {
+      return { currentStreak: 0, weekCount: 0, weekGoal: weekGoal(), recent: [] };
+    }
+
+    const rows = await db
+      .select({
+        lessonSlug: universityProgress.lessonSlug,
+        reflection: universityProgress.reflection,
+        repDay: universityProgress.repDay,
+        createdAt: universityProgress.createdAt,
+      })
+      .from(universityProgress)
+      .where(
+        or(
+          sql`LOWER(${universityProgress.email}) = ${identity.email}`,
+          eq(universityProgress.accountId, identity.accountId),
+        ),
+      )
+      .orderBy(desc(universityProgress.createdAt));
+
+    const today = utcDayString(now);
+    // rep_day comes back from the `date` column as a 'YYYY-MM-DD' string.
+    const repDays = rows.map((r) => String(r.repDay));
+    const currentStreak = computeStreak(repDays, today);
+
+    // This-week count: distinct rep-days within the trailing 7-day window
+    // (today and the 6 prior UTC days, inclusive).
+    const windowStart = addUtcDays(today, -6);
+    const weekDays = new Set(
+      repDays.filter((d) => d >= windowStart && d <= today),
+    );
+    const weekCount = weekDays.size;
+
+    const recent = rows.slice(0, 10).map((r) => ({
+      lessonSlug: r.lessonSlug,
+      createdAt: r.createdAt,
+      reflection: r.reflection,
+    }));
+
+    return { currentStreak, weekCount, weekGoal: weekGoal(), recent };
   }
 
   return {
@@ -702,7 +925,11 @@ export function customerPortalService(db: Db) {
     revokeCredentialById,
     revokeCredentialByKind,
     isUniversityAccount,
+    getUniversityStripeCustomerId,
     setStripeCustomerId,
+    recordRep,
+    getProgressSummary,
+    computeStreak,
     logAction,
   };
 }

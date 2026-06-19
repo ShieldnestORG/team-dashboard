@@ -417,6 +417,115 @@ export function portalRoutes(db: Db): Router {
     }
   });
 
+  // -- University progress (rep-log) ------------------------------------------
+  //
+  // The "Practice" half of the learning loop. Gated to University members via
+  // isUniversityAccount() — a non-member with a valid portal session gets 403,
+  // never a silent empty result, so the storefront can branch on membership.
+  //
+  // GET  /university/progress → { currentStreak, weekCount, weekGoal, recent }
+  // POST /university/progress { lessonSlug, reflection?, quizScore? }
+  //   → idempotent upsert of TODAY's rep; returns { currentStreak, weekCount,
+  //     weekGoal }.
+
+  // Shared gate: resolve the session, then require University membership.
+  // Returns the accountId on success, or null after writing the response.
+  async function requireUniversityMember(
+    req: Request,
+    res: Response,
+  ): Promise<string | null> {
+    const accountId = requireSession(req, res);
+    if (!accountId) return null;
+    let isMember: boolean;
+    try {
+      isMember = await svc.isUniversityAccount(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university: membership check failed",
+      );
+      res.status(500).json({ error: "Failed to verify membership" });
+      return null;
+    }
+    if (!isMember) {
+      res.status(403).json({ error: "University membership required" });
+      return null;
+    }
+    return accountId;
+  }
+
+  router.get("/university/progress", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    try {
+      const summary = await svc.getProgressSummary(accountId);
+      res.json({
+        currentStreak: summary.currentStreak,
+        weekCount: summary.weekCount,
+        weekGoal: summary.weekGoal,
+        recent: summary.recent.map((r) => ({
+          lessonSlug: r.lessonSlug,
+          created_at: r.createdAt.toISOString(),
+          reflection: r.reflection ?? undefined,
+        })),
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/progress: summary failed",
+      );
+      res.status(500).json({ error: "Failed to load progress" });
+    }
+  });
+
+  router.post("/university/progress", async (req: Request, res: Response) => {
+    // Logging a rep mutates state — block under impersonation (read-only).
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as {
+      lessonSlug?: unknown;
+      reflection?: unknown;
+      quizScore?: unknown;
+    };
+    const lessonSlug =
+      typeof body.lessonSlug === "string" ? body.lessonSlug.trim() : "";
+    if (!lessonSlug || lessonSlug.length > 200) {
+      res.status(400).json({ error: "lessonSlug required" });
+      return;
+    }
+    const reflection =
+      typeof body.reflection === "string" ? body.reflection.slice(0, 10_000) : null;
+    let quizScore: number | null = null;
+    if (body.quizScore !== undefined && body.quizScore !== null) {
+      const n = Number(body.quizScore);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        res.status(400).json({ error: "quizScore must be 0–100" });
+        return;
+      }
+      quizScore = Math.trunc(n);
+    }
+
+    try {
+      const result = await svc.recordRep(accountId, lessonSlug, {
+        reflection,
+        quizScore,
+      });
+      res.status(200).json({
+        currentStreak: result.currentStreak,
+        weekCount: result.weekCount,
+        weekGoal: result.weekGoal,
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId, lessonSlug },
+        "portal/university/progress: recordRep failed",
+      );
+      res.status(500).json({ error: "Failed to record rep" });
+    }
+  });
+
   // -- List credentials -------------------------------------------------------
   router.get("/credentials", async (req: Request, res: Response) => {
     const accountId = requireSession(req, res);
@@ -488,7 +597,29 @@ export function portalRoutes(db: Db): Router {
         res.status(401).json({ error: "Account not found" });
         return;
       }
-      if (!account.stripeCustomerId) {
+      // University members bill on a SEPARATE Stripe account (Starwise), so the
+      // billing-portal session MUST be created with BOTH the University key AND
+      // a Starwise customer id. The key/id pair must come from the SAME account
+      // or Stripe rejects the request ("No such customer").
+      //
+      // Dual-customer fix: customer_accounts has a single stripe_customer_id
+      // column and the customer-account-linker does ON CONFLICT(email) DO
+      // UPDATE (last-writer-wins), so for a customer holding BOTH a University
+      // (Starwise) and a CD (CreditScore/Watchtower) subscription that column
+      // can hold EITHER account's id. We therefore never trust it for a
+      // University account: the Starwise customer id is read from
+      // university_subscriptions (written only by the University checkout, which
+      // authenticates with universityStripeKey()), guaranteeing key+id share an
+      // account. CD-only customers are unaffected — isUniversityAccount() is
+      // false for them, so they keep using customer_accounts.stripe_customer_id
+      // with the shared key, and that column is never read for an account that
+      // also has a Starwise customer. universityStripeKey() falls back to
+      // STRIPE_SECRET_KEY, so a single-account (local/dev) setup is a no-op.
+      const isUniversity = await svc.isUniversityAccount(accountId);
+      const stripeCustomerId = isUniversity
+        ? await svc.getUniversityStripeCustomerId(accountId)
+        : account.stripeCustomerId;
+      if (!stripeCustomerId) {
         res.status(400).json({
           error:
             "No Stripe customer linked to this account yet. Make a purchase first or contact support.",
@@ -498,31 +629,12 @@ export function portalRoutes(db: Db): Router {
       const returnUrl =
         process.env.PORTAL_STRIPE_RETURN_URL?.trim() ||
         `${portalBaseUrl()}/billing`;
-      // University members bill on a SEPARATE Stripe account (Starwise), so
-      // their stripe_customer_id is a Starwise customer and the billing-portal
-      // session MUST be created with the University key. CD-only customers
-      // (CreditScore/Watchtower) keep using the shared key. universityStripeKey()
-      // falls back to STRIPE_SECRET_KEY, so when only one account is configured
-      // (local/dev/single-account) this is a no-op for everyone.
-      //
-      // EDGE CASE (documented, not fully resolvable here): customer_accounts has
-      // a single stripe_customer_id column and the customer-account-linker does
-      // ON CONFLICT(email) DO UPDATE, so a customer who holds BOTH a University
-      // (Starwise) and a CD (CreditScore/Watchtower) subscription has whichever
-      // product's webhook fired last stored there. For such a dual-account
-      // customer the stored id may belong to the OTHER account than the key we
-      // pick. We optimize for the common University-only member (correct), and
-      // for the dual case the portal session would error rather than silently
-      // mis-bill. A proper fix needs a per-account customer-id column (separate
-      // refactor, out of scope for this change).
-      const secretKey = (await svc.isUniversityAccount(accountId))
-        ? universityStripeKey()
-        : undefined;
+      const secretKey = isUniversity ? universityStripeKey() : undefined;
       const session = await stripeRequest<{ url: string }>(
         "POST",
         "/billing_portal/sessions",
         {
-          customer: account.stripeCustomerId,
+          customer: stripeCustomerId,
           return_url: returnUrl,
         },
         secretKey,
