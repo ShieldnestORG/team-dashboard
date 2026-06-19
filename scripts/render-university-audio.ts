@@ -35,6 +35,10 @@
  *   With slug args:    renders only those lessons (e.g. the-leak).
  *   --ab          also render the 3-voice A/B sample (rex / ElevenLabs / Google).
  *   --ab-only     render ONLY the A/B sample, skip lessons.
+ *   --candidates  render naturalness A/B variants (v2 whole-lesson / v3 /
+ *                 v2-chunked) for the given slug(s) — defaults to the-leak —
+ *                 and skip the normal lesson render. Used to tune for the
+ *                 least-robotic sentence-ends before batching all 10.
  *
  * Output: <repo>/output/university-audio/<slug>.mp3   (gitignored; never committed)
  *         <repo>/output/university-audio/_ab-sample-{rex,elevenlabs,google}.mp3
@@ -47,7 +51,24 @@ import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PRESENCE_LESSONS } from "/Users/exe/Downloads/Claude/portal-presence/lib/curriculum/presence.ts";
+// portal-presence has no "type":"module", so Node treats its .ts as CommonJS.
+// This worktree is "type":"module"; a cross-package *named* ESM import fails
+// static analysis ("does not provide an export named PRESENCE_LESSONS"). Worse,
+// from inside this ESM package the CJS module collapses to a single `default`
+// export holding the named exports, while from outside it spreads onto the
+// namespace. Handle both: prefer `default`, fall back to the namespace.
+// (Behavior identical to the original named import; only the form changed.)
+import * as presenceCurriculum from "/Users/exe/Downloads/Claude/portal-presence/lib/curriculum/presence.ts";
+type PresenceLesson = { slug: string; title: string; order: number; markdown: string };
+const presenceMod = presenceCurriculum as unknown as {
+  default?: { PRESENCE_LESSONS: PresenceLesson[] };
+  PRESENCE_LESSONS?: PresenceLesson[];
+};
+const PRESENCE_LESSONS: PresenceLesson[] =
+  presenceMod.default?.PRESENCE_LESSONS ?? presenceMod.PRESENCE_LESSONS ?? [];
+if (PRESENCE_LESSONS.length === 0) {
+  throw new Error("Failed to load PRESENCE_LESSONS from portal-presence — import shape unexpected.");
+}
 
 const execAsync = promisify(exec);
 
@@ -72,6 +93,36 @@ const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2
 const ELEVENLABS_STABILITY = Number(process.env.ELEVENLABS_STABILITY ?? 0.45);
 const ELEVENLABS_SIMILARITY = Number(process.env.ELEVENLABS_SIMILARITY ?? 0.8);
 const ELEVENLABS_STYLE = Number(process.env.ELEVENLABS_STYLE ?? 0.0);
+
+// ── Naturalness candidates (--candidates mode) ──────────────────────────────
+// The production renderLesson() above renders ONE ElevenLabs request per
+// paragraph and concatenates with 1.4s gaps. Rendering each paragraph in
+// isolation loses cross-sentence prosody, and the abrupt section ends + long
+// gaps read as robotic. The candidate renderers below tackle that:
+//   v2  — the WHOLE lesson in a single request (no seams at all → fully
+//         connected prosody), eleven_multilingual_v2 at a LOWER stability for
+//         more expressive, less flat sentence-ends.
+//   v3  — eleven_v3 "Natural" profile (owner's tts.py v3 preset: stability
+//         0.5 / similarity 0.9 / style 0.0, NO speaker_boost — v3 rejects it),
+//         split into the fewest chunks under v3's ~3000-char request cap, with
+//         SHORT (0.5s) softly-faded seams.
+//   v2-chunked — middle ground: v2, paragraphs grouped into a few large chunks
+//         (still big enough for connected prosody) with short 0.5s seams. A/B
+//         reference if the single-request v2 ever hits a quality ceiling.
+//
+// ElevenLabs documented per-request text limits (as of 2026): multilingual_v2
+// ~10,000 chars, eleven_v3 ~3,000 chars. The-leak is ~4,900 sanitized chars:
+// fits v2 in one request; needs ~2 chunks for v3.
+const ELEVENLABS_MODEL_V3 = "eleven_v3";
+const CANDIDATE_V2_STABILITY = Number(process.env.CANDIDATE_V2_STABILITY ?? 0.35);
+const CANDIDATE_V3_STABILITY = Number(process.env.CANDIDATE_V3_STABILITY ?? 0.5);
+const CANDIDATE_V3_SIMILARITY = Number(process.env.CANDIDATE_V3_SIMILARITY ?? 0.9);
+// Short, gently-faded seam for the candidates that DO concatenate (v3, chunked).
+const CANDIDATE_SEAM_SILENCE_SEC = Number(process.env.CANDIDATE_SEAM_SILENCE_SEC ?? 0.5);
+// Group paragraphs until a chunk would exceed this many chars (keeps each
+// request large for prosody, but under the model's per-request cap).
+const V3_MAX_CHUNK_CHARS = 2600;
+const V2_CHUNKED_MAX_CHARS = 2400;
 
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || "";
 const GOOGLE_TTS_VOICE = process.env.GOOGLE_TTS_VOICE || "en-US-Neural2-D"; // calm male neural
@@ -281,6 +332,57 @@ async function generateElevenLabsChunk(text: string, outputPath: string): Promis
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// ElevenLabs TTS — parametrized single chunk (for naturalness candidates).
+// Same request shape as generateElevenLabsChunk but lets the caller pick the
+// model + voice settings instead of reading the module-level env globals, so a
+// single run can compare v2 vs v3 profiles. eleven_v3 rejects use_speaker_boost
+// (mirrors the owner's tts.py NO_SPEAKER_BOOST_MODELS), so it's omitted for v3.
+// ───────────────────────────────────────────────────────────────────────────
+
+interface ElevenSettings {
+  model: string;
+  stability: number;
+  similarity: number;
+  style: number;
+}
+
+function makeElevenGenerator(s: ElevenSettings): ChunkGenerator {
+  const isV3 = s.model === ELEVENLABS_MODEL_V3;
+  return async (text: string, outputPath: string): Promise<void> => {
+    if (!ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not set.");
+
+    const voiceSettings: Record<string, number | boolean> = {
+      stability: s.stability,
+      similarity_boost: s.similarity,
+      style: s.style,
+    };
+    // v3 rejects use_speaker_boost; v2 keeps it (matches production path).
+    if (!isV3) voiceSettings.use_speaker_boost = true;
+
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+      {
+        method: "POST",
+        headers: { "xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ text, model_id: s.model, voice_settings: voiceSettings }),
+        signal: AbortSignal.timeout(180_000),
+      },
+    );
+
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      throw new Error(`ElevenLabs TTS failed (${res.status}) [${s.model}]: ${errBody.slice(0, 500)}`);
+    }
+
+    // Re-encode 44.1kHz/128k → pipeline 24kHz mono so any concat stays consistent.
+    const raw = `${outputPath}.raw.mp3`;
+    await writeFile(raw, Buffer.from(await res.arrayBuffer()));
+    await normalizeMp3(raw, outputPath);
+    await unlink(raw).catch(() => {});
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Chunked TTS — port of generateChunkedTTS with a tunable silence gap and a
 // pluggable per-chunk generator (Grok or ElevenLabs).
 // ───────────────────────────────────────────────────────────────────────────
@@ -397,6 +499,125 @@ async function renderLesson(slug: string): Promise<void> {
     generateChunk,
   );
   console.log(`  ✓ ${outputPath}  (${result.durationSec.toFixed(1)}s)`);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Naturalness candidates — A/B different chunking + model/settings for ONE
+// lesson, so the owner can pick the least-robotic read before batching all 10.
+// Writes <slug>.mark-v2.mp3 / .mark-v3.mp3 / .mark-v2-chunked.mp3 alongside the
+// existing baseline <slug>.mark.mp3 (which is left untouched).
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sanitize the WHOLE lesson as one blob (paragraph breaks preserved as ". "
+ * sentence boundaries) so it can go out in a single request with fully
+ * connected prosody. sanitizeTextForTTS already collapses whitespace, so we
+ * sanitize per-paragraph then rejoin with a paragraph pause marker.
+ */
+function lessonToSingleBlob(markdown: string): string {
+  return markdown
+    .split(/\n\n+/)
+    .map((p) => sanitizeTextForTTS(p))
+    .filter((p) => p.length > 0)
+    .join("\n\n"); // ElevenLabs reads a blank line as a natural paragraph pause
+}
+
+/** Greedily pack sanitized paragraphs into chunks under maxChars (for prosody). */
+function groupParagraphs(markdown: string, maxChars: number): string[] {
+  const paras = markdown
+    .split(/\n\n+/)
+    .map((p) => sanitizeTextForTTS(p))
+    .filter((p) => p.length > 0);
+
+  const chunks: string[] = [];
+  let cur = "";
+  for (const p of paras) {
+    if (cur && cur.length + p.length + 2 > maxChars) {
+      chunks.push(cur);
+      cur = p;
+    } else {
+      cur = cur ? `${cur}\n\n${p}` : p;
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+async function reportCandidate(label: string, outputPath: string, charCost: number): Promise<void> {
+  const dur = await getAudioDuration(outputPath);
+  const { stdout: probe } = await execAsync(
+    `ffprobe -v error -show_entries format=format_name,duration,size,bit_rate -of default=noprint_wrappers=1 "${outputPath}"`,
+  );
+  console.log(`  ✓ ${label}`);
+  console.log(`    file: ${outputPath}`);
+  console.log(`    duration: ${dur.toFixed(1)}s | chars sent (cost): ${charCost}`);
+  console.log(`    ffprobe: ${probe.trim().replace(/\n/g, " | ")}`);
+}
+
+async function renderCandidates(slug: string): Promise<void> {
+  const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
+  if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
+
+  console.log(`\n▶ Naturalness candidates for ${slug} — "${lesson.title}"`);
+  console.log(`  voice: ${ELEVENLABS_VOICE_ID} | baseline left intact: ${slug}.mark.mp3`);
+
+  // ── Candidate 1: whole-lesson single request, v2, lower stability ─────────
+  // No concatenation seams at all → maximal cross-sentence prosody.
+  const blob = lessonToSingleBlob(lesson.markdown);
+  const v2Gen = makeElevenGenerator({
+    model: ELEVENLABS_MODEL,
+    stability: CANDIDATE_V2_STABILITY,
+    similarity: ELEVENLABS_SIMILARITY,
+    style: ELEVENLABS_STYLE,
+  });
+  const v2Out = join(OUTPUT_DIR, `${slug}.mark-v2.mp3`);
+  console.log(
+    `\n  [v2] whole-lesson single request · ${ELEVENLABS_MODEL} · stab ${CANDIDATE_V2_STABILITY} ` +
+      `· sim ${ELEVENLABS_SIMILARITY} · style ${ELEVENLABS_STYLE} · 1 chunk (${blob.length} chars) · no seams`,
+  );
+  try {
+    await v2Gen(blob, v2Out);
+    await reportCandidate("v2 (whole-lesson, expressive)", v2Out, blob.length);
+  } catch (err) {
+    console.log(`  ✗ v2 FAILED: ${(err as Error).message}`);
+  }
+
+  // ── Candidate 2: v3 "Natural", fewest chunks under the v3 cap, short seams ─
+  const v3Chunks = groupParagraphs(lesson.markdown, V3_MAX_CHUNK_CHARS);
+  const v3CharCost = v3Chunks.reduce((n, c) => n + c.length, 0);
+  const v3Gen = makeElevenGenerator({
+    model: ELEVENLABS_MODEL_V3,
+    stability: CANDIDATE_V3_STABILITY,
+    similarity: CANDIDATE_V3_SIMILARITY,
+    style: ELEVENLABS_STYLE,
+  });
+  const v3Out = join(OUTPUT_DIR, `${slug}.mark-v3.mp3`);
+  console.log(
+    `\n  [v3] ${ELEVENLABS_MODEL_V3} "Natural" · stab ${CANDIDATE_V3_STABILITY} · sim ${CANDIDATE_V3_SIMILARITY} ` +
+      `· style ${ELEVENLABS_STYLE} · ${v3Chunks.length} chunk(s) · ${CANDIDATE_SEAM_SILENCE_SEC}s seams`,
+  );
+  try {
+    await generateChunkedTTS(v3Chunks, v3Out, CANDIDATE_SEAM_SILENCE_SEC, v3Gen);
+    await reportCandidate("v3 (Natural, large chunks)", v3Out, v3CharCost);
+  } catch (err) {
+    console.log(`  ✗ v3 FAILED: ${(err as Error).message}`);
+  }
+
+  // ── Candidate 3: v2, paragraphs grouped into few large chunks, short seams ─
+  const chunked = groupParagraphs(lesson.markdown, V2_CHUNKED_MAX_CHARS);
+  const chunkedCharCost = chunked.reduce((n, c) => n + c.length, 0);
+  const v2ChunkedOut = join(OUTPUT_DIR, `${slug}.mark-v2-chunked.mp3`);
+  console.log(
+    `\n  [v2-chunked] ${ELEVENLABS_MODEL} · stab ${CANDIDATE_V2_STABILITY} · sim ${ELEVENLABS_SIMILARITY} ` +
+      `· style ${ELEVENLABS_STYLE} · ${chunked.length} chunk(s) · ${CANDIDATE_SEAM_SILENCE_SEC}s seams`,
+  );
+  try {
+    // Reuse the same lower-stability v2 generator as candidate 1.
+    await generateChunkedTTS(chunked, v2ChunkedOut, CANDIDATE_SEAM_SILENCE_SEC, v2Gen);
+    await reportCandidate("v2-chunked (large chunks)", v2ChunkedOut, chunkedCharCost);
+  } catch (err) {
+    console.log(`  ✗ v2-chunked FAILED: ${(err as Error).message}`);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -526,9 +747,20 @@ async function main() {
   const args = process.argv.slice(2);
   const doAB = args.includes("--ab") || args.includes("--ab-only");
   const abOnly = args.includes("--ab-only");
+  // --candidates: render naturalness A/B variants (v2 whole-lesson / v3 /
+  // v2-chunked) for the given slug(s) instead of the production lesson render.
+  const doCandidates = args.includes("--candidates");
   const slugArgs = args.filter((a) => !a.startsWith("--"));
 
   await ensureDir(OUTPUT_DIR);
+
+  if (doCandidates) {
+    const slugs = slugArgs.length > 0 ? slugArgs : ["the-leak"];
+    console.log("Coherent Ones University — naturalness candidate render (A/B)");
+    for (const slug of slugs) await renderCandidates(slug);
+    console.log("\nDone (candidates).");
+    return;
+  }
 
   const lessonVoice =
     LESSON_TTS_ENGINE === "elevenlabs"
