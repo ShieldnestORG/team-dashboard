@@ -83,7 +83,12 @@ export type CreditscoreEmailKind =
   // auto-promoted off the waitlist into a freed `going` seat (event-driven from
   // the member cancel-RSVP route). Transactional. Same data shape family as
   // `university_session_rsvp_confirm`; the storefront ships the real template.
-  | "university_session_waitlist_open";
+  | "university_session_waitlist_open"
+  // Final past_due warning — the last touch before Stripe auto-cancels a lapsed
+  // subscription (fired by the university:dunning-d7 cron alongside the touch=3
+  // past_due nudge). Transactional storefront-side (NOT suppressed): a lapsing
+  // paying member must receive it. payload data { manageBillingUrl }.
+  | "university_payment_failed_final";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;

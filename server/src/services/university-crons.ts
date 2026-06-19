@@ -10,6 +10,10 @@
 //                                 Capped to once per 7 days per member.
 //   - university:reengage       — active members gone quiet: last activity was
 //                                 EXACTLY 7 / 14 / 30 UTC-days ago
+//   - university:dunning-d3     — past_due subs ~3 days in (past_due touch=2)
+//   - university:dunning-d7     — past_due subs ~7 days in (past_due touch=3 +
+//                                 the final payment_failed warning before Stripe
+//                                 auto-cancels)
 //
 // Most jobs select on joined_at/status (and, for winback, the updated_at
 // timestamp the cancel handlers stamp) using a 1-DAY WINDOW so a daily cron hits
@@ -34,6 +38,7 @@ import {
   universitySessions,
   universitySessionRsvps,
   universityEmailLog,
+  universitySubscriptions,
 } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import {
@@ -44,6 +49,7 @@ import {
   UNIVERSITY_PRESENCE_URL,
   UNIVERSITY_REJOIN_URL,
   UNIVERSITY_SESSIONS_URL,
+  UNIVERSITY_MANAGE_BILLING_URL,
   firstNameFromDisplayName,
 } from "./university-email.js";
 import { JOIN_GRACE_AFTER_MINUTES } from "./university-sessions.js";
@@ -855,6 +861,115 @@ export async function runUniversityReengage(
 }
 
 // ---------------------------------------------------------------------------
+// Dunning — day-3 and day-7 past_due nudges.
+//
+// touch=1 fires event-driven in university-stripe-handler.ts on the past_due
+// transition (which stamps university_subscriptions.updated_at). These two
+// time-delayed crons complete the dunning ladder:
+//   - day 3 → touch=2 (second knock)
+//   - day 7 → touch=3 (final past_due nudge) PLUS the dedicated
+//             university_payment_failed_final warning, fired before Stripe's
+//             own auto-cancel (typically ~the end of the smart-retry window).
+//
+// We window on updated_at (mirroring winback), selecting subscriptions still in
+// status='past_due'. A member who fixes their card transitions OUT of past_due
+// (handler flips status + re-stamps updated_at), so they naturally fall out of
+// the window and are never nudged again. Caveat: updated_at is the LAST status
+// write, so if some other event re-stamps it mid-dunning the window resets — an
+// accepted approximation consistent with the existing winback cron, and erring
+// toward fewer (not duplicate) nudges.
+//
+// Idempotency across the daily run is the 1-DAY window: a member sits in the
+// [now-(N+1)d, now-Nd) bucket for exactly one daily fire.
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared past_due dunning runner. Selects past_due subscriptions whose
+ * updated_at lands in [now-(dayMark+1)d, now-dayMark d) and fires a
+ * university_past_due email at the given touch level. When `final` is set
+ * (day-7), ALSO fires the university_payment_failed_final warning. Each send is
+ * independently non-fatal. Returns the count of past_due nudges sent.
+ */
+async function runUniversityDunning(
+  db: Db,
+  opts: { dayMark: number; touch: number; final: boolean },
+): Promise<number> {
+  const { dayMark, touch, final } = opts;
+  const olderThan = `now() - interval '${dayMark + 1} days'`;
+  const newerThan = `now() - interval '${dayMark} days'`;
+
+  const due = await db
+    .select({
+      id: universitySubscriptions.id,
+      email: universitySubscriptions.email,
+    })
+    .from(universitySubscriptions)
+    .where(
+      and(
+        eq(universitySubscriptions.status, "past_due"),
+        gte(universitySubscriptions.updatedAt, sql.raw(olderThan)),
+        lt(universitySubscriptions.updatedAt, sql.raw(newerThan)),
+      ),
+    );
+
+  let sent = 0;
+  for (const s of due) {
+    if (!s.email) continue;
+    try {
+      await sendCreditscoreEmail({
+        kind: "university_past_due",
+        to: s.email,
+        data: {
+          manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
+          touch,
+        },
+      });
+      sent += 1;
+    } catch (err) {
+      logger.error(
+        { err, email: s.email, kind: "university_past_due", touch },
+        `university:dunning-d${dayMark} — past_due send failed (non-fatal)`,
+      );
+    }
+
+    if (final) {
+      // Last warning before Stripe auto-cancels. Transactional storefront-side
+      // (NOT suppressed) — a lapsing paying member must receive it.
+      try {
+        await sendCreditscoreEmail({
+          kind: "university_payment_failed_final",
+          to: s.email,
+          data: {
+            manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
+          },
+        });
+      } catch (err) {
+        logger.error(
+          { err, email: s.email, kind: "university_payment_failed_final" },
+          `university:dunning-d${dayMark} — final-warning send failed (non-fatal)`,
+        );
+      }
+    }
+  }
+
+  logger.info(
+    { considered: due.length, sent, dayMark, touch, final },
+    `university:dunning-d${dayMark} — cycle complete`,
+  );
+  return sent;
+}
+
+/** Day-3 past_due nudge (touch=2). */
+export async function runUniversityDunningD3(db: Db): Promise<number> {
+  return runUniversityDunning(db, { dayMark: 3, touch: 2, final: false });
+}
+
+/** Day-7 past_due nudge (touch=3) + final pre-cancellation warning. */
+export async function runUniversityDunningD7(db: Db): Promise<number> {
+  return runUniversityDunning(db, { dayMark: 7, touch: 3, final: true });
+}
+
+// ---------------------------------------------------------------------------
 // Registration. Staggered early-UTC daily slots so they don't collide with the
 // 6-hourly creditscore:scan or the 1st-of-month fulfillment jobs.
 // ---------------------------------------------------------------------------
@@ -894,6 +1009,25 @@ export function startUniversityCrons(db: Db): void {
     ownerAgent: "mark",
     sourceFile: "university-crons.ts",
     handler: () => runUniversityReengage(db),
+  });
+
+  // Dunning — day-3 (touch=2) and day-7 (touch=3 + final warning) past_due
+  // nudges. Daily sweep; the 1-day updated_at window is the idempotency. Slotted
+  // after the 14:xx lifecycle jobs (reengage is :45) to avoid collisions.
+  registerCronJob({
+    jobName: "university:dunning-d3",
+    schedule: "0 15 * * *", // daily 15:00 UTC
+    ownerAgent: "mark",
+    sourceFile: "university-crons.ts",
+    handler: () => runUniversityDunningD3(db),
+  });
+
+  registerCronJob({
+    jobName: "university:dunning-d7",
+    schedule: "15 15 * * *", // daily 15:15 UTC
+    ownerAgent: "mark",
+    sourceFile: "university-crons.ts",
+    handler: () => runUniversityDunningD7(db),
   });
 
   // Session reminders run HOURLY (not daily) — the 1-hour start-time window

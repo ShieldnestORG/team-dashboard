@@ -26,6 +26,8 @@ vi.mock("../services/creditscore-email-callback.js", () => ({
 import {
   runUniversityStreakNudge,
   runUniversityReengage,
+  runUniversityDunningD3,
+  runUniversityDunningD7,
 } from "../services/university-crons.js";
 
 // ---------------------------------------------------------------------------
@@ -334,5 +336,58 @@ describe("runUniversityReengage", () => {
         messageId: null,
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dunning — day-3 (touch=2) / day-7 (touch=3 + final payment-failed warning).
+//   - d3 fires university_past_due touch=2 and NO final warning
+//   - d7 fires university_past_due touch=3 AND university_payment_failed_final
+// ---------------------------------------------------------------------------
+
+describe("runUniversityDunningD3", () => {
+  it("fires past_due touch=2 and NO final warning", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "due@x.test" }];
+    const { db } = makeDb([subs]);
+
+    const sent = await runUniversityDunningD3(db);
+
+    expect(sent).toBe(1);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+    const call = emailSpy.mock.calls[0][0] as {
+      kind: string;
+      data: { touch: number };
+    };
+    expect(call.kind).toBe("university_past_due");
+    expect(call.data.touch).toBe(2);
+  });
+
+  it("skips subscription rows with no email", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: null }];
+    const { db } = makeDb([subs]);
+    const sent = await runUniversityDunningD3(db);
+    expect(sent).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("runUniversityDunningD7", () => {
+  it("fires past_due touch=3 AND the final payment-failed warning", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "lapsing@x.test" }];
+    const { db } = makeDb([subs]);
+
+    const sent = await runUniversityDunningD7(db);
+
+    expect(sent).toBe(1); // count tracks past_due nudges
+    expect(emailSpy).toHaveBeenCalledTimes(2);
+    const kinds = emailSpy.mock.calls.map(
+      (c) => (c[0] as { kind: string }).kind,
+    );
+    expect(kinds).toContain("university_past_due");
+    expect(kinds).toContain("university_payment_failed_final");
+    const pastDue = emailSpy.mock.calls
+      .map((c) => c[0] as { kind: string; data: { touch?: number } })
+      .find((p) => p.kind === "university_past_due");
+    expect(pastDue?.data.touch).toBe(3);
   });
 });
