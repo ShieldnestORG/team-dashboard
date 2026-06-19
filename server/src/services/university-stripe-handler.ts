@@ -46,6 +46,16 @@ import type { Db } from "@paperclipai/db";
 import { universityMembers, universitySubscriptions } from "@paperclipai/db";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 import { logActivity } from "./activity-log.js";
+import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import {
+  UNIVERSITY_LOGIN_URL,
+  UNIVERSITY_LESSON_URL,
+  UNIVERSITY_MANAGE_BILLING_URL,
+  UNIVERSITY_REJOIN_URL,
+  UNIVERSITY_PLAN_LABEL,
+  UNIVERSITY_PRICE_DISPLAY,
+  firstNameFromDisplayName,
+} from "./university-email.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID =
@@ -253,6 +263,44 @@ export async function handleUniversityCheckout(
     .where(eq(universitySubscriptions.id, subscriptionId))
     .returning({ id: universitySubscriptions.id });
 
+  // Activation emails (welcome + receipt). Non-fatal: a mail failure must never
+  // break the webhook (mirrors the linkStripeCustomerToAccount try/catch above).
+  // Templates + FROM/voice live storefront-side; we only post the envelope.
+  const firstName = firstNameFromDisplayName(displayName);
+  try {
+    await sendCreditscoreEmail({
+      kind: "university_welcome",
+      to: email,
+      data: {
+        firstName,
+        loginUrl: UNIVERSITY_LOGIN_URL,
+        lessonUrl: UNIVERSITY_LESSON_URL,
+      },
+    });
+  } catch (err) {
+    logger.error(
+      { err, email, kind: "university_welcome" },
+      "university-stripe-handler: welcome email failed (non-fatal)",
+    );
+  }
+  try {
+    await sendCreditscoreEmail({
+      kind: "university_receipt",
+      to: email,
+      data: {
+        amount: UNIVERSITY_PRICE_DISPLAY,
+        dateISO: now.toISOString(),
+        plan: UNIVERSITY_PLAN_LABEL,
+        manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
+      },
+    });
+  } catch (err) {
+    logger.error(
+      { err, email, kind: "university_receipt" },
+      "university-stripe-handler: receipt email failed (non-fatal)",
+    );
+  }
+
   logger.info(
     {
       sessionId: session.id,
@@ -374,6 +422,29 @@ export async function handleUniversitySubscriptionUpdated(
         },
       );
     }
+
+    // Card-bounce email (touch 1). Only on the past_due transition. Non-fatal:
+    // a mail failure must never break the webhook. Templates live storefront-side.
+    if (status === "past_due") {
+      for (const row of updatedSubs) {
+        if (!row.email) continue;
+        try {
+          await sendCreditscoreEmail({
+            kind: "university_past_due",
+            to: row.email,
+            data: {
+              manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
+              touch: 1,
+            },
+          });
+        } catch (err) {
+          logger.error(
+            { err, email: row.email, kind: "university_past_due" },
+            "university-stripe-handler: past_due email failed (non-fatal)",
+          );
+        }
+      }
+    }
   }
   return { matched: updatedSubs.length, status };
 }
@@ -429,6 +500,27 @@ export async function handleUniversitySubscriptionDeleted(
         row.id,
         { stripeSubscriptionId: sub.id, stripeStatus: sub.status },
       );
+    }
+
+    // "Here's the door back" email. Non-fatal: a mail failure must never break
+    // the webhook. accessEndDateISO is omitted — the narrow deleted-event shape
+    // doesn't carry a reliable period end, and the contract marks it optional.
+    for (const row of updatedSubs) {
+      if (!row.email) continue;
+      try {
+        await sendCreditscoreEmail({
+          kind: "university_canceled",
+          to: row.email,
+          data: {
+            rejoinUrl: UNIVERSITY_REJOIN_URL,
+          },
+        });
+      } catch (err) {
+        logger.error(
+          { err, email: row.email, kind: "university_canceled" },
+          "university-stripe-handler: canceled email failed (non-fatal)",
+        );
+      }
     }
   }
   return { matched: updatedSubs.length };

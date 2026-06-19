@@ -28,6 +28,14 @@ vi.mock("../services/customer-account-linker.js", () => ({
   linkStripeCustomerToAccount: (...args: unknown[]) => linkSpy(...args),
 }));
 
+// The handlers now fire lifecycle emails (welcome/receipt/past_due/canceled)
+// via sendCreditscoreEmail. No-op it so the tests touch no network (mirrors
+// the integration test). Spy so we can assert which kinds fired.
+const emailSpy = vi.fn(async () => undefined);
+vi.mock("../services/creditscore-email-callback.js", () => ({
+  sendCreditscoreEmail: (...args: unknown[]) => emailSpy(...args),
+}));
+
 // ---------------------------------------------------------------------------
 // Tiny query-builder stub. Drizzle chains are select().from().where().limit()
 // for reads, insert().values().returning() for writes, and
@@ -131,6 +139,7 @@ function makeDb(queue: QueueEntry[]) {
 
 beforeEach(() => {
   linkSpy.mockClear();
+  emailSpy.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -226,6 +235,29 @@ describe("handleUniversityCheckout", () => {
     expect(linkSpy).toHaveBeenCalledWith(expect.anything(), {
       email: "buyer@example.com",
       stripeCustomerId: "cus_ABC",
+    });
+
+    // Activation emails: welcome + receipt, to the member email.
+    expect(emailSpy).toHaveBeenCalledTimes(2);
+    expect(emailSpy).toHaveBeenCalledWith({
+      kind: "university_welcome",
+      to: "buyer@example.com",
+      data: {
+        firstName: "Jane",
+        loginUrl: "https://app.coherencedaddy.com/login",
+        lessonUrl:
+          "https://app.coherencedaddy.com/university/curriculum/presence/the-leak",
+      },
+    });
+    expect(emailSpy).toHaveBeenCalledWith({
+      kind: "university_receipt",
+      to: "buyer@example.com",
+      data: {
+        amount: "$50.00",
+        dateISO: expect.any(String),
+        plan: "Monthly",
+        manageBillingUrl: "https://app.coherencedaddy.com/billing",
+      },
     });
   });
 
@@ -332,6 +364,33 @@ describe("handleUniversitySubscriptionUpdated", () => {
     expect(r2.status).toBe("cancelled");
   });
 
+  it("sends university_past_due (touch 1) to the member email on past_due, and NOT on active", async () => {
+    // active → no lifecycle email from this handler.
+    const ok = makeDb([
+      { kind: "update", result: [{ id: "sub-1", memberId: "mem-1", email: "x@y.com" }] },
+      { kind: "update", result: [{ id: "mem-1" }] },
+    ]);
+    await handleUniversitySubscriptionUpdated(ok.db, { id: "sub_A", status: "active" });
+    expect(emailSpy).not.toHaveBeenCalled();
+
+    // past_due → one card-bounce email, touch 1, to the sub's email.
+    emailSpy.mockClear();
+    const pd = makeDb([
+      { kind: "update", result: [{ id: "sub-2", memberId: "mem-2", email: "pd@y.com" }] },
+      { kind: "update", result: [{ id: "mem-2" }] },
+    ]);
+    await handleUniversitySubscriptionUpdated(pd.db, { id: "sub_B", status: "past_due" });
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+    expect(emailSpy).toHaveBeenCalledWith({
+      kind: "university_past_due",
+      to: "pd@y.com",
+      data: {
+        manageBillingUrl: "https://app.coherencedaddy.com/billing",
+        touch: 1,
+      },
+    });
+  });
+
   it("no-op (no DB call) when status is unmappable (incl. paused)", async () => {
     const { db, calls } = makeDb([]);
     const r = await handleUniversitySubscriptionUpdated(db, {
@@ -340,6 +399,7 @@ describe("handleUniversitySubscriptionUpdated", () => {
     });
     expect(r).toEqual({ matched: 0, status: null });
     expect(calls).toHaveLength(0);
+    expect(emailSpy).not.toHaveBeenCalled();
   });
 
   it("returns matched=0 when no subscription row matches", async () => {
@@ -374,6 +434,14 @@ describe("handleUniversitySubscriptionDeleted", () => {
     expect((calls[1]!.payload as { set: Record<string, unknown> }).set).toMatchObject({
       status: "cancelled",
     });
+
+    // "Door back" email fires to the sub's email; accessEndDateISO omitted.
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+    expect(emailSpy).toHaveBeenCalledWith({
+      kind: "university_canceled",
+      to: "x@y.com",
+      data: { rejoinUrl: "https://coherencedaddy.com/university" },
+    });
   });
 
   it("returns matched=0 when no row matches", async () => {
@@ -383,5 +451,6 @@ describe("handleUniversitySubscriptionDeleted", () => {
       status: "anything",
     });
     expect(r.matched).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
   });
 });

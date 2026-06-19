@@ -147,6 +147,7 @@ import { startWatchtowerCron } from "./services/watchtower-cron.js";
 import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cron.js";
 import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
+import { startUniversityCrons } from "./services/university-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
@@ -578,6 +579,7 @@ export async function createApp(
     startRizzExtractorCron(db, { companyId: RIZZ_COMPANY_ID });
   }
   startCreditscoreFulfillmentCrons(db);
+  startUniversityCrons(db);
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted

@@ -27,7 +27,16 @@ export type CreditscoreEmailKind =
   | "weekly_report"
   | "fix_priority_monthly"
   | "score_drop_alert"
-  | "sage_weekly_digest";
+  | "sage_weekly_digest"
+  // Coherent Ones University ($50/mo membership). Templates live storefront-side
+  // (docs/OWNERSHIP.md); this contract is the team-dashboard → storefront kind list.
+  | "university_welcome"
+  | "university_receipt"
+  | "university_past_due"
+  | "university_canceled"
+  | "university_onboarding_d1"
+  | "university_onboarding_d3"
+  | "university_winback";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;
