@@ -1,0 +1,475 @@
+#!/usr/bin/env npx tsx
+/**
+ * Coherent Ones University — batch audio-render pipeline for the
+ * "walk / breathe / learn" Presence lessons.
+ *
+ * Renders one MP3 per Presence lesson, keyed by the SAME slugs the text
+ * lessons use (the-leak, regulate-before-you-speak, …), so audio and text
+ * line up 1:1.
+ *
+ * ── Reuse note (read before editing) ──────────────────────────────────────
+ * The audio core here is a faithful port of the YouTube pipeline's TTS, NOT a
+ * reinvention:
+ *   - server/src/services/youtube/tts.ts          → generateChunkedTTS():
+ *       xAI Grok TTS, endpoint https://api.x.ai/v1/tts, voice `rex`, MP3
+ *       24kHz / 128kbps, per-chunk 30ms edge fades + silence gaps + ffmpeg
+ *       concat. Same request body, same params, same concat algorithm.
+ *   - server/src/services/youtube/walkthrough-writer.ts → sanitizeTextForTTS():
+ *       strips markdown, expands $/&/% etc., splits very long sentences.
+ *       Replicated verbatim below.
+ *
+ * Why ported instead of imported: tts.ts pulls in middleware/logger.ts →
+ * `pino`, which is not installed in this worktree (no node_modules), so a
+ * direct import fails at runtime. And the YouTube silence gap is a hardcoded
+ * const (0.6s) inside generateChunkedTTS with no override — the brand brief
+ * needs a longer walking/breathing pace. Porting the exact logic keeps the
+ * audio byte-equivalent to what the pipeline produces, lets the silence gap
+ * become a tunable const, and keeps the script dependency-free (only fetch +
+ * node stdlib + ffmpeg). Env var read is the SAME one tts.ts reads:
+ * GROK_API_KEY.
+ *
+ * ── Usage ─────────────────────────────────────────────────────────────────
+ *   GROK_API_KEY=…  npx tsx scripts/render-university-audio.ts [slug …]
+ *
+ *   With no slug args: renders ALL 10 lessons.
+ *   With slug args:    renders only those lessons (e.g. the-leak).
+ *   --ab          also render the 3-voice A/B sample (rex / ElevenLabs / Google).
+ *   --ab-only     render ONLY the A/B sample, skip lessons.
+ *
+ * Output: <repo>/output/university-audio/<slug>.mp3   (gitignored; never committed)
+ *         <repo>/output/university-audio/_ab-sample-{rex,elevenlabs,google}.mp3
+ */
+
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+import { writeFile, unlink, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { PRESENCE_LESSONS } from "/Users/exe/Downloads/Claude/portal-presence/lib/curriculum/presence.ts";
+
+const execAsync = promisify(exec);
+
+// ───────────────────────────────────────────────────────────────────────────
+// Config
+// ───────────────────────────────────────────────────────────────────────────
+
+const GROK_API_KEY = process.env.GROK_API_KEY || "";
+const GROK_TTS_VOICE = process.env.GROK_TTS_VOICE || "rex";
+const GROK_TTS_URL = "https://api.x.ai/v1/tts";
+
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
+// Brian — "Deep, Resonant and Comforting", premade male voice. Chosen because
+// it is the warmest meditative-leaning *premade* voice (premade voices work on
+// the free tier; "professional"/library voices like Milo return HTTP 402
+// paid_plan_required on this account). Override with ELEVENLABS_VOICE_ID.
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "nPczCjzI2devNBz1zQrb";
+const ELEVENLABS_MODEL = "eleven_multilingual_v2";
+
+const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || "";
+const GOOGLE_TTS_VOICE = process.env.GOOGLE_TTS_VOICE || "en-US-Neural2-D"; // calm male neural
+
+// MP3 format — identical to tts.ts (24kHz mono, 128kbps).
+const SAMPLE_RATE = 24000;
+const BIT_RATE = 128000;
+
+/**
+ * Inter-section silence, in seconds. The YouTube pipeline uses 0.6s. For the
+ * "walk / breathe / learn" brand we lengthen it to a walking/breathing pace so
+ * each paragraph has room to land before the next begins.
+ */
+const INTER_SECTION_SILENCE_SEC = 1.4;
+
+/** 30ms edge fades to suppress click/pop at concat boundaries — same as tts.ts. */
+const FADE_SEC = 0.03;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, ".."); // scripts/ → repo root
+const OUTPUT_DIR = join(REPO_ROOT, "output", "university-audio");
+const TMP_DIR = join(OUTPUT_DIR, ".tmp");
+
+// ───────────────────────────────────────────────────────────────────────────
+// sanitizeTextForTTS — verbatim port of walkthrough-writer.ts
+// ───────────────────────────────────────────────────────────────────────────
+
+function sanitizeTextForTTS(text: string): string {
+  let t = text;
+
+  // Strip URLs entirely
+  t = t.replace(/https?:\/\/[^\s)]+/g, "their website");
+
+  // Strip markdown formatting
+  t = t.replace(/\*\*([^*]+)\*\*/g, "$1"); // bold
+  t = t.replace(/\*([^*]+)\*/g, "$1"); // italic
+  t = t.replace(/`([^`]+)`/g, "$1"); // inline code
+  t = t.replace(/^[-*•]\s+/gm, ""); // bullet points
+  t = t.replace(/^#+\s+/gm, ""); // heading markers
+
+  // Expand common symbols
+  t = t.replace(/&/g, " and ");
+  t = t.replace(/%/g, " percent");
+  t = t.replace(/\$/g, " dollars ");
+  t = t.replace(/\+/g, " plus ");
+  t = t.replace(/@/g, " at ");
+  t = t.replace(/#(\w)/g, "number $1");
+  t = t.replace(/\//g, " ");
+
+  // Expand common abbreviations
+  t = t.replace(/\bNFTs?\b/g, "N-F-T");
+  t = t.replace(/\bDeFi\b/gi, "de-fi");
+  t = t.replace(/\bDAOs?\b/g, (m) => (m.endsWith("s") ? "dow-z" : "dow"));
+  t = t.replace(/\bAPR\b/g, "A-P-R");
+  t = t.replace(/\bAPY\b/g, "A-P-Y");
+  t = t.replace(/\bAPI\b/g, "A-P-I");
+  t = t.replace(/\bUI\b/g, "U-I");
+  t = t.replace(/\bUX\b/g, "U-X");
+  t = t.replace(/\bAI\b/g, "A-I");
+  t = t.replace(/\bETH\b/g, "E-T-H");
+  t = t.replace(/\bBTC\b/g, "B-T-C");
+
+  // Numbers: simple conversions for common patterns
+  t = t.replace(/(\d+)\+/g, "over $1");
+  t = t.replace(/\b(\d{1,3}),(\d{3})\b/g, "$1$2"); // strip commas in numbers
+
+  // Clean up domain-like patterns
+  t = t.replace(/\b(\w+)\.(\w+)\.(\w+)\b/g, "$1 dot $2 dot $3");
+  t = t.replace(/\b(\w+)\.(\w{2,6})\b/g, (match, name, tld) => {
+    if (["com", "io", "fi", "org", "net", "co", "app", "dev", "xyz"].includes(tld.toLowerCase())) {
+      return `${name} dot ${tld}`;
+    }
+    return match;
+  });
+
+  // Remove non-speakable characters
+  t = t.replace(/[{}[\]<>|\\^~`]/g, "");
+  t = t.replace(/[“”]/g, '"');
+  t = t.replace(/[‘’]/g, "'");
+  t = t.replace(/—/g, ", ");
+  t = t.replace(/–/g, ", ");
+  t = t.replace(/\.\.\./g, ". ");
+
+  // Collapse excessive whitespace
+  t = t.replace(/\s+/g, " ").trim();
+
+  // Break up very long sentences (over 30 words) with natural pauses
+  const sentences = t.split(/(?<=[.!?])\s+/);
+  const cleaned = sentences.map((s) => {
+    const words = s.split(/\s+/);
+    if (words.length > 30) {
+      const midpoint = Math.min(15, Math.floor(words.length / 2));
+      for (let i = midpoint - 3; i <= midpoint + 3 && i < words.length; i++) {
+        if (
+          words[i].endsWith(",") ||
+          ["and", "but", "or", "which", "that", "where"].includes(words[i].toLowerCase())
+        ) {
+          words[i] = words[i].replace(/,$/, ".") || words[i] + ".";
+          break;
+        }
+      }
+    }
+    return words.join(" ");
+  });
+  t = cleaned.join(" ");
+
+  return t;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// FFmpeg helpers
+// ───────────────────────────────────────────────────────────────────────────
+
+async function ensureDir(dir: string) {
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+}
+
+async function getAudioDuration(audioPath: string): Promise<number> {
+  const { stdout } = await execAsync(
+    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`,
+  );
+  return parseFloat(stdout.trim()) || 0;
+}
+
+/** Apply 30ms fade-in/out in place — verbatim behavior from tts.ts. */
+async function applyEdgeFades(audioPath: string, durationSec: number): Promise<void> {
+  const fadeOutStart = Math.max(0, durationSec - FADE_SEC);
+  const tmpPath = `${audioPath}.faded.mp3`;
+  await execAsync(
+    `ffmpeg -y -i "${audioPath}" -af "afade=t=in:st=0:d=${FADE_SEC},afade=t=out:st=${fadeOutStart.toFixed(
+      3,
+    )}:d=${FADE_SEC}" -codec:a libmp3lame -qscale:a 2 "${tmpPath}"`,
+    { timeout: 60_000 },
+  );
+  await execAsync(`mv "${tmpPath}" "${audioPath}"`);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Grok TTS (xAI) — single chunk. Same request shape as tts.ts generateGrokTTS.
+// ───────────────────────────────────────────────────────────────────────────
+
+async function generateGrokChunk(text: string, outputPath: string): Promise<void> {
+  if (!GROK_API_KEY) throw new Error("GROK_API_KEY is not set.");
+
+  const res = await fetch(GROK_TTS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${GROK_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text,
+      voice_id: GROK_TTS_VOICE,
+      language: "en",
+      output_format: { codec: "mp3", sample_rate: SAMPLE_RATE, bit_rate: BIT_RATE },
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Grok TTS failed (${res.status}): ${errBody.slice(0, 500)}`);
+  }
+
+  const audioBuffer = Buffer.from(await res.arrayBuffer());
+  await writeFile(outputPath, audioBuffer);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Chunked TTS — port of generateChunkedTTS with a tunable silence gap.
+// ───────────────────────────────────────────────────────────────────────────
+
+interface ChunkedResult {
+  audioPath: string;
+  durationSec: number;
+  sections: number;
+  silenceGapSec: number;
+}
+
+async function generateChunkedGrokTTS(
+  chunks: string[],
+  outputPath: string,
+  silenceGapSec: number,
+): Promise<ChunkedResult> {
+  await ensureDir(TMP_DIR);
+
+  const stamp = Date.now();
+  const silencePath = join(TMP_DIR, `silence_${stamp}.mp3`);
+  await execAsync(
+    `ffmpeg -y -f lavfi -i anullsrc=r=${SAMPLE_RATE}:cl=mono -t ${silenceGapSec} -codec:a libmp3lame -qscale:a 2 "${silencePath}"`,
+  );
+
+  const concatPaths: string[] = [];
+  const chunkFiles: string[] = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    const text = chunks[i].trim();
+    if (!text) continue;
+
+    const chunkFile = join(TMP_DIR, `chunk_${stamp}_${i}.mp3`);
+    process.stdout.write(`    section ${i + 1}/${chunks.length} (${text.length} chars)… `);
+    await generateGrokChunk(text, chunkFile);
+    const dur = await getAudioDuration(chunkFile);
+    await applyEdgeFades(chunkFile, dur);
+    process.stdout.write(`${dur.toFixed(1)}s\n`);
+
+    chunkFiles.push(chunkFile);
+    concatPaths.push(chunkFile);
+    if (i < chunks.length - 1) concatPaths.push(silencePath);
+  }
+
+  if (concatPaths.length === 0) throw new Error("No non-empty sections to render.");
+
+  const concatList = join(TMP_DIR, `concat_${stamp}.txt`);
+  await writeFile(concatList, concatPaths.map((p) => `file '${p}'`).join("\n"));
+  await execAsync(
+    `ffmpeg -y -f concat -safe 0 -i "${concatList}" -codec:a libmp3lame -qscale:a 2 "${outputPath}"`,
+    { timeout: 180_000 },
+  );
+
+  const totalDuration = await getAudioDuration(outputPath);
+
+  // Cleanup temp files
+  for (const f of chunkFiles) await unlink(f).catch(() => {});
+  await unlink(silencePath).catch(() => {});
+  await unlink(concatList).catch(() => {});
+
+  return {
+    audioPath: outputPath,
+    durationSec: totalDuration,
+    sections: chunkFiles.length,
+    silenceGapSec,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Lesson rendering
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Split a lesson's markdown into per-paragraph sections, sanitized for TTS. */
+function lessonToSections(markdown: string): string[] {
+  return markdown
+    .split(/\n\n+/)
+    .map((p) => sanitizeTextForTTS(p))
+    .filter((p) => p.length > 0);
+}
+
+async function renderLesson(slug: string): Promise<void> {
+  const lesson = PRESENCE_LESSONS.find((l) => l.slug === slug);
+  if (!lesson) throw new Error(`Unknown lesson slug: ${slug}`);
+
+  const sections = lessonToSections(lesson.markdown);
+  const outputPath = join(OUTPUT_DIR, `${slug}.mp3`);
+
+  console.log(`\n▶ ${lesson.order}. ${slug} — "${lesson.title}"`);
+  console.log(`  ${sections.length} sections, ${INTER_SECTION_SILENCE_SEC}s walking-pace gaps`);
+
+  const result = await generateChunkedGrokTTS(sections, outputPath, INTER_SECTION_SILENCE_SEC);
+  console.log(`  ✓ ${outputPath}  (${result.durationSec.toFixed(1)}s)`);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// A/B voice sample — same excerpt, three providers.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** First ~30-45s of "The Leak" — the same text fed to all three providers. */
+function abSampleText(): string {
+  const leak = PRESENCE_LESSONS.find((l) => l.slug === "the-leak")!;
+  // First two paragraphs = the opening ~35s of narration.
+  const firstTwo = leak.markdown.split(/\n\n+/).slice(0, 2).join("\n\n");
+  return sanitizeTextForTTS(firstTwo);
+}
+
+/** Re-encode any input to the common A/B format so the comparison is fair. */
+async function normalizeMp3(inPath: string, outPath: string): Promise<void> {
+  await execAsync(
+    `ffmpeg -y -i "${inPath}" -ar ${SAMPLE_RATE} -ac 1 -codec:a libmp3lame -b:a 128k "${outPath}"`,
+    { timeout: 60_000 },
+  );
+}
+
+async function abGrok(text: string, outPath: string): Promise<void> {
+  await ensureDir(TMP_DIR);
+  const raw = join(TMP_DIR, `ab_grok_${Date.now()}.mp3`);
+  await generateGrokChunk(text, raw);
+  await normalizeMp3(raw, outPath);
+  await unlink(raw).catch(() => {});
+}
+
+async function abElevenLabs(text: string, outPath: string): Promise<void> {
+  if (!ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not set.");
+  await ensureDir(TMP_DIR);
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: ELEVENLABS_MODEL,
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    },
+  );
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`ElevenLabs TTS failed (${res.status}): ${errBody.slice(0, 500)}`);
+  }
+  const raw = join(TMP_DIR, `ab_el_${Date.now()}.mp3`);
+  await writeFile(raw, Buffer.from(await res.arrayBuffer()));
+  await normalizeMp3(raw, outPath);
+  await unlink(raw).catch(() => {});
+}
+
+async function abGoogle(text: string, outPath: string): Promise<void> {
+  if (!GOOGLE_TTS_API_KEY) throw new Error("GOOGLE_TTS_API_KEY is not set.");
+  await ensureDir(TMP_DIR);
+  const res = await fetch(
+    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: "en-US", name: GOOGLE_TTS_VOICE },
+        // Slow, low — a meditative read.
+        audioConfig: { audioEncoding: "MP3", sampleRateHertz: SAMPLE_RATE, speakingRate: 0.88, pitch: -2.0 },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    },
+  );
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Google TTS failed (${res.status}): ${errBody.slice(0, 500)}`);
+  }
+  const data = (await res.json()) as { audioContent?: string };
+  if (!data.audioContent) throw new Error("Google TTS returned no audioContent.");
+  const raw = join(TMP_DIR, `ab_g_${Date.now()}.mp3`);
+  await writeFile(raw, Buffer.from(data.audioContent, "base64"));
+  await normalizeMp3(raw, outPath);
+  await unlink(raw).catch(() => {});
+}
+
+async function renderABSample(): Promise<void> {
+  const text = abSampleText();
+  console.log(`\n▶ A/B voice sample — identical excerpt (opening of "The Leak"), 3 providers`);
+  console.log(`  excerpt chars: ${text.length}`);
+
+  const targets: Array<{ name: string; fn: () => Promise<void>; out: string }> = [
+    { name: "Grok rex", fn: () => abGrok(text, join(OUTPUT_DIR, "_ab-sample-rex.mp3")), out: "_ab-sample-rex.mp3" },
+    {
+      name: `ElevenLabs (${ELEVENLABS_VOICE_ID})`,
+      fn: () => abElevenLabs(text, join(OUTPUT_DIR, "_ab-sample-elevenlabs.mp3")),
+      out: "_ab-sample-elevenlabs.mp3",
+    },
+    {
+      name: `Google (${GOOGLE_TTS_VOICE})`,
+      fn: () => abGoogle(text, join(OUTPUT_DIR, "_ab-sample-google.mp3")),
+      out: "_ab-sample-google.mp3",
+    },
+  ];
+
+  for (const t of targets) {
+    process.stdout.write(`  ${t.name}… `);
+    try {
+      await t.fn();
+      const dur = await getAudioDuration(join(OUTPUT_DIR, t.out));
+      console.log(`✓ ${t.out} (${dur.toFixed(1)}s)`);
+    } catch (err) {
+      console.log(`✗ FAILED: ${(err as Error).message}`);
+    }
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Main
+// ───────────────────────────────────────────────────────────────────────────
+
+async function main() {
+  const args = process.argv.slice(2);
+  const doAB = args.includes("--ab") || args.includes("--ab-only");
+  const abOnly = args.includes("--ab-only");
+  const slugArgs = args.filter((a) => !a.startsWith("--"));
+
+  await ensureDir(OUTPUT_DIR);
+
+  console.log("Coherent Ones University — walk/breathe/learn audio render");
+  console.log(`  voice: Grok ${GROK_TTS_VOICE} | format: MP3 ${SAMPLE_RATE / 1000}kHz ${BIT_RATE / 1000}kbps`);
+  console.log(`  silence gap: ${INTER_SECTION_SILENCE_SEC}s | output: ${OUTPUT_DIR}`);
+
+  if (!abOnly) {
+    const slugs = slugArgs.length > 0 ? slugArgs : PRESENCE_LESSONS.map((l) => l.slug);
+    for (const slug of slugs) {
+      await renderLesson(slug);
+    }
+  }
+
+  if (doAB) await renderABSample();
+
+  console.log("\nDone.");
+}
+
+main().catch((err) => {
+  console.error("\nFATAL:", err.message);
+  process.exit(1);
+});
