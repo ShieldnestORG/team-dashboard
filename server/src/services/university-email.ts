@@ -24,9 +24,27 @@ export const UNIVERSITY_MANAGE_BILLING_URL =
 export const UNIVERSITY_REJOIN_URL =
   "https://coherencedaddy.com/university";
 
-// Receipt display values for the single-tier $50/mo membership.
+// Receipt display values, per plan. Monthly is $50/mo; annual is $500/yr
+// (two months free). The plan key is the stable 'university_monthly' /
+// 'university_annual' set at checkout.
 export const UNIVERSITY_PLAN_LABEL = "Monthly";
 export const UNIVERSITY_PRICE_DISPLAY = "$50.00";
+export const UNIVERSITY_ANNUAL_PLAN_LABEL = "Annual";
+export const UNIVERSITY_ANNUAL_PRICE_DISPLAY = "$500.00";
+
+/** Human plan label for the receipt email, by plan key. */
+export function planLabel(plan: string | null | undefined): string {
+  return plan === "university_annual"
+    ? UNIVERSITY_ANNUAL_PLAN_LABEL
+    : UNIVERSITY_PLAN_LABEL;
+}
+
+/** Charged-amount display for the receipt email, by plan key. */
+export function priceDisplay(plan: string | null | undefined): string {
+  return plan === "university_annual"
+    ? UNIVERSITY_ANNUAL_PRICE_DISPLAY
+    : UNIVERSITY_PRICE_DISPLAY;
+}
 
 /**
  * Derives the optional `firstName` token for the email payload from the

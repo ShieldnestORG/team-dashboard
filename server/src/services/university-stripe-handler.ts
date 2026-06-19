@@ -52,10 +52,16 @@ import {
   UNIVERSITY_LESSON_URL,
   UNIVERSITY_MANAGE_BILLING_URL,
   UNIVERSITY_REJOIN_URL,
-  UNIVERSITY_PLAN_LABEL,
-  UNIVERSITY_PRICE_DISPLAY,
+  planLabel,
+  priceDisplay,
   firstNameFromDisplayName,
 } from "./university-email.js";
+import {
+  resolvePlanKey,
+  countUniversityMembers,
+  foundingCap,
+  isFoundingEligible,
+} from "./university-founding.js";
 import { logger } from "../middleware/logger.js";
 
 const COMPANY_ID =
@@ -113,6 +119,8 @@ export interface UniversityCheckoutResult {
   subscriptionId: string;
   memberId: string;
   created: boolean;
+  plan: string;
+  founding: boolean;
 }
 
 export async function handleUniversityCheckout(
@@ -127,6 +135,9 @@ export async function handleUniversityCheckout(
   }
 
   const displayName = metadata.displayName?.trim() || null;
+  // Plan key set at checkout ('university_monthly' | 'university_annual').
+  // Normalize defensively; unknown/missing → monthly.
+  const plan = resolvePlanKey(metadata.plan);
   const stripeCustomerId =
     typeof session.customer === "string" ? session.customer : null;
   const stripeSubscriptionId =
@@ -191,7 +202,7 @@ export async function handleUniversityCheckout(
       .update(universitySubscriptions)
       .set({
         status: "active",
-        plan: "university_monthly",
+        plan,
         stripeCustomerId,
         stripeCheckoutSessionId: session.id,
         email,
@@ -207,7 +218,7 @@ export async function handleUniversityCheckout(
       .insert(universitySubscriptions)
       .values({
         status: "active",
-        plan: "university_monthly",
+        plan,
         stripeCustomerId,
         stripeSubscriptionId,
         stripeCheckoutSessionId: session.id,
@@ -227,28 +238,53 @@ export async function handleUniversityCheckout(
     .limit(1);
 
   let memberId: string;
+  let founding: boolean;
   if (existingMember[0]) {
-    await db
+    // Re-activation / replay: NEVER recompute founding. A founder stays a
+    // founder for life, and a late-comer must not be retro-promoted just
+    // because they re-subscribed. We deliberately omit `founding` from the SET
+    // so the stamped value is preserved, and read it back for the result/logs.
+    const updated = await db
       .update(universityMembers)
       .set({
         status: "active",
-        plan: "university_monthly",
+        plan,
         accountId,
         displayName,
         joinedAt: now,
         updatedAt: now,
       })
       .where(eq(universityMembers.id, existingMember[0].id))
-      .returning({ id: universityMembers.id });
+      .returning({
+        id: universityMembers.id,
+        founding: universityMembers.founding,
+      });
     memberId = existingMember[0].id;
+    founding = updated[0]?.founding ?? false;
   } else {
+    // First activation: founding is decided ONCE, here, against the live count
+    // of existing members (which excludes this not-yet-inserted one) versus the
+    // configured cap. Stamped permanently — see schema/university.ts. The count
+    // is best-effort; a failure defaults to non-founding so we never over-grant
+    // the lifetime-locked rate by accident.
+    let existingCount = Number.POSITIVE_INFINITY;
+    try {
+      existingCount = await countUniversityMembers(db);
+    } catch (err) {
+      logger.error(
+        { err, sessionId: session.id, email },
+        "university-stripe-handler: member count failed (non-fatal) — defaulting founding=false",
+      );
+    }
+    founding = isFoundingEligible(existingCount, foundingCap());
     const [row] = await db
       .insert(universityMembers)
       .values({
         email,
         displayName,
         status: "active",
-        plan: "university_monthly",
+        plan,
+        founding,
         accountId,
         joinedAt: now,
       })
@@ -288,9 +324,9 @@ export async function handleUniversityCheckout(
       kind: "university_receipt",
       to: email,
       data: {
-        amount: UNIVERSITY_PRICE_DISPLAY,
+        amount: priceDisplay(plan),
         dateISO: now.toISOString(),
-        plan: UNIVERSITY_PLAN_LABEL,
+        plan: planLabel(plan),
         manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
       },
     });
@@ -308,6 +344,8 @@ export async function handleUniversityCheckout(
       memberId,
       stripeSubscriptionId,
       created,
+      plan,
+      founding,
       email,
     },
     "university-stripe-handler: checkout processed",
@@ -326,10 +364,12 @@ export async function handleUniversityCheckout(
       memberId,
       email,
       accountId,
+      plan,
+      founding,
     },
   );
 
-  return { subscriptionId, memberId, created };
+  return { subscriptionId, memberId, created, plan, founding };
 }
 
 // ---------------------------------------------------------------------------

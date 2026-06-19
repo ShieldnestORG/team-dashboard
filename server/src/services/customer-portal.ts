@@ -181,6 +181,8 @@ export interface CustomerEntitlements {
     status: string;
     memberSince: string | null;
     plan: string;
+    // Lifetime price-lock flag — true for the first N members (founding cohort).
+    founding: boolean;
   } | null;
 }
 
@@ -470,6 +472,7 @@ export function customerPortalService(db: Db) {
       .select({
         status: universityMembers.status,
         plan: universityMembers.plan,
+        founding: universityMembers.founding,
         joinedAt: universityMembers.joinedAt,
         createdAt: universityMembers.createdAt,
       })
@@ -494,6 +497,7 @@ export function customerPortalService(db: Db) {
         status: row.status,
         memberSince: (row.joinedAt ?? row.createdAt)?.toISOString() ?? null,
         plan: row.plan,
+        founding: row.founding,
       };
     }
 

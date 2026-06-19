@@ -61,16 +61,31 @@ function makeDb(queue: QueueEntry[]) {
     return entry.result;
   }
 
-  // SELECT chain
+  // SELECT chain. Two terminal shapes:
+  //   - select().from() awaited directly (no .where()/.limit()) → an aggregate
+  //     like countUniversityMembers(). Resolves a queued "count" entry. We make
+  //     from() a thenable so awaiting the chain works.
+  //   - select().from().where().limit() → a row lookup. Resolves a "select".
   function selectChain() {
     const payload: Record<string, unknown> = {};
     const chain = {
       from(table: unknown) {
         payload.table = table;
-        return chain;
+        // Thenable: awaiting select().from() (the count path) resolves a queued
+        // "count" result. Chaining .where()/.limit() instead returns `chain`
+        // below, so a row lookup never hits this then().
+        return Object.assign(chain, {
+          then(resolve: (v: unknown) => unknown) {
+            calls.push({ kind: "count", payload });
+            return Promise.resolve(next("count")).then(resolve);
+          },
+        });
       },
       where(predicate: unknown) {
         payload.where = predicate;
+        // A row lookup — drop the count-path then() so awaiting after .where()
+        // doesn't resolve the count branch.
+        delete (chain as { then?: unknown }).then;
         return chain;
       },
       limit(n: number) {
@@ -189,16 +204,20 @@ describe("handleUniversityCheckout", () => {
       { kind: "select", result: [] }, // existing subscription → none
       { kind: "insert", result: [{ id: "sub-row-1" }] }, // insert subscription
       { kind: "select", result: [] }, // existing member → none
+      { kind: "count", result: [{ n: 0 }] }, // member count for founding gate → 0
       { kind: "insert", result: [{ id: "member-row-1" }] }, // insert member
       { kind: "update", result: [{ id: "sub-row-1" }] }, // backfill member_id
     ]);
 
     const result = await handleUniversityCheckout(db, baseSession);
 
+    // count=0 < default cap 100 → this is a founding member; default plan monthly.
     expect(result).toEqual({
       subscriptionId: "sub-row-1",
       memberId: "member-row-1",
       created: true,
+      plan: "university_monthly",
+      founding: true,
     });
 
     // Subscription insert shape.
@@ -214,21 +233,23 @@ describe("handleUniversityCheckout", () => {
       accountId: "acc-1",
     });
 
-    // Member insert shape.
+    // Member insert shape (calls: 0 sub-select, 1 sub-insert, 2 member-select,
+    // 3 count, 4 member-insert, 5 backfill).
     const memberInsert = (
-      calls[3]!.payload as { values: Record<string, unknown> }
+      calls[4]!.payload as { values: Record<string, unknown> }
     ).values;
     expect(memberInsert).toMatchObject({
       email: "buyer@example.com",
       displayName: "Jane Doe",
       status: "active",
       plan: "university_monthly",
+      founding: true,
       accountId: "acc-1",
     });
     expect((memberInsert as { joinedAt?: unknown }).joinedAt).toBeInstanceOf(Date);
 
     // member_id backfilled onto the subscription.
-    const backfill = (calls[4]!.payload as { set: Record<string, unknown> }).set;
+    const backfill = (calls[5]!.payload as { set: Record<string, unknown> }).set;
     expect(backfill).toMatchObject({ memberId: "member-row-1" });
 
     expect(linkSpy).toHaveBeenCalledTimes(1);
@@ -271,14 +292,22 @@ describe("handleUniversityCheckout", () => {
     ]);
 
     const result = await handleUniversityCheckout(db, baseSession);
+    // Existing member → update path preserves the stamped founding flag (the
+    // update .returning() yields the member row WITHOUT a founding field in this
+    // stub, so it reads back undefined → false). The key guarantee: founding is
+    // NOT recomputed on replay (no count query runs).
     expect(result).toEqual({
       subscriptionId: "sub-existing-1",
       memberId: "member-existing-1",
       created: false,
+      plan: "university_monthly",
+      founding: false,
     });
 
     // No subscription/member INSERT on replay — that's the idempotency guarantee.
     expect(calls.find((c) => c.kind === "insert")).toBeUndefined();
+    // And NO count query — founding is never recomputed for an existing member.
+    expect(calls.find((c) => c.kind === "count")).toBeUndefined();
     expect(calls.filter((c) => c.kind === "select")).toHaveLength(2);
     expect(calls.filter((c) => c.kind === "update")).toHaveLength(3);
   });
