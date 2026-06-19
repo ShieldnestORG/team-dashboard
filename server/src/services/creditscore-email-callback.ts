@@ -36,7 +36,9 @@ export type CreditscoreEmailKind =
   | "university_canceled"
   | "university_onboarding_d1"
   | "university_onboarding_d3"
-  | "university_winback";
+  | "university_winback"
+  | "university_streak_nudge"
+  | "university_payment_failed_final";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;
