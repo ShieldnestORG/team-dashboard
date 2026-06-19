@@ -18,6 +18,12 @@ export interface CheckoutOptions {
    * session is created on the Starwise account where the university price lives.
    */
   secretKey?: string;
+  /**
+   * Optional Stripe-native `client_reference_id`. University sets this to the
+   * referral code so the code is captured on the session for attribution at
+   * webhook time (see services/university-referrals.ts).
+   */
+  clientReferenceId?: string;
 }
 
 export interface CheckoutResult {
@@ -51,6 +57,12 @@ export async function createCheckoutSession(
     params.customer = opts.customerId;
   } else {
     params.customer_email = opts.email;
+  }
+
+  // Stripe-native attribution slot (referral code). The webhook reads it back
+  // from session.client_reference_id (with metadata.referral_code as a fallback).
+  if (opts.clientReferenceId) {
+    params.client_reference_id = opts.clientReferenceId;
   }
 
   // Flatten metadata key-value pairs into the form body.
