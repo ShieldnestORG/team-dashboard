@@ -651,6 +651,33 @@ export function customerPortalService(db: Db) {
     return true;
   }
 
+  /**
+   * Is this account a Coherent Ones University member?
+   *
+   * University bills on a SEPARATE Stripe account (Starwise Ventures), so the
+   * billing-portal route needs to know whether to authenticate with the
+   * University key. We match on account_id OR email (the same durable join keys
+   * getAccountWithEntitlements uses) and ignore status on purpose: a cancelled
+   * or past_due member's stripe_customer_id still lives on Starwise, and they
+   * may open the billing portal to reactivate or update a card.
+   */
+  async function isUniversityAccount(accountId: string): Promise<boolean> {
+    const account = await getAccount(accountId);
+    if (!account) return false;
+    const email = normalizeEmail(account.email);
+    const rows = await db
+      .select({ id: universityMembers.id })
+      .from(universityMembers)
+      .where(
+        or(
+          sql`LOWER(${universityMembers.email}) = ${email}`,
+          eq(universityMembers.accountId, account.id),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
   async function setStripeCustomerId(
     accountId: string,
     stripeCustomerId: string,
@@ -674,6 +701,7 @@ export function customerPortalService(db: Db) {
     listCredentials,
     revokeCredentialById,
     revokeCredentialByKind,
+    isUniversityAccount,
     setStripeCustomerId,
     logAction,
   };

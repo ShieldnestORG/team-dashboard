@@ -8,10 +8,28 @@ export function stripeConfigured(): boolean {
   return !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.trim());
 }
 
-function stripeKey(): string {
-  const k = process.env.STRIPE_SECRET_KEY;
+// Resolve the secret key for an outbound Stripe call. Callers that need the
+// shared Coherence Daddy account (CreditScore/Watchtower/Directory/etc.) pass
+// nothing and get STRIPE_SECRET_KEY. Callers that must hit a different Stripe
+// account (e.g. University → Starwise) pass an explicit override.
+function stripeKey(override?: string): string {
+  const k = override ?? process.env.STRIPE_SECRET_KEY;
   if (!k || !k.trim()) throw new Error("STRIPE_SECRET_KEY not configured");
   return k.trim();
+}
+
+/**
+ * University products bill on a SEPARATE Stripe account (Starwise Ventures),
+ * not the shared Coherence Daddy account. Returns the University secret key,
+ * falling back to STRIPE_SECRET_KEY when UNIVERSITY_STRIPE_SECRET_KEY is unset
+ * so local/dev/test (single-account) keeps working. Returns undefined only if
+ * neither is set.
+ */
+export function universityStripeKey(): string | undefined {
+  const uni = process.env.UNIVERSITY_STRIPE_SECRET_KEY?.trim();
+  if (uni) return uni;
+  const shared = process.env.STRIPE_SECRET_KEY?.trim();
+  return shared || undefined;
 }
 
 function toForm(params: Record<string, unknown>, prefix = ""): string {
@@ -42,12 +60,16 @@ export async function stripeRequest<T = unknown>(
   method: "GET" | "POST" | "DELETE",
   path: string,
   body?: Record<string, unknown>,
+  // Optional account override. Defaults to STRIPE_SECRET_KEY (shared CD
+  // account). Pass an explicit key to target another Stripe account, e.g.
+  // universityStripeKey() for University → Starwise.
+  secretKey?: string,
 ): Promise<T> {
   const url = `${STRIPE_API}${path}`;
   const init: RequestInit = {
     method,
     headers: {
-      Authorization: `Bearer ${stripeKey()}`,
+      Authorization: `Bearer ${stripeKey(secretKey)}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
   };

@@ -5,7 +5,11 @@ import {
   portalBaseUrl,
   PORTAL_SESSION_COOKIE,
 } from "../services/customer-portal.js";
-import { stripeRequest, stripeConfigured } from "../services/stripe-client.js";
+import {
+  stripeRequest,
+  stripeConfigured,
+  universityStripeKey,
+} from "../services/stripe-client.js";
 import { logger } from "../middleware/logger.js";
 import {
   adminImpersonationService,
@@ -494,6 +498,26 @@ export function portalRoutes(db: Db): Router {
       const returnUrl =
         process.env.PORTAL_STRIPE_RETURN_URL?.trim() ||
         `${portalBaseUrl()}/billing`;
+      // University members bill on a SEPARATE Stripe account (Starwise), so
+      // their stripe_customer_id is a Starwise customer and the billing-portal
+      // session MUST be created with the University key. CD-only customers
+      // (CreditScore/Watchtower) keep using the shared key. universityStripeKey()
+      // falls back to STRIPE_SECRET_KEY, so when only one account is configured
+      // (local/dev/single-account) this is a no-op for everyone.
+      //
+      // EDGE CASE (documented, not fully resolvable here): customer_accounts has
+      // a single stripe_customer_id column and the customer-account-linker does
+      // ON CONFLICT(email) DO UPDATE, so a customer who holds BOTH a University
+      // (Starwise) and a CD (CreditScore/Watchtower) subscription has whichever
+      // product's webhook fired last stored there. For such a dual-account
+      // customer the stored id may belong to the OTHER account than the key we
+      // pick. We optimize for the common University-only member (correct), and
+      // for the dual case the portal session would error rather than silently
+      // mis-bill. A proper fix needs a per-account customer-id column (separate
+      // refactor, out of scope for this change).
+      const secretKey = (await svc.isUniversityAccount(accountId))
+        ? universityStripeKey()
+        : undefined;
       const session = await stripeRequest<{ url: string }>(
         "POST",
         "/billing_portal/sessions",
@@ -501,6 +525,7 @@ export function portalRoutes(db: Db): Router {
           customer: account.stripeCustomerId,
           return_url: returnUrl,
         },
+        secretKey,
       );
       void svc.logAction(accountId, "stripe_portal_opened", {});
       res.json({ url: session.url });

@@ -12,6 +12,10 @@ const mockStripeRequest = vi.hoisted(() => vi.fn());
 vi.mock("../services/stripe-client.js", () => ({
   stripeRequest: mockStripeRequest,
   stripeConfigured: () => true,
+  // /stripe-portal now resolves a per-account key (University → Starwise).
+  // None of these tests exercise that path, but mock it to match the module
+  // surface the route imports.
+  universityStripeKey: () => "rk_test_university",
 }));
 
 import { portalRoutes } from "../routes/portal.js";

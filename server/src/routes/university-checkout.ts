@@ -29,6 +29,7 @@ import {
   stripeRequest,
   stripeConfigured,
   verifyStripeSignature,
+  universityStripeKey,
 } from "../services/stripe-client.js";
 import {
   handleUniversityCheckout,
@@ -57,13 +58,23 @@ interface PriceListResponse {
  *      haven't backfilled lookup_keys yet.
  *
  * Throws if neither resolves so the route surfaces a clear 503.
+ *
+ * The price lives on the University Stripe account (Starwise), NOT the shared
+ * Coherence Daddy account — so the lookup_keys call must authenticate with the
+ * University key (`universityStripeKey()` = UNIVERSITY_STRIPE_SECRET_KEY ??
+ * STRIPE_SECRET_KEY). Callers pass that key in; it defaults to the resolved
+ * University key when omitted.
  */
-export async function resolveUniversityPriceId(): Promise<string> {
-  if (stripeConfigured()) {
+export async function resolveUniversityPriceId(
+  secretKey: string | undefined = universityStripeKey(),
+): Promise<string> {
+  if (secretKey) {
     try {
       const list = await stripeRequest<PriceListResponse>(
         "GET",
         `/prices?lookup_keys[]=${encodeURIComponent(LOOKUP_KEY)}&active=true&expand[]=data.product&limit=10`,
+        undefined,
+        secretKey,
       );
       const active = list.data?.find(
         (p) => p.active && p.lookup_key === LOOKUP_KEY,
@@ -136,7 +147,11 @@ export function universityCheckoutRoutes(db: Db): Router {
     const cancelUrl = `${cancelBase}${cancelSep}status=cancelled`;
 
     try {
-      const priceId = await resolveUniversityPriceId();
+      // University bills on the Starwise account — use the University key for
+      // BOTH the price lookup and the checkout session so they hit the same
+      // account the university_monthly price lives on.
+      const secretKey = universityStripeKey();
+      const priceId = await resolveUniversityPriceId(secretKey);
       const metadata: Record<string, string> = {
         product: "university",
         plan: "university_monthly",
@@ -150,6 +165,7 @@ export function universityCheckoutRoutes(db: Db): Router {
         successUrl,
         cancelUrl,
         metadata,
+        secretKey,
       });
 
       res.json({ url: checkoutUrl, sessionId });
