@@ -208,5 +208,24 @@ export type {
   UniversityCancelFeedback,
   NewUniversityCancelFeedback,
 } from "./university.js";
+export {
+  universityCommunityPosts,
+  universityCommunityComments,
+  universityCommunityReactions,
+  universityCommunityReports,
+  universityCommunityNotifications,
+} from "./university_community.js";
+export type {
+  UniversityCommunityPost,
+  NewUniversityCommunityPost,
+  UniversityCommunityComment,
+  NewUniversityCommunityComment,
+  UniversityCommunityReaction,
+  NewUniversityCommunityReaction,
+  UniversityCommunityReport,
+  NewUniversityCommunityReport,
+  UniversityCommunityNotification,
+  NewUniversityCommunityNotification,
+} from "./university_community.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";
