@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import {
@@ -15,6 +15,11 @@ import {
   universityProgress,
   universityNotes,
   universityCancelFeedback,
+  universityCommunityPosts,
+  universityCommunityComments,
+  universityCommunityReactions,
+  universityCommunityReports,
+  universityCommunityNotifications,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
 import type { CustomerCredentialKind } from "@paperclipai/db";
@@ -26,6 +31,7 @@ import {
   type LocalEncryptedMaterial,
 } from "../secrets/local-encrypted-provider.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import leoProfanity from "leo-profanity";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
@@ -84,6 +90,146 @@ function normalizeEmail(email: string): string {
 }
 
 export const PORTAL_SESSION_COOKIE = "cd_portal_session";
+
+// ---------------------------------------------------------------------------
+// University community — shared constants, types, and pure helpers.
+// ---------------------------------------------------------------------------
+
+// Body length caps (service-enforced). Owner-confirmed defaults (DESIGN §13.9).
+const COMMUNITY_POST_MAX = 5000;
+const COMMUNITY_COMMENT_MAX = 2000;
+const COMMUNITY_REPORT_REASON_MAX = 500;
+
+// Neutral display-name fallback when a member has no display_name. Owner
+// decision §13.1 — never expose the email.
+const COMMUNITY_NAME_FALLBACK = "Coherent One";
+
+// A typed service error so routes can map an expected business outcome to a
+// specific HTTP status (e.g. 422 profanity, 404 missing target, 400 bad body)
+// without string-matching. True/unexpected failures still throw plain Error.
+export class CommunityError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CommunityError";
+  }
+}
+
+// The owner ("Mark") / staff email list, env-config'd (owner decision §13.3 —
+// no schema flag). Comma-separated COMMUNITY_STAFF_EMAILS; lowercased.
+function communityStaffEmails(): Set<string> {
+  const raw = process.env.COMMUNITY_STAFF_EMAILS?.trim();
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(",")
+      .map((e) => normalizeEmail(e))
+      .filter((e) => e.length > 0),
+  );
+}
+
+// Deterministic profanity gate (code, not an LLM — CLAUDE.md Rule 5). leo-
+// profanity's default English dictionary; conservative by design. `check()`
+// returns true if any listed word appears.
+function isCommunityProfane(text: string): boolean {
+  return leoProfanity.check(text);
+}
+
+// A stable, collision-safe @handle derived at read time (no persisted column in
+// MVP — owner decision §13.2). Slug from display name (or email local-part),
+// lowercased, non-alphanumerics stripped, with a short deterministic suffix
+// from the email so two members who slugify the same stay distinct.
+export function deriveCommunityHandle(
+  email: string,
+  displayName: string | null,
+): string {
+  const source =
+    displayName && displayName.trim().length
+      ? displayName
+      : email.split("@")[0] ?? "member";
+  let slug = source
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 20);
+  if (!slug) slug = "member";
+  // Deterministic 4-char suffix from the email so collisions are disambiguated
+  // stably (same member → same handle on every render).
+  const suffix = createHmac("sha256", "community-handle")
+    .update(normalizeEmail(email))
+    .digest("hex")
+    .slice(0, 4);
+  return `${slug}${suffix}`;
+}
+
+// Opaque cursor for community pagination — base64url of "<isoCreatedAt>|<id>".
+// Cursor pagination on (created_at, id) is stable under concurrent inserts.
+interface CommunityCursor {
+  createdAt: Date;
+  id: string;
+}
+
+export function encodeCommunityCursor(createdAt: Date, id: string): string {
+  return Buffer.from(`${createdAt.toISOString()}|${id}`, "utf8").toString(
+    "base64url",
+  );
+}
+
+export function decodeCommunityCursor(
+  cursor: string | null | undefined,
+): CommunityCursor | null {
+  if (!cursor || typeof cursor !== "string") return null;
+  try {
+    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+    const sep = decoded.indexOf("|");
+    if (sep < 0) return null;
+    const iso = decoded.slice(0, sep);
+    const id = decoded.slice(sep + 1);
+    const createdAt = new Date(iso);
+    if (Number.isNaN(createdAt.getTime()) || !id) return null;
+    return { createdAt, id };
+  } catch {
+    return null;
+  }
+}
+
+export interface CommunityAuthor {
+  displayName: string;
+  handle: string;
+  isYou: boolean;
+  isMark: boolean;
+}
+
+export interface CommunityPostView {
+  id: string;
+  author: CommunityAuthor;
+  body: string;
+  commentCount: number;
+  reactionCount: number;
+  youReacted: boolean;
+  createdAt: Date;
+}
+
+export interface CommunityCommentView {
+  id: string;
+  postId: string;
+  author: CommunityAuthor;
+  body: string;
+  reactionCount: number;
+  youReacted: boolean;
+  createdAt: Date;
+}
+
+// Default reaction kind for the MVP single "Resonate" reaction.
+export const COMMUNITY_DEFAULT_EMOJI = "resonate";
+
+// Clamp a requested page size into the allowed range (default 20, max 50).
+export function clampCommunityLimit(raw: unknown, fallback = 20): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(50, Math.max(1, Math.floor(n)));
+}
 
 // ---------------------------------------------------------------------------
 // Magic links
@@ -1108,6 +1254,802 @@ export function customerPortalService(db: Db) {
       );
   }
 
+  // -------------------------------------------------------------------------
+  // University native COMMUNITY feed — the "Do, between sessions" beat of the
+  // Coherent Loop. Members post short updates, comment on each other, and react
+  // ("Resonate"). Identity is the durable email (account_id once the linker has
+  // fired); the author display name is resolved at read time from
+  // university_members.display_name, falling back to "Coherent One". Moderation
+  // is light + owner-run: a member report bumps an open-report count; at the
+  // auto-hide threshold the target flips to status='hidden' (reversible).
+  // -------------------------------------------------------------------------
+
+  // The auto-hide threshold: N open reports on a target flips it to 'hidden'
+  // pending owner review. Env-config'd; defaults to 2 for the early cohort.
+  function autoHideThreshold(): number {
+    const raw = process.env.COMMUNITY_AUTOHIDE_REPORTS;
+    const n = raw ? Number(raw) : 2;
+    if (!Number.isFinite(n) || n < 1) return 2;
+    return Math.floor(n);
+  }
+
+  // Resolve display names for a set of author emails in one query. Returns a
+  // map email→displayName, using the most-recent member row's display_name and
+  // falling back to "Coherent One" (never the email — owner decision §13).
+  async function resolveDisplayNames(
+    emails: string[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const unique = Array.from(new Set(emails.map((e) => normalizeEmail(e))));
+    if (unique.length === 0) return out;
+    const rows = await db
+      .select({
+        email: universityMembers.email,
+        displayName: universityMembers.displayName,
+        createdAt: universityMembers.createdAt,
+      })
+      .from(universityMembers)
+      .where(
+        sql`LOWER(${universityMembers.email}) IN (${sql.join(
+          unique.map((e) => sql`${e}`),
+          sql`, `,
+        )})`,
+      )
+      .orderBy(desc(universityMembers.createdAt));
+    for (const row of rows) {
+      const key = normalizeEmail(row.email);
+      // First row wins (newest first); skip if already set.
+      if (out.has(key)) continue;
+      const name = row.displayName?.trim();
+      out.set(key, name && name.length ? name : COMMUNITY_NAME_FALLBACK);
+    }
+    // Any author with no member row (shouldn't happen behind the gate, but be
+    // safe) still gets the neutral fallback.
+    for (const e of unique) if (!out.has(e)) out.set(e, COMMUNITY_NAME_FALLBACK);
+    return out;
+  }
+
+  function buildAuthor(
+    authorEmail: string,
+    displayNames: Map<string, string>,
+    viewerEmail: string,
+  ): CommunityAuthor {
+    const email = normalizeEmail(authorEmail);
+    return {
+      displayName: displayNames.get(email) ?? COMMUNITY_NAME_FALLBACK,
+      handle: deriveCommunityHandle(email, displayNames.get(email) ?? null),
+      isYou: email === viewerEmail,
+      isMark: communityStaffEmails().has(email),
+    };
+  }
+
+  // Which target ids (of one type) the viewer has reacted to — for `youReacted`.
+  async function reactedTargetIds(
+    viewerEmail: string,
+    targetType: "post" | "comment",
+    targetIds: string[],
+  ): Promise<Set<string>> {
+    const set = new Set<string>();
+    if (targetIds.length === 0) return set;
+    const rows = await db
+      .select({ targetId: universityCommunityReactions.targetId })
+      .from(universityCommunityReactions)
+      .where(
+        and(
+          sql`LOWER(${universityCommunityReactions.reactorEmail}) = ${viewerEmail}`,
+          eq(universityCommunityReactions.targetType, targetType),
+          sql`${universityCommunityReactions.targetId} IN (${sql.join(
+            targetIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        ),
+      );
+    for (const r of rows) set.add(r.targetId);
+    return set;
+  }
+
+  /**
+   * The community feed: visible posts, newest first, cursor-paginated on
+   * (created_at, id) so it's stable under concurrent inserts. `limit` is
+   * clamped 1–50 by the caller. Returns each post with its resolved author
+   * label, denormalized counts, and whether the viewer has reacted.
+   */
+  async function getCommunityFeed(
+    accountId: string,
+    opts: { cursor?: string | null; limit: number },
+  ): Promise<{ posts: CommunityPostView[]; nextCursor: string | null }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) return { posts: [], nextCursor: null };
+    const cursor = decodeCommunityCursor(opts.cursor);
+
+    const where = cursor
+      ? and(
+          eq(universityCommunityPosts.status, "visible"),
+          or(
+            lt(universityCommunityPosts.createdAt, cursor.createdAt),
+            and(
+              eq(universityCommunityPosts.createdAt, cursor.createdAt),
+              lt(universityCommunityPosts.id, cursor.id),
+            ),
+          ),
+        )
+      : eq(universityCommunityPosts.status, "visible");
+
+    const rows = await db
+      .select({
+        id: universityCommunityPosts.id,
+        authorEmail: universityCommunityPosts.authorEmail,
+        body: universityCommunityPosts.body,
+        commentCount: universityCommunityPosts.commentCount,
+        reactionCount: universityCommunityPosts.reactionCount,
+        createdAt: universityCommunityPosts.createdAt,
+      })
+      .from(universityCommunityPosts)
+      .where(where)
+      .orderBy(
+        desc(universityCommunityPosts.createdAt),
+        desc(universityCommunityPosts.id),
+      )
+      .limit(opts.limit + 1);
+
+    const hasMore = rows.length > opts.limit;
+    const page = hasMore ? rows.slice(0, opts.limit) : rows;
+    const displayNames = await resolveDisplayNames(
+      page.map((r) => r.authorEmail),
+    );
+    const reacted = await reactedTargetIds(
+      identity.email,
+      "post",
+      page.map((r) => r.id),
+    );
+
+    const posts: CommunityPostView[] = page.map((r) => ({
+      id: r.id,
+      author: buildAuthor(r.authorEmail, displayNames, identity.email),
+      body: r.body,
+      commentCount: r.commentCount,
+      reactionCount: r.reactionCount,
+      youReacted: reacted.has(r.id),
+      createdAt: r.createdAt,
+    }));
+
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCommunityCursor(last.createdAt, last.id) : null;
+    return { posts, nextCursor };
+  }
+
+  /**
+   * Create a top-level post. Body is trimmed + length-validated by the caller;
+   * the deterministic profanity gate runs here (code, not an LLM) and throws a
+   * CommunityError(422) on a hit — fail loud to the author, never a silent drop.
+   */
+  async function createCommunityPost(
+    accountId: string,
+    bodyRaw: string,
+  ): Promise<CommunityPostView> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    const body = bodyRaw.trim();
+    if (!body) throw new CommunityError(400, "Post body required");
+    if (body.length > COMMUNITY_POST_MAX) {
+      throw new CommunityError(
+        400,
+        `Post must be at most ${COMMUNITY_POST_MAX} characters`,
+      );
+    }
+    if (isCommunityProfane(body)) throw new CommunityError(422, "profanity");
+
+    const [row] = await db
+      .insert(universityCommunityPosts)
+      .values({
+        accountId: identity.accountId,
+        authorEmail: identity.email,
+        body,
+      })
+      .returning({
+        id: universityCommunityPosts.id,
+        authorEmail: universityCommunityPosts.authorEmail,
+        body: universityCommunityPosts.body,
+        commentCount: universityCommunityPosts.commentCount,
+        reactionCount: universityCommunityPosts.reactionCount,
+        createdAt: universityCommunityPosts.createdAt,
+      });
+    const displayNames = await resolveDisplayNames([row.authorEmail]);
+    return {
+      id: row.id,
+      author: buildAuthor(row.authorEmail, displayNames, identity.email),
+      body: row.body,
+      commentCount: row.commentCount,
+      reactionCount: row.reactionCount,
+      youReacted: false,
+      createdAt: row.createdAt,
+    };
+  }
+
+  /**
+   * Post detail + its visible comments (oldest first, cursor-paginated). Throws
+   * CommunityError(404) if the post is missing or not visible.
+   */
+  async function getCommunityPost(
+    accountId: string,
+    postId: string,
+    opts: { cursor?: string | null; limit: number },
+  ): Promise<{
+    post: CommunityPostView;
+    comments: CommunityCommentView[];
+    nextCursor: string | null;
+  }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    const [post] = await db
+      .select({
+        id: universityCommunityPosts.id,
+        authorEmail: universityCommunityPosts.authorEmail,
+        body: universityCommunityPosts.body,
+        commentCount: universityCommunityPosts.commentCount,
+        reactionCount: universityCommunityPosts.reactionCount,
+        createdAt: universityCommunityPosts.createdAt,
+      })
+      .from(universityCommunityPosts)
+      .where(
+        and(
+          eq(universityCommunityPosts.id, postId),
+          eq(universityCommunityPosts.status, "visible"),
+        ),
+      )
+      .limit(1);
+    if (!post) throw new CommunityError(404, "Post not found");
+
+    const cursor = decodeCommunityCursor(opts.cursor);
+    const commentWhere = cursor
+      ? and(
+          eq(universityCommunityComments.postId, postId),
+          eq(universityCommunityComments.status, "visible"),
+          or(
+            sql`${universityCommunityComments.createdAt} > ${cursor.createdAt}`,
+            and(
+              eq(universityCommunityComments.createdAt, cursor.createdAt),
+              sql`${universityCommunityComments.id} > ${cursor.id}`,
+            ),
+          ),
+        )
+      : and(
+          eq(universityCommunityComments.postId, postId),
+          eq(universityCommunityComments.status, "visible"),
+        );
+
+    const commentRows = await db
+      .select({
+        id: universityCommunityComments.id,
+        postId: universityCommunityComments.postId,
+        authorEmail: universityCommunityComments.authorEmail,
+        body: universityCommunityComments.body,
+        createdAt: universityCommunityComments.createdAt,
+      })
+      .from(universityCommunityComments)
+      .where(commentWhere)
+      .orderBy(
+        asc(universityCommunityComments.createdAt),
+        asc(universityCommunityComments.id),
+      )
+      .limit(opts.limit + 1);
+
+    const hasMore = commentRows.length > opts.limit;
+    const page = hasMore ? commentRows.slice(0, opts.limit) : commentRows;
+
+    const displayNames = await resolveDisplayNames([
+      post.authorEmail,
+      ...page.map((c) => c.authorEmail),
+    ]);
+    const postReacted = await reactedTargetIds(identity.email, "post", [
+      post.id,
+    ]);
+    const commentReacted = await reactedTargetIds(
+      identity.email,
+      "comment",
+      page.map((c) => c.id),
+    );
+    // Per-comment reaction counts (a small N — one grouped query).
+    const commentReactionCounts = await communityReactionCounts(
+      "comment",
+      page.map((c) => c.id),
+    );
+
+    const postView: CommunityPostView = {
+      id: post.id,
+      author: buildAuthor(post.authorEmail, displayNames, identity.email),
+      body: post.body,
+      commentCount: post.commentCount,
+      reactionCount: post.reactionCount,
+      youReacted: postReacted.has(post.id),
+      createdAt: post.createdAt,
+    };
+    const comments: CommunityCommentView[] = page.map((c) => ({
+      id: c.id,
+      postId: c.postId,
+      author: buildAuthor(c.authorEmail, displayNames, identity.email),
+      body: c.body,
+      reactionCount: commentReactionCounts.get(c.id) ?? 0,
+      youReacted: commentReacted.has(c.id),
+      createdAt: c.createdAt,
+    }));
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCommunityCursor(last.createdAt, last.id) : null;
+    return { post: postView, comments, nextCursor };
+  }
+
+  // Grouped reaction counts for a set of targets of one type.
+  async function communityReactionCounts(
+    targetType: "post" | "comment",
+    targetIds: string[],
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (targetIds.length === 0) return out;
+    const rows = await db
+      .select({
+        targetId: universityCommunityReactions.targetId,
+        c: sql<number>`count(*)::int`,
+      })
+      .from(universityCommunityReactions)
+      .where(
+        and(
+          eq(universityCommunityReactions.targetType, targetType),
+          sql`${universityCommunityReactions.targetId} IN (${sql.join(
+            targetIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        ),
+      )
+      .groupBy(universityCommunityReactions.targetId);
+    for (const r of rows) out.set(r.targetId, Number(r.c));
+    return out;
+  }
+
+  /**
+   * Author-only soft delete of a post → status='removed' (kept for audit, never
+   * rendered). Returns false if the post isn't the caller's (or doesn't exist).
+   */
+  async function deleteCommunityPost(
+    accountId: string,
+    postId: string,
+  ): Promise<boolean> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    const result = await db
+      .update(universityCommunityPosts)
+      .set({ status: "removed", hiddenReason: "author", updatedAt: new Date() })
+      .where(
+        and(
+          eq(universityCommunityPosts.id, postId),
+          sql`LOWER(${universityCommunityPosts.authorEmail}) = ${identity.email}`,
+          sql`${universityCommunityPosts.status} <> 'removed'`,
+        ),
+      )
+      .returning({ id: universityCommunityPosts.id });
+    return result.length > 0;
+  }
+
+  /**
+   * Add a comment to a visible post. Profanity-gated (422). Bumps the post's
+   * denormalized comment_count in the SAME transaction as the insert, and
+   * writes a reply notification for the post author (suppressed for self-reply).
+   */
+  async function createCommunityComment(
+    accountId: string,
+    postId: string,
+    bodyRaw: string,
+  ): Promise<CommunityCommentView> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    const body = bodyRaw.trim();
+    if (!body) throw new CommunityError(400, "Comment body required");
+    if (body.length > COMMUNITY_COMMENT_MAX) {
+      throw new CommunityError(
+        400,
+        `Comment must be at most ${COMMUNITY_COMMENT_MAX} characters`,
+      );
+    }
+    if (isCommunityProfane(body)) throw new CommunityError(422, "profanity");
+
+    const inserted = await db.transaction(async (tx) => {
+      const [post] = await tx
+        .select({
+          id: universityCommunityPosts.id,
+          authorEmail: universityCommunityPosts.authorEmail,
+          accountId: universityCommunityPosts.accountId,
+        })
+        .from(universityCommunityPosts)
+        .where(
+          and(
+            eq(universityCommunityPosts.id, postId),
+            eq(universityCommunityPosts.status, "visible"),
+          ),
+        )
+        .limit(1);
+      if (!post) throw new CommunityError(404, "Post not found");
+
+      const [comment] = await tx
+        .insert(universityCommunityComments)
+        .values({
+          postId,
+          accountId: identity.accountId,
+          authorEmail: identity.email,
+          body,
+        })
+        .returning({
+          id: universityCommunityComments.id,
+          postId: universityCommunityComments.postId,
+          authorEmail: universityCommunityComments.authorEmail,
+          body: universityCommunityComments.body,
+          createdAt: universityCommunityComments.createdAt,
+        });
+
+      await tx
+        .update(universityCommunityPosts)
+        .set({
+          commentCount: sql`${universityCommunityPosts.commentCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(universityCommunityPosts.id, postId));
+
+      // Reply notification — never notify the author about their own comment.
+      const recipientEmail = normalizeEmail(post.authorEmail);
+      if (recipientEmail !== identity.email) {
+        await tx.insert(universityCommunityNotifications).values({
+          accountId: post.accountId,
+          recipientEmail,
+          actorEmail: identity.email,
+          kind: "reply",
+          postId,
+          commentId: comment.id,
+        });
+      }
+      return { comment, post };
+    });
+
+    // Best-effort email reply notification (storefront template is owner-gated;
+    // sendCreditscoreEmail warn-and-continues if the kind/template isn't wired).
+    const recipientEmail = normalizeEmail(inserted.post.authorEmail);
+    if (recipientEmail !== identity.email) {
+      void sendCommunityReplyEmail({
+        recipientEmail,
+        postId,
+        snippet: inserted.comment.body.slice(0, 140),
+      });
+    }
+
+    const displayNames = await resolveDisplayNames([inserted.comment.authorEmail]);
+    return {
+      id: inserted.comment.id,
+      postId: inserted.comment.postId,
+      author: buildAuthor(
+        inserted.comment.authorEmail,
+        displayNames,
+        identity.email,
+      ),
+      body: inserted.comment.body,
+      reactionCount: 0,
+      youReacted: false,
+      createdAt: inserted.comment.createdAt,
+    };
+  }
+
+  /**
+   * Author-only soft delete of a comment → status='removed'. Decrements the
+   * post's comment_count in the same transaction. Returns false if the comment
+   * isn't the caller's (or doesn't exist / already removed).
+   */
+  async function deleteCommunityComment(
+    accountId: string,
+    commentId: string,
+  ): Promise<boolean> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    return db.transaction(async (tx) => {
+      const removed = await tx
+        .update(universityCommunityComments)
+        .set({
+          status: "removed",
+          hiddenReason: "author",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(universityCommunityComments.id, commentId),
+            sql`LOWER(${universityCommunityComments.authorEmail}) = ${identity.email}`,
+            eq(universityCommunityComments.status, "visible"),
+          ),
+        )
+        .returning({ postId: universityCommunityComments.postId });
+      if (removed.length === 0) return false;
+      await tx
+        .update(universityCommunityPosts)
+        .set({
+          commentCount: sql`GREATEST(${universityCommunityPosts.commentCount} - 1, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(universityCommunityPosts.id, removed[0].postId));
+      return true;
+    });
+  }
+
+  // Verify a polymorphic target exists + is visible (integrity for reactions /
+  // reports, which carry no FK on target_id).
+  async function communityTargetIsVisible(
+    targetType: "post" | "comment",
+    targetId: string,
+  ): Promise<boolean> {
+    if (targetType === "post") {
+      const [r] = await db
+        .select({ id: universityCommunityPosts.id })
+        .from(universityCommunityPosts)
+        .where(
+          and(
+            eq(universityCommunityPosts.id, targetId),
+            eq(universityCommunityPosts.status, "visible"),
+          ),
+        )
+        .limit(1);
+      return !!r;
+    }
+    const [r] = await db
+      .select({ id: universityCommunityComments.id })
+      .from(universityCommunityComments)
+      .where(
+        and(
+          eq(universityCommunityComments.id, targetId),
+          eq(universityCommunityComments.status, "visible"),
+        ),
+      )
+      .limit(1);
+    return !!r;
+  }
+
+  /**
+   * Add a reaction ("Resonate"). Idempotent on the unique key — a double-tap is
+   * a no-op (ON CONFLICT DO NOTHING), not an error. Bumps the denormalized
+   * reaction_count on a post only when a NEW row was inserted. Returns the
+   * current count + youReacted:true.
+   */
+  async function reactToCommunity(
+    accountId: string,
+    targetType: "post" | "comment",
+    targetId: string,
+    emoji: string,
+  ): Promise<{ reactionCount: number; youReacted: boolean }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    if (!(await communityTargetIsVisible(targetType, targetId))) {
+      throw new CommunityError(404, "Target not found");
+    }
+    await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(universityCommunityReactions)
+        .values({
+          accountId: identity.accountId,
+          reactorEmail: identity.email,
+          targetType,
+          targetId,
+          emoji,
+        })
+        .onConflictDoNothing({
+          target: [
+            universityCommunityReactions.reactorEmail,
+            universityCommunityReactions.targetType,
+            universityCommunityReactions.targetId,
+            universityCommunityReactions.emoji,
+          ],
+        })
+        .returning({ id: universityCommunityReactions.id });
+      // Only bump the post counter on a genuinely new reaction.
+      if (inserted.length > 0 && targetType === "post") {
+        await tx
+          .update(universityCommunityPosts)
+          .set({
+            reactionCount: sql`${universityCommunityPosts.reactionCount} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(universityCommunityPosts.id, targetId));
+      }
+    });
+    const counts = await communityReactionCounts(targetType, [targetId]);
+    return { reactionCount: counts.get(targetId) ?? 0, youReacted: true };
+  }
+
+  /**
+   * Remove a reaction. Deletes the row (reactions are the one place we delete —
+   * a withdrawn reaction carries no audit value). Decrements the post counter
+   * only when a row was actually deleted. Returns the current count +
+   * youReacted:false.
+   */
+  async function unreactToCommunity(
+    accountId: string,
+    targetType: "post" | "comment",
+    targetId: string,
+    emoji: string,
+  ): Promise<{ reactionCount: number; youReacted: boolean }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    await db.transaction(async (tx) => {
+      const deleted = await tx
+        .delete(universityCommunityReactions)
+        .where(
+          and(
+            sql`LOWER(${universityCommunityReactions.reactorEmail}) = ${identity.email}`,
+            eq(universityCommunityReactions.targetType, targetType),
+            eq(universityCommunityReactions.targetId, targetId),
+            eq(universityCommunityReactions.emoji, emoji),
+          ),
+        )
+        .returning({ id: universityCommunityReactions.id });
+      if (deleted.length > 0 && targetType === "post") {
+        await tx
+          .update(universityCommunityPosts)
+          .set({
+            reactionCount: sql`GREATEST(${universityCommunityPosts.reactionCount} - 1, 0)`,
+            updatedAt: new Date(),
+          })
+          .where(eq(universityCommunityPosts.id, targetId));
+      }
+    });
+    const counts = await communityReactionCounts(targetType, [targetId]);
+    return { reactionCount: counts.get(targetId) ?? 0, youReacted: false };
+  }
+
+  /**
+   * Report a post/comment. Idempotent on (reporter, target) — a re-report is a
+   * no-op, never report-spam. After recording, if the target's OPEN-report
+   * count reaches the auto-hide threshold, flip it to status='hidden',
+   * hidden_reason='report' (reversible). Never reveals report counts to members.
+   */
+  async function reportCommunityTarget(
+    accountId: string,
+    targetType: "post" | "comment",
+    targetId: string,
+    reasonRaw: string | null,
+  ): Promise<void> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    if (!(await communityTargetIsVisible(targetType, targetId))) {
+      throw new CommunityError(404, "Target not found");
+    }
+    const reason =
+      reasonRaw && reasonRaw.trim().length
+        ? reasonRaw.trim().slice(0, COMMUNITY_REPORT_REASON_MAX)
+        : null;
+
+    await db
+      .insert(universityCommunityReports)
+      .values({
+        reporterEmail: identity.email,
+        accountId: identity.accountId,
+        targetType,
+        targetId,
+        reason,
+      })
+      .onConflictDoNothing({
+        target: [
+          universityCommunityReports.reporterEmail,
+          universityCommunityReports.targetType,
+          universityCommunityReports.targetId,
+        ],
+      });
+
+    const [{ openCount }] = await db
+      .select({ openCount: sql<number>`count(*)::int` })
+      .from(universityCommunityReports)
+      .where(
+        and(
+          eq(universityCommunityReports.targetType, targetType),
+          eq(universityCommunityReports.targetId, targetId),
+          eq(universityCommunityReports.status, "open"),
+        ),
+      );
+
+    if (Number(openCount) >= autoHideThreshold()) {
+      if (targetType === "post") {
+        await db
+          .update(universityCommunityPosts)
+          .set({
+            status: "hidden",
+            hiddenReason: "report",
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(universityCommunityPosts.id, targetId),
+              eq(universityCommunityPosts.status, "visible"),
+            ),
+          );
+      } else {
+        await db
+          .update(universityCommunityComments)
+          .set({
+            status: "hidden",
+            hiddenReason: "report",
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(universityCommunityComments.id, targetId),
+              eq(universityCommunityComments.status, "visible"),
+            ),
+          );
+      }
+    }
+  }
+
+  /**
+   * Count of the member's UNREAD community notifications (replies to them).
+   * Drives the sidebar badge. Cheap — rides the (recipient_email, read_at) index.
+   */
+  async function getCommunityUnreadCount(accountId: string): Promise<number> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) return 0;
+    const [{ c }] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(universityCommunityNotifications)
+      .where(
+        and(
+          sql`LOWER(${universityCommunityNotifications.recipientEmail}) = ${identity.email}`,
+          isNull(universityCommunityNotifications.readAt),
+        ),
+      );
+    return Number(c);
+  }
+
+  /**
+   * Mark all of the member's unread community notifications as seen (read_at =
+   * now). Idempotent; returns the number marked.
+   */
+  async function markCommunityNotificationsSeen(
+    accountId: string,
+  ): Promise<number> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) return 0;
+    const updated = await db
+      .update(universityCommunityNotifications)
+      .set({ readAt: new Date() })
+      .where(
+        and(
+          sql`LOWER(${universityCommunityNotifications.recipientEmail}) = ${identity.email}`,
+          isNull(universityCommunityNotifications.readAt),
+        ),
+      )
+      .returning({ id: universityCommunityNotifications.id });
+    return updated.length;
+  }
+
+  // Fire the reply email via the lifecycle envelope. The storefront Resend
+  // template for `university_community_reply` is owner-gated — until it ships,
+  // sendCreditscoreEmail warn-and-continues (it no-ops when the callback isn't
+  // configured), so the in-app badge works without it.
+  async function sendCommunityReplyEmail(args: {
+    recipientEmail: string;
+    postId: string;
+    snippet: string;
+  }): Promise<void> {
+    try {
+      const base = portalBaseUrl().replace(/\/+$/, "");
+      await sendCreditscoreEmail({
+        kind: "university_community_reply",
+        to: args.recipientEmail,
+        data: {
+          postUrl: `${base}/university/community/${args.postId}`,
+          snippet: args.snippet,
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err, recipientEmail: args.recipientEmail, postId: args.postId },
+        "portal/university/community: reply email send failed",
+      );
+    }
+  }
+
   return {
     createMagicLink,
     previewMagicLink,
@@ -1132,6 +2074,17 @@ export function customerPortalService(db: Db) {
     upsertNote,
     getNotes,
     deleteNote,
+    getCommunityFeed,
+    createCommunityPost,
+    getCommunityPost,
+    deleteCommunityPost,
+    createCommunityComment,
+    deleteCommunityComment,
+    reactToCommunity,
+    unreactToCommunity,
+    reportCommunityTarget,
+    getCommunityUnreadCount,
+    markCommunityNotificationsSeen,
     logAction,
   };
 }

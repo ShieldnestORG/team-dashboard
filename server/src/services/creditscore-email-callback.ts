@@ -36,7 +36,12 @@ export type CreditscoreEmailKind =
   | "university_canceled"
   | "university_onboarding_d1"
   | "university_onboarding_d3"
-  | "university_winback";
+  | "university_winback"
+  // Community reply notification ("someone replied to your post"). The storefront
+  // Resend template is owner-gated (must ship CAN-SPAM compliant); until it
+  // exists this kind no-ops via the warn-and-continue callback, so the in-app
+  // unread badge works without it.
+  | "university_community_reply";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;
