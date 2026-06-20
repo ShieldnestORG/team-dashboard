@@ -197,6 +197,9 @@ export {
   universityCancelFeedback,
   universitySessions,
   universitySessionRsvps,
+  universityReferralCodes,
+  universityReferrals,
+  universityCreditLedger,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -213,6 +216,12 @@ export type {
   NewUniversitySession,
   UniversitySessionRsvp,
   NewUniversitySessionRsvp,
+  UniversityReferralCode,
+  NewUniversityReferralCode,
+  UniversityReferral,
+  NewUniversityReferral,
+  UniversityCreditLedgerRow,
+  NewUniversityCreditLedgerRow,
 } from "./university.js";
 export {
   universityCommunityPosts,

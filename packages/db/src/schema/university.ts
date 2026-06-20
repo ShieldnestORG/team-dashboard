@@ -359,6 +359,157 @@ export const universitySessionRsvps = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University REFERRAL program (credit-only) + the SHARED member credit ledger.
+//
+// See designs/DESIGN-referral-program.md. Three tables, all following the same
+// convention as the rest of University — the durable join key is the lowercased
+// `email`; `account_id` fills in once the customer-account-linker resolves the
+// shared magic-link login identity. Attribution happens at checkout, where the
+// email is known but the account may not be, so email must carry the identity.
+//
+//   universityReferralCodes  — one code per member (UNIQUE code + UNIQUE email).
+//   universityReferrals      — the attribution record, one per referred member.
+//                              UNIQUE(referred_email) is the first-touch lock.
+//   universityCreditLedger   — the ONE shared, append-only, signed ledger. BOTH
+//                              referral AND (future) repost-for-credit write
+//                              here, so a single balance + single floor check
+//                              makes it impossible to double-discount past the
+//                              floor. Balance = SUM(amount_cents) WHERE email=?.
+//                              Never UPDATE/DELETE a row; corrections are new
+//                              signed rows. Idempotency key is
+//                              (source, source_ref_id, stripe_invoice_id, kind).
+//
+// Money is integer cents. Mirrors migration 0128_university_referrals.sql.
+// ---------------------------------------------------------------------------
+
+export const universityReferralCodes = pgTable(
+  "university_referral_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the login
+    // identity. `email` is the durable owner key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable owner key. Lowercased before insert. Unique across members.
+    email: text("email").notNull(),
+    // Short, URL-safe attribution token (Crockford base32). Globally unique.
+    code: text("code").notNull(),
+    // active | disabled
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    codeUq: uniqueIndex("university_referral_codes_code_key").on(table.code),
+    emailUq: uniqueIndex("university_referral_codes_email_key").on(table.email),
+    accountIdx: index("university_referral_codes_account_idx").on(
+      table.accountId,
+    ),
+  }),
+);
+
+export const universityReferrals = pgTable(
+  "university_referrals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The code used at checkout.
+    referrerCode: text("referrer_code").notNull(),
+    // Denormalized owner email (lowercased) — the durable referrer identity.
+    referrerEmail: text("referrer_email").notNull(),
+    // Filled when known.
+    referrerAccountId: uuid("referrer_account_id"),
+    // The new member's email (lowercased).
+    referredEmail: text("referred_email").notNull(),
+    // Filled by the webhook once the member/subscription rows exist.
+    referredMemberId: uuid("referred_member_id").references(
+      () => universityMembers.id,
+    ),
+    referredSubscriptionId: uuid("referred_subscription_id").references(
+      () => universitySubscriptions.id,
+    ),
+    // The referred member's Stripe sub — the join key for invoice.paid.
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    // pending | active | churned | reversed | self_referral_blocked
+    status: text("status").notNull().default("pending"),
+    // First-touch lock time.
+    attributedAt: timestamp("attributed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // First successful paid invoice.
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+    // When the reward stream stopped.
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // The attribution lock: a member can only ever be referred ONCE.
+    referredEmailUq: uniqueIndex(
+      "university_referrals_referred_email_key",
+    ).on(table.referredEmail),
+    referrerStatusIdx: index("university_referrals_referrer_status_idx").on(
+      table.referrerEmail,
+      table.status,
+    ),
+    stripeSubIdx: index("university_referrals_stripe_sub_idx").on(
+      table.stripeSubscriptionId,
+    ),
+    referredMemberIdx: index("university_referrals_referred_member_idx").on(
+      table.referredMemberId,
+    ),
+  }),
+);
+
+export const universityCreditLedger = pgTable(
+  "university_credit_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the login identity resolves. `email` is the key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable key. Lowercased before insert.
+    email: text("email").notNull(),
+    // Signed: +earned, -applied. Integer cents.
+    amountCents: integer("amount_cents").notNull(),
+    // referral_earned | referral_reversed | repost_earned | credit_applied | admin_adjust
+    kind: text("kind").notNull(),
+    // referral | repost | admin
+    source: text("source").notNull(),
+    // FK-by-convention to the source row (university_referrals.id for referral).
+    sourceRefId: uuid("source_ref_id"),
+    // Set on credit_applied / *_earned / reversed rows.
+    stripeInvoiceId: text("stripe_invoice_id"),
+    // Human note (refund, dispute, etc.).
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // Idempotency: never double-credit one source-row for one invoice + kind.
+    idemUq: uniqueIndex("university_credit_ledger_idem_uq").on(
+      table.source,
+      table.sourceRefId,
+      table.stripeInvoiceId,
+      table.kind,
+    ),
+    emailIdx: index("university_credit_ledger_email_idx").on(table.email),
+    accountIdx: index("university_credit_ledger_account_idx").on(
+      table.accountId,
+    ),
+    invoiceIdx: index("university_credit_ledger_invoice_idx").on(
+      table.stripeInvoiceId,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -378,3 +529,13 @@ export type NewUniversitySession = typeof universitySessions.$inferInsert;
 export type UniversitySessionRsvp = typeof universitySessionRsvps.$inferSelect;
 export type NewUniversitySessionRsvp =
   typeof universitySessionRsvps.$inferInsert;
+export type UniversityReferralCode =
+  typeof universityReferralCodes.$inferSelect;
+export type NewUniversityReferralCode =
+  typeof universityReferralCodes.$inferInsert;
+export type UniversityReferral = typeof universityReferrals.$inferSelect;
+export type NewUniversityReferral = typeof universityReferrals.$inferInsert;
+export type UniversityCreditLedgerRow =
+  typeof universityCreditLedger.$inferSelect;
+export type NewUniversityCreditLedgerRow =
+  typeof universityCreditLedger.$inferInsert;

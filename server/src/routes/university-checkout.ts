@@ -36,6 +36,11 @@ import {
   handleUniversitySubscriptionUpdated,
   handleUniversitySubscriptionDeleted,
 } from "../services/university-stripe-handler.js";
+import {
+  handleReferralAttribution,
+  handleReferralInvoicePaid,
+  handleReferralRefund,
+} from "../services/university-referrals.js";
 import { logger } from "../middleware/logger.js";
 
 const LOOKUP_KEY = "university_monthly";
@@ -118,7 +123,10 @@ export function universityCheckoutRoutes(db: Db): Router {
     const email = asString(body.email).toLowerCase();
     const displayName = asString(body.displayName);
     const returnUrl = asString(body.returnUrl);
-    const ref = asString(body.ref);
+    // Referral attribution code. Accept from the body; tolerate the query param
+    // as a fallback (storefront forwards either). NOT validated/rejected here —
+    // checkout stays dumb + fast; the webhook validates against the DB.
+    const ref = asString(body.ref) || asString(req.query.ref);
 
     // Validation
     if (!email) {
@@ -161,6 +169,8 @@ export function universityCheckoutRoutes(db: Db): Router {
         customerEmail: email,
       };
       if (displayName) metadata.displayName = displayName;
+      // Belt-and-suspenders attribution: client_reference_id is the canonical
+      // Stripe-native field; metadata.referral_code is the redundant read path.
       if (ref) metadata.referral_code = ref;
 
       const { checkoutUrl, sessionId } = await createStripeCheckoutSession({
@@ -265,9 +275,52 @@ export async function dispatchUniversityEvent(
       customer_email?: string | null;
       customer_details?: { email?: string | null } | null;
       subscription?: string | null;
+      client_reference_id?: string | null;
     };
     if (session.metadata?.product !== "university") return;
+    // Referral attribution runs BEFORE the member/subscription upsert so the
+    // "can't refer an existing member" check sees the pre-checkout state (the
+    // member row this very checkout is about to create must not count). Failures
+    // here must NOT block activation — credit is a benefit layered on top of a
+    // paid membership, never a precondition for it.
+    try {
+      await handleReferralAttribution(db, session);
+    } catch (err) {
+      logger.error(
+        { err, sessionId: session.id },
+        "university-webhook: referral attribution failed (non-fatal) — activation continues",
+      );
+    }
     await handleUniversityCheckout(db, session);
+    return;
+  }
+
+  // invoice.paid (and the older alias invoice.payment_succeeded) — the lifetime
+  // engine: accrue the referrer's monthly credit and apply the payer's standing
+  // credit to this invoice (capped at the floor). See university-referrals.ts.
+  if (
+    event.type === "invoice.paid"
+    || event.type === "invoice.payment_succeeded"
+  ) {
+    const invoice = event.data.object as {
+      id: string;
+      subscription?: string | null;
+      customer?: string | null;
+      customer_email?: string | null;
+    };
+    await handleReferralInvoicePaid(db, invoice);
+    return;
+  }
+
+  // charge.refunded — reverse the referral credit for the affected invoice
+  // (credit-only, so no cash clawback).
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as {
+      id: string;
+      invoice?: string | null;
+      customer?: string | null;
+    };
+    await handleReferralRefund(db, charge);
     return;
   }
 
