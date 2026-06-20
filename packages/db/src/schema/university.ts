@@ -214,6 +214,45 @@ export const universityNotes = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University CANCEL feedback — the reason a member gives when they cancel.
+//
+// Purely a feedback log. The actual cancel is a Stripe action (the portal
+// save-flow sets cancel_at_period_end=true); this table captures the optional
+// free-text "why are you leaving?" so churn reasons survive for later review.
+// Not part of entitlement/billing logic — never gates access.
+//
+// The member is identified the same way the rest of University is — by the
+// shared customer_accounts login (account_id once the linker has fired) joined
+// on the lowercased `email` as the durable fallback. Both are stored so the
+// row is attributable before AND after the account link resolves. Append-only:
+// every cancel attempt is its own row (no uniqueness key) so repeated
+// cancel→reactivate→cancel cycles all leave a trace.
+// ---------------------------------------------------------------------------
+
+export const universityCancelFeedback = pgTable(
+  "university_cancel_feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    // Optional free-text reason. Nullable — a member can cancel silently.
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    emailIdx: index("university_cancel_feedback_email_idx").on(table.email),
+    accountIdx: index("university_cancel_feedback_account_idx").on(
+      table.accountId,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -224,3 +263,7 @@ export type UniversityProgress = typeof universityProgress.$inferSelect;
 export type NewUniversityProgress = typeof universityProgress.$inferInsert;
 export type UniversityNote = typeof universityNotes.$inferSelect;
 export type NewUniversityNote = typeof universityNotes.$inferInsert;
+export type UniversityCancelFeedback =
+  typeof universityCancelFeedback.$inferSelect;
+export type NewUniversityCancelFeedback =
+  typeof universityCancelFeedback.$inferInsert;

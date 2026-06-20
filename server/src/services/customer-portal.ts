@@ -14,6 +14,7 @@ import {
   universitySubscriptions,
   universityProgress,
   universityNotes,
+  universityCancelFeedback,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
 import type { CustomerCredentialKind } from "@paperclipai/db";
@@ -721,6 +722,64 @@ export function customerPortalService(db: Db) {
     return rows[0]?.stripeCustomerId ?? null;
   }
 
+  /**
+   * The member's most-recent University (Starwise) Stripe subscription id —
+   * the one the billing save-flow (cancel / pause / reactivate) operates on.
+   *
+   * Reads from `university_subscriptions` (written ONLY by the University
+   * checkout/webhook, which authenticate with universityStripeKey()), so the
+   * returned id always belongs to the same Stripe account the save-flow uses
+   * universityStripeKey() against — the same key/id-pairing guarantee as
+   * getUniversityStripeCustomerId(). Matches on account_id OR email (the same
+   * durable join keys), ignores status on purpose (a past_due/canceling member
+   * still owns a live subscription they may reactivate), and returns the most
+   * recently created row. Null when no subscription id has been recorded yet.
+   */
+  async function getUniversityStripeSubscriptionId(
+    accountId: string,
+  ): Promise<string | null> {
+    const account = await getAccount(accountId);
+    if (!account) return null;
+    const email = normalizeEmail(account.email);
+    const rows = await db
+      .select({
+        stripeSubscriptionId: universitySubscriptions.stripeSubscriptionId,
+      })
+      .from(universitySubscriptions)
+      .where(
+        and(
+          or(
+            sql`LOWER(${universitySubscriptions.email}) = ${email}`,
+            eq(universitySubscriptions.accountId, account.id),
+          ),
+          sql`${universitySubscriptions.stripeSubscriptionId} IS NOT NULL`,
+        ),
+      )
+      .orderBy(desc(universitySubscriptions.createdAt))
+      .limit(1);
+    return rows[0]?.stripeSubscriptionId ?? null;
+  }
+
+  /**
+   * Persist the optional free-text reason a member gives when they cancel from
+   * the billing save-flow. Pure feedback log — append-only, never gates access.
+   * Carries both the durable email identity and the resolved account_id so the
+   * row is attributable before AND after the account link fires (mirrors the
+   * email-OR-account_id join keys the rest of University uses).
+   */
+  async function recordCancelFeedback(
+    accountId: string,
+    reason: string | null,
+  ): Promise<void> {
+    const account = await getAccount(accountId);
+    if (!account) throw new Error("Account not found");
+    await db.insert(universityCancelFeedback).values({
+      accountId: account.id,
+      email: normalizeEmail(account.email),
+      reason: reason && reason.length ? reason : null,
+    });
+  }
+
   async function setStripeCustomerId(
     accountId: string,
     stripeCustomerId: string,
@@ -1064,6 +1123,8 @@ export function customerPortalService(db: Db) {
     revokeCredentialByKind,
     isUniversityAccount,
     getUniversityStripeCustomerId,
+    getUniversityStripeSubscriptionId,
+    recordCancelFeedback,
     setStripeCustomerId,
     recordRep,
     getProgressSummary,

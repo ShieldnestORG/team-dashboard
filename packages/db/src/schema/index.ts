@@ -194,6 +194,7 @@ export {
   universitySubscriptions,
   universityProgress,
   universityNotes,
+  universityCancelFeedback,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -204,6 +205,8 @@ export type {
   NewUniversityProgress,
   UniversityNote,
   NewUniversityNote,
+  UniversityCancelFeedback,
+  NewUniversityCancelFeedback,
 } from "./university.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

@@ -53,6 +53,16 @@ const TEAM_DASHBOARD_COMPANY_ID =
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COOKIE_DOMAIN = ".coherencedaddy.com";
 
+// Add `n` whole months to a date in UTC, preserving the day-of-month where the
+// target month is long enough (JS Date normalizes overflow, e.g. Jan 31 + 1mo
+// → Mar 3; acceptable for a billing-pause resume anchor). Used to compute the
+// University pause `resumes_at` (now + 1 billing cycle).
+function addUtcMonths(from: Date, n: number): Date {
+  const d = new Date(from.getTime());
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d;
+}
+
 function parseCookies(header: string | undefined): Record<string, string> {
   if (!header) return {};
   const out: Record<string, string> = {};
@@ -790,6 +800,167 @@ export function portalRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err, accountId }, "portal/stripe-portal: create session failed");
       res.status(500).json({ error: "Failed to create billing portal session" });
+    }
+  });
+
+  // -- University billing save-flow: cancel / pause / reactivate --------------
+  //
+  // Three self-service actions on the member's University (Starwise) Stripe
+  // subscription, all gated by requireUniversityMember (403 for non-members)
+  // and requireNonImpersonating (these mutate billing — never allowed while an
+  // admin is "viewing as customer"). Every call authenticates against the
+  // SEPARATE Starwise account via universityStripeKey(); the subscription id is
+  // read from university_subscriptions (the only writer that uses that key), so
+  // key + subscription id always belong to the same Stripe account — same
+  // pairing guarantee as /stripe-portal.
+  //
+  // "Manage payment & invoices" stays the existing /stripe-portal Customer
+  // Portal hand-off — separate surface, unchanged.
+
+  // Shared prelude: gate (non-impersonating + member), require Stripe to be
+  // configured, then resolve the member's University subscription id. Returns
+  // { accountId, subId } on success, or null after writing the response.
+  async function resolveUniversitySubscription(
+    req: Request,
+    res: Response,
+  ): Promise<{ accountId: string; subId: string } | null> {
+    if (!requireNonImpersonating(req, res)) return null;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return null;
+    if (!stripeConfigured()) {
+      res.status(503).json({ error: "Stripe not configured" });
+      return null;
+    }
+    let subId: string | null;
+    try {
+      subId = await svc.getUniversityStripeSubscriptionId(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university billing: subscription lookup failed",
+      );
+      res.status(500).json({ error: "Failed to load subscription" });
+      return null;
+    }
+    if (!subId) {
+      res.status(400).json({
+        error:
+          "No University subscription found for this account. Contact support.",
+      });
+      return null;
+    }
+    return { accountId, subId };
+  }
+
+  // POST /university/cancel { reason? }
+  //   → Stripe cancel_at_period_end=true (member keeps access through the paid
+  //     period), persist the optional churn reason, return the access-until ISO.
+  router.post("/university/cancel", async (req: Request, res: Response) => {
+    const resolved = await resolveUniversitySubscription(req, res);
+    if (!resolved) return;
+    const { accountId, subId } = resolved;
+
+    const body = (req.body ?? {}) as { reason?: unknown };
+    const reason =
+      typeof body.reason === "string" ? body.reason.trim().slice(0, 2_000) : "";
+
+    try {
+      const sub = await stripeRequest<{ current_period_end: number }>(
+        "POST",
+        `/subscriptions/${subId}`,
+        { cancel_at_period_end: true },
+        universityStripeKey(),
+      );
+      // Persist the reason AFTER Stripe confirms — we only log churn feedback
+      // for cancels that actually took effect.
+      try {
+        await svc.recordCancelFeedback(accountId, reason || null);
+      } catch (err) {
+        // Feedback is non-critical; a failed insert must NOT fail the cancel.
+        logger.error(
+          { err, accountId },
+          "portal/university/cancel: recordCancelFeedback failed (cancel still applied)",
+        );
+      }
+      void svc.logAction(accountId, "university_cancel_requested", {});
+      res.json({
+        status: "canceling",
+        accessUntil: new Date(sub.current_period_end * 1000).toISOString(),
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/cancel: Stripe update failed",
+      );
+      res.status(500).json({ error: "Failed to cancel membership" });
+    }
+  });
+
+  // POST /university/pause { months? = 1 }
+  //   → Stripe pause_collection { behavior: 'void' } for one billing cycle.
+  //     Voids invoices during the pause; collection resumes at resumes_at.
+  router.post("/university/pause", async (req: Request, res: Response) => {
+    const resolved = await resolveUniversitySubscription(req, res);
+    if (!resolved) return;
+    const { accountId, subId } = resolved;
+
+    // Contract is single-cycle; `months` is accepted for forward-compat but
+    // clamped to 1 (the only supported value today).
+    const body = (req.body ?? {}) as { months?: unknown };
+    const monthsRaw = Number(body.months);
+    const months =
+      Number.isFinite(monthsRaw) && monthsRaw >= 1 ? Math.trunc(monthsRaw) : 1;
+
+    // resumes_at = now + one billing cycle (monthly). Computed from a UTC date
+    // so the day-of-month anchor is preserved across month-length differences.
+    const resumesAtMs = addUtcMonths(new Date(), months).getTime();
+    const resumesAtUnix = Math.floor(resumesAtMs / 1000);
+
+    try {
+      await stripeRequest(
+        "POST",
+        `/subscriptions/${subId}`,
+        { pause_collection: { behavior: "void", resumes_at: resumesAtUnix } },
+        universityStripeKey(),
+      );
+      void svc.logAction(accountId, "university_paused", {});
+      res.json({
+        status: "paused",
+        resumesAt: new Date(resumesAtUnix * 1000).toISOString(),
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/pause: Stripe update failed",
+      );
+      res.status(500).json({ error: "Failed to pause membership" });
+    }
+  });
+
+  // POST /university/reactivate
+  //   → Undo a pending cancel ("keep my membership") AND lift any pause: unset
+  //     cancel_at_period_end and clear pause_collection. Returns active.
+  router.post("/university/reactivate", async (req: Request, res: Response) => {
+    const resolved = await resolveUniversitySubscription(req, res);
+    if (!resolved) return;
+    const { accountId, subId } = resolved;
+
+    try {
+      await stripeRequest(
+        "POST",
+        `/subscriptions/${subId}`,
+        // Empty string clears pause_collection (Stripe's documented unset form).
+        { cancel_at_period_end: false, pause_collection: "" },
+        universityStripeKey(),
+      );
+      void svc.logAction(accountId, "university_reactivated", {});
+      res.json({ status: "active" });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/reactivate: Stripe update failed",
+      );
+      res.status(500).json({ error: "Failed to reactivate membership" });
     }
   });
 
