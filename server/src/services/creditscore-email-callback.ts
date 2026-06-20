@@ -41,7 +41,13 @@ export type CreditscoreEmailKind =
   // Resend template is owner-gated (must ship CAN-SPAM compliant); until it
   // exists this kind no-ops via the warn-and-continue callback, so the in-app
   // unread badge works without it.
-  | "university_community_reply";
+  | "university_community_reply"
+  // Live-session lifecycle. Windowed reminder crons fan these out to RSVP'd
+  // members (T-24h / T-1h); the canceled notice is event-driven from the admin
+  // cancel route. Templates live storefront-side (owner-gated).
+  | "university_session_reminder_24h"
+  | "university_session_reminder_1h"
+  | "university_session_canceled";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;

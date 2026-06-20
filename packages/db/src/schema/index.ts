@@ -195,6 +195,8 @@ export {
   universityProgress,
   universityNotes,
   universityCancelFeedback,
+  universitySessions,
+  universitySessionRsvps,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -207,6 +209,10 @@ export type {
   NewUniversityNote,
   UniversityCancelFeedback,
   NewUniversityCancelFeedback,
+  UniversitySession,
+  NewUniversitySession,
+  UniversitySessionRsvp,
+  NewUniversitySessionRsvp,
 } from "./university.js";
 export {
   universityCommunityPosts,

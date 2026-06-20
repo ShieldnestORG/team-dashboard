@@ -26,6 +26,9 @@ import {
   mintBridgeToken,
   type BridgeStatus,
 } from "../services/optimize-me-bridge.js";
+import { universitySessionsService } from "../services/university-sessions.js";
+import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
+import { UNIVERSITY_SESSIONS_URL } from "../services/university-email.js";
 
 // Optimize Me ("architect") app surface. The bridge handoff lands at
 // /api/sso/bridge there. Overridable via env for staging/local.
@@ -301,9 +304,227 @@ function renderAuthInterstitial(token: string): string {
 </html>`;
 }
 
+// --- University session validation (pure, module-scope) --------------------
+
+interface SessionCreateValue {
+  title: string;
+  description: string | null;
+  hostName: string;
+  hostEmail: string | null;
+  startsAt: Date;
+  durationMinutes: number;
+  joinUrl: string;
+  capacity: number | null;
+}
+
+// Bounds shared by create + patch validation.
+const SESSION_LIMITS = {
+  titleMax: 200,
+  descMax: 4_000,
+  hostMax: 200,
+  durationMax: 480,
+} as const;
+
+function isHttpsUrl(value: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    return false;
+  }
+  return u.protocol === "https:";
+}
+
+// Validate an optional capacity field. Returns the parsed value, undefined when
+// absent, or an error message. null/absent both mean "unlimited".
+function parseCapacity(
+  raw: unknown,
+): { value: number | null } | { error: string } {
+  if (raw === undefined || raw === null) return { value: null };
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+    return { error: "capacity must be an integer >= 1 or null" };
+  }
+  return { value: n };
+}
+
+function parseDuration(
+  raw: unknown,
+): { value: number } | { error: string } {
+  const n = Number(raw);
+  if (
+    !Number.isFinite(n) ||
+    !Number.isInteger(n) ||
+    n < 1 ||
+    n > SESSION_LIMITS.durationMax
+  ) {
+    return { error: `durationMinutes must be 1–${SESSION_LIMITS.durationMax}` };
+  }
+  return { value: n };
+}
+
+export function parseSessionCreate(
+  body: Record<string, unknown>,
+): { value: SessionCreateValue } | { error: string } {
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title || title.length > SESSION_LIMITS.titleMax) {
+    return { error: `title required (1–${SESSION_LIMITS.titleMax} chars)` };
+  }
+  const hostName =
+    typeof body.hostName === "string" ? body.hostName.trim() : "";
+  if (!hostName || hostName.length > SESSION_LIMITS.hostMax) {
+    return { error: `hostName required (1–${SESSION_LIMITS.hostMax} chars)` };
+  }
+  const joinUrl = typeof body.joinUrl === "string" ? body.joinUrl.trim() : "";
+  if (!joinUrl || !isHttpsUrl(joinUrl)) {
+    return { error: "joinUrl required and must be an https URL" };
+  }
+  const startsAtRaw =
+    typeof body.startsAt === "string" ? body.startsAt.trim() : "";
+  const startsAt = startsAtRaw ? new Date(startsAtRaw) : new Date("invalid");
+  if (Number.isNaN(startsAt.getTime())) {
+    return { error: "startsAt must be a valid ISO timestamp" };
+  }
+  if (startsAt.getTime() <= Date.now()) {
+    return { error: "startsAt must be in the future" };
+  }
+
+  let durationMinutes = 60;
+  if (body.durationMinutes !== undefined) {
+    const d = parseDuration(body.durationMinutes);
+    if ("error" in d) return { error: d.error };
+    durationMinutes = d.value;
+  }
+
+  const cap = parseCapacity(body.capacity);
+  if ("error" in cap) return { error: cap.error };
+
+  const description =
+    typeof body.description === "string"
+      ? body.description.slice(0, SESSION_LIMITS.descMax)
+      : null;
+  const hostEmail =
+    typeof body.hostEmail === "string" && body.hostEmail.trim()
+      ? body.hostEmail.trim()
+      : null;
+
+  return {
+    value: {
+      title,
+      description,
+      hostName,
+      hostEmail,
+      startsAt,
+      durationMinutes,
+      joinUrl,
+      capacity: cap.value,
+    },
+  };
+}
+
+export function parseSessionPatch(
+  body: Record<string, unknown>,
+):
+  | { value: Partial<SessionCreateValue> }
+  | { error: string } {
+  const out: Partial<SessionCreateValue> = {};
+
+  if (body.title !== undefined) {
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title || title.length > SESSION_LIMITS.titleMax) {
+      return { error: `title must be 1–${SESSION_LIMITS.titleMax} chars` };
+    }
+    out.title = title;
+  }
+  if (body.hostName !== undefined) {
+    const hostName =
+      typeof body.hostName === "string" ? body.hostName.trim() : "";
+    if (!hostName || hostName.length > SESSION_LIMITS.hostMax) {
+      return { error: `hostName must be 1–${SESSION_LIMITS.hostMax} chars` };
+    }
+    out.hostName = hostName;
+  }
+  if (body.joinUrl !== undefined) {
+    const joinUrl =
+      typeof body.joinUrl === "string" ? body.joinUrl.trim() : "";
+    if (!joinUrl || !isHttpsUrl(joinUrl)) {
+      return { error: "joinUrl must be an https URL" };
+    }
+    out.joinUrl = joinUrl;
+  }
+  if (body.startsAt !== undefined) {
+    const raw = typeof body.startsAt === "string" ? body.startsAt.trim() : "";
+    const startsAt = raw ? new Date(raw) : new Date("invalid");
+    if (Number.isNaN(startsAt.getTime())) {
+      return { error: "startsAt must be a valid ISO timestamp" };
+    }
+    out.startsAt = startsAt;
+  }
+  if (body.durationMinutes !== undefined) {
+    const d = parseDuration(body.durationMinutes);
+    if ("error" in d) return { error: d.error };
+    out.durationMinutes = d.value;
+  }
+  if (body.capacity !== undefined) {
+    const cap = parseCapacity(body.capacity);
+    if ("error" in cap) return { error: cap.error };
+    out.capacity = cap.value;
+  }
+  if (body.description !== undefined) {
+    out.description =
+      typeof body.description === "string"
+        ? body.description.slice(0, SESSION_LIMITS.descMax)
+        : null;
+  }
+  if (body.hostEmail !== undefined) {
+    out.hostEmail =
+      typeof body.hostEmail === "string" && body.hostEmail.trim()
+        ? body.hostEmail.trim()
+        : null;
+  }
+
+  if (Object.keys(out).length === 0) {
+    return { error: "No editable fields provided" };
+  }
+  return { value: out };
+}
+
+// Admin-facing serialization (full row, NOT the gated member view — admins see
+// the join_url unconditionally since they author it). Timestamps as ISO.
+function serializeAdminSession(row: {
+  id: string;
+  title: string;
+  description: string | null;
+  hostName: string;
+  hostEmail: string | null;
+  startsAt: Date;
+  durationMinutes: number;
+  joinUrl: string;
+  capacity: number | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): Record<string, unknown> {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description ?? null,
+    hostName: row.hostName,
+    hostEmail: row.hostEmail ?? null,
+    startsAt: row.startsAt.toISOString(),
+    durationMinutes: row.durationMinutes,
+    joinUrl: row.joinUrl,
+    capacity: row.capacity ?? null,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 export function portalRoutes(db: Db): Router {
   const router = Router();
   const svc = customerPortalService(db);
+  const sessionsSvc = universitySessionsService(db);
 
   function requireSession(req: Request, res: Response): string | null {
     // Impersonation cookie wins when present (admin "View as customer").
@@ -1126,6 +1347,287 @@ export function portalRoutes(db: Db): Router {
           "portal/university/community/notifications/seen: failed",
         );
         res.status(500).json({ error: "Failed to mark notifications seen" });
+      }
+    },
+  );
+
+  // -- University live SESSIONS (scheduling + RSVP) ---------------------------
+  //
+  // The "Practice together" leg of the Coherent Loop. Admin-created scheduled
+  // sits; members RSVP, get reminded (T-24h / T-1h via university-crons.ts),
+  // save to calendar (.ics), and one-click join an external video room when
+  // it's live. Gated to University members via requireUniversityMember();
+  // mutations add requireNonImpersonating first (read-only under impersonation).
+  // The DB logic lives in university-sessions.ts; routes stay validation/shape.
+  //
+  // join_url is NEVER returned unless the session is live AND the caller RSVP'd
+  // `going` — the service enforces this so a recurring room link can't leak.
+  //
+  // GET    /university/sessions?scope=upcoming|past → { sessions: [...] }
+  // POST   /university/sessions/:id/rsvp            → upsert going; 409 if full
+  // DELETE /university/sessions/:id/rsvp            → soft-cancel; idempotent
+  // GET    /university/sessions/:id/ics             → text/calendar (VEVENT)
+  // POST   /university/sessions      (admin)        → create one scheduled row
+  // PATCH  /university/sessions/:id  (admin)        → partial edit
+  // POST   /university/sessions/:id/cancel (admin)  → soft-cancel + notice
+
+  // Admin authoring is gated on an env allow-list of admin account emails
+  // (UNIVERSITY_SESSION_ADMINS, comma-separated), checked AFTER the membership
+  // gate. There is no member-facing admin-role system in the University path
+  // today; an env allow-list is honest, zero-schema, and the simplest
+  // sufficient gate (DESIGN §5.2/§10 opt 2).
+  function sessionAdminEmails(): Set<string> {
+    const raw = process.env.UNIVERSITY_SESSION_ADMINS ?? "";
+    return new Set(
+      raw
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e.length > 0),
+    );
+  }
+
+  // Resolve the member (membership-gated) AND require they're on the admin
+  // allow-list. Returns the accountId on success, or null after writing 403.
+  async function requireSessionAdmin(
+    req: Request,
+    res: Response,
+  ): Promise<string | null> {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return null;
+    const allow = sessionAdminEmails();
+    if (allow.size === 0) {
+      res.status(403).json({ error: "Session administration is not enabled" });
+      return null;
+    }
+    let account: Awaited<ReturnType<typeof svc.getAccount>>;
+    try {
+      account = await svc.getAccount(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/sessions: admin account lookup failed",
+      );
+      res.status(500).json({ error: "Failed to verify admin" });
+      return null;
+    }
+    const email = account?.email?.trim().toLowerCase() ?? "";
+    if (!email || !allow.has(email)) {
+      res.status(403).json({ error: "Session administration required" });
+      return null;
+    }
+    return accountId;
+  }
+
+  router.get("/university/sessions", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    const scopeRaw = req.query.scope;
+    const scope = scopeRaw === "past" ? "past" : "upcoming";
+    try {
+      const sessions = await sessionsSvc.listSessions(accountId, scope);
+      res.json({ sessions });
+    } catch (err) {
+      logger.error(
+        { err, accountId, scope },
+        "portal/university/sessions: list failed",
+      );
+      res.status(500).json({ error: "Failed to load sessions" });
+    }
+  });
+
+  router.post(
+    "/university/sessions/:id/rsvp",
+    async (req: Request, res: Response) => {
+      // RSVPing mutates state — block under impersonation (read-only).
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const result = await sessionsSvc.rsvp(accountId, sessionId);
+        if (!result.ok) {
+          switch (result.code) {
+            case "not_found":
+              res.status(404).json({ error: "Session not found" });
+              return;
+            case "full":
+              res.status(409).json({ error: "Session is full" });
+              return;
+            case "canceled":
+              res.status(400).json({ error: "Session is canceled" });
+              return;
+            case "ended":
+              res.status(400).json({ error: "Session has ended" });
+              return;
+          }
+        }
+        res.status(200).json({ session: result.session });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: rsvp failed",
+        );
+        res.status(500).json({ error: "Failed to RSVP" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/sessions/:id/rsvp",
+    async (req: Request, res: Response) => {
+      // Canceling an RSVP mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const ok = await sessionsSvc.cancelRsvp(accountId, sessionId);
+        if (!ok) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: cancel-rsvp failed",
+        );
+        res.status(500).json({ error: "Failed to cancel RSVP" });
+      }
+    },
+  );
+
+  router.get(
+    "/university/sessions/:id/ics",
+    async (req: Request, res: Response) => {
+      // Contains the join link → members only.
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const ics = await sessionsSvc.buildIcs(sessionId);
+        if (ics === null) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res
+          .status(200)
+          .setHeader("Content-Type", "text/calendar; charset=utf-8")
+          .setHeader(
+            "Content-Disposition",
+            'attachment; filename="coherence-session.ics"',
+          )
+          .send(ics);
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: ics failed",
+        );
+        res.status(500).json({ error: "Failed to build calendar file" });
+      }
+    },
+  );
+
+  // -- Admin authoring (env allow-list) ---------------------------------------
+
+  router.post("/university/sessions", async (req: Request, res: Response) => {
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireSessionAdmin(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = parseSessionCreate(body);
+    if ("error" in parsed) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    try {
+      const row = await sessionsSvc.createSession({
+        ...parsed.value,
+        createdByAccount: accountId,
+      });
+      res.status(200).json({ session: serializeAdminSession(row) });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/sessions: create failed",
+      );
+      res.status(500).json({ error: "Failed to create session" });
+    }
+  });
+
+  router.patch(
+    "/university/sessions/:id",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const parsed = parseSessionPatch(body);
+      if ("error" in parsed) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      try {
+        const row = await sessionsSvc.patchSession(sessionId, parsed.value);
+        if (!row) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res.status(200).json({ session: serializeAdminSession(row) });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: patch failed",
+        );
+        res.status(500).json({ error: "Failed to update session" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/sessions/:id/cancel",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const result = await sessionsSvc.cancelSession(sessionId);
+        if (!result) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        // Event-driven "session canceled" notice to going RSVPs (DESIGN §9).
+        // The storefront template owns FROM/subject/body; we post the envelope.
+        // Per-send failures must not fail the cancel — log and continue.
+        for (const email of result.goingEmails) {
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_canceled",
+              to: email,
+              data: {
+                title: result.row.title,
+                startsAtIso: result.row.startsAt.toISOString(),
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email, sessionId },
+              "portal/university/sessions: canceled notice send failed (non-fatal)",
+            );
+          }
+        }
+        res.status(200).json({ session: serializeAdminSession(result.row) });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: cancel failed",
+        );
+        res.status(500).json({ error: "Failed to cancel session" });
       }
     },
   );
