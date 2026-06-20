@@ -55,6 +55,17 @@ describe("universityStripeKey", () => {
     );
   });
 
+  it("FAILS CLOSED when NODE_ENV is unset: throws and does NOT fall back to the shared key", () => {
+    // The foot-gun this guards: an unset/empty NODE_ENV in a real deployment
+    // must NOT silently fall back to the shared STRIPE_SECRET_KEY (which would
+    // mischarge the wrong account). Only an explicit dev/test value unlocks it.
+    delete process.env.NODE_ENV;
+    process.env.STRIPE_SECRET_KEY = "rk_live_shared";
+    expect(() => universityStripeKey()).toThrowError(
+      /UNIVERSITY_STRIPE_SECRET_KEY is required in production/,
+    );
+  });
+
   it("dev/test: falls back to the shared STRIPE_SECRET_KEY when the University key is unset", () => {
     process.env.NODE_ENV = "development";
     process.env.STRIPE_SECRET_KEY = "  rk_test_shared  ";

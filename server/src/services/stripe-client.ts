@@ -22,18 +22,23 @@ function stripeKey(override?: string): string {
  * University products bill on a SEPARATE Stripe account (Starwise Ventures),
  * not the shared Coherence Daddy account. Returns the University secret key.
  *
- * FAIL CLOSED in production: when NODE_ENV==='production' the University key is
- * REQUIRED — falling back to the shared STRIPE_SECRET_KEY would land University
- * money in the wrong (Coherence Daddy / Exegesis) account, so a missing
- * UNIVERSITY_STRIPE_SECRET_KEY throws instead of silently mischarging.
+ * FAIL CLOSED by default: the shared-key fallback is allowed ONLY when
+ * NODE_ENV is explicitly 'development' or 'test'. For any other value
+ * (including unset/empty/'production'/'staging'/typos like 'prod') the
+ * University key is REQUIRED — falling back to the shared STRIPE_SECRET_KEY
+ * would land University money in the wrong (Coherence Daddy / Exegesis)
+ * account, so a missing UNIVERSITY_STRIPE_SECRET_KEY throws instead of
+ * silently mischarging.
  *
- * Outside production we keep the shared-key fallback so local/dev/test
- * (single-account) keeps working; returns undefined only if neither is set.
+ * In dev/test we keep the shared-key fallback so local (single-account) work
+ * keeps working; returns undefined only if neither is set.
  */
 export function universityStripeKey(): string | undefined {
   const uni = process.env.UNIVERSITY_STRIPE_SECRET_KEY?.trim();
   if (uni) return uni;
-  if (process.env.NODE_ENV === "production") {
+  const env = process.env.NODE_ENV;
+  const isDevOrTest = env === "development" || env === "test";
+  if (!isDevOrTest) {
     throw new Error(
       "UNIVERSITY_STRIPE_SECRET_KEY is required in production — refusing to fall back to the shared STRIPE_SECRET_KEY (University money would land in the wrong Stripe account)",
     );
