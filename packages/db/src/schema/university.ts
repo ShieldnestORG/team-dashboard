@@ -253,6 +253,112 @@ export const universityCancelFeedback = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University LIVE SESSIONS — the "Practice together" leg of the Coherent Loop.
+//
+// A Session is an admin-created, time-boxed live group practice (a scheduled
+// sit). It is a GLOBAL/admin object, not owned by any one member — the member
+// relationship lives entirely in the RSVP table. `starts_at` is the single
+// source of truth for lifecycle (upcoming → live → ended), computed from the
+// clock in the service, never stored (no state-drift).
+//
+// The video call runs on an EXTERNAL room — `join_url` is just an https string
+// (Zoom/Meet/Whereby); the schema/code is provider-agnostic. The service NEVER
+// returns join_url unless the session is live AND the caller RSVP'd `going`, so
+// a recurring room link can't leak.
+//
+// recurrence_rule / recurrence_group are present-but-NULL at MVP (one-off rows
+// only) so the v2 recurrence generator needs no second migration — they are
+// inert until v2 materializes concrete rows sharing a recurrence_group.
+// ---------------------------------------------------------------------------
+
+export const universitySessions = pgTable(
+  "university_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    description: text("description"),
+    // Display host (e.g. "Mark"). The host need not be the creator.
+    hostName: text("host_name").notNull(),
+    // Optional internal contact — not shown to members.
+    hostEmail: text("host_email"),
+    // The instant the session starts (UTC). timestamptz — never a wall-clock
+    // string. Single source of truth for the upcoming/past split, the live
+    // window, and the reminder windows.
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    durationMinutes: integer("duration_minutes").notNull().default(60),
+    // External video room (Zoom/Meet/Whereby). Provider-agnostic https URL.
+    joinUrl: text("join_url").notNull(),
+    // Nullable = unlimited. Capacity is enforced in the service at RSVP time.
+    capacity: integer("capacity"),
+    // scheduled | canceled
+    status: text("status").notNull().default("scheduled"),
+    // v2 recurrence (NULL at MVP; one-off rows only). iCal RRULE string.
+    recurrenceRule: text("recurrence_rule"),
+    // v2 — shared id across a generated series.
+    recurrenceGroup: uuid("recurrence_group"),
+    // The admin account that created the session (audit). Nullable.
+    createdByAccount: uuid("created_by_account").references(
+      () => customerAccounts.id,
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    startsAtIdx: index("university_sessions_starts_at_idx").on(table.startsAt),
+    statusIdx: index("university_sessions_status_idx").on(table.status),
+    recurrenceGroupIdx: index("university_sessions_recurrence_group_idx").on(
+      table.recurrenceGroup,
+    ),
+  }),
+);
+
+export const universitySessionRsvps = pgTable(
+  "university_session_rsvps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => universitySessions.id),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    // going | canceled. Cancel is soft (status flip), never a delete — matches
+    // the codebase's append/soft-state style.
+    status: text("status").notNull().default("going"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One RSVP per member+session. Re-RSVPing flips status back to `going` in
+    // place (ON CONFLICT in the service). We key on email (the durable
+    // identity) so the constraint holds before the account link resolves;
+    // account_id is carried for query convenience but is NOT part of the key.
+    rsvpUq: uniqueIndex("university_session_rsvps_session_email_uq").on(
+      table.sessionId,
+      table.email,
+    ),
+    sessionStatusIdx: index("university_session_rsvps_session_status_idx").on(
+      table.sessionId,
+      table.status,
+    ),
+    emailIdx: index("university_session_rsvps_email_idx").on(table.email),
+    accountIdx: index("university_session_rsvps_account_idx").on(
+      table.accountId,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -267,3 +373,8 @@ export type UniversityCancelFeedback =
   typeof universityCancelFeedback.$inferSelect;
 export type NewUniversityCancelFeedback =
   typeof universityCancelFeedback.$inferInsert;
+export type UniversitySession = typeof universitySessions.$inferSelect;
+export type NewUniversitySession = typeof universitySessions.$inferInsert;
+export type UniversitySessionRsvp = typeof universitySessionRsvps.$inferSelect;
+export type NewUniversitySessionRsvp =
+  typeof universitySessionRsvps.$inferInsert;
