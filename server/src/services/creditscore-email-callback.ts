@@ -36,7 +36,13 @@ export type CreditscoreEmailKind =
   | "university_canceled"
   | "university_onboarding_d1"
   | "university_onboarding_d3"
-  | "university_winback";
+  | "university_winback"
+  // Live-session lifecycle. Windowed reminder crons fan these out to RSVP'd
+  // members (T-24h / T-1h); the canceled notice is event-driven from the admin
+  // cancel route. Templates live storefront-side (owner-gated).
+  | "university_session_reminder_24h"
+  | "university_session_reminder_1h"
+  | "university_session_canceled";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;

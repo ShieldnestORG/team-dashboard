@@ -23,6 +23,11 @@ export const UNIVERSITY_MANAGE_BILLING_URL =
   "https://app.coherencedaddy.com/billing";
 export const UNIVERSITY_REJOIN_URL =
   "https://coherencedaddy.com/university";
+// The Sessions tab — shared by the reminder crons (university-crons.ts) and the
+// event-driven cancel notice (the admin cancel route) so both deep-link to one
+// source of truth.
+export const UNIVERSITY_SESSIONS_URL =
+  "https://app.coherencedaddy.com/university/sessions";
 
 // Receipt display values for the single-tier $50/mo membership.
 export const UNIVERSITY_PLAN_LABEL = "Monthly";
