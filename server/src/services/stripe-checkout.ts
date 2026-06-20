@@ -13,6 +13,11 @@ export interface CheckoutOptions {
   /** Optional: reuse an existing Stripe customer (skips customer_email lookup). */
   customerId?: string;
   /**
+   * Optional Stripe `client_reference_id` — surfaced back on the completed
+   * checkout session (e.g. a referral code captured on the landing page).
+   */
+  clientReferenceId?: string;
+  /**
    * Optional Stripe account override. Defaults to STRIPE_SECRET_KEY (shared
    * Coherence Daddy account). University passes universityStripeKey() so the
    * session is created on the Starwise account where the university price lives.
@@ -45,6 +50,8 @@ export async function createCheckoutSession(
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,
   };
+
+  if (opts.clientReferenceId) params.client_reference_id = opts.clientReferenceId;
 
   // Prefer customer ID when available (avoids duplicate Stripe customers).
   if (opts.customerId) {

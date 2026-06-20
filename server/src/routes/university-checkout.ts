@@ -66,15 +66,16 @@ interface PriceListResponse {
  * University key when omitted.
  */
 export async function resolveUniversityPriceId(
-  secretKey: string | undefined = universityStripeKey(),
+  secretKey?: string,
 ): Promise<string> {
-  if (secretKey) {
+  const key = secretKey ?? universityStripeKey();
+  if (key) {
     try {
       const list = await stripeRequest<PriceListResponse>(
         "GET",
         `/prices?lookup_keys[]=${encodeURIComponent(LOOKUP_KEY)}&active=true&expand[]=data.product&limit=10`,
         undefined,
-        secretKey,
+        key,
       );
       const active = list.data?.find(
         (p) => p.active && p.lookup_key === LOOKUP_KEY,
@@ -100,6 +101,7 @@ interface CheckoutBody {
   email?: unknown;
   displayName?: unknown;
   returnUrl?: unknown;
+  ref?: unknown;
 }
 
 function asString(v: unknown): string {
@@ -116,6 +118,7 @@ export function universityCheckoutRoutes(db: Db): Router {
     const email = asString(body.email).toLowerCase();
     const displayName = asString(body.displayName);
     const returnUrl = asString(body.returnUrl);
+    const ref = asString(body.ref);
 
     // Validation
     if (!email) {
@@ -158,6 +161,7 @@ export function universityCheckoutRoutes(db: Db): Router {
         customerEmail: email,
       };
       if (displayName) metadata.displayName = displayName;
+      if (ref) metadata.referral_code = ref;
 
       const { checkoutUrl, sessionId } = await createStripeCheckoutSession({
         email,
@@ -166,6 +170,7 @@ export function universityCheckoutRoutes(db: Db): Router {
         cancelUrl,
         metadata,
         secretKey,
+        clientReferenceId: ref || undefined,
       });
 
       res.json({ url: checkoutUrl, sessionId });
