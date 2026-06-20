@@ -20,14 +20,24 @@ function stripeKey(override?: string): string {
 
 /**
  * University products bill on a SEPARATE Stripe account (Starwise Ventures),
- * not the shared Coherence Daddy account. Returns the University secret key,
- * falling back to STRIPE_SECRET_KEY when UNIVERSITY_STRIPE_SECRET_KEY is unset
- * so local/dev/test (single-account) keeps working. Returns undefined only if
- * neither is set.
+ * not the shared Coherence Daddy account. Returns the University secret key.
+ *
+ * FAIL CLOSED in production: when NODE_ENV==='production' the University key is
+ * REQUIRED — falling back to the shared STRIPE_SECRET_KEY would land University
+ * money in the wrong (Coherence Daddy / Exegesis) account, so a missing
+ * UNIVERSITY_STRIPE_SECRET_KEY throws instead of silently mischarging.
+ *
+ * Outside production we keep the shared-key fallback so local/dev/test
+ * (single-account) keeps working; returns undefined only if neither is set.
  */
 export function universityStripeKey(): string | undefined {
   const uni = process.env.UNIVERSITY_STRIPE_SECRET_KEY?.trim();
   if (uni) return uni;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "UNIVERSITY_STRIPE_SECRET_KEY is required in production — refusing to fall back to the shared STRIPE_SECRET_KEY (University money would land in the wrong Stripe account)",
+    );
+  }
   const shared = process.env.STRIPE_SECRET_KEY?.trim();
   return shared || undefined;
 }
