@@ -50,8 +50,11 @@ import { sql } from "drizzle-orm";
 
 // The portal service imports the magic-link email callback at module load.
 // No-op it so nothing touches the network (mirrors portal-routes.test.ts).
+// Captured via vi.hoisted so the replay test can assert the welcome/receipt
+// are sent ONCE per genuinely-new member and NOT re-sent on a webhook retry.
+const { emailSpy } = vi.hoisted(() => ({ emailSpy: vi.fn(async () => undefined) }));
 vi.mock("../services/creditscore-email-callback.js", () => ({
-  sendCreditscoreEmail: vi.fn(async () => undefined),
+  sendCreditscoreEmail: emailSpy,
 }));
 
 import {
@@ -223,6 +226,7 @@ describeDb("university webhook → member + subscription + portal entitlement (i
   }, 60_000);
 
   afterEach(async () => {
+    emailSpy.mockClear();
     // Order matters: subscription references member, member references account.
     await db.delete(universitySubscriptions);
     await db.delete(universityMembers);
@@ -294,9 +298,17 @@ describeDb("university webhook → member + subscription + portal entitlement (i
     expect(me.body.entitlements.university.memberSince).toEqual(expect.any(String));
   });
 
-  it("idempotent replay: a second identical signed webhook writes NO duplicate rows", async () => {
+  it("idempotent replay: a second identical signed webhook writes NO duplicate rows AND does not re-send emails", async () => {
     const first = await postSignedWebhook(app, checkoutCompletedEvent());
     expect(first.status).toBe(200);
+
+    // First (genuinely new) activation sent exactly the welcome + receipt.
+    const welcomeKinds = (kind: string) =>
+      emailSpy.mock.calls.filter(
+        (c) => (c[0] as { kind?: string } | undefined)?.kind === kind,
+      ).length;
+    expect(welcomeKinds("university_welcome")).toBe(1);
+    expect(welcomeKinds("university_receipt")).toBe(1);
 
     const replay = await postSignedWebhook(app, checkoutCompletedEvent());
     expect(replay.status).toBe(200);
@@ -320,6 +332,11 @@ describeDb("university webhook → member + subscription + portal entitlement (i
     expect(accounts).toHaveLength(1);
     expect(members[0].status).toBe("active");
     expect(subs[0].status).toBe("active");
+
+    // EMAIL idempotency: the retry must NOT re-send — still exactly one of each
+    // (a webhook retry double-sending welcome/receipt is the bug T2 fixes).
+    expect(welcomeKinds("university_welcome")).toBe(1);
+    expect(welcomeKinds("university_receipt")).toBe(1);
   });
 
   it("customer.subscription.deleted flips BOTH the member and the subscription to cancelled", async () => {

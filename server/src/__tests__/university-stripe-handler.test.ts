@@ -281,6 +281,10 @@ describe("handleUniversityCheckout", () => {
     expect(calls.find((c) => c.kind === "insert")).toBeUndefined();
     expect(calls.filter((c) => c.kind === "select")).toHaveLength(2);
     expect(calls.filter((c) => c.kind === "update")).toHaveLength(3);
+
+    // EMAIL idempotency: a replayed checkout (created=false) must NOT re-send
+    // the welcome/receipt — otherwise every Stripe webhook retry double-sends.
+    expect(emailSpy).not.toHaveBeenCalled();
   });
 
   it("returns null and does nothing when metadata.product is not 'university'", async () => {

@@ -263,42 +263,51 @@ export async function handleUniversityCheckout(
     .where(eq(universitySubscriptions.id, subscriptionId))
     .returning({ id: universitySubscriptions.id });
 
-  // Activation emails (welcome + receipt). Non-fatal: a mail failure must never
-  // break the webhook (mirrors the linkStripeCustomerToAccount try/catch above).
-  // Templates + FROM/voice live storefront-side; we only post the envelope.
-  const firstName = firstNameFromDisplayName(displayName);
-  try {
-    await sendCreditscoreEmail({
-      kind: "university_welcome",
-      to: email,
-      data: {
-        firstName,
-        loginUrl: UNIVERSITY_LOGIN_URL,
-        lessonUrl: UNIVERSITY_LESSON_URL,
-      },
-    });
-  } catch (err) {
-    logger.error(
-      { err, email, kind: "university_welcome" },
-      "university-stripe-handler: welcome email failed (non-fatal)",
-    );
-  }
-  try {
-    await sendCreditscoreEmail({
-      kind: "university_receipt",
-      to: email,
-      data: {
-        amount: UNIVERSITY_PRICE_DISPLAY,
-        dateISO: now.toISOString(),
-        plan: UNIVERSITY_PLAN_LABEL,
-        manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
-      },
-    });
-  } catch (err) {
-    logger.error(
-      { err, email, kind: "university_receipt" },
-      "university-stripe-handler: receipt email failed (non-fatal)",
-    );
+  // Activation emails (welcome + receipt) — ONLY on a genuinely new member.
+  // `created` is true exactly when the subscription row was INSERTed (the
+  // UNIQUE stripe_subscription_id idempotency key found no existing row); a
+  // Stripe webhook RETRY of the same checkout.session.completed takes the
+  // UPDATE path (created=false), so gating here is what stops the welcome +
+  // receipt from being double-sent on every replay.
+  //
+  // Non-fatal: a mail failure must never break the webhook (mirrors the
+  // linkStripeCustomerToAccount try/catch above). Templates + FROM/voice live
+  // storefront-side; we only post the envelope.
+  if (created) {
+    const firstName = firstNameFromDisplayName(displayName);
+    try {
+      await sendCreditscoreEmail({
+        kind: "university_welcome",
+        to: email,
+        data: {
+          firstName,
+          loginUrl: UNIVERSITY_LOGIN_URL,
+          lessonUrl: UNIVERSITY_LESSON_URL,
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err, email, kind: "university_welcome" },
+        "university-stripe-handler: welcome email failed (non-fatal)",
+      );
+    }
+    try {
+      await sendCreditscoreEmail({
+        kind: "university_receipt",
+        to: email,
+        data: {
+          amount: UNIVERSITY_PRICE_DISPLAY,
+          dateISO: now.toISOString(),
+          plan: UNIVERSITY_PLAN_LABEL,
+          manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err, email, kind: "university_receipt" },
+        "university-stripe-handler: receipt email failed (non-fatal)",
+      );
+    }
   }
 
   logger.info(
