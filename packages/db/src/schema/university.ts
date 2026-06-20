@@ -45,8 +45,13 @@ export const universityMembers = pgTable(
     displayName: text("display_name"),
     // pending | active | past_due | cancelled
     status: text("status").notNull().default("pending"),
-    // Stable plan key — currently single-tier 'university_monthly'.
+    // Stable plan key — 'university_monthly' ($50/mo) or 'university_annual'
+    // ($500/yr). Set from the checkout metadata.plan at activation.
     plan: text("plan").notNull().default("university_monthly"),
+    // Founding-member price-lock. Stamped true at activation while the member
+    // count is below UNIVERSITY_FOUNDING_CAP. Once true, stays true for life —
+    // the rate is locked regardless of later cap changes (see migration 0129).
+    founding: boolean("founding").notNull().default(false),
     joinedAt: timestamp("joined_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -59,6 +64,7 @@ export const universityMembers = pgTable(
     emailUq: uniqueIndex("university_members_email_key").on(table.email),
     accountIdx: index("university_members_account_idx").on(table.accountId),
     statusIdx: index("university_members_status_idx").on(table.status),
+    foundingIdx: index("university_members_founding_idx").on(table.founding),
   }),
 );
 
@@ -73,7 +79,8 @@ export const universitySubscriptions = pgTable(
     accountId: uuid("account_id"),
     // Captured at checkout. Recipient + member join key fallback.
     email: text("email"),
-    // Stable plan key — currently single-tier 'university_monthly'.
+    // Stable plan key — 'university_monthly' ($50/mo) or 'university_annual'
+    // ($500/yr). Set from the checkout metadata.plan at activation.
     plan: text("plan").default("university_monthly"),
     // pending | active | past_due | cancelled
     status: text("status").default("pending"),

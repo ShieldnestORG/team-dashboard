@@ -41,9 +41,33 @@ import {
   handleReferralInvoicePaid,
   handleReferralRefund,
 } from "../services/university-referrals.js";
+import {
+  resolvePlanKey,
+  countUniversityMembers,
+  foundingCap,
+  isFoundingEligible,
+  PLAN_ANNUAL,
+  PLAN_MONTHLY,
+  type UniversityPlanKey,
+} from "../services/university-founding.js";
 import { logger } from "../middleware/logger.js";
 
-const LOOKUP_KEY = "university_monthly";
+// Per-plan Stripe price resolution. Each plan resolves by its own lookup_key
+// first (stable across test/live rotations) then falls back to its env var.
+// Both prices live on the University Stripe account (Starwise).
+const PLAN_PRICE_CONFIG: Record<
+  UniversityPlanKey,
+  { lookupKey: string; envVar: string }
+> = {
+  [PLAN_MONTHLY]: {
+    lookupKey: "university_monthly",
+    envVar: "UNIVERSITY_STRIPE_PRICE_ID",
+  },
+  [PLAN_ANNUAL]: {
+    lookupKey: "university_annual",
+    envVar: "UNIVERSITY_ANNUAL_PRICE_ID",
+  },
+};
 
 interface PriceListResponse {
   data: Array<{
@@ -54,51 +78,54 @@ interface PriceListResponse {
 }
 
 /**
- * Resolves the Stripe price id for University.
+ * Resolves the Stripe price id for a University plan (monthly or annual).
  *
- * Order of preference (matches the convention in docs/deploy/stripe-products.md):
- *   1. `stripe.prices.list({ lookup_keys: ["university_monthly"], expand: ["data.product"] })`
+ * Order of preference per plan (matches docs/deploy/stripe-products.md):
+ *   1. `stripe.prices.list({ lookup_keys: [<plan lookup_key>], ... })`
  *      — stable across test/live mode rotations.
- *   2. `UNIVERSITY_STRIPE_PRICE_ID` env var fallback for accounts that
- *      haven't backfilled lookup_keys yet.
+ *   2. the plan's env var fallback (UNIVERSITY_STRIPE_PRICE_ID for monthly,
+ *      UNIVERSITY_ANNUAL_PRICE_ID for annual) for accounts that haven't
+ *      backfilled lookup_keys yet.
  *
  * Throws if neither resolves so the route surfaces a clear 503.
  *
- * The price lives on the University Stripe account (Starwise), NOT the shared
+ * The prices live on the University Stripe account (Starwise), NOT the shared
  * Coherence Daddy account — so the lookup_keys call must authenticate with the
  * University key (`universityStripeKey()` = UNIVERSITY_STRIPE_SECRET_KEY ??
  * STRIPE_SECRET_KEY). Callers pass that key in; it defaults to the resolved
- * University key when omitted.
+ * University key when omitted. `plan` defaults to monthly for back-compat.
  */
 export async function resolveUniversityPriceId(
-  secretKey?: string,
+  plan: UniversityPlanKey = PLAN_MONTHLY,
+  secretKey: string | undefined = universityStripeKey(),
 ): Promise<string> {
-  const key = secretKey ?? universityStripeKey();
-  if (key) {
+  const { lookupKey, envVar } = PLAN_PRICE_CONFIG[plan];
+
+  if (secretKey) {
     try {
       const list = await stripeRequest<PriceListResponse>(
         "GET",
-        `/prices?lookup_keys[]=${encodeURIComponent(LOOKUP_KEY)}&active=true&expand[]=data.product&limit=10`,
+        `/prices?lookup_keys[]=${encodeURIComponent(lookupKey)}&active=true&expand[]=data.product&limit=10`,
         undefined,
-        key,
+        secretKey,
       );
       const active = list.data?.find(
-        (p) => p.active && p.lookup_key === LOOKUP_KEY,
+        (p) => p.active && p.lookup_key === lookupKey,
       );
       if (active) return active.id;
     } catch (err) {
       logger.warn(
-        { err: (err as Error).message, lookupKey: LOOKUP_KEY },
+        { err: (err as Error).message, lookupKey, plan },
         "university-checkout: lookup_key resolve failed, falling back to env var",
       );
     }
   }
 
-  const envId = process.env.UNIVERSITY_STRIPE_PRICE_ID?.trim();
+  const envId = process.env[envVar]?.trim();
   if (envId) return envId;
 
   throw new Error(
-    `University price not resolvable: no Stripe price with lookup_key="${LOOKUP_KEY}" and UNIVERSITY_STRIPE_PRICE_ID is unset`,
+    `University price not resolvable for plan="${plan}": no Stripe price with lookup_key="${lookupKey}" and ${envVar} is unset`,
   );
 }
 
@@ -107,6 +134,9 @@ interface CheckoutBody {
   displayName?: unknown;
   returnUrl?: unknown;
   ref?: unknown;
+  // 'monthly' | 'annual' selector from the storefront toggle. Normalized via
+  // resolvePlanKey; anything unrecognized fails safe to monthly.
+  plan?: unknown;
 }
 
 function asString(v: unknown): string {
@@ -115,8 +145,41 @@ function asString(v: unknown): string {
 
 export function universityCheckoutRoutes(db: Db): Router {
   const router = Router();
-  // db is reserved for future per-checkout side effects (e.g. dedup lookups).
-  void db;
+
+  // Public status — drives the storefront's "Founding member — rate locked for
+  // life" badge + the pricing copy. Server-authoritative so the badge can't be
+  // shown after founders run out. Cheap (one COUNT); cached briefly by the CDN.
+  router.get("/status", async (_req: Request, res: Response) => {
+    try {
+      const cap = foundingCap();
+      const count = await countUniversityMembers(db);
+      const remaining = Math.max(0, cap - count);
+      res.set("Cache-Control", "public, max-age=60");
+      res.json({
+        founding: {
+          available: isFoundingEligible(count, cap),
+          cap,
+          claimed: count,
+          remaining,
+        },
+        plans: {
+          monthly: { key: PLAN_MONTHLY, priceDisplay: "$50/mo" },
+          annual: { key: PLAN_ANNUAL, priceDisplay: "$500/yr" },
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "university-checkout: status failed");
+      // Fail safe: report founding UNAVAILABLE so the storefront never promises
+      // a founding rate it can't verify.
+      res.status(200).json({
+        founding: { available: false, cap: 0, claimed: 0, remaining: 0 },
+        plans: {
+          monthly: { key: PLAN_MONTHLY, priceDisplay: "$50/mo" },
+          annual: { key: PLAN_ANNUAL, priceDisplay: "$500/yr" },
+        },
+      });
+    }
+  });
 
   router.post("/checkout", async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as CheckoutBody;
@@ -127,6 +190,9 @@ export function universityCheckoutRoutes(db: Db): Router {
     // as a fallback (storefront forwards either). NOT validated/rejected here —
     // checkout stays dumb + fast; the webhook validates against the DB.
     const ref = asString(body.ref) || asString(req.query.ref);
+    // Plan selector ('monthly' | 'annual'). Tolerate the query param as a
+    // fallback. Normalized to a stable plan key; unknown → monthly.
+    const planKey = resolvePlanKey(asString(body.plan) || asString(req.query.plan));
 
     // Validation
     if (!email) {
@@ -160,12 +226,31 @@ export function universityCheckoutRoutes(db: Db): Router {
     try {
       // University bills on the Starwise account — use the University key for
       // BOTH the price lookup and the checkout session so they hit the same
-      // account the university_monthly price lives on.
+      // account the university prices live on.
       const secretKey = universityStripeKey();
-      const priceId = await resolveUniversityPriceId(secretKey);
+      const priceId = await resolveUniversityPriceId(planKey, secretKey);
+
+      // Founding eligibility is a hint here (the webhook is authoritative and
+      // re-checks against the live count at activation). Computed best-effort so
+      // a slow/failed count never blocks checkout. We pass it on metadata so the
+      // success page / receipt can reflect it without another round-trip.
+      let foundingHint = false;
+      try {
+        foundingHint = isFoundingEligible(
+          await countUniversityMembers(db),
+          foundingCap(),
+        );
+      } catch (err) {
+        logger.warn(
+          { err: (err as Error).message, email },
+          "university-checkout: founding count failed (non-fatal) — metadata hint=false; webhook re-checks",
+        );
+      }
+
       const metadata: Record<string, string> = {
         product: "university",
-        plan: "university_monthly",
+        plan: planKey,
+        founding_hint: foundingHint ? "true" : "false",
         customerEmail: email,
       };
       if (displayName) metadata.displayName = displayName;
