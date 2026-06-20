@@ -1,9 +1,13 @@
 import { Router, type Request, type Response } from "express";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Db } from "@paperclipai/db";
 import {
   customerPortalService,
   portalBaseUrl,
   PORTAL_SESSION_COOKIE,
+  CommunityError,
+  COMMUNITY_DEFAULT_EMOJI,
+  clampCommunityLimit,
 } from "../services/customer-portal.js";
 import {
   stripeRequest,
@@ -681,6 +685,450 @@ export function portalRoutes(db: Db): Router {
       res.status(500).json({ error: "Failed to delete note" });
     }
   });
+
+  // -- University community (the native members feed) -------------------------
+  //
+  // The "Do, between sessions" beat of the Coherent Loop. A members-only async
+  // feed: members post short updates, comment, and react ("Resonate"). Mounted
+  // INLINE here (not a separate router) reusing the in-place requireUniversity-
+  // Member + requireNonImpersonating gates — identical to /university/progress
+  // and /university/notes. Every mutation is also rate-limited per member
+  // (write floods) and runs the deterministic profanity gate in the service.
+  //
+  // GET    /university/community/feed?cursor=&limit=          → feed page
+  // POST   /university/community/posts { body }               → create post
+  // GET    /university/community/posts/:id?cursor=&limit=     → post + comments
+  // DELETE /university/community/posts/:id                    → author soft-delete
+  // POST   /university/community/posts/:id/comments { body }  → add comment
+  // DELETE /university/community/comments/:id                 → author soft-delete
+  // POST   /university/community/react   { targetType, targetId, emoji? }
+  // DELETE /university/community/react   { targetType, targetId, emoji? }
+  // POST   /university/community/report  { targetType, targetId, reason? }
+  // GET    /university/community/notifications/unread-count   → { count }
+  // POST   /university/community/notifications/seen           → { ok }
+
+  // Map a thrown service CommunityError to its HTTP status; rethrow anything
+  // else for the generic 500 path. The profanity 422 surfaces a non-preachy
+  // message the portal renders inline.
+  function sendCommunityError(res: Response, err: unknown): boolean {
+    if (err instanceof CommunityError) {
+      if (err.status === 422 && err.message === "profanity") {
+        res.status(422).json({
+          error: "Let's keep it coherent — please rephrase.",
+          code: "profanity",
+        });
+        return true;
+      }
+      res.status(err.status).json({ error: err.message });
+      return true;
+    }
+    return false;
+  }
+
+  // Per-member write rate limiter. Keyed on the verified session account id
+  // (so a member behind shared NAT doesn't throttle others, and a bot behind
+  // one account is caught) with an IPv6-safe IP fallback for unauthenticated
+  // hits. 429 returns a friendly "slow down". Mirrors global-rate-limit.ts.
+  function communityWriteLimiter(maxPerMinute: number) {
+    return rateLimit({
+      windowMs: 60 * 1000,
+      max: maxPerMinute,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "You're posting quickly — give it a moment." },
+      keyGenerator: (req: Request): string => {
+        const resolved = resolvePortalAuth(req, (c) => svc.verifySession(c));
+        if (resolved) return `acct:${resolved.accountId}`;
+        return ipKeyGenerator(req.ip ?? "");
+      },
+    });
+  }
+
+  // Owner-confirmed per-minute write limits (DESIGN §13.9): posts ≤ 5,
+  // comments ≤ 15, reactions/reports kept loose but bounded against automation.
+  // Env-overridable so the owner can tune without a redeploy (and so the test
+  // suite can lift the ceiling — the limits are behavioural, not correctness).
+  function writeLimit(envVar: string, fallback: number): number {
+    const raw = process.env[envVar];
+    const n = raw ? Number(raw) : fallback;
+    if (!Number.isFinite(n) || n < 1) return fallback;
+    return Math.floor(n);
+  }
+  const postWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_POST_RATE_PER_MIN", 5),
+  );
+  const commentWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_COMMENT_RATE_PER_MIN", 15),
+  );
+  const reactWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_REACT_RATE_PER_MIN", 60),
+  );
+  const reportWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_REPORT_RATE_PER_MIN", 20),
+  );
+
+  function parseTargetType(raw: unknown): "post" | "comment" | null {
+    return raw === "post" || raw === "comment" ? raw : null;
+  }
+
+  // Validate a body string (string + non-empty after trim). Length is enforced
+  // in the service against the table-specific cap.
+  function readBody(raw: unknown): string | null {
+    if (typeof raw !== "string") return null;
+    return raw;
+  }
+
+  function serializePost(p: {
+    id: string;
+    author: { displayName: string; handle: string; isYou: boolean; isMark: boolean };
+    body: string;
+    commentCount: number;
+    reactionCount: number;
+    youReacted: boolean;
+    createdAt: Date;
+  }) {
+    return {
+      id: p.id,
+      author: p.author,
+      body: p.body,
+      commentCount: p.commentCount,
+      reactionCount: p.reactionCount,
+      youReacted: p.youReacted,
+      createdAt: p.createdAt.toISOString(),
+    };
+  }
+
+  function serializeComment(c: {
+    id: string;
+    postId: string;
+    author: { displayName: string; handle: string; isYou: boolean; isMark: boolean };
+    body: string;
+    reactionCount: number;
+    youReacted: boolean;
+    createdAt: Date;
+  }) {
+    return {
+      id: c.id,
+      postId: c.postId,
+      author: c.author,
+      body: c.body,
+      reactionCount: c.reactionCount,
+      youReacted: c.youReacted,
+      createdAt: c.createdAt.toISOString(),
+    };
+  }
+
+  router.get(
+    "/university/community/feed",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const cursor =
+        typeof req.query.cursor === "string" ? req.query.cursor : null;
+      const limit = clampCommunityLimit(req.query.limit);
+      try {
+        const { posts, nextCursor } = await svc.getCommunityFeed(accountId, {
+          cursor,
+          limit,
+        });
+        res.json({ posts: posts.map(serializePost), nextCursor });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/community/feed: list failed",
+        );
+        res.status(500).json({ error: "Failed to load feed" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/posts",
+    postWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const body = readBody((req.body ?? {}).body);
+      if (body === null) {
+        res.status(400).json({ error: "Post body required" });
+        return;
+      }
+      try {
+        const post = await svc.createCommunityPost(accountId, body);
+        res.status(201).json({ post: serializePost(post) });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId },
+          "portal/university/community/posts: create failed",
+        );
+        res.status(500).json({ error: "Failed to create post" });
+      }
+    },
+  );
+
+  router.get(
+    "/university/community/posts/:id",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      const cursor =
+        typeof req.query.cursor === "string" ? req.query.cursor : null;
+      const limit = clampCommunityLimit(req.query.limit);
+      try {
+        const result = await svc.getCommunityPost(accountId, postId, {
+          cursor,
+          limit,
+        });
+        res.json({
+          post: serializePost(result.post),
+          comments: result.comments.map(serializeComment),
+          nextCursor: result.nextCursor,
+        });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/posts/:id: detail failed",
+        );
+        res.status(500).json({ error: "Failed to load post" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/community/posts/:id",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      try {
+        const ok = await svc.deleteCommunityPost(accountId, postId);
+        if (!ok) {
+          res.status(404).json({ error: "Post not found" });
+          return;
+        }
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/posts/:id: delete failed",
+        );
+        res.status(500).json({ error: "Failed to delete post" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/posts/:id/comments",
+    commentWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      const body = readBody((req.body ?? {}).body);
+      if (body === null) {
+        res.status(400).json({ error: "Comment body required" });
+        return;
+      }
+      try {
+        const comment = await svc.createCommunityComment(
+          accountId,
+          postId,
+          body,
+        );
+        res.status(201).json({ comment: serializeComment(comment) });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/comments: create failed",
+        );
+        res.status(500).json({ error: "Failed to create comment" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/community/comments/:id",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const commentId = String(req.params.id);
+      try {
+        const ok = await svc.deleteCommunityComment(accountId, commentId);
+        if (!ok) {
+          res.status(404).json({ error: "Comment not found" });
+          return;
+        }
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId, commentId },
+          "portal/university/community/comments/:id: delete failed",
+        );
+        res.status(500).json({ error: "Failed to delete comment" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/react",
+    reactWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const b = (req.body ?? {}) as {
+        targetType?: unknown;
+        targetId?: unknown;
+        emoji?: unknown;
+      };
+      const targetType = parseTargetType(b.targetType);
+      const targetId = typeof b.targetId === "string" ? b.targetId : "";
+      if (!targetType || !targetId) {
+        res.status(400).json({ error: "targetType and targetId required" });
+        return;
+      }
+      const emoji =
+        typeof b.emoji === "string" && b.emoji.trim().length
+          ? b.emoji.trim().slice(0, 40)
+          : COMMUNITY_DEFAULT_EMOJI;
+      try {
+        const result = await svc.reactToCommunity(
+          accountId,
+          targetType,
+          targetId,
+          emoji,
+        );
+        res.status(200).json(result);
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, targetType, targetId },
+          "portal/university/community/react: react failed",
+        );
+        res.status(500).json({ error: "Failed to react" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/community/react",
+    reactWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const b = (req.body ?? {}) as {
+        targetType?: unknown;
+        targetId?: unknown;
+        emoji?: unknown;
+      };
+      const targetType = parseTargetType(b.targetType);
+      const targetId = typeof b.targetId === "string" ? b.targetId : "";
+      if (!targetType || !targetId) {
+        res.status(400).json({ error: "targetType and targetId required" });
+        return;
+      }
+      const emoji =
+        typeof b.emoji === "string" && b.emoji.trim().length
+          ? b.emoji.trim().slice(0, 40)
+          : COMMUNITY_DEFAULT_EMOJI;
+      try {
+        const result = await svc.unreactToCommunity(
+          accountId,
+          targetType,
+          targetId,
+          emoji,
+        );
+        res.status(200).json(result);
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, targetType, targetId },
+          "portal/university/community/react: unreact failed",
+        );
+        res.status(500).json({ error: "Failed to remove reaction" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/report",
+    reportWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const b = (req.body ?? {}) as {
+        targetType?: unknown;
+        targetId?: unknown;
+        reason?: unknown;
+      };
+      const targetType = parseTargetType(b.targetType);
+      const targetId = typeof b.targetId === "string" ? b.targetId : "";
+      if (!targetType || !targetId) {
+        res.status(400).json({ error: "targetType and targetId required" });
+        return;
+      }
+      const reason = typeof b.reason === "string" ? b.reason : null;
+      try {
+        await svc.reportCommunityTarget(accountId, targetType, targetId, reason);
+        // Never reveal report counts or the auto-hide outcome to members.
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, targetType, targetId },
+          "portal/university/community/report: report failed",
+        );
+        res.status(500).json({ error: "Failed to submit report" });
+      }
+    },
+  );
+
+  router.get(
+    "/university/community/notifications/unread-count",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      try {
+        const count = await svc.getCommunityUnreadCount(accountId);
+        res.json({ count });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/community/notifications/unread-count: failed",
+        );
+        res.status(500).json({ error: "Failed to load unread count" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/notifications/seen",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      try {
+        const marked = await svc.markCommunityNotificationsSeen(accountId);
+        res.json({ ok: true, marked });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/community/notifications/seen: failed",
+        );
+        res.status(500).json({ error: "Failed to mark notifications seen" });
+      }
+    },
+  );
 
   // -- List credentials -------------------------------------------------------
   router.get("/credentials", async (req: Request, res: Response) => {
