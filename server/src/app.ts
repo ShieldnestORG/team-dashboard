@@ -156,6 +156,7 @@ import { campaignRoutes } from "./routes/campaigns.js";
 import { portalRoutes } from "./routes/portal.js";
 import { portalAgentsRoutes } from "./routes/portal-agents.js";
 import { portalUpsellRoutes } from "./routes/portal-upsell.js";
+import { universityReferralRoutes } from "./routes/university-referrals.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -439,6 +440,9 @@ export async function createApp(
   app.use("/api/portal/agents", portalAgentsRoutes(db));
   // Contextual upsell cards for logged-in portal users — mounted under /api/portal.
   app.use("/api/portal", portalUpsellRoutes(db));
+  // University refer-a-friend — GET /api/portal/university/referral. Inherits
+  // the cd_portal_session cookie; gated to University members (Phase 2).
+  app.use("/api/portal", universityReferralRoutes(db));
   // Public AEO audit — no auth required. `db` is passed so every audit
   // attempt gets a row in creditscore_audit_runs for post-hoc debugging.
   app.use("/api/public", auditRoutes(db));
