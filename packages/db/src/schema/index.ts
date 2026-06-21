@@ -212,6 +212,7 @@ export {
   universityCommunityPosts,
   universityCommunityComments,
   universityCommunityReactions,
+  universityCommunityIdeaVotes,
   universityCommunityReports,
   universityCommunityNotifications,
 } from "./university_community.js";
@@ -222,6 +223,8 @@ export type {
   NewUniversityCommunityComment,
   UniversityCommunityReaction,
   NewUniversityCommunityReaction,
+  UniversityCommunityIdeaVote,
+  NewUniversityCommunityIdeaVote,
   UniversityCommunityReport,
   NewUniversityCommunityReport,
   UniversityCommunityNotification,
