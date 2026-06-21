@@ -177,6 +177,28 @@ export class XApiClient {
     return this.request<TweetResponse>("POST", "/2/tweets", { body, budgetAction });
   }
 
+  /**
+   * Post a thread: a sequence of tweets where each part replies to the previous.
+   * Reuses createTweet, feeding each returned id into the next part's replyTo.
+   * `opts.mediaIds` is one media-id array per part (index-aligned with texts).
+   * Returns the created tweet ids in order (root first).
+   */
+  async postThread(texts: string[], opts?: { mediaIds?: string[][] }): Promise<string[]> {
+    const ids: string[] = [];
+    let replyTo: string | undefined;
+    for (let i = 0; i < texts.length; i++) {
+      const res = await this.createTweet({
+        text: texts[i],
+        replyTo,
+        mediaIds: opts?.mediaIds?.[i],
+      });
+      const id = res.data.id;
+      ids.push(id);
+      replyTo = id;
+    }
+    return ids;
+  }
+
   /** Retweet a tweet by ID. */
   async retweet(tweetId: string): Promise<void> {
     const userId = await this.getUserId();

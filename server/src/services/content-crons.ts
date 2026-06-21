@@ -108,6 +108,32 @@ export const JOB_DEFS: ContentJobDef[] = [
     useContentBridge: true,
     topic: "AEO strategy for 2026: how AI directories are replacing Google for B2B discovery",
   },
+  // @tokns_fi own X stream — $TX / RWA focused. Distinct from tx_rizz amplifier:
+  // no auto-injected ecosystem cross-mentions (gated in content-bridge by accountSlug).
+  // $TX facts: L1 on Cosmos SDK + CometBFT, bridges XRPL <-> Cosmos <-> EVM, RWA /
+  // tokenized-stocks focus, institutional-grade regulated intermediaries. Site: tx.org.
+  {
+    name: "content:tx-rwa-tokns",
+    schedule: "0 10,18 * * *",
+    personality: "vanguard",
+    ownerAgent: "vanguard",
+    contentType: "tweet",
+    brand: "tokns",
+    xAccountSlug: "tokns_fi",
+    useContentBridge: true,
+    topic: "$TX as the RWA L1: tokenized stocks and real-world assets, institutional-grade and regulated, built on Cosmos SDK + CometBFT and bridging XRPL <-> Cosmos <-> EVM (tx.org)",
+  },
+  {
+    name: "content:tx-bridge-tokns",
+    schedule: "0 14 * * 1,3,5",
+    personality: "forge",
+    ownerAgent: "forge",
+    contentType: "tweet",
+    brand: "tokns",
+    xAccountSlug: "tokns_fi",
+    useContentBridge: true,
+    topic: "How $TX moves real-world-asset value across three ecosystems: the XRPL <-> Cosmos <-> EVM bridge, regulated intermediaries across NA/Europe/LATAM, post-merger (tx.org)",
+  },
   // City-trends blog — Tuesday 9am, day after Monday city intelligence refresh
   {
     name: "content:city-trends:blog",
