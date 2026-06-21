@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   pgTable,
   uuid,
   text,
@@ -53,6 +54,17 @@ export const universityCommunityPosts = pgTable(
     status: text("status").notNull().default("visible"),
     // Set when status != visible: report | profanity | admin
     hiddenReason: text("hidden_reason"),
+    // statement (default catch-all) | question | idea. CHECK-gated in SQL.
+    postType: text("post_type").notNull().default("statement"),
+    // Optional curated topic slug (wins | tools_workflows | body_mind |
+    // building_revenue | meta); nullable. CHECK-gated in SQL.
+    topic: text("topic"),
+    // The single source of truth for "answered": the chosen comment. Nullable;
+    // only question posts are ever accepted (enforced in the service).
+    // AnyPgColumn breaks the posts<->comments circular reference (repo convention).
+    acceptedCommentId: uuid("accepted_comment_id").references(
+      (): AnyPgColumn => universityCommunityComments.id,
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -71,6 +83,18 @@ export const universityCommunityPosts = pgTable(
     ),
     accountIdx: index("university_community_posts_account_idx").on(
       table.accountId,
+    ),
+    // Type filter + Open-questions board: visible posts of a type, newest first.
+    typeIdx: index("university_community_posts_type_idx").on(
+      table.postType,
+      table.status,
+      table.createdAt.desc(),
+    ),
+    // Topic filter: visible posts under a topic, newest first.
+    topicIdx: index("university_community_posts_topic_idx").on(
+      table.topic,
+      table.status,
+      table.createdAt.desc(),
     ),
   }),
 );
@@ -147,6 +171,53 @@ export const universityCommunityReactions = pgTable(
     targetIdx: index("university_community_reactions_target_idx").on(
       table.targetType,
       table.targetId,
+    ),
+  }),
+);
+
+// Idea SUPPORT with required reasoning (Spec B, migration 0128). One row per
+// member per idea post — a SUPPORT ("I'd build this") that MUST carry a written
+// reason. There is NO direction/downvote — support only ever rises or holds, so
+// an idea can never be voted down or killed (owner directive). Re-supporting
+// UPDATEs the row in place (one row, never double-counts); retracting deletes
+// it. Counts + the reason list are resolved on read (no denormalized counts)
+// and are always visible. Only post_type='idea' posts are supported (enforced
+// in the service). Keyed on the durable lowercased voter_email so the
+// one-support constraint holds before AND after the account link fires.
+export const universityCommunityIdeaVotes = pgTable(
+  "university_community_idea_votes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The idea post being supported. AnyPgColumn breaks the posts<->votes
+    // circular reference at type-inference time (repo convention, see 0127).
+    postId: uuid("post_id")
+      .notNull()
+      .references((): AnyPgColumn => universityCommunityPosts.id),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `voter_email` is the durable key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable supporter key. Lowercased before insert.
+    voterEmail: text("voter_email").notNull(),
+    // Required free text; length-capped + profanity-gated in the service.
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One support per member per idea (upsert on re-support). Keyed on the
+    // durable email identity so the constraint holds before the account link
+    // fires.
+    voteUq: uniqueIndex("university_community_idea_votes_uq").on(
+      table.voterEmail,
+      table.postId,
+    ),
+    // Count + reason-list queries: all support rows for an idea post.
+    postIdx: index("university_community_idea_votes_post_idx").on(
+      table.postId,
     ),
   }),
 );
@@ -238,6 +309,10 @@ export type UniversityCommunityReaction =
   typeof universityCommunityReactions.$inferSelect;
 export type NewUniversityCommunityReaction =
   typeof universityCommunityReactions.$inferInsert;
+export type UniversityCommunityIdeaVote =
+  typeof universityCommunityIdeaVotes.$inferSelect;
+export type NewUniversityCommunityIdeaVote =
+  typeof universityCommunityIdeaVotes.$inferInsert;
 export type UniversityCommunityReport =
   typeof universityCommunityReports.$inferSelect;
 export type NewUniversityCommunityReport =
