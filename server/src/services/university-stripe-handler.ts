@@ -51,6 +51,7 @@ import {
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 import { logActivity } from "./activity-log.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import { sendBrevoEmail } from "./brevo.js";
 import {
   UNIVERSITY_LOGIN_URL,
   UNIVERSITY_LESSON_URL,
@@ -349,6 +350,39 @@ export async function handleUniversityCheckout(
         "university-stripe-handler: receipt email failed (non-fatal)",
       );
     }
+
+    // Owner alert — notify the business inbox of every NEW paying member (Brevo).
+    // Non-fatal: a mail failure must never break the webhook.
+    try {
+      const ownerTo = process.env.OWNER_ALERT_EMAIL || "info@coherencedaddy.com";
+      const fromAddr = process.env.ALERT_EMAIL_FROM || "info@coherencedaddy.com";
+      await sendBrevoEmail({
+        from: `Coherence Daddy <${fromAddr}>`,
+        to: ownerTo,
+        subject: `💸 New $50 member: ${email}`,
+        html: `<div style="font-family:system-ui,sans-serif;font-size:15px;color:#111">
+          <h2 style="margin:0 0 12px">💸 New paying member</h2>
+          <table style="border-collapse:collapse">
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td><strong>${email}</strong></td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Name</td><td>${displayName ?? "—"}</td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Plan</td><td>${planLabel(plan)}</td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">When</td><td>${now.toISOString()}</td></tr>
+          </table>
+        </div>`,
+      });
+    } catch (err) {
+      logger.error({ err, email }, "university-stripe-handler: owner alert failed (non-fatal)");
+    }
+
+    // Owner-legible dashboard feed line (separate from the audit log below, which
+    // also covers the replay path). logUniversityActivity is itself non-fatal.
+    await logUniversityActivity(db, "university.member.joined", subscriptionId, {
+      email,
+      displayName,
+      plan,
+      founding,
+      memberId,
+    });
   }
 
   logger.info(
