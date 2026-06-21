@@ -25,6 +25,7 @@ export const BOARD_ROUTE_MANIFEST: readonly string[] = [
   "approvals",
   "costs",
   "activity",
+  "members",
   "inbox",
   "design-guide",
   "structure",

@@ -25,6 +25,7 @@ import { approvalRoutes } from "./routes/approvals.js";
 import { secretRoutes } from "./routes/secrets.js";
 import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
+import { cockpitRoutes } from "./routes/cockpit.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
@@ -343,6 +344,7 @@ export async function createApp(
   api.use(secretRoutes(db));
   api.use(costRoutes(db));
   api.use(activityRoutes(db));
+  api.use(cockpitRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(agentOpsRoutes(db));
   api.use(sidebarBadgeRoutes(db));

@@ -19,7 +19,8 @@ import { ActivityRow } from "../components/ActivityRow";
 import { Identity } from "../components/Identity";
 import { timeAgo } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
-import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
+import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle, Send, MailCheck, MailX, ListChecks, Users, UserPlus, UserMinus } from "lucide-react";
+import { cockpitApi } from "../api/cockpit";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -77,6 +78,18 @@ export function Dashboard() {
   const { data: runs } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
     queryFn: () => heartbeatsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: emailHealth } = useQuery({
+    queryKey: queryKeys.cockpit.emailHealth(selectedCompanyId!),
+    queryFn: () => cockpitApi.getEmailHealth(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: revenue } = useQuery({
+    queryKey: queryKeys.cockpit.revenue(selectedCompanyId!),
+    queryFn: () => cockpitApi.getRevenue(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -297,6 +310,85 @@ export function Dashboard() {
               }
             />
           </div>
+
+          {(emailHealth || revenue) && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Email &amp; Revenue
+              </h3>
+              <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
+                {emailHealth && (
+                  <>
+                    <MetricCard
+                      icon={Send}
+                      value={emailHealth.stats.requests.toLocaleString()}
+                      label="Emails Sent"
+                      description={<span>{emailHealth.account.email}</span>}
+                    />
+                    <MetricCard
+                      icon={MailCheck}
+                      value={emailHealth.stats.delivered.toLocaleString()}
+                      label="Delivered"
+                      description={
+                        <span>
+                          {emailHealth.stats.opens.toLocaleString()} opens{", "}
+                          {emailHealth.stats.clicks.toLocaleString()} clicks
+                        </span>
+                      }
+                    />
+                    <MetricCard
+                      icon={MailX}
+                      value={(emailHealth.stats.hardBounces + emailHealth.stats.softBounces).toLocaleString()}
+                      label="Bounces"
+                      description={
+                        <span>
+                          {emailHealth.stats.hardBounces.toLocaleString()} hard{", "}
+                          {emailHealth.stats.softBounces.toLocaleString()} soft
+                        </span>
+                      }
+                    />
+                    <MetricCard
+                      icon={ListChecks}
+                      value={emailHealth.foundingList.total.toLocaleString()}
+                      label="Founding List"
+                      description={<span>Brevo list #{emailHealth.foundingList.id}</span>}
+                    />
+                  </>
+                )}
+                {revenue && (
+                  <>
+                    <MetricCard
+                      icon={Users}
+                      value={revenue.activeMembers.toLocaleString()}
+                      label="Active Members"
+                      to="/members"
+                      description={
+                        <span>
+                          {revenue.monthlyMembers.toLocaleString()} monthly{", "}
+                          {revenue.annualMembers.toLocaleString()} annual
+                        </span>
+                      }
+                    />
+                    <MetricCard
+                      icon={DollarSign}
+                      value={`$${revenue.mrrUsd.toLocaleString()}`}
+                      label="MRR"
+                    />
+                    <MetricCard
+                      icon={UserPlus}
+                      value={revenue.newSubs30d.toLocaleString()}
+                      label="New (30d)"
+                    />
+                    <MetricCard
+                      icon={UserMinus}
+                      value={revenue.cancellations30d.toLocaleString()}
+                      label="Cancellations (30d)"
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           <Link
             to="/topic-takeover"

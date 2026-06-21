@@ -129,3 +129,122 @@ export async function sendMailBrevoFirst(
   }
   return false;
 }
+
+// ---------------------------------------------------------------------------
+// READ helpers — Cockpit "email health" reads from Brevo's REST API.
+//
+// Same auth + fetch style as sendBrevoEmail above (api-key header, global
+// fetch, no SDK), but GET. Each returns parsed JSON on success or `null` on any
+// failure (unconfigured key, non-2xx, network/parse error) so callers can fall
+// back to safe defaults instead of throwing — mirrors the "never break the
+// dashboard" posture of the send path.
+// ---------------------------------------------------------------------------
+
+const BREVO_API_BASE = "https://api.brevo.com/v3";
+
+/** GET <BREVO_API_BASE><path> with the api-key header. Parsed JSON or null. */
+async function brevoGet<T = unknown>(path: string): Promise<T | null> {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const res = await fetch(`${BREVO_API_BASE}${path}`, {
+      method: "GET",
+      headers: {
+        "api-key": apiKey,
+        accept: "application/json",
+      },
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      logger.warn({ status: res.status, path, detail }, "[BREVO] GET failed");
+      return null;
+    }
+    return (await res.json()) as T;
+  } catch (err) {
+    logger.warn({ err, path }, "[BREVO] GET threw");
+    return null;
+  }
+}
+
+/** Format a Date as YYYY-MM-DD (UTC) for Brevo's statistics date params. */
+function brevoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export interface BrevoAccount {
+  email?: string;
+  plan?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+/** GET /account — the Brevo account profile (login email, plan list). */
+export async function getBrevoAccount(): Promise<BrevoAccount | null> {
+  return brevoGet<BrevoAccount>("/account");
+}
+
+export interface BrevoEmailStats {
+  range?: string;
+  requests?: number;
+  delivered?: number;
+  hardBounces?: number;
+  softBounces?: number;
+  opens?: number;
+  uniqueOpens?: number;
+  clicks?: number;
+  uniqueClicks?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /smtp/statistics/aggregatedReport — aggregated transactional email stats.
+ * `startDate`/`endDate` are YYYY-MM-DD; default to the last 30 days.
+ */
+export async function getBrevoEmailStats(
+  startDate?: string,
+  endDate?: string,
+): Promise<BrevoEmailStats | null> {
+  const end = endDate ?? brevoDate(new Date());
+  const start =
+    startDate ?? brevoDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  return brevoGet<BrevoEmailStats>(
+    `/smtp/statistics/aggregatedReport?startDate=${start}&endDate=${end}`,
+  );
+}
+
+export interface BrevoList {
+  id?: number;
+  name?: string;
+  totalSubscribers?: number;
+  uniqueSubscribers?: number;
+  [key: string]: unknown;
+}
+
+/** GET /contacts/lists/{listId} — list metadata incl. subscriber counts. */
+export async function getBrevoListCount(
+  listId: number,
+): Promise<BrevoList | null> {
+  return brevoGet<BrevoList>(`/contacts/lists/${listId}`);
+}
+
+export interface BrevoContact {
+  email?: string;
+  id?: number;
+  attributes?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface BrevoListContacts {
+  contacts?: BrevoContact[];
+  count?: number;
+  [key: string]: unknown;
+}
+
+/** GET /contacts/lists/{listId}/contacts?limit= — contacts on a list. */
+export async function getBrevoListContacts(
+  listId: number,
+  limit = 500,
+): Promise<BrevoListContacts | null> {
+  return brevoGet<BrevoListContacts>(
+    `/contacts/lists/${listId}/contacts?limit=${limit}`,
+  );
+}

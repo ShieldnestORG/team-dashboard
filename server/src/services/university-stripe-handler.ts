@@ -50,6 +50,7 @@ import {
 } from "@paperclipai/db";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 import { logActivity } from "./activity-log.js";
+import { issueService } from "./issues.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
 import { sendBrevoEmail } from "./brevo.js";
 import {
@@ -383,6 +384,33 @@ export async function handleUniversityCheckout(
       founding,
       memberId,
     });
+
+    // Owner Inbox alert — surface every NEW paying member as a low-priority
+    // issue in the cockpit Inbox. originKind/originId dedupe per member: the
+    // issues table has no UNIQUE on (companyId, signup_alert, originId), so we
+    // check for an existing row first (idempotent across webhook replays — note
+    // this whole block is already gated on `created`). Non-fatal: an Inbox
+    // failure must never break the webhook.
+    try {
+      const originId = `member:${memberId}`;
+      const existingAlerts = await issueService(db).list(COMPANY_ID, {
+        originKind: "signup_alert",
+        originId,
+      });
+      if (existingAlerts.length === 0) {
+        await issueService(db).create(COMPANY_ID, {
+          title: `New $50 member: ${email}`,
+          priority: "low",
+          originKind: "signup_alert",
+          originId,
+        });
+      }
+    } catch (err) {
+      logger.error(
+        { err, email, memberId },
+        "university-stripe-handler: inbox signup alert failed (non-fatal)",
+      );
+    }
   }
 
   logger.info(
