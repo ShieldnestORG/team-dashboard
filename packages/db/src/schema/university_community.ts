@@ -175,19 +175,20 @@ export const universityCommunityReactions = pgTable(
   }),
 );
 
-// Idea voting with required reasoning (Spec B, migration 0128). One row per
-// member per idea post — an up / "Needs work" (down) vote that MUST carry a
-// written reason. Re-voting UPDATEs the row in place (switching direction moves
-// the tally, never double-counts); retracting deletes it. Tallies + the
-// rationale list are resolved on read (no denormalized counts), and stay hidden
-// until an idea has >= 3 votes. Only post_type='idea' posts are voted on
-// (enforced in the service). Keyed on the durable lowercased voter_email so the
-// one-vote constraint holds before AND after the account link fires.
+// Idea SUPPORT with required reasoning (Spec B, migration 0128). One row per
+// member per idea post — a SUPPORT ("I'd build this") that MUST carry a written
+// reason. There is NO direction/downvote — support only ever rises or holds, so
+// an idea can never be voted down or killed (owner directive). Re-supporting
+// UPDATEs the row in place (one row, never double-counts); retracting deletes
+// it. Counts + the reason list are resolved on read (no denormalized counts)
+// and are always visible. Only post_type='idea' posts are supported (enforced
+// in the service). Keyed on the durable lowercased voter_email so the
+// one-support constraint holds before AND after the account link fires.
 export const universityCommunityIdeaVotes = pgTable(
   "university_community_idea_votes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // The idea post being voted on. AnyPgColumn breaks the posts<->votes
+    // The idea post being supported. AnyPgColumn breaks the posts<->votes
     // circular reference at type-inference time (repo convention, see 0127).
     postId: uuid("post_id")
       .notNull()
@@ -195,10 +196,8 @@ export const universityCommunityIdeaVotes = pgTable(
     // Nullable — set once the customer-account-linker resolves the shared
     // customer_accounts login identity. `voter_email` is the durable key.
     accountId: uuid("account_id").references(() => customerAccounts.id),
-    // The durable voter key. Lowercased before insert.
+    // The durable supporter key. Lowercased before insert.
     voterEmail: text("voter_email").notNull(),
-    // 'up' | 'down' ('down' surfaced as "Needs work"). CHECK-gated in SQL.
-    direction: text("direction").notNull(),
     // Required free text; length-capped + profanity-gated in the service.
     reason: text("reason").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -209,13 +208,14 @@ export const universityCommunityIdeaVotes = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    // One vote per member per idea (upsert on re-vote). Keyed on the durable
-    // email identity so the constraint holds before the account link fires.
+    // One support per member per idea (upsert on re-support). Keyed on the
+    // durable email identity so the constraint holds before the account link
+    // fires.
     voteUq: uniqueIndex("university_community_idea_votes_uq").on(
       table.voterEmail,
       table.postId,
     ),
-    // Tally + rationale-list queries: all votes for an idea post.
+    // Count + reason-list queries: all support rows for an idea post.
     postIdx: index("university_community_idea_votes_post_idx").on(
       table.postId,
     ),

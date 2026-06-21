@@ -251,50 +251,24 @@ export interface CommunityAcceptedAnswer {
   author: CommunityAuthor;
 }
 
-// Idea-vote directions (Spec B). 'down' is surfaced as "Needs work" in the UI.
-// The wire/DB value is the lowercase slug. CHECK-gated in the DB; validated in
-// the service.
-export const COMMUNITY_VOTE_DIRECTIONS = ["up", "down"] as const;
-export type CommunityVoteDirection = (typeof COMMUNITY_VOTE_DIRECTIONS)[number];
-
-function isCommunityVoteDirection(
-  value: unknown,
-): value is CommunityVoteDirection {
-  return (
-    typeof value === "string" &&
-    (COMMUNITY_VOTE_DIRECTIONS as readonly string[]).includes(value)
-  );
-}
-
-// Required-reason cap on a vote (service-enforced). Owner-confirmed ~500 chars,
-// matching the report-reason cap.
+// Required-reason cap on a support (service-enforced). Owner-confirmed ~500
+// chars, matching the report-reason cap.
 const COMMUNITY_VOTE_REASON_MAX = 500;
 
-// Reveal threshold (Spec B, locked): an idea's tally + rationale list stay
-// hidden until it has at least this many votes. Below it, up/down/net are null
-// over the wire (the split can't be read early); a voter always sees their own
-// vote regardless.
-const COMMUNITY_VOTE_REVEAL_THRESHOLD = 3;
-
-// The idea-vote summary attached to an idea post's view (null for non-idea
-// posts). `total` is always present; `up`/`down`/`net` are null until revealed
-// (total >= threshold), so the split is never leaked early. `youVoted` carries
-// the viewer's own vote (direction + reason) or null — always visible to the
-// voter even before reveal.
-export interface CommunityIdeaVotes {
-  revealed: boolean;
-  total: number;
-  up: number | null;
-  down: number | null;
-  net: number | null;
-  youVoted: { direction: CommunityVoteDirection; reason: string } | null;
+// The idea-support summary attached to an idea post's view (null for non-idea
+// posts). `count` is the number of support rows (only ever rises or holds — no
+// down/net/negative). `youSupported` carries the viewer's own support (reason)
+// or null. Support + reasons are always visible — the signal is only positive,
+// so there is nothing to hide.
+export interface CommunityIdeaSupport {
+  count: number;
+  youSupported: { reason: string } | null;
 }
 
-// A single rationale-list entry (GET votes): one member's vote with their
-// written reason and resolved author label. Only returned once the idea is
-// revealed (total >= threshold).
-export interface CommunityIdeaVoteRationale {
-  direction: CommunityVoteDirection;
+// A single supporter-list entry (GET supporters): one member's support with
+// their written reason and resolved author label. Always returned (no reveal
+// gate — there is nothing to hide).
+export interface CommunityIdeaSupporter {
   reason: string;
   author: CommunityAuthor;
   createdAt: Date;
@@ -312,7 +286,7 @@ export interface CommunityPostView {
   topic: CommunityTopic | null;
   acceptedCommentId: string | null;
   acceptedAnswer: CommunityAcceptedAnswer | null;
-  ideaVotes: CommunityIdeaVotes | null;
+  ideaSupport: CommunityIdeaSupport | null;
 }
 
 export interface CommunityCommentView {
@@ -1491,42 +1465,32 @@ export function customerPortalService(db: Db) {
     return out;
   }
 
-  // The ideaVotes summary for a brand-new idea post (zero votes): not revealed,
-  // total 0, split null, no viewer vote. Non-idea posts get null instead.
-  function freshIdeaVotes(
+  // The ideaSupport summary for a brand-new idea post (zero support): count 0,
+  // no viewer support. Non-idea posts get null instead.
+  function freshIdeaSupport(
     postType: CommunityPostType,
-  ): CommunityIdeaVotes | null {
+  ): CommunityIdeaSupport | null {
     if (postType !== "idea") return null;
-    return {
-      revealed: false,
-      total: 0,
-      up: null,
-      down: null,
-      net: null,
-      youVoted: null,
-    };
+    return { count: 0, youSupported: null };
   }
 
-  // Resolve the idea-vote summary for a set of posts in two grouped queries:
-  // direction tallies for the given idea posts, and the viewer's own vote rows.
+  // Resolve the idea-support summary for a set of posts in two grouped queries:
+  // support counts for the given idea posts, and the viewer's own support rows.
   // Mirrors resolveAcceptedAnswers — bulk, IN(...) via sql.join, returns a Map.
-  // The reveal threshold is enforced HERE (server-side): when total < threshold
-  // the up/down/net split is masked to null so it can't be read over the wire;
-  // the viewer's own vote (youVoted) is always set regardless of reveal.
+  // Support is always visible (no reveal gate, no down/net/negative).
   // `ideaPostIds` must already be filtered to post_type='idea' posts.
-  async function resolveIdeaVotes(
+  async function resolveIdeaSupport(
     ideaPostIds: string[],
     viewerEmail: string,
-  ): Promise<Map<string, CommunityIdeaVotes>> {
-    const out = new Map<string, CommunityIdeaVotes>();
+  ): Promise<Map<string, CommunityIdeaSupport>> {
+    const out = new Map<string, CommunityIdeaSupport>();
     const ids = Array.from(new Set(ideaPostIds.filter((id) => !!id)));
     if (ids.length === 0) return out;
 
-    // Per-post up/down counts in one grouped query.
-    const tallyRows = await db
+    // Per-post support counts in one grouped query.
+    const countRows = await db
       .select({
         postId: universityCommunityIdeaVotes.postId,
-        direction: universityCommunityIdeaVotes.direction,
         c: sql<number>`count(*)::int`,
       })
       .from(universityCommunityIdeaVotes)
@@ -1536,16 +1500,12 @@ export function customerPortalService(db: Db) {
           sql`, `,
         )})`,
       )
-      .groupBy(
-        universityCommunityIdeaVotes.postId,
-        universityCommunityIdeaVotes.direction,
-      );
+      .groupBy(universityCommunityIdeaVotes.postId);
 
-    // The viewer's own vote on each of these posts (always surfaced).
+    // The viewer's own support on each of these posts.
     const mineRows = await db
       .select({
         postId: universityCommunityIdeaVotes.postId,
-        direction: universityCommunityIdeaVotes.direction,
         reason: universityCommunityIdeaVotes.reason,
       })
       .from(universityCommunityIdeaVotes)
@@ -1559,35 +1519,15 @@ export function customerPortalService(db: Db) {
         ),
       );
 
-    const up = new Map<string, number>();
-    const down = new Map<string, number>();
-    for (const r of tallyRows) {
-      if (r.direction === "up") up.set(r.postId, Number(r.c));
-      else if (r.direction === "down") down.set(r.postId, Number(r.c));
-    }
-    const mine = new Map<
-      string,
-      { direction: CommunityVoteDirection; reason: string }
-    >();
-    for (const r of mineRows) {
-      if (isCommunityVoteDirection(r.direction)) {
-        mine.set(r.postId, { direction: r.direction, reason: r.reason });
-      }
-    }
+    const counts = new Map<string, number>();
+    for (const r of countRows) counts.set(r.postId, Number(r.c));
+    const mine = new Map<string, { reason: string }>();
+    for (const r of mineRows) mine.set(r.postId, { reason: r.reason });
 
     for (const id of ids) {
-      const u = up.get(id) ?? 0;
-      const d = down.get(id) ?? 0;
-      const total = u + d;
-      const revealed = total >= COMMUNITY_VOTE_REVEAL_THRESHOLD;
       out.set(id, {
-        revealed,
-        total,
-        // Mask the split until revealed — never leak it over the wire.
-        up: revealed ? u : null,
-        down: revealed ? d : null,
-        net: revealed ? u - d : null,
-        youVoted: mine.get(id) ?? null,
+        count: counts.get(id) ?? 0,
+        youSupported: mine.get(id) ?? null,
       });
     }
     return out;
@@ -1676,7 +1616,7 @@ export function customerPortalService(db: Db) {
         .filter((id): id is string => !!id),
       identity.email,
     );
-    const ideaVotes = await resolveIdeaVotes(
+    const ideaSupport = await resolveIdeaSupport(
       page
         .filter((r) => normalizeStoredPostType(r.postType) === "idea")
         .map((r) => r.id),
@@ -1697,9 +1637,9 @@ export function customerPortalService(db: Db) {
       acceptedAnswer: r.acceptedCommentId
         ? acceptedAnswers.get(r.acceptedCommentId) ?? null
         : null,
-      ideaVotes:
+      ideaSupport:
         normalizeStoredPostType(r.postType) === "idea"
-          ? ideaVotes.get(r.id) ?? freshIdeaVotes("idea")
+          ? ideaSupport.get(r.id) ?? freshIdeaSupport("idea")
           : null,
     }));
 
@@ -1784,8 +1724,8 @@ export function customerPortalService(db: Db) {
       acceptedCommentId: row.acceptedCommentId ?? null,
       // A freshly created post is never answered.
       acceptedAnswer: null,
-      // A freshly created idea has zero votes (not revealed); non-ideas → null.
-      ideaVotes: freshIdeaVotes(normalizeStoredPostType(row.postType)),
+      // A freshly created idea has zero support; non-ideas → null.
+      ideaSupport: freshIdeaSupport(normalizeStoredPostType(row.postType)),
     };
   }
 
@@ -1886,9 +1826,9 @@ export function customerPortalService(db: Db) {
       ? await resolveAcceptedAnswers([post.acceptedCommentId], identity.email)
       : new Map<string, CommunityAcceptedAnswer>();
     const postIsIdea = normalizeStoredPostType(post.postType) === "idea";
-    const ideaVotes = postIsIdea
-      ? await resolveIdeaVotes([post.id], identity.email)
-      : new Map<string, CommunityIdeaVotes>();
+    const ideaSupport = postIsIdea
+      ? await resolveIdeaSupport([post.id], identity.email)
+      : new Map<string, CommunityIdeaSupport>();
     const postView: CommunityPostView = {
       id: post.id,
       author: buildAuthor(post.authorEmail, displayNames, identity.email),
@@ -1903,8 +1843,8 @@ export function customerPortalService(db: Db) {
       acceptedAnswer: post.acceptedCommentId
         ? acceptedAnswers.get(post.acceptedCommentId) ?? null
         : null,
-      ideaVotes: postIsIdea
-        ? ideaVotes.get(post.id) ?? freshIdeaVotes("idea")
+      ideaSupport: postIsIdea
+        ? ideaSupport.get(post.id) ?? freshIdeaSupport("idea")
         : null,
     };
     const comments: CommunityCommentView[] = page.map((c) => ({
@@ -2191,9 +2131,9 @@ export function customerPortalService(db: Db) {
       ? await resolveAcceptedAnswers([post.acceptedCommentId], viewerEmail)
       : new Map<string, CommunityAcceptedAnswer>();
     const postIsIdea = normalizeStoredPostType(post.postType) === "idea";
-    const ideaVotes = postIsIdea
-      ? await resolveIdeaVotes([post.id], viewerEmail)
-      : new Map<string, CommunityIdeaVotes>();
+    const ideaSupport = postIsIdea
+      ? await resolveIdeaSupport([post.id], viewerEmail)
+      : new Map<string, CommunityIdeaSupport>();
     return {
       id: post.id,
       author: buildAuthor(post.authorEmail, displayNames, viewerEmail),
@@ -2205,8 +2145,8 @@ export function customerPortalService(db: Db) {
       postType: normalizeStoredPostType(post.postType),
       topic: normalizeStoredTopic(post.topic),
       acceptedCommentId: post.acceptedCommentId ?? null,
-      ideaVotes: postIsIdea
-        ? ideaVotes.get(post.id) ?? freshIdeaVotes("idea")
+      ideaSupport: postIsIdea
+        ? ideaSupport.get(post.id) ?? freshIdeaSupport("idea")
         : null,
       acceptedAnswer: post.acceptedCommentId
         ? acceptedAnswers.get(post.acceptedCommentId) ?? null
@@ -2344,12 +2284,13 @@ export function customerPortalService(db: Db) {
   }
 
   /**
-   * Who may vote on an idea (Spec B): any active member EXCEPT the idea's own
+   * Who may support an idea (Spec B): any active member EXCEPT the idea's own
    * author. Membership is enforced upstream (requireUniversityMember); the only
    * extra gate here is the author-self exclusion. `post.postType` must be an
-   * 'idea' — non-idea posts have no vote control. All emails compared normalized.
+   * 'idea' — non-idea posts have no support control. All emails compared
+   * normalized.
    */
-  function canVoteOnIdea(
+  function canSupportIdea(
     callerEmail: string,
     post: { authorEmail: string; postType: CommunityPostType },
   ): boolean {
@@ -2359,26 +2300,20 @@ export function customerPortalService(db: Db) {
   }
 
   /**
-   * Cast (or change) the caller's vote on an idea. Upserts on
-   * (voter_email, post_id): a first vote INSERTs, a re-vote UPDATEs direction +
-   * reason in place — switching direction moves the tally without double-
-   * counting. Gates: non-idea → 400, author-self → 403, bad direction → 400,
-   * empty/whitespace reason → 422, profane reason → 422, over-cap reason → 422.
-   * Returns the refreshed post view (with the resolved ideaVotes summary).
+   * Record (or update) the caller's support for an idea. Upserts on
+   * (voter_email, post_id): a first support INSERTs, a re-support UPDATEs the
+   * reason in place — one row per member, never double-counts. Gates: non-idea
+   * → 400, author-self → 403, empty/whitespace reason → 422, profane reason →
+   * 422, over-cap reason → 422. Returns the refreshed post view (with the
+   * resolved ideaSupport summary).
    */
-  async function voteOnIdea(
+  async function supportIdea(
     accountId: string,
     postId: string,
-    directionRaw: unknown,
     reasonRaw: string,
   ): Promise<CommunityPostView> {
     const identity = await resolveProgressIdentity(accountId);
     if (!identity) throw new Error("Account not found");
-
-    if (!isCommunityVoteDirection(directionRaw)) {
-      throw new CommunityError(400, "Invalid direction");
-    }
-    const direction: CommunityVoteDirection = directionRaw;
 
     const reason = reasonRaw.trim();
     if (!reason) throw new CommunityError(422, "A reason is required");
@@ -2406,27 +2341,26 @@ export function customerPortalService(db: Db) {
       .limit(1);
     if (!post) throw new CommunityError(404, "Post not found");
     if (normalizeStoredPostType(post.postType) !== "idea") {
-      throw new CommunityError(400, "Only ideas can be voted on");
+      throw new CommunityError(400, "Only ideas can be supported");
     }
     if (
-      !canVoteOnIdea(identity.email, {
+      !canSupportIdea(identity.email, {
         authorEmail: post.authorEmail,
         postType: "idea",
       })
     ) {
-      throw new CommunityError(403, "You can't vote on your own idea");
+      throw new CommunityError(403, "You can't support your own idea");
     }
 
     // Upsert on the unique (voter_email, post_id): insert, or update the
-    // existing row's direction/reason. Switching direction simply rewrites the
-    // single row — the tally moves, never double-counts.
+    // existing row's reason. One row per member — re-supporting just rewrites
+    // the reason, never double-counts.
     await db
       .insert(universityCommunityIdeaVotes)
       .values({
         postId,
         accountId: identity.accountId,
         voterEmail: identity.email,
-        direction,
         reason,
       })
       .onConflictDoUpdate({
@@ -2434,18 +2368,19 @@ export function customerPortalService(db: Db) {
           universityCommunityIdeaVotes.voterEmail,
           universityCommunityIdeaVotes.postId,
         ],
-        set: { direction, reason, updatedAt: new Date() },
+        set: { reason, updatedAt: new Date() },
       });
 
     return buildPostViewById(postId, identity.email);
   }
 
   /**
-   * Retract the caller's vote on an idea: deletes their row. Idempotent — if no
-   * row exists it's a no-op. Returns the refreshed post view. (A retracted vote
-   * carries no audit value, like a withdrawn reaction, so the row is deleted.)
+   * Retract the caller's support for an idea: deletes their row. Idempotent —
+   * if no row exists it's a no-op. Returns the refreshed post view. (A retracted
+   * support carries no audit value, like a withdrawn reaction, so the row is
+   * deleted.)
    */
-  async function retractIdeaVote(
+  async function unsupportIdea(
     accountId: string,
     postId: string,
   ): Promise<CommunityPostView> {
@@ -2465,22 +2400,22 @@ export function customerPortalService(db: Db) {
   }
 
   /**
-   * The rationale list for an idea (Spec B): each vote's direction + reason +
-   * resolved author, newest first, cursor-paginated on (created_at, id) like
-   * the rest of the feed. Returns EMPTY unless the idea is revealed
-   * (total >= threshold) — the collected reasons stay hidden until the tally
-   * does. A non-idea or missing post also yields an empty list.
+   * The supporter list for an idea (Spec B): each supporter's reason + resolved
+   * author, newest first, cursor-paginated on (created_at, id) like the rest of
+   * the feed. Always returned — there is no reveal gate (the signal is only
+   * positive, so there is nothing to hide). A non-idea or missing post yields an
+   * empty list.
    */
-  async function listIdeaVotes(
+  async function listIdeaSupporters(
     accountId: string,
     postId: string,
     opts: { cursor?: string | null; limit: number },
   ): Promise<{
-    votes: CommunityIdeaVoteRationale[];
+    supporters: CommunityIdeaSupporter[];
     nextCursor: string | null;
   }> {
     const identity = await resolveProgressIdentity(accountId);
-    if (!identity) return { votes: [], nextCursor: null };
+    if (!identity) return { supporters: [], nextCursor: null };
 
     const [post] = await db
       .select({
@@ -2496,20 +2431,11 @@ export function customerPortalService(db: Db) {
       )
       .limit(1);
     if (!post || normalizeStoredPostType(post.postType) !== "idea") {
-      return { votes: [], nextCursor: null };
-    }
-
-    // The rationale list is gated on reveal: hidden until total >= threshold.
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(universityCommunityIdeaVotes)
-      .where(eq(universityCommunityIdeaVotes.postId, postId));
-    if (Number(total) < COMMUNITY_VOTE_REVEAL_THRESHOLD) {
-      return { votes: [], nextCursor: null };
+      return { supporters: [], nextCursor: null };
     }
 
     const cursor = decodeCommunityCursor(opts.cursor);
-    const voteWhere = cursor
+    const supportWhere = cursor
       ? and(
           eq(universityCommunityIdeaVotes.postId, postId),
           or(
@@ -2526,12 +2452,11 @@ export function customerPortalService(db: Db) {
       .select({
         id: universityCommunityIdeaVotes.id,
         authorEmail: universityCommunityIdeaVotes.voterEmail,
-        direction: universityCommunityIdeaVotes.direction,
         reason: universityCommunityIdeaVotes.reason,
         createdAt: universityCommunityIdeaVotes.createdAt,
       })
       .from(universityCommunityIdeaVotes)
-      .where(voteWhere)
+      .where(supportWhere)
       .orderBy(
         desc(universityCommunityIdeaVotes.createdAt),
         desc(universityCommunityIdeaVotes.id),
@@ -2543,18 +2468,15 @@ export function customerPortalService(db: Db) {
     const displayNames = await resolveDisplayNames(
       page.map((r) => r.authorEmail),
     );
-    const votes: CommunityIdeaVoteRationale[] = page
-      .filter((r) => isCommunityVoteDirection(r.direction))
-      .map((r) => ({
-        direction: r.direction as CommunityVoteDirection,
-        reason: r.reason,
-        author: buildAuthor(r.authorEmail, displayNames, identity.email),
-        createdAt: r.createdAt,
-      }));
+    const supporters: CommunityIdeaSupporter[] = page.map((r) => ({
+      reason: r.reason,
+      author: buildAuthor(r.authorEmail, displayNames, identity.email),
+      createdAt: r.createdAt,
+    }));
     const last = page[page.length - 1];
     const nextCursor =
       hasMore && last ? encodeCommunityCursor(last.createdAt, last.id) : null;
-    return { votes, nextCursor };
+    return { supporters, nextCursor };
   }
 
   // Verify a polymorphic target exists + is visible (integrity for reactions /
@@ -2606,7 +2528,7 @@ export function customerPortalService(db: Db) {
     if (!(await communityTargetIsVisible(targetType, targetId))) {
       throw new CommunityError(404, "Target not found");
     }
-    // Resonate is replaced by voting on idea POSTS (Spec B): a post-target
+    // Resonate is replaced by support on idea POSTS (Spec B): a post-target
     // reaction on an idea is rejected. Reactions on COMMENTS under an idea (or
     // on statement/question posts) are untouched.
     if (targetType === "post") {
@@ -2616,7 +2538,7 @@ export function customerPortalService(db: Db) {
         .where(eq(universityCommunityPosts.id, targetId))
         .limit(1);
       if (target && normalizeStoredPostType(target.postType) === "idea") {
-        throw new CommunityError(400, "ideas use voting");
+        throw new CommunityError(400, "ideas use support");
       }
     }
     await db.transaction(async (tx) => {
@@ -2876,9 +2798,9 @@ export function customerPortalService(db: Db) {
     deleteCommunityComment,
     acceptCommunityAnswer,
     unacceptCommunityAnswer,
-    voteOnIdea,
-    retractIdeaVote,
-    listIdeaVotes,
+    supportIdea,
+    unsupportIdea,
+    listIdeaSupporters,
     reactToCommunity,
     unreactToCommunity,
     reportCommunityTarget,

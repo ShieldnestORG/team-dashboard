@@ -772,10 +772,10 @@ export function portalRoutes(db: Db): Router {
   const reportWriteLimiter = communityWriteLimiter(
     writeLimit("COMMUNITY_REPORT_RATE_PER_MIN", 20),
   );
-  // Voting requires a written reason, so it's more deliberate than a Resonate
-  // tap (60/min) but a member browsing ideas may cast several — 30/min.
-  const voteWriteLimiter = communityWriteLimiter(
-    writeLimit("COMMUNITY_VOTE_RATE_PER_MIN", 30),
+  // Support requires a written reason, so it's more deliberate than a Resonate
+  // tap (60/min) but a member browsing ideas may support several — 30/min.
+  const supportWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_SUPPORT_RATE_PER_MIN", 30),
   );
 
   function parseTargetType(raw: unknown): "post" | "comment" | null {
@@ -830,13 +830,9 @@ export function portalRoutes(db: Db): Router {
       body: string;
       author: SerializableAuthor;
     } | null;
-    ideaVotes: {
-      revealed: boolean;
-      total: number;
-      up: number | null;
-      down: number | null;
-      net: number | null;
-      youVoted: { direction: "up" | "down"; reason: string } | null;
+    ideaSupport: {
+      count: number;
+      youSupported: { reason: string } | null;
     } | null;
   }) {
     return {
@@ -851,25 +847,23 @@ export function portalRoutes(db: Db): Router {
       topic: p.topic,
       acceptedCommentId: p.acceptedCommentId,
       acceptedAnswer: p.acceptedAnswer,
-      // null for non-idea posts; the split (up/down/net) is already masked to
-      // null server-side until the idea is revealed.
-      ideaVotes: p.ideaVotes,
+      // null for non-idea posts; support only ever rises or holds (no
+      // down/net/negative).
+      ideaSupport: p.ideaSupport,
     };
   }
 
-  // Serialize one rationale-list entry (GET votes). createdAt → ISO; the author
-  // label is already resolved by the service.
-  function serializeIdeaVote(v: {
-    direction: "up" | "down";
+  // Serialize one supporter-list entry (GET supporters). createdAt → ISO; the
+  // author label is already resolved by the service.
+  function serializeSupporter(s: {
     reason: string;
     author: SerializableAuthor;
     createdAt: Date;
   }) {
     return {
-      direction: v.direction,
-      reason: v.reason,
-      author: v.author,
-      createdAt: v.createdAt.toISOString(),
+      reason: s.reason,
+      author: s.author,
+      createdAt: s.createdAt.toISOString(),
     };
   }
 
@@ -1129,61 +1123,59 @@ export function portalRoutes(db: Db): Router {
     },
   );
 
-  // Idea voting (Spec B). Mirrors the accept routes: member-gated, writes also
+  // Idea support (Spec B). Mirrors the accept routes: member-gated, writes also
   // non-impersonating, errors via sendCommunityError. The service is the
-  // authority on direction/reason validation (400/403/422) and the idea gate.
+  // authority on reason validation (400/403/422) and the idea gate.
   router.post(
-    "/university/community/posts/:id/vote",
-    voteWriteLimiter,
+    "/university/community/posts/:id/support",
+    supportWriteLimiter,
     async (req: Request, res: Response) => {
       if (!requireNonImpersonating(req, res)) return;
       const accountId = await requireUniversityMember(req, res);
       if (!accountId) return;
       const postId = String(req.params.id);
-      const b = (req.body ?? {}) as { direction?: unknown; reason?: unknown };
-      // Pass the raw direction through — the service validates the enum and
-      // throws CommunityError(400) on a bad value.
+      const b = (req.body ?? {}) as { reason?: unknown };
       const reason = typeof b.reason === "string" ? b.reason : "";
       try {
-        const post = await svc.voteOnIdea(accountId, postId, b.direction, reason);
+        const post = await svc.supportIdea(accountId, postId, reason);
         res.status(200).json({ post: serializePost(post) });
       } catch (err) {
         if (sendCommunityError(res, err)) return;
         logger.error(
           { err, accountId, postId },
-          "portal/university/community/posts/:id/vote: vote failed",
+          "portal/university/community/posts/:id/support: support failed",
         );
-        res.status(500).json({ error: "Failed to record vote" });
+        res.status(500).json({ error: "Failed to record support" });
       }
     },
   );
 
   router.delete(
-    "/university/community/posts/:id/vote",
-    voteWriteLimiter,
+    "/university/community/posts/:id/support",
+    supportWriteLimiter,
     async (req: Request, res: Response) => {
       if (!requireNonImpersonating(req, res)) return;
       const accountId = await requireUniversityMember(req, res);
       if (!accountId) return;
       const postId = String(req.params.id);
       try {
-        const post = await svc.retractIdeaVote(accountId, postId);
+        const post = await svc.unsupportIdea(accountId, postId);
         res.status(200).json({ post: serializePost(post) });
       } catch (err) {
         if (sendCommunityError(res, err)) return;
         logger.error(
           { err, accountId, postId },
-          "portal/university/community/posts/:id/vote: retract failed",
+          "portal/university/community/posts/:id/support: retract failed",
         );
-        res.status(500).json({ error: "Failed to retract vote" });
+        res.status(500).json({ error: "Failed to retract support" });
       }
     },
   );
 
-  // Rationale list — paginated reasons, returned EMPTY unless the idea is
-  // revealed (service-gated). Read-only: member-gated, no impersonation block.
+  // Supporter list — paginated reasons, always available (no reveal gate).
+  // Read-only: member-gated, no impersonation block.
   router.get(
-    "/university/community/posts/:id/votes",
+    "/university/community/posts/:id/supporters",
     async (req: Request, res: Response) => {
       const accountId = await requireUniversityMember(req, res);
       if (!accountId) return;
@@ -1192,19 +1184,19 @@ export function portalRoutes(db: Db): Router {
         typeof req.query.cursor === "string" ? req.query.cursor : null;
       const limit = clampCommunityLimit(req.query.limit);
       try {
-        const { votes, nextCursor } = await svc.listIdeaVotes(
+        const { supporters, nextCursor } = await svc.listIdeaSupporters(
           accountId,
           postId,
           { cursor, limit },
         );
-        res.json({ votes: votes.map(serializeIdeaVote), nextCursor });
+        res.json({ supporters: supporters.map(serializeSupporter), nextCursor });
       } catch (err) {
         if (sendCommunityError(res, err)) return;
         logger.error(
           { err, accountId, postId },
-          "portal/university/community/posts/:id/votes: list failed",
+          "portal/university/community/posts/:id/supporters: list failed",
         );
-        res.status(500).json({ error: "Failed to load votes" });
+        res.status(500).json({ error: "Failed to load supporters" });
       }
     },
   );
