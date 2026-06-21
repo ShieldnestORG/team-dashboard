@@ -37,6 +37,10 @@ export type CreditscoreEmailKind =
   | "university_onboarding_d1"
   | "university_onboarding_d3"
   | "university_winback"
+  // Streak nudge ("you're about to break your streak"). Fired by the
+  // university:streak-nudge cron to active members who repped yesterday but not
+  // yet today. Commercial-classed storefront-side (suppression + unsubscribe).
+  | "university_streak_nudge"
   // Community reply notification ("someone replied to your post"). The storefront
   // Resend template is owner-gated (must ship CAN-SPAM compliant); until it
   // exists this kind no-ops via the warn-and-continue callback, so the in-app

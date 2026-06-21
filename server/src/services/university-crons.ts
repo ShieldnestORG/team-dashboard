@@ -1,17 +1,20 @@
 // ---------------------------------------------------------------------------
 // Coherent Ones University — time-delayed lifecycle emails (cron-driven).
 //
-// Three daily jobs, each a thin wrapper over a queryable+testable send fn:
+// Daily jobs, each a thin wrapper over a queryable+testable send fn:
 //   - university:onboarding-d1  — active members ~1 day post-join
 //   - university:onboarding-d3  — active members ~3 days post-join
 //   - university:winback        — cancelled members ~14 days after cancelling
+//   - university:streak-nudge   — active members whose live streak is at risk
+//                                 today (repped yesterday, not yet today)
 //
-// No progress table (not built yet): we select on joined_at/status (and, for
-// winback, the updated_at timestamp the cancel handlers stamp) using a 1-DAY
-// WINDOW so a daily cron hits each member exactly once. E.g. d1 selects members
-// whose joined_at is in [now-2d, now-1d); the next day they've aged out of the
-// window, so they aren't re-emailed. This mirrors the windowed dunning queries
-// in affiliate-crons.ts.
+// Most jobs select on joined_at/status (and, for winback, the updated_at
+// timestamp the cancel handlers stamp) using a 1-DAY WINDOW so a daily cron hits
+// each member exactly once. E.g. d1 selects members whose joined_at is in
+// [now-2d, now-1d); the next day they've aged out of the window, so they aren't
+// re-emailed. This mirrors the windowed dunning queries in affiliate-crons.ts.
+// The streak-nudge job instead derives the at-risk set from university_progress
+// rep-days in code (Rule 5), keyed on the UTC day.
 //
 // Event-driven sends (welcome/receipt/past_due/canceled) live in
 // university-stripe-handler.ts. These crons cover only the time-delayed touches.
@@ -24,6 +27,7 @@ import { and, eq, gte, lt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   universityMembers,
+  universityProgress,
   universitySessions,
   universitySessionRsvps,
 } from "@paperclipai/db";
@@ -39,6 +43,16 @@ import {
   firstNameFromDisplayName,
 } from "./university-email.js";
 import { logger } from "../middleware/logger.js";
+
+// A "rep day" comes back from the Postgres `date` column as 'YYYY-MM-DD'. The
+// streak-nudge cron reasons in UTC day buckets, matching customer-portal.ts.
+function utcDayString(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+function addUtcDays(day: string, n: number): string {
+  const ms = Date.parse(`${day}T00:00:00.000Z`);
+  return utcDayString(new Date(ms + n * 24 * 60 * 60 * 1000));
+}
 
 // ---------------------------------------------------------------------------
 // onboarding day 1 — active members who joined ~1 day ago.
@@ -290,6 +304,123 @@ export async function runUniversitySessionReminder1h(db: Db): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// Streak nudge — ACTIVE members whose streak is alive but at risk today.
+//
+// "At risk" = the member logged a rep YESTERDAY (UTC) and has NOT logged one
+// TODAY. That's exactly the window where a single missed day breaks the chain
+// (see customer-portal.ts computeStreak: a streak survives on yesterday's rep
+// but resets once a full day is missed). Nudging them today, before the UTC day
+// closes, is the highest-leverage single touch.
+//
+// We compute the at-risk set in ONE grouped query over university_progress:
+// per email, the max rep_day. Members whose latest rep_day == yesterday are
+// at-risk (repped yesterday, not today). We then keep only those joined to an
+// ACTIVE member row. Streak length for the email copy is derived from a count
+// of that member's recent distinct rep-days walked backward from yesterday —
+// computed in code (Rule 5), not by the model.
+// ---------------------------------------------------------------------------
+
+export async function runUniversityStreakNudge(
+  db: Db,
+  now: Date = new Date(),
+): Promise<number> {
+  const today = utcDayString(now);
+  const yesterday = addUtcDays(today, -1);
+
+  // Per-member rep-day rollup. We only need members active enough to plausibly
+  // hold a streak, so we look back a bounded window (30 days) — far more than
+  // any streak the copy cares about, and it keeps the scan cheap.
+  const windowStart = addUtcDays(today, -30);
+
+  const rows = await db
+    .select({
+      email: universityProgress.email,
+      repDay: universityProgress.repDay,
+    })
+    .from(universityProgress)
+    .where(gte(universityProgress.repDay, windowStart));
+
+  // Group rep-days per (lowercased) email.
+  const byEmail = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const email = r.email.toLowerCase();
+    const day = String(r.repDay);
+    const set = byEmail.get(email) ?? new Set<string>();
+    set.add(day);
+    byEmail.set(email, set);
+  }
+
+  // At-risk = latest rep is yesterday (repped yesterday, none today). Compute
+  // the live streak length walking back from yesterday for the email copy.
+  const atRisk: Array<{ email: string; streakDays: number }> = [];
+  for (const [email, days] of byEmail) {
+    if (days.has(today)) continue; // already did today's rep — safe
+    if (!days.has(yesterday)) continue; // streak already broken — not at risk
+    let streakDays = 0;
+    let cursor = yesterday;
+    while (days.has(cursor)) {
+      streakDays += 1;
+      cursor = addUtcDays(cursor, -1);
+    }
+    atRisk.push({ email, streakDays });
+  }
+
+  if (atRisk.length === 0) {
+    logger.info({ considered: 0, sent: 0 }, "university:streak-nudge — cycle complete");
+    return 0;
+  }
+
+  // Keep only ACTIVE members, and grab the display name for the greeting.
+  const emails = atRisk.map((a) => a.email);
+  const members = await db
+    .select({
+      email: universityMembers.email,
+      displayName: universityMembers.displayName,
+    })
+    .from(universityMembers)
+    .where(
+      and(
+        eq(universityMembers.status, "active"),
+        sql`LOWER(${universityMembers.email}) = ANY(${emails})`,
+      ),
+    );
+
+  const memberByEmail = new Map<string, string | null>();
+  for (const m of members) {
+    memberByEmail.set(m.email.toLowerCase(), m.displayName);
+  }
+
+  let sent = 0;
+  for (const a of atRisk) {
+    if (!memberByEmail.has(a.email)) continue; // not an active member
+    const displayName = memberByEmail.get(a.email) ?? null;
+    try {
+      await sendCreditscoreEmail({
+        kind: "university_streak_nudge",
+        to: a.email,
+        data: {
+          firstName: firstNameFromDisplayName(displayName),
+          streakDays: a.streakDays,
+          repUrl: UNIVERSITY_PRESENCE_URL,
+        },
+      });
+      sent += 1;
+    } catch (err) {
+      logger.error(
+        { err, email: a.email, kind: "university_streak_nudge" },
+        "university:streak-nudge — send failed for member (non-fatal)",
+      );
+    }
+  }
+
+  logger.info(
+    { considered: atRisk.length, activeMatched: members.length, sent },
+    "university:streak-nudge — cycle complete",
+  );
+  return sent;
+}
+
+// ---------------------------------------------------------------------------
 // Registration. Staggered early-UTC daily slots so they don't collide with the
 // 6-hourly creditscore:scan or the 1st-of-month fulfillment jobs.
 // ---------------------------------------------------------------------------
@@ -336,5 +467,16 @@ export function startUniversityCrons(db: Db): void {
     ownerAgent: "mark",
     sourceFile: "university-crons.ts",
     handler: () => runUniversitySessionReminder1h(db),
+  });
+
+  // Streak nudge runs LATE in the UTC day so members have had the whole day to
+  // log today's rep before we nudge — minimizing "you missed it" sends to
+  // members who simply rep in the evening.
+  registerCronJob({
+    jobName: "university:streak-nudge",
+    schedule: "0 22 * * *", // daily 22:00 UTC
+    ownerAgent: "mark",
+    sourceFile: "university-crons.ts",
+    handler: () => runUniversityStreakNudge(db),
   });
 }
