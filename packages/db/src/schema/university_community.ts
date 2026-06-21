@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   pgTable,
   uuid,
   text,
@@ -53,6 +54,17 @@ export const universityCommunityPosts = pgTable(
     status: text("status").notNull().default("visible"),
     // Set when status != visible: report | profanity | admin
     hiddenReason: text("hidden_reason"),
+    // statement (default catch-all) | question | idea. CHECK-gated in SQL.
+    postType: text("post_type").notNull().default("statement"),
+    // Optional curated topic slug (wins | tools_workflows | body_mind |
+    // building_revenue | meta); nullable. CHECK-gated in SQL.
+    topic: text("topic"),
+    // The single source of truth for "answered": the chosen comment. Nullable;
+    // only question posts are ever accepted (enforced in the service).
+    // AnyPgColumn breaks the posts<->comments circular reference (repo convention).
+    acceptedCommentId: uuid("accepted_comment_id").references(
+      (): AnyPgColumn => universityCommunityComments.id,
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -71,6 +83,18 @@ export const universityCommunityPosts = pgTable(
     ),
     accountIdx: index("university_community_posts_account_idx").on(
       table.accountId,
+    ),
+    // Type filter + Open-questions board: visible posts of a type, newest first.
+    typeIdx: index("university_community_posts_type_idx").on(
+      table.postType,
+      table.status,
+      table.createdAt.desc(),
+    ),
+    // Topic filter: visible posts under a topic, newest first.
+    topicIdx: index("university_community_posts_topic_idx").on(
+      table.topic,
+      table.status,
+      table.createdAt.desc(),
     ),
   }),
 );

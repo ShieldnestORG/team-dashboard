@@ -201,6 +201,55 @@ export interface CommunityAuthor {
   isMark: boolean;
 }
 
+// Post types (Spec A). 'statement' is the default catch-all; the wire/DB value
+// is the lowercase slug. CHECK-gated in the DB; validated in the service.
+export const COMMUNITY_POST_TYPES = ["statement", "question", "idea"] as const;
+export type CommunityPostType = (typeof COMMUNITY_POST_TYPES)[number];
+
+// Curated, fixed topic slugs (Spec A). A post has at most one (nullable).
+export const COMMUNITY_TOPICS = [
+  "wins",
+  "tools_workflows",
+  "body_mind",
+  "building_revenue",
+  "meta",
+] as const;
+export type CommunityTopic = (typeof COMMUNITY_TOPICS)[number];
+
+function isCommunityPostType(value: unknown): value is CommunityPostType {
+  return (
+    typeof value === "string" &&
+    (COMMUNITY_POST_TYPES as readonly string[]).includes(value)
+  );
+}
+
+function isCommunityTopic(value: unknown): value is CommunityTopic {
+  return (
+    typeof value === "string" &&
+    (COMMUNITY_TOPICS as readonly string[]).includes(value)
+  );
+}
+
+// Narrow a DB-stored post_type (text column, CHECK-constrained) to the union.
+// Any unexpected legacy value falls back to the default 'statement'.
+function normalizeStoredPostType(value: string): CommunityPostType {
+  return isCommunityPostType(value) ? value : "statement";
+}
+
+// Narrow a DB-stored topic (nullable text column, CHECK-constrained) to the
+// union or null. Any unexpected value reads back as null (no topic).
+function normalizeStoredTopic(value: string | null): CommunityTopic | null {
+  return isCommunityTopic(value) ? value : null;
+}
+
+// A surfaced answer preview for a collapsed card: the accepted comment's body +
+// author, so the resolution renders without fetching the full thread.
+export interface CommunityAcceptedAnswer {
+  commentId: string;
+  body: string;
+  author: CommunityAuthor;
+}
+
 export interface CommunityPostView {
   id: string;
   author: CommunityAuthor;
@@ -209,6 +258,10 @@ export interface CommunityPostView {
   reactionCount: number;
   youReacted: boolean;
   createdAt: Date;
+  postType: CommunityPostType;
+  topic: CommunityTopic | null;
+  acceptedCommentId: string | null;
+  acceptedAnswer: CommunityAcceptedAnswer | null;
 }
 
 export interface CommunityCommentView {
@@ -219,6 +272,7 @@ export interface CommunityCommentView {
   reactionCount: number;
   youReacted: boolean;
   createdAt: Date;
+  isAccepted: boolean;
 }
 
 // Default reaction kind for the MVP single "Resonate" reaction.
@@ -1348,32 +1402,90 @@ export function customerPortalService(db: Db) {
     return set;
   }
 
+  // Resolve the surfaced answer preview for a set of accepted comment ids in one
+  // query: comment id → { body, authorEmail }. Only visible comments resolve so
+  // a removed answer doesn't surface stale text. The viewer email lets us build
+  // the author label (isYou) consistently with the rest of the feed.
+  async function resolveAcceptedAnswers(
+    acceptedCommentIds: string[],
+    viewerEmail: string,
+  ): Promise<Map<string, CommunityAcceptedAnswer>> {
+    const out = new Map<string, CommunityAcceptedAnswer>();
+    const ids = Array.from(new Set(acceptedCommentIds.filter((id) => !!id)));
+    if (ids.length === 0) return out;
+    const rows = await db
+      .select({
+        id: universityCommunityComments.id,
+        authorEmail: universityCommunityComments.authorEmail,
+        body: universityCommunityComments.body,
+      })
+      .from(universityCommunityComments)
+      .where(
+        and(
+          sql`${universityCommunityComments.id} IN (${sql.join(
+            ids.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+          eq(universityCommunityComments.status, "visible"),
+        ),
+      );
+    const displayNames = await resolveDisplayNames(rows.map((r) => r.authorEmail));
+    for (const r of rows) {
+      out.set(r.id, {
+        commentId: r.id,
+        body: r.body,
+        author: buildAuthor(r.authorEmail, displayNames, viewerEmail),
+      });
+    }
+    return out;
+  }
+
   /**
    * The community feed: visible posts, newest first, cursor-paginated on
    * (created_at, id) so it's stable under concurrent inserts. `limit` is
    * clamped 1–50 by the caller. Returns each post with its resolved author
-   * label, denormalized counts, and whether the viewer has reacted.
+   * label, denormalized counts, and whether the viewer has reacted. The
+   * optional `type` / `topic` / `unanswered` filters narrow the stream; with
+   * none set the feed behaves exactly as before.
    */
   async function getCommunityFeed(
     accountId: string,
-    opts: { cursor?: string | null; limit: number },
+    opts: {
+      cursor?: string | null;
+      limit: number;
+      type?: CommunityPostType | null;
+      topic?: CommunityTopic | null;
+      unanswered?: boolean;
+    },
   ): Promise<{ posts: CommunityPostView[]; nextCursor: string | null }> {
     const identity = await resolveProgressIdentity(accountId);
     if (!identity) return { posts: [], nextCursor: null };
     const cursor = decodeCommunityCursor(opts.cursor);
 
-    const where = cursor
-      ? and(
-          eq(universityCommunityPosts.status, "visible"),
-          or(
-            lt(universityCommunityPosts.createdAt, cursor.createdAt),
-            and(
-              eq(universityCommunityPosts.createdAt, cursor.createdAt),
-              lt(universityCommunityPosts.id, cursor.id),
-            ),
+    const filters = [eq(universityCommunityPosts.status, "visible")];
+    if (cursor) {
+      filters.push(
+        or(
+          lt(universityCommunityPosts.createdAt, cursor.createdAt),
+          and(
+            eq(universityCommunityPosts.createdAt, cursor.createdAt),
+            lt(universityCommunityPosts.id, cursor.id),
           ),
-        )
-      : eq(universityCommunityPosts.status, "visible");
+        )!,
+      );
+    }
+    if (opts.type) {
+      filters.push(eq(universityCommunityPosts.postType, opts.type));
+    }
+    if (opts.topic) {
+      filters.push(eq(universityCommunityPosts.topic, opts.topic));
+    }
+    if (opts.unanswered) {
+      // The Open-questions board: open (unanswered) questions only.
+      filters.push(eq(universityCommunityPosts.postType, "question"));
+      filters.push(isNull(universityCommunityPosts.acceptedCommentId));
+    }
+    const where = and(...filters);
 
     const rows = await db
       .select({
@@ -1383,6 +1495,9 @@ export function customerPortalService(db: Db) {
         commentCount: universityCommunityPosts.commentCount,
         reactionCount: universityCommunityPosts.reactionCount,
         createdAt: universityCommunityPosts.createdAt,
+        postType: universityCommunityPosts.postType,
+        topic: universityCommunityPosts.topic,
+        acceptedCommentId: universityCommunityPosts.acceptedCommentId,
       })
       .from(universityCommunityPosts)
       .where(where)
@@ -1402,6 +1517,12 @@ export function customerPortalService(db: Db) {
       "post",
       page.map((r) => r.id),
     );
+    const acceptedAnswers = await resolveAcceptedAnswers(
+      page
+        .map((r) => r.acceptedCommentId)
+        .filter((id): id is string => !!id),
+      identity.email,
+    );
 
     const posts: CommunityPostView[] = page.map((r) => ({
       id: r.id,
@@ -1411,6 +1532,12 @@ export function customerPortalService(db: Db) {
       reactionCount: r.reactionCount,
       youReacted: reacted.has(r.id),
       createdAt: r.createdAt,
+      postType: normalizeStoredPostType(r.postType),
+      topic: normalizeStoredTopic(r.topic),
+      acceptedCommentId: r.acceptedCommentId ?? null,
+      acceptedAnswer: r.acceptedCommentId
+        ? acceptedAnswers.get(r.acceptedCommentId) ?? null
+        : null,
     }));
 
     const last = page[page.length - 1];
@@ -1427,6 +1554,8 @@ export function customerPortalService(db: Db) {
   async function createCommunityPost(
     accountId: string,
     bodyRaw: string,
+    postTypeRaw?: string | null,
+    topicRaw?: string | null,
   ): Promise<CommunityPostView> {
     const identity = await resolveProgressIdentity(accountId);
     if (!identity) throw new Error("Account not found");
@@ -1440,12 +1569,32 @@ export function customerPortalService(db: Db) {
     }
     if (isCommunityProfane(body)) throw new CommunityError(422, "profanity");
 
+    // post_type defaults to 'statement' when omitted; an explicit bad value is
+    // a 400 (no row written). topic is optional/nullable; an explicit bad value
+    // is a 400. Empty-string topic is treated as "no topic".
+    let postType: CommunityPostType = "statement";
+    if (postTypeRaw !== undefined && postTypeRaw !== null) {
+      if (!isCommunityPostType(postTypeRaw)) {
+        throw new CommunityError(400, "Invalid postType");
+      }
+      postType = postTypeRaw;
+    }
+    let topic: CommunityTopic | null = null;
+    if (topicRaw !== undefined && topicRaw !== null && topicRaw !== "") {
+      if (!isCommunityTopic(topicRaw)) {
+        throw new CommunityError(400, "Invalid topic");
+      }
+      topic = topicRaw;
+    }
+
     const [row] = await db
       .insert(universityCommunityPosts)
       .values({
         accountId: identity.accountId,
         authorEmail: identity.email,
         body,
+        postType,
+        topic,
       })
       .returning({
         id: universityCommunityPosts.id,
@@ -1454,6 +1603,9 @@ export function customerPortalService(db: Db) {
         commentCount: universityCommunityPosts.commentCount,
         reactionCount: universityCommunityPosts.reactionCount,
         createdAt: universityCommunityPosts.createdAt,
+        postType: universityCommunityPosts.postType,
+        topic: universityCommunityPosts.topic,
+        acceptedCommentId: universityCommunityPosts.acceptedCommentId,
       });
     const displayNames = await resolveDisplayNames([row.authorEmail]);
     return {
@@ -1464,6 +1616,11 @@ export function customerPortalService(db: Db) {
       reactionCount: row.reactionCount,
       youReacted: false,
       createdAt: row.createdAt,
+      postType: normalizeStoredPostType(row.postType),
+      topic: normalizeStoredTopic(row.topic),
+      acceptedCommentId: row.acceptedCommentId ?? null,
+      // A freshly created post is never answered.
+      acceptedAnswer: null,
     };
   }
 
@@ -1491,6 +1648,9 @@ export function customerPortalService(db: Db) {
         commentCount: universityCommunityPosts.commentCount,
         reactionCount: universityCommunityPosts.reactionCount,
         createdAt: universityCommunityPosts.createdAt,
+        postType: universityCommunityPosts.postType,
+        topic: universityCommunityPosts.topic,
+        acceptedCommentId: universityCommunityPosts.acceptedCommentId,
       })
       .from(universityCommunityPosts)
       .where(
@@ -1557,6 +1717,9 @@ export function customerPortalService(db: Db) {
       page.map((c) => c.id),
     );
 
+    const acceptedAnswers = post.acceptedCommentId
+      ? await resolveAcceptedAnswers([post.acceptedCommentId], identity.email)
+      : new Map<string, CommunityAcceptedAnswer>();
     const postView: CommunityPostView = {
       id: post.id,
       author: buildAuthor(post.authorEmail, displayNames, identity.email),
@@ -1565,6 +1728,12 @@ export function customerPortalService(db: Db) {
       reactionCount: post.reactionCount,
       youReacted: postReacted.has(post.id),
       createdAt: post.createdAt,
+      postType: normalizeStoredPostType(post.postType),
+      topic: normalizeStoredTopic(post.topic),
+      acceptedCommentId: post.acceptedCommentId ?? null,
+      acceptedAnswer: post.acceptedCommentId
+        ? acceptedAnswers.get(post.acceptedCommentId) ?? null
+        : null,
     };
     const comments: CommunityCommentView[] = page.map((c) => ({
       id: c.id,
@@ -1574,6 +1743,8 @@ export function customerPortalService(db: Db) {
       reactionCount: commentReactionCounts.get(c.id) ?? 0,
       youReacted: commentReacted.has(c.id),
       createdAt: c.createdAt,
+      // A comment is "the answer" iff the post points at it.
+      isAccepted: c.id === post.acceptedCommentId,
     }));
     const last = page[page.length - 1];
     const nextCursor =
@@ -1734,6 +1905,8 @@ export function customerPortalService(db: Db) {
       reactionCount: 0,
       youReacted: false,
       createdAt: inserted.comment.createdAt,
+      // A freshly created comment is never the accepted answer.
+      isAccepted: false,
     };
   }
 
@@ -1765,15 +1938,230 @@ export function customerPortalService(db: Db) {
         )
         .returning({ postId: universityCommunityComments.postId });
       if (removed.length === 0) return false;
+      const postId = removed[0].postId;
       await tx
         .update(universityCommunityPosts)
         .set({
           commentCount: sql`GREATEST(${universityCommunityPosts.commentCount} - 1, 0)`,
           updatedAt: new Date(),
         })
-        .where(eq(universityCommunityPosts.id, removed[0].postId));
+        .where(eq(universityCommunityPosts.id, postId));
+      // If this comment was the post's accepted answer, revert the post to open
+      // in the SAME transaction (a removed answer must not surface as resolved).
+      await tx
+        .update(universityCommunityPosts)
+        .set({ acceptedCommentId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(universityCommunityPosts.id, postId),
+            eq(universityCommunityPosts.acceptedCommentId, commentId),
+          ),
+        );
       return true;
     });
+  }
+
+  // The moderator set for accept-answer eligibility. Empty until Spec C ships
+  // the moderator role; the canAcceptAnswer branch then resolves moderators
+  // here with no rework elsewhere. SEAM: Spec C populates this.
+  function communityModeratorEmails(): Set<string> {
+    return new Set();
+  }
+
+  /**
+   * Who may accept an answer on a question (Spec A): the asker (post author) OR
+   * the owner/staff OR a moderator. Moderators are an empty set until Spec C, so
+   * today the effective accepters are asker + owner/staff; moderators gain the
+   * power automatically once the role lands. All emails compared normalized.
+   */
+  function canAcceptAnswer(
+    callerEmail: string,
+    post: { authorEmail: string },
+  ): boolean {
+    const caller = normalizeEmail(callerEmail);
+    if (caller === normalizeEmail(post.authorEmail)) return true;
+    if (communityStaffEmails().has(caller)) return true;
+    // SEAM (Spec C): moderators inherit accept rights here.
+    if (communityModeratorEmails().has(caller)) return true;
+    return false;
+  }
+
+  // Build a CommunityPostView for a single visible post id (no comments). Used
+  // to return the refreshed post after accept/unaccept. Throws 404 if missing.
+  async function buildPostViewById(
+    postId: string,
+    viewerEmail: string,
+  ): Promise<CommunityPostView> {
+    const [post] = await db
+      .select({
+        id: universityCommunityPosts.id,
+        authorEmail: universityCommunityPosts.authorEmail,
+        body: universityCommunityPosts.body,
+        commentCount: universityCommunityPosts.commentCount,
+        reactionCount: universityCommunityPosts.reactionCount,
+        createdAt: universityCommunityPosts.createdAt,
+        postType: universityCommunityPosts.postType,
+        topic: universityCommunityPosts.topic,
+        acceptedCommentId: universityCommunityPosts.acceptedCommentId,
+      })
+      .from(universityCommunityPosts)
+      .where(
+        and(
+          eq(universityCommunityPosts.id, postId),
+          eq(universityCommunityPosts.status, "visible"),
+        ),
+      )
+      .limit(1);
+    if (!post) throw new CommunityError(404, "Post not found");
+    const displayNames = await resolveDisplayNames([post.authorEmail]);
+    const reacted = await reactedTargetIds(viewerEmail, "post", [post.id]);
+    const acceptedAnswers = post.acceptedCommentId
+      ? await resolveAcceptedAnswers([post.acceptedCommentId], viewerEmail)
+      : new Map<string, CommunityAcceptedAnswer>();
+    return {
+      id: post.id,
+      author: buildAuthor(post.authorEmail, displayNames, viewerEmail),
+      body: post.body,
+      commentCount: post.commentCount,
+      reactionCount: post.reactionCount,
+      youReacted: reacted.has(post.id),
+      createdAt: post.createdAt,
+      postType: normalizeStoredPostType(post.postType),
+      topic: normalizeStoredTopic(post.topic),
+      acceptedCommentId: post.acceptedCommentId ?? null,
+      acceptedAnswer: post.acceptedCommentId
+        ? acceptedAnswers.get(post.acceptedCommentId) ?? null
+        : null,
+    };
+  }
+
+  /**
+   * Mark a comment as the accepted answer to a question. Gated by
+   * canAcceptAnswer (asker / owner / moderator → else 403). The post must be a
+   * 'question' (else 400) and the comment must belong to it and be visible
+   * (else 404). Idempotent: re-accepting the same comment is a no-op. On a NEW
+   * acceptance, inserts a kind='accepted' notification to the answerer (never
+   * self). Returns the refreshed post view.
+   */
+  async function acceptCommunityAnswer(
+    accountId: string,
+    postId: string,
+    commentId: string,
+  ): Promise<CommunityPostView> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    await db.transaction(async (tx) => {
+      const [post] = await tx
+        .select({
+          id: universityCommunityPosts.id,
+          authorEmail: universityCommunityPosts.authorEmail,
+          postType: universityCommunityPosts.postType,
+          acceptedCommentId: universityCommunityPosts.acceptedCommentId,
+        })
+        .from(universityCommunityPosts)
+        .where(
+          and(
+            eq(universityCommunityPosts.id, postId),
+            eq(universityCommunityPosts.status, "visible"),
+          ),
+        )
+        .limit(1);
+      if (!post) throw new CommunityError(404, "Post not found");
+      if (!canAcceptAnswer(identity.email, post)) {
+        throw new CommunityError(403, "Not allowed to accept an answer");
+      }
+      if (post.postType !== "question") {
+        throw new CommunityError(400, "Only questions can be answered");
+      }
+
+      const [comment] = await tx
+        .select({
+          id: universityCommunityComments.id,
+          authorEmail: universityCommunityComments.authorEmail,
+          accountId: universityCommunityComments.accountId,
+        })
+        .from(universityCommunityComments)
+        .where(
+          and(
+            eq(universityCommunityComments.id, commentId),
+            eq(universityCommunityComments.postId, postId),
+            eq(universityCommunityComments.status, "visible"),
+          ),
+        )
+        .limit(1);
+      if (!comment) throw new CommunityError(404, "Comment not found");
+
+      // Idempotent: already the accepted answer → no-op (no duplicate notify).
+      if (post.acceptedCommentId === commentId) return;
+
+      await tx
+        .update(universityCommunityPosts)
+        .set({ acceptedCommentId: commentId, updatedAt: new Date() })
+        .where(eq(universityCommunityPosts.id, postId));
+
+      // "Your help mattered" notification to the answerer — never notify self.
+      const recipientEmail = normalizeEmail(comment.authorEmail);
+      if (recipientEmail !== identity.email) {
+        await tx.insert(universityCommunityNotifications).values({
+          accountId: comment.accountId,
+          recipientEmail,
+          actorEmail: identity.email,
+          kind: "accepted",
+          postId,
+          commentId,
+        });
+      }
+    });
+
+    return buildPostViewById(postId, identity.email);
+  }
+
+  /**
+   * Clear the accepted answer on a question, reverting it to open. Same
+   * canAcceptAnswer gate. Idempotent: clearing an already-open question is a
+   * no-op. Returns the refreshed post view.
+   */
+  async function unacceptCommunityAnswer(
+    accountId: string,
+    postId: string,
+  ): Promise<CommunityPostView> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    await db.transaction(async (tx) => {
+      const [post] = await tx
+        .select({
+          id: universityCommunityPosts.id,
+          authorEmail: universityCommunityPosts.authorEmail,
+          postType: universityCommunityPosts.postType,
+          acceptedCommentId: universityCommunityPosts.acceptedCommentId,
+        })
+        .from(universityCommunityPosts)
+        .where(
+          and(
+            eq(universityCommunityPosts.id, postId),
+            eq(universityCommunityPosts.status, "visible"),
+          ),
+        )
+        .limit(1);
+      if (!post) throw new CommunityError(404, "Post not found");
+      if (!canAcceptAnswer(identity.email, post)) {
+        throw new CommunityError(403, "Not allowed to un-accept an answer");
+      }
+      if (post.postType !== "question") {
+        throw new CommunityError(400, "Only questions can be answered");
+      }
+      // Idempotent: already open → no-op.
+      if (!post.acceptedCommentId) return;
+
+      await tx
+        .update(universityCommunityPosts)
+        .set({ acceptedCommentId: null, updatedAt: new Date() })
+        .where(eq(universityCommunityPosts.id, postId));
+    });
+
+    return buildPostViewById(postId, identity.email);
   }
 
   // Verify a polymorphic target exists + is visible (integrity for reactions /
@@ -2080,6 +2468,8 @@ export function customerPortalService(db: Db) {
     deleteCommunityPost,
     createCommunityComment,
     deleteCommunityComment,
+    acceptCommunityAnswer,
+    unacceptCommunityAnswer,
     reactToCommunity,
     unreactToCommunity,
     reportCommunityTarget,

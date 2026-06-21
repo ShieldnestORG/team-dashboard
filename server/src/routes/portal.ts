@@ -7,7 +7,11 @@ import {
   PORTAL_SESSION_COOKIE,
   CommunityError,
   COMMUNITY_DEFAULT_EMOJI,
+  COMMUNITY_POST_TYPES,
+  COMMUNITY_TOPICS,
   clampCommunityLimit,
+  type CommunityPostType,
+  type CommunityTopic,
 } from "../services/customer-portal.js";
 import {
   stripeRequest,
@@ -695,10 +699,12 @@ export function portalRoutes(db: Db): Router {
   // and /university/notes. Every mutation is also rate-limited per member
   // (write floods) and runs the deterministic profanity gate in the service.
   //
-  // GET    /university/community/feed?cursor=&limit=          → feed page
-  // POST   /university/community/posts { body }               → create post
+  // GET    /university/community/feed?cursor=&limit=&type=&topic=&unanswered=1 → feed page
+  // POST   /university/community/posts { body, postType?, topic? } → create post
   // GET    /university/community/posts/:id?cursor=&limit=     → post + comments
   // DELETE /university/community/posts/:id                    → author soft-delete
+  // POST   /university/community/posts/:id/accept { commentId } → mark accepted answer
+  // DELETE /university/community/posts/:id/accept             → clear accepted answer
   // POST   /university/community/posts/:id/comments { body }  → add comment
   // DELETE /university/community/comments/:id                 → author soft-delete
   // POST   /university/community/react   { targetType, targetId, emoji? }
@@ -771,6 +777,24 @@ export function portalRoutes(db: Db): Router {
     return raw === "post" || raw === "comment" ? raw : null;
   }
 
+  // Narrow a query/body post_type to the union, or null if absent/invalid.
+  // (The service is the authority and re-validates create; the feed filter just
+  // ignores an unrecognised type.)
+  function parsePostType(raw: unknown): CommunityPostType | null {
+    return typeof raw === "string" &&
+      (COMMUNITY_POST_TYPES as readonly string[]).includes(raw)
+      ? (raw as CommunityPostType)
+      : null;
+  }
+
+  // Narrow a query/body topic to the union, or null if absent/invalid.
+  function parseTopic(raw: unknown): CommunityTopic | null {
+    return typeof raw === "string" &&
+      (COMMUNITY_TOPICS as readonly string[]).includes(raw)
+      ? (raw as CommunityTopic)
+      : null;
+  }
+
   // Validate a body string (string + non-empty after trim). Length is enforced
   // in the service against the table-specific cap.
   function readBody(raw: unknown): string | null {
@@ -778,14 +802,29 @@ export function portalRoutes(db: Db): Router {
     return raw;
   }
 
+  type SerializableAuthor = {
+    displayName: string;
+    handle: string;
+    isYou: boolean;
+    isMark: boolean;
+  };
+
   function serializePost(p: {
     id: string;
-    author: { displayName: string; handle: string; isYou: boolean; isMark: boolean };
+    author: SerializableAuthor;
     body: string;
     commentCount: number;
     reactionCount: number;
     youReacted: boolean;
     createdAt: Date;
+    postType: string;
+    topic: string | null;
+    acceptedCommentId: string | null;
+    acceptedAnswer: {
+      commentId: string;
+      body: string;
+      author: SerializableAuthor;
+    } | null;
   }) {
     return {
       id: p.id,
@@ -795,17 +834,22 @@ export function portalRoutes(db: Db): Router {
       reactionCount: p.reactionCount,
       youReacted: p.youReacted,
       createdAt: p.createdAt.toISOString(),
+      postType: p.postType,
+      topic: p.topic,
+      acceptedCommentId: p.acceptedCommentId,
+      acceptedAnswer: p.acceptedAnswer,
     };
   }
 
   function serializeComment(c: {
     id: string;
     postId: string;
-    author: { displayName: string; handle: string; isYou: boolean; isMark: boolean };
+    author: SerializableAuthor;
     body: string;
     reactionCount: number;
     youReacted: boolean;
     createdAt: Date;
+    isAccepted: boolean;
   }) {
     return {
       id: c.id,
@@ -815,6 +859,7 @@ export function portalRoutes(db: Db): Router {
       reactionCount: c.reactionCount,
       youReacted: c.youReacted,
       createdAt: c.createdAt.toISOString(),
+      isAccepted: c.isAccepted,
     };
   }
 
@@ -826,10 +871,16 @@ export function portalRoutes(db: Db): Router {
       const cursor =
         typeof req.query.cursor === "string" ? req.query.cursor : null;
       const limit = clampCommunityLimit(req.query.limit);
+      const type = parsePostType(req.query.type);
+      const topic = parseTopic(req.query.topic);
+      const unanswered = req.query.unanswered === "1";
       try {
         const { posts, nextCursor } = await svc.getCommunityFeed(accountId, {
           cursor,
           limit,
+          type,
+          topic,
+          unanswered,
         });
         res.json({ posts: posts.map(serializePost), nextCursor });
       } catch (err) {
@@ -849,13 +900,28 @@ export function portalRoutes(db: Db): Router {
       if (!requireNonImpersonating(req, res)) return;
       const accountId = await requireUniversityMember(req, res);
       if (!accountId) return;
-      const body = readBody((req.body ?? {}).body);
+      const reqBody = (req.body ?? {}) as {
+        body?: unknown;
+        postType?: unknown;
+        topic?: unknown;
+      };
+      const body = readBody(reqBody.body);
       if (body === null) {
         res.status(400).json({ error: "Post body required" });
         return;
       }
+      // Pass the raw values through — the service validates the enums and
+      // throws CommunityError(400) on a bad value (routed via sendCommunityError).
+      const postType =
+        typeof reqBody.postType === "string" ? reqBody.postType : null;
+      const topic = typeof reqBody.topic === "string" ? reqBody.topic : null;
       try {
-        const post = await svc.createCommunityPost(accountId, body);
+        const post = await svc.createCommunityPost(
+          accountId,
+          body,
+          postType,
+          topic,
+        );
         res.status(201).json({ post: serializePost(post) });
       } catch (err) {
         if (sendCommunityError(res, err)) return;
@@ -973,6 +1039,60 @@ export function portalRoutes(db: Db): Router {
           "portal/university/community/comments/:id: delete failed",
         );
         res.status(500).json({ error: "Failed to delete comment" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/posts/:id/accept",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      const commentId =
+        typeof (req.body ?? {}).commentId === "string"
+          ? (req.body as { commentId: string }).commentId
+          : "";
+      if (!commentId) {
+        res.status(400).json({ error: "commentId required" });
+        return;
+      }
+      try {
+        const post = await svc.acceptCommunityAnswer(
+          accountId,
+          postId,
+          commentId,
+        );
+        res.status(200).json({ post: serializePost(post) });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/posts/:id/accept: accept failed",
+        );
+        res.status(500).json({ error: "Failed to accept answer" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/community/posts/:id/accept",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      try {
+        const post = await svc.unacceptCommunityAnswer(accountId, postId);
+        res.status(200).json({ post: serializePost(post) });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/posts/:id/accept: unaccept failed",
+        );
+        res.status(500).json({ error: "Failed to un-accept answer" });
       }
     },
   );
