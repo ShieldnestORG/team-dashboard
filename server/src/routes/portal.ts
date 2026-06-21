@@ -1,11 +1,19 @@
 import { Router, type Request, type Response } from "express";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Db } from "@paperclipai/db";
 import {
   customerPortalService,
   portalBaseUrl,
   PORTAL_SESSION_COOKIE,
+  CommunityError,
+  COMMUNITY_DEFAULT_EMOJI,
+  clampCommunityLimit,
 } from "../services/customer-portal.js";
-import { stripeRequest, stripeConfigured } from "../services/stripe-client.js";
+import {
+  stripeRequest,
+  stripeConfigured,
+  universityStripeKey,
+} from "../services/stripe-client.js";
 import { logger } from "../middleware/logger.js";
 import {
   adminImpersonationService,
@@ -14,6 +22,22 @@ import {
   type ImpersonationSession,
 } from "../services/admin-impersonation.js";
 import { logActivity } from "../services/activity-log.js";
+import {
+  mintBridgeToken,
+  type BridgeStatus,
+} from "../services/optimize-me-bridge.js";
+import { universitySessionsService } from "../services/university-sessions.js";
+import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
+import { UNIVERSITY_SESSIONS_URL } from "../services/university-email.js";
+
+// Optimize Me ("architect") app surface. The bridge handoff lands at
+// /api/sso/bridge there. Overridable via env for staging/local.
+function optimizeMeAppUrl(): string {
+  return (
+    process.env.OPTIMIZE_ME_APP_URL?.trim() ||
+    "https://app.optimize-me.coherencedaddy.com"
+  );
+}
 
 const TEAM_DASHBOARD_COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID ||
@@ -35,6 +59,16 @@ const TEAM_DASHBOARD_COMPANY_ID =
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COOKIE_DOMAIN = ".coherencedaddy.com";
+
+// Add `n` whole months to a date in UTC, preserving the day-of-month where the
+// target month is long enough (JS Date normalizes overflow, e.g. Jan 31 + 1mo
+// → Mar 3; acceptable for a billing-pause resume anchor). Used to compute the
+// University pause `resumes_at` (now + 1 billing cycle).
+function addUtcMonths(from: Date, n: number): Date {
+  const d = new Date(from.getTime());
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d;
+}
 
 function parseCookies(header: string | undefined): Record<string, string> {
   if (!header) return {};
@@ -270,9 +304,227 @@ function renderAuthInterstitial(token: string): string {
 </html>`;
 }
 
+// --- University session validation (pure, module-scope) --------------------
+
+interface SessionCreateValue {
+  title: string;
+  description: string | null;
+  hostName: string;
+  hostEmail: string | null;
+  startsAt: Date;
+  durationMinutes: number;
+  joinUrl: string;
+  capacity: number | null;
+}
+
+// Bounds shared by create + patch validation.
+const SESSION_LIMITS = {
+  titleMax: 200,
+  descMax: 4_000,
+  hostMax: 200,
+  durationMax: 480,
+} as const;
+
+function isHttpsUrl(value: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    return false;
+  }
+  return u.protocol === "https:";
+}
+
+// Validate an optional capacity field. Returns the parsed value, undefined when
+// absent, or an error message. null/absent both mean "unlimited".
+function parseCapacity(
+  raw: unknown,
+): { value: number | null } | { error: string } {
+  if (raw === undefined || raw === null) return { value: null };
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+    return { error: "capacity must be an integer >= 1 or null" };
+  }
+  return { value: n };
+}
+
+function parseDuration(
+  raw: unknown,
+): { value: number } | { error: string } {
+  const n = Number(raw);
+  if (
+    !Number.isFinite(n) ||
+    !Number.isInteger(n) ||
+    n < 1 ||
+    n > SESSION_LIMITS.durationMax
+  ) {
+    return { error: `durationMinutes must be 1–${SESSION_LIMITS.durationMax}` };
+  }
+  return { value: n };
+}
+
+export function parseSessionCreate(
+  body: Record<string, unknown>,
+): { value: SessionCreateValue } | { error: string } {
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title || title.length > SESSION_LIMITS.titleMax) {
+    return { error: `title required (1–${SESSION_LIMITS.titleMax} chars)` };
+  }
+  const hostName =
+    typeof body.hostName === "string" ? body.hostName.trim() : "";
+  if (!hostName || hostName.length > SESSION_LIMITS.hostMax) {
+    return { error: `hostName required (1–${SESSION_LIMITS.hostMax} chars)` };
+  }
+  const joinUrl = typeof body.joinUrl === "string" ? body.joinUrl.trim() : "";
+  if (!joinUrl || !isHttpsUrl(joinUrl)) {
+    return { error: "joinUrl required and must be an https URL" };
+  }
+  const startsAtRaw =
+    typeof body.startsAt === "string" ? body.startsAt.trim() : "";
+  const startsAt = startsAtRaw ? new Date(startsAtRaw) : new Date("invalid");
+  if (Number.isNaN(startsAt.getTime())) {
+    return { error: "startsAt must be a valid ISO timestamp" };
+  }
+  if (startsAt.getTime() <= Date.now()) {
+    return { error: "startsAt must be in the future" };
+  }
+
+  let durationMinutes = 60;
+  if (body.durationMinutes !== undefined) {
+    const d = parseDuration(body.durationMinutes);
+    if ("error" in d) return { error: d.error };
+    durationMinutes = d.value;
+  }
+
+  const cap = parseCapacity(body.capacity);
+  if ("error" in cap) return { error: cap.error };
+
+  const description =
+    typeof body.description === "string"
+      ? body.description.slice(0, SESSION_LIMITS.descMax)
+      : null;
+  const hostEmail =
+    typeof body.hostEmail === "string" && body.hostEmail.trim()
+      ? body.hostEmail.trim()
+      : null;
+
+  return {
+    value: {
+      title,
+      description,
+      hostName,
+      hostEmail,
+      startsAt,
+      durationMinutes,
+      joinUrl,
+      capacity: cap.value,
+    },
+  };
+}
+
+export function parseSessionPatch(
+  body: Record<string, unknown>,
+):
+  | { value: Partial<SessionCreateValue> }
+  | { error: string } {
+  const out: Partial<SessionCreateValue> = {};
+
+  if (body.title !== undefined) {
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title || title.length > SESSION_LIMITS.titleMax) {
+      return { error: `title must be 1–${SESSION_LIMITS.titleMax} chars` };
+    }
+    out.title = title;
+  }
+  if (body.hostName !== undefined) {
+    const hostName =
+      typeof body.hostName === "string" ? body.hostName.trim() : "";
+    if (!hostName || hostName.length > SESSION_LIMITS.hostMax) {
+      return { error: `hostName must be 1–${SESSION_LIMITS.hostMax} chars` };
+    }
+    out.hostName = hostName;
+  }
+  if (body.joinUrl !== undefined) {
+    const joinUrl =
+      typeof body.joinUrl === "string" ? body.joinUrl.trim() : "";
+    if (!joinUrl || !isHttpsUrl(joinUrl)) {
+      return { error: "joinUrl must be an https URL" };
+    }
+    out.joinUrl = joinUrl;
+  }
+  if (body.startsAt !== undefined) {
+    const raw = typeof body.startsAt === "string" ? body.startsAt.trim() : "";
+    const startsAt = raw ? new Date(raw) : new Date("invalid");
+    if (Number.isNaN(startsAt.getTime())) {
+      return { error: "startsAt must be a valid ISO timestamp" };
+    }
+    out.startsAt = startsAt;
+  }
+  if (body.durationMinutes !== undefined) {
+    const d = parseDuration(body.durationMinutes);
+    if ("error" in d) return { error: d.error };
+    out.durationMinutes = d.value;
+  }
+  if (body.capacity !== undefined) {
+    const cap = parseCapacity(body.capacity);
+    if ("error" in cap) return { error: cap.error };
+    out.capacity = cap.value;
+  }
+  if (body.description !== undefined) {
+    out.description =
+      typeof body.description === "string"
+        ? body.description.slice(0, SESSION_LIMITS.descMax)
+        : null;
+  }
+  if (body.hostEmail !== undefined) {
+    out.hostEmail =
+      typeof body.hostEmail === "string" && body.hostEmail.trim()
+        ? body.hostEmail.trim()
+        : null;
+  }
+
+  if (Object.keys(out).length === 0) {
+    return { error: "No editable fields provided" };
+  }
+  return { value: out };
+}
+
+// Admin-facing serialization (full row, NOT the gated member view — admins see
+// the join_url unconditionally since they author it). Timestamps as ISO.
+function serializeAdminSession(row: {
+  id: string;
+  title: string;
+  description: string | null;
+  hostName: string;
+  hostEmail: string | null;
+  startsAt: Date;
+  durationMinutes: number;
+  joinUrl: string;
+  capacity: number | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): Record<string, unknown> {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description ?? null,
+    hostName: row.hostName,
+    hostEmail: row.hostEmail ?? null,
+    startsAt: row.startsAt.toISOString(),
+    durationMinutes: row.durationMinutes,
+    joinUrl: row.joinUrl,
+    capacity: row.capacity ?? null,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 export function portalRoutes(db: Db): Router {
   const router = Router();
   const svc = customerPortalService(db);
+  const sessionsSvc = universitySessionsService(db);
 
   function requireSession(req: Request, res: Response): string | null {
     // Impersonation cookie wins when present (admin "View as customer").
@@ -413,6 +665,973 @@ export function portalRoutes(db: Db): Router {
     }
   });
 
+  // -- University progress (rep-log) ------------------------------------------
+  //
+  // The "Practice" half of the learning loop. Gated to University members via
+  // isUniversityAccount() — a non-member with a valid portal session gets 403,
+  // never a silent empty result, so the storefront can branch on membership.
+  //
+  // GET  /university/progress → { currentStreak, weekCount, weekGoal, recent }
+  // POST /university/progress { lessonSlug, reflection?, quizScore? }
+  //   → idempotent upsert of TODAY's rep; returns { currentStreak, weekCount,
+  //     weekGoal }.
+
+  // Shared gate: resolve the session, then require University membership.
+  // Returns the accountId on success, or null after writing the response.
+  async function requireUniversityMember(
+    req: Request,
+    res: Response,
+  ): Promise<string | null> {
+    const accountId = requireSession(req, res);
+    if (!accountId) return null;
+    let isMember: boolean;
+    try {
+      isMember = await svc.isUniversityAccount(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university: membership check failed",
+      );
+      res.status(500).json({ error: "Failed to verify membership" });
+      return null;
+    }
+    if (!isMember) {
+      res.status(403).json({ error: "University membership required" });
+      return null;
+    }
+    return accountId;
+  }
+
+  router.get("/university/progress", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    try {
+      const summary = await svc.getProgressSummary(accountId);
+      res.json({
+        currentStreak: summary.currentStreak,
+        weekCount: summary.weekCount,
+        weekGoal: summary.weekGoal,
+        recent: summary.recent.map((r) => ({
+          lessonSlug: r.lessonSlug,
+          created_at: r.createdAt.toISOString(),
+          reflection: r.reflection ?? undefined,
+        })),
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/progress: summary failed",
+      );
+      res.status(500).json({ error: "Failed to load progress" });
+    }
+  });
+
+  router.post("/university/progress", async (req: Request, res: Response) => {
+    // Logging a rep mutates state — block under impersonation (read-only).
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as {
+      lessonSlug?: unknown;
+      reflection?: unknown;
+      quizScore?: unknown;
+    };
+    const lessonSlug =
+      typeof body.lessonSlug === "string" ? body.lessonSlug.trim() : "";
+    if (!lessonSlug || lessonSlug.length > 200) {
+      res.status(400).json({ error: "lessonSlug required" });
+      return;
+    }
+    const reflection =
+      typeof body.reflection === "string" ? body.reflection.slice(0, 10_000) : null;
+    let quizScore: number | null = null;
+    if (body.quizScore !== undefined && body.quizScore !== null) {
+      const n = Number(body.quizScore);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        res.status(400).json({ error: "quizScore must be 0–100" });
+        return;
+      }
+      quizScore = Math.trunc(n);
+    }
+
+    try {
+      const result = await svc.recordRep(accountId, lessonSlug, {
+        reflection,
+        quizScore,
+      });
+      res.status(200).json({
+        currentStreak: result.currentStreak,
+        weekCount: result.weekCount,
+        weekGoal: result.weekGoal,
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId, lessonSlug },
+        "portal/university/progress: recordRep failed",
+      );
+      res.status(500).json({ error: "Failed to record rep" });
+    }
+  });
+
+  // -- University notes (in-lesson "write this down") -------------------------
+  //
+  // Persists the in-lesson note prompts so they survive across sessions and
+  // devices. Gated to University members via requireUniversityMember() — same
+  // gate as the rep-log — and writes are blocked under impersonation
+  // (read-only), exactly like POST /university/progress.
+  //
+  // A note is keyed by (lessonSlug, noteKey): noteKey is the stable slot for an
+  // in-lesson field, so saving the same field again upserts the row in place.
+  //
+  // GET    /university/notes?lessonSlug=<slug>  (lessonSlug optional → all the
+  //          member's notes) → { notes: [{ lessonSlug, noteKey, body, updatedAt }] }
+  // POST   /university/notes { lessonSlug, noteKey, body } → upsert; returns the
+  //          saved note. 400 on missing lessonSlug/noteKey.
+  // DELETE /university/notes { lessonSlug, noteKey } → remove.
+  //
+  // FUTURE: these member notes are the input corpus for a planned "smart
+  // pattern recognition" feature ported from the Optimize Me / architect app —
+  // it will analyze members' notes to surface what to work on + best
+  // suggestions. Not built yet.
+
+  const NOTE_BODY_MAX = 20_000;
+
+  router.get("/university/notes", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    const lessonSlugRaw = req.query.lessonSlug;
+    const lessonSlug =
+      typeof lessonSlugRaw === "string" ? lessonSlugRaw.trim() : undefined;
+    try {
+      const notes = await svc.getNotes({ accountId, lessonSlug });
+      res.json({
+        notes: notes.map((n) => ({
+          lessonSlug: n.lessonSlug,
+          noteKey: n.noteKey,
+          body: n.body,
+          updatedAt: n.updatedAt.toISOString(),
+        })),
+      });
+    } catch (err) {
+      logger.error({ err, accountId }, "portal/university/notes: list failed");
+      res.status(500).json({ error: "Failed to load notes" });
+    }
+  });
+
+  router.post("/university/notes", async (req: Request, res: Response) => {
+    // Saving a note mutates state — block under impersonation (read-only).
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as {
+      lessonSlug?: unknown;
+      noteKey?: unknown;
+      body?: unknown;
+    };
+    const lessonSlug =
+      typeof body.lessonSlug === "string" ? body.lessonSlug.trim() : "";
+    if (!lessonSlug || lessonSlug.length > 200) {
+      res.status(400).json({ error: "lessonSlug required" });
+      return;
+    }
+    const noteKey = typeof body.noteKey === "string" ? body.noteKey.trim() : "";
+    if (!noteKey || noteKey.length > 200) {
+      res.status(400).json({ error: "noteKey required" });
+      return;
+    }
+    const noteBody = typeof body.body === "string" ? body.body : "";
+    if (noteBody.length > NOTE_BODY_MAX) {
+      res
+        .status(400)
+        .json({ error: `body must be at most ${NOTE_BODY_MAX} characters` });
+      return;
+    }
+
+    try {
+      const saved = await svc.upsertNote({
+        accountId,
+        lessonSlug,
+        noteKey,
+        body: noteBody,
+      });
+      res.status(200).json({
+        note: {
+          lessonSlug: saved.lessonSlug,
+          noteKey: saved.noteKey,
+          body: saved.body,
+          updatedAt: saved.updatedAt.toISOString(),
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId, lessonSlug, noteKey },
+        "portal/university/notes: upsert failed",
+      );
+      res.status(500).json({ error: "Failed to save note" });
+    }
+  });
+
+  router.delete("/university/notes", async (req: Request, res: Response) => {
+    // Deleting a note mutates state — block under impersonation (read-only).
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as {
+      lessonSlug?: unknown;
+      noteKey?: unknown;
+    };
+    const lessonSlug =
+      typeof body.lessonSlug === "string" ? body.lessonSlug.trim() : "";
+    const noteKey = typeof body.noteKey === "string" ? body.noteKey.trim() : "";
+    if (!lessonSlug) {
+      res.status(400).json({ error: "lessonSlug required" });
+      return;
+    }
+    if (!noteKey) {
+      res.status(400).json({ error: "noteKey required" });
+      return;
+    }
+
+    try {
+      await svc.deleteNote({ accountId, lessonSlug, noteKey });
+      res.status(200).json({ ok: true });
+    } catch (err) {
+      logger.error(
+        { err, accountId, lessonSlug, noteKey },
+        "portal/university/notes: delete failed",
+      );
+      res.status(500).json({ error: "Failed to delete note" });
+    }
+  });
+
+  // -- University community (the native members feed) -------------------------
+  //
+  // The "Do, between sessions" beat of the Coherent Loop. A members-only async
+  // feed: members post short updates, comment, and react ("Resonate"). Mounted
+  // INLINE here (not a separate router) reusing the in-place requireUniversity-
+  // Member + requireNonImpersonating gates — identical to /university/progress
+  // and /university/notes. Every mutation is also rate-limited per member
+  // (write floods) and runs the deterministic profanity gate in the service.
+  //
+  // GET    /university/community/feed?cursor=&limit=          → feed page
+  // POST   /university/community/posts { body }               → create post
+  // GET    /university/community/posts/:id?cursor=&limit=     → post + comments
+  // DELETE /university/community/posts/:id                    → author soft-delete
+  // POST   /university/community/posts/:id/comments { body }  → add comment
+  // DELETE /university/community/comments/:id                 → author soft-delete
+  // POST   /university/community/react   { targetType, targetId, emoji? }
+  // DELETE /university/community/react   { targetType, targetId, emoji? }
+  // POST   /university/community/report  { targetType, targetId, reason? }
+  // GET    /university/community/notifications/unread-count   → { count }
+  // POST   /university/community/notifications/seen           → { ok }
+
+  // Map a thrown service CommunityError to its HTTP status; rethrow anything
+  // else for the generic 500 path. The profanity 422 surfaces a non-preachy
+  // message the portal renders inline.
+  function sendCommunityError(res: Response, err: unknown): boolean {
+    if (err instanceof CommunityError) {
+      if (err.status === 422 && err.message === "profanity") {
+        res.status(422).json({
+          error: "Let's keep it coherent — please rephrase.",
+          code: "profanity",
+        });
+        return true;
+      }
+      res.status(err.status).json({ error: err.message });
+      return true;
+    }
+    return false;
+  }
+
+  // Per-member write rate limiter. Keyed on the verified session account id
+  // (so a member behind shared NAT doesn't throttle others, and a bot behind
+  // one account is caught) with an IPv6-safe IP fallback for unauthenticated
+  // hits. 429 returns a friendly "slow down". Mirrors global-rate-limit.ts.
+  function communityWriteLimiter(maxPerMinute: number) {
+    return rateLimit({
+      windowMs: 60 * 1000,
+      max: maxPerMinute,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "You're posting quickly — give it a moment." },
+      keyGenerator: (req: Request): string => {
+        const resolved = resolvePortalAuth(req, (c) => svc.verifySession(c));
+        if (resolved) return `acct:${resolved.accountId}`;
+        return ipKeyGenerator(req.ip ?? "");
+      },
+    });
+  }
+
+  // Owner-confirmed per-minute write limits (DESIGN §13.9): posts ≤ 5,
+  // comments ≤ 15, reactions/reports kept loose but bounded against automation.
+  // Env-overridable so the owner can tune without a redeploy (and so the test
+  // suite can lift the ceiling — the limits are behavioural, not correctness).
+  function writeLimit(envVar: string, fallback: number): number {
+    const raw = process.env[envVar];
+    const n = raw ? Number(raw) : fallback;
+    if (!Number.isFinite(n) || n < 1) return fallback;
+    return Math.floor(n);
+  }
+  const postWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_POST_RATE_PER_MIN", 5),
+  );
+  const commentWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_COMMENT_RATE_PER_MIN", 15),
+  );
+  const reactWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_REACT_RATE_PER_MIN", 60),
+  );
+  const reportWriteLimiter = communityWriteLimiter(
+    writeLimit("COMMUNITY_REPORT_RATE_PER_MIN", 20),
+  );
+
+  function parseTargetType(raw: unknown): "post" | "comment" | null {
+    return raw === "post" || raw === "comment" ? raw : null;
+  }
+
+  // Validate a body string (string + non-empty after trim). Length is enforced
+  // in the service against the table-specific cap.
+  function readBody(raw: unknown): string | null {
+    if (typeof raw !== "string") return null;
+    return raw;
+  }
+
+  function serializePost(p: {
+    id: string;
+    author: { displayName: string; handle: string; isYou: boolean; isMark: boolean };
+    body: string;
+    commentCount: number;
+    reactionCount: number;
+    youReacted: boolean;
+    createdAt: Date;
+  }) {
+    return {
+      id: p.id,
+      author: p.author,
+      body: p.body,
+      commentCount: p.commentCount,
+      reactionCount: p.reactionCount,
+      youReacted: p.youReacted,
+      createdAt: p.createdAt.toISOString(),
+    };
+  }
+
+  function serializeComment(c: {
+    id: string;
+    postId: string;
+    author: { displayName: string; handle: string; isYou: boolean; isMark: boolean };
+    body: string;
+    reactionCount: number;
+    youReacted: boolean;
+    createdAt: Date;
+  }) {
+    return {
+      id: c.id,
+      postId: c.postId,
+      author: c.author,
+      body: c.body,
+      reactionCount: c.reactionCount,
+      youReacted: c.youReacted,
+      createdAt: c.createdAt.toISOString(),
+    };
+  }
+
+  router.get(
+    "/university/community/feed",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const cursor =
+        typeof req.query.cursor === "string" ? req.query.cursor : null;
+      const limit = clampCommunityLimit(req.query.limit);
+      try {
+        const { posts, nextCursor } = await svc.getCommunityFeed(accountId, {
+          cursor,
+          limit,
+        });
+        res.json({ posts: posts.map(serializePost), nextCursor });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/community/feed: list failed",
+        );
+        res.status(500).json({ error: "Failed to load feed" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/posts",
+    postWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const body = readBody((req.body ?? {}).body);
+      if (body === null) {
+        res.status(400).json({ error: "Post body required" });
+        return;
+      }
+      try {
+        const post = await svc.createCommunityPost(accountId, body);
+        res.status(201).json({ post: serializePost(post) });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId },
+          "portal/university/community/posts: create failed",
+        );
+        res.status(500).json({ error: "Failed to create post" });
+      }
+    },
+  );
+
+  router.get(
+    "/university/community/posts/:id",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      const cursor =
+        typeof req.query.cursor === "string" ? req.query.cursor : null;
+      const limit = clampCommunityLimit(req.query.limit);
+      try {
+        const result = await svc.getCommunityPost(accountId, postId, {
+          cursor,
+          limit,
+        });
+        res.json({
+          post: serializePost(result.post),
+          comments: result.comments.map(serializeComment),
+          nextCursor: result.nextCursor,
+        });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/posts/:id: detail failed",
+        );
+        res.status(500).json({ error: "Failed to load post" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/community/posts/:id",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      try {
+        const ok = await svc.deleteCommunityPost(accountId, postId);
+        if (!ok) {
+          res.status(404).json({ error: "Post not found" });
+          return;
+        }
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/posts/:id: delete failed",
+        );
+        res.status(500).json({ error: "Failed to delete post" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/posts/:id/comments",
+    commentWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const postId = String(req.params.id);
+      const body = readBody((req.body ?? {}).body);
+      if (body === null) {
+        res.status(400).json({ error: "Comment body required" });
+        return;
+      }
+      try {
+        const comment = await svc.createCommunityComment(
+          accountId,
+          postId,
+          body,
+        );
+        res.status(201).json({ comment: serializeComment(comment) });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, postId },
+          "portal/university/community/comments: create failed",
+        );
+        res.status(500).json({ error: "Failed to create comment" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/community/comments/:id",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const commentId = String(req.params.id);
+      try {
+        const ok = await svc.deleteCommunityComment(accountId, commentId);
+        if (!ok) {
+          res.status(404).json({ error: "Comment not found" });
+          return;
+        }
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId, commentId },
+          "portal/university/community/comments/:id: delete failed",
+        );
+        res.status(500).json({ error: "Failed to delete comment" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/react",
+    reactWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const b = (req.body ?? {}) as {
+        targetType?: unknown;
+        targetId?: unknown;
+        emoji?: unknown;
+      };
+      const targetType = parseTargetType(b.targetType);
+      const targetId = typeof b.targetId === "string" ? b.targetId : "";
+      if (!targetType || !targetId) {
+        res.status(400).json({ error: "targetType and targetId required" });
+        return;
+      }
+      const emoji =
+        typeof b.emoji === "string" && b.emoji.trim().length
+          ? b.emoji.trim().slice(0, 40)
+          : COMMUNITY_DEFAULT_EMOJI;
+      try {
+        const result = await svc.reactToCommunity(
+          accountId,
+          targetType,
+          targetId,
+          emoji,
+        );
+        res.status(200).json(result);
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, targetType, targetId },
+          "portal/university/community/react: react failed",
+        );
+        res.status(500).json({ error: "Failed to react" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/community/react",
+    reactWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const b = (req.body ?? {}) as {
+        targetType?: unknown;
+        targetId?: unknown;
+        emoji?: unknown;
+      };
+      const targetType = parseTargetType(b.targetType);
+      const targetId = typeof b.targetId === "string" ? b.targetId : "";
+      if (!targetType || !targetId) {
+        res.status(400).json({ error: "targetType and targetId required" });
+        return;
+      }
+      const emoji =
+        typeof b.emoji === "string" && b.emoji.trim().length
+          ? b.emoji.trim().slice(0, 40)
+          : COMMUNITY_DEFAULT_EMOJI;
+      try {
+        const result = await svc.unreactToCommunity(
+          accountId,
+          targetType,
+          targetId,
+          emoji,
+        );
+        res.status(200).json(result);
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, targetType, targetId },
+          "portal/university/community/react: unreact failed",
+        );
+        res.status(500).json({ error: "Failed to remove reaction" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/report",
+    reportWriteLimiter,
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const b = (req.body ?? {}) as {
+        targetType?: unknown;
+        targetId?: unknown;
+        reason?: unknown;
+      };
+      const targetType = parseTargetType(b.targetType);
+      const targetId = typeof b.targetId === "string" ? b.targetId : "";
+      if (!targetType || !targetId) {
+        res.status(400).json({ error: "targetType and targetId required" });
+        return;
+      }
+      const reason = typeof b.reason === "string" ? b.reason : null;
+      try {
+        await svc.reportCommunityTarget(accountId, targetType, targetId, reason);
+        // Never reveal report counts or the auto-hide outcome to members.
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        if (sendCommunityError(res, err)) return;
+        logger.error(
+          { err, accountId, targetType, targetId },
+          "portal/university/community/report: report failed",
+        );
+        res.status(500).json({ error: "Failed to submit report" });
+      }
+    },
+  );
+
+  router.get(
+    "/university/community/notifications/unread-count",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      try {
+        const count = await svc.getCommunityUnreadCount(accountId);
+        res.json({ count });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/community/notifications/unread-count: failed",
+        );
+        res.status(500).json({ error: "Failed to load unread count" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/community/notifications/seen",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      try {
+        const marked = await svc.markCommunityNotificationsSeen(accountId);
+        res.json({ ok: true, marked });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/community/notifications/seen: failed",
+        );
+        res.status(500).json({ error: "Failed to mark notifications seen" });
+      }
+    },
+  );
+
+  // -- University live SESSIONS (scheduling + RSVP) ---------------------------
+  //
+  // The "Practice together" leg of the Coherent Loop. Admin-created scheduled
+  // sits; members RSVP, get reminded (T-24h / T-1h via university-crons.ts),
+  // save to calendar (.ics), and one-click join an external video room when
+  // it's live. Gated to University members via requireUniversityMember();
+  // mutations add requireNonImpersonating first (read-only under impersonation).
+  // The DB logic lives in university-sessions.ts; routes stay validation/shape.
+  //
+  // join_url is NEVER returned unless the session is live AND the caller RSVP'd
+  // `going` — the service enforces this so a recurring room link can't leak.
+  //
+  // GET    /university/sessions?scope=upcoming|past → { sessions: [...] }
+  // POST   /university/sessions/:id/rsvp            → upsert going; 409 if full
+  // DELETE /university/sessions/:id/rsvp            → soft-cancel; idempotent
+  // GET    /university/sessions/:id/ics             → text/calendar (VEVENT)
+  // POST   /university/sessions      (admin)        → create one scheduled row
+  // PATCH  /university/sessions/:id  (admin)        → partial edit
+  // POST   /university/sessions/:id/cancel (admin)  → soft-cancel + notice
+
+  // Admin authoring is gated on an env allow-list of admin account emails
+  // (UNIVERSITY_SESSION_ADMINS, comma-separated), checked AFTER the membership
+  // gate. There is no member-facing admin-role system in the University path
+  // today; an env allow-list is honest, zero-schema, and the simplest
+  // sufficient gate (DESIGN §5.2/§10 opt 2).
+  function sessionAdminEmails(): Set<string> {
+    const raw = process.env.UNIVERSITY_SESSION_ADMINS ?? "";
+    return new Set(
+      raw
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e.length > 0),
+    );
+  }
+
+  // Resolve the member (membership-gated) AND require they're on the admin
+  // allow-list. Returns the accountId on success, or null after writing 403.
+  async function requireSessionAdmin(
+    req: Request,
+    res: Response,
+  ): Promise<string | null> {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return null;
+    const allow = sessionAdminEmails();
+    if (allow.size === 0) {
+      res.status(403).json({ error: "Session administration is not enabled" });
+      return null;
+    }
+    let account: Awaited<ReturnType<typeof svc.getAccount>>;
+    try {
+      account = await svc.getAccount(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/sessions: admin account lookup failed",
+      );
+      res.status(500).json({ error: "Failed to verify admin" });
+      return null;
+    }
+    const email = account?.email?.trim().toLowerCase() ?? "";
+    if (!email || !allow.has(email)) {
+      res.status(403).json({ error: "Session administration required" });
+      return null;
+    }
+    return accountId;
+  }
+
+  router.get("/university/sessions", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    const scopeRaw = req.query.scope;
+    const scope = scopeRaw === "past" ? "past" : "upcoming";
+    try {
+      const sessions = await sessionsSvc.listSessions(accountId, scope);
+      res.json({ sessions });
+    } catch (err) {
+      logger.error(
+        { err, accountId, scope },
+        "portal/university/sessions: list failed",
+      );
+      res.status(500).json({ error: "Failed to load sessions" });
+    }
+  });
+
+  router.post(
+    "/university/sessions/:id/rsvp",
+    async (req: Request, res: Response) => {
+      // RSVPing mutates state — block under impersonation (read-only).
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const result = await sessionsSvc.rsvp(accountId, sessionId);
+        if (!result.ok) {
+          switch (result.code) {
+            case "not_found":
+              res.status(404).json({ error: "Session not found" });
+              return;
+            case "full":
+              res.status(409).json({ error: "Session is full" });
+              return;
+            case "canceled":
+              res.status(400).json({ error: "Session is canceled" });
+              return;
+            case "ended":
+              res.status(400).json({ error: "Session has ended" });
+              return;
+          }
+        }
+        res.status(200).json({ session: result.session });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: rsvp failed",
+        );
+        res.status(500).json({ error: "Failed to RSVP" });
+      }
+    },
+  );
+
+  router.delete(
+    "/university/sessions/:id/rsvp",
+    async (req: Request, res: Response) => {
+      // Canceling an RSVP mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const ok = await sessionsSvc.cancelRsvp(accountId, sessionId);
+        if (!ok) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: cancel-rsvp failed",
+        );
+        res.status(500).json({ error: "Failed to cancel RSVP" });
+      }
+    },
+  );
+
+  router.get(
+    "/university/sessions/:id/ics",
+    async (req: Request, res: Response) => {
+      // Contains the join link → members only.
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const ics = await sessionsSvc.buildIcs(sessionId);
+        if (ics === null) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res
+          .status(200)
+          .setHeader("Content-Type", "text/calendar; charset=utf-8")
+          .setHeader(
+            "Content-Disposition",
+            'attachment; filename="coherence-session.ics"',
+          )
+          .send(ics);
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: ics failed",
+        );
+        res.status(500).json({ error: "Failed to build calendar file" });
+      }
+    },
+  );
+
+  // -- Admin authoring (env allow-list) ---------------------------------------
+
+  router.post("/university/sessions", async (req: Request, res: Response) => {
+    if (!requireNonImpersonating(req, res)) return;
+    const accountId = await requireSessionAdmin(req, res);
+    if (!accountId) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = parseSessionCreate(body);
+    if ("error" in parsed) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    try {
+      const row = await sessionsSvc.createSession({
+        ...parsed.value,
+        createdByAccount: accountId,
+      });
+      res.status(200).json({ session: serializeAdminSession(row) });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/sessions: create failed",
+      );
+      res.status(500).json({ error: "Failed to create session" });
+    }
+  });
+
+  router.patch(
+    "/university/sessions/:id",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const parsed = parseSessionPatch(body);
+      if ("error" in parsed) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      try {
+        const row = await sessionsSvc.patchSession(sessionId, parsed.value);
+        if (!row) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res.status(200).json({ session: serializeAdminSession(row) });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: patch failed",
+        );
+        res.status(500).json({ error: "Failed to update session" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/sessions/:id/cancel",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const result = await sessionsSvc.cancelSession(sessionId);
+        if (!result) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        // Event-driven "session canceled" notice to going RSVPs (DESIGN §9).
+        // The storefront template owns FROM/subject/body; we post the envelope.
+        // Per-send failures must not fail the cancel — log and continue.
+        for (const email of result.goingEmails) {
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_canceled",
+              to: email,
+              data: {
+                title: result.row.title,
+                startsAtIso: result.row.startsAt.toISOString(),
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email, sessionId },
+              "portal/university/sessions: canceled notice send failed (non-fatal)",
+            );
+          }
+        }
+        res.status(200).json({ session: serializeAdminSession(result.row) });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: cancel failed",
+        );
+        res.status(500).json({ error: "Failed to cancel session" });
+      }
+    },
+  );
+
   // -- List credentials -------------------------------------------------------
   router.get("/credentials", async (req: Request, res: Response) => {
     const accountId = requireSession(req, res);
@@ -484,7 +1703,29 @@ export function portalRoutes(db: Db): Router {
         res.status(401).json({ error: "Account not found" });
         return;
       }
-      if (!account.stripeCustomerId) {
+      // University members bill on a SEPARATE Stripe account (Starwise), so the
+      // billing-portal session MUST be created with BOTH the University key AND
+      // a Starwise customer id. The key/id pair must come from the SAME account
+      // or Stripe rejects the request ("No such customer").
+      //
+      // Dual-customer fix: customer_accounts has a single stripe_customer_id
+      // column and the customer-account-linker does ON CONFLICT(email) DO
+      // UPDATE (last-writer-wins), so for a customer holding BOTH a University
+      // (Starwise) and a CD (CreditScore/Watchtower) subscription that column
+      // can hold EITHER account's id. We therefore never trust it for a
+      // University account: the Starwise customer id is read from
+      // university_subscriptions (written only by the University checkout, which
+      // authenticates with universityStripeKey()), guaranteeing key+id share an
+      // account. CD-only customers are unaffected — isUniversityAccount() is
+      // false for them, so they keep using customer_accounts.stripe_customer_id
+      // with the shared key, and that column is never read for an account that
+      // also has a Starwise customer. universityStripeKey() falls back to
+      // STRIPE_SECRET_KEY, so a single-account (local/dev) setup is a no-op.
+      const isUniversity = await svc.isUniversityAccount(accountId);
+      const stripeCustomerId = isUniversity
+        ? await svc.getUniversityStripeCustomerId(accountId)
+        : account.stripeCustomerId;
+      if (!stripeCustomerId) {
         res.status(400).json({
           error:
             "No Stripe customer linked to this account yet. Make a purchase first or contact support.",
@@ -494,13 +1735,15 @@ export function portalRoutes(db: Db): Router {
       const returnUrl =
         process.env.PORTAL_STRIPE_RETURN_URL?.trim() ||
         `${portalBaseUrl()}/billing`;
+      const secretKey = isUniversity ? universityStripeKey() : undefined;
       const session = await stripeRequest<{ url: string }>(
         "POST",
         "/billing_portal/sessions",
         {
-          customer: account.stripeCustomerId,
+          customer: stripeCustomerId,
           return_url: returnUrl,
         },
+        secretKey,
       );
       void svc.logAction(accountId, "stripe_portal_opened", {});
       res.json({ url: session.url });
@@ -509,6 +1752,223 @@ export function portalRoutes(db: Db): Router {
       res.status(500).json({ error: "Failed to create billing portal session" });
     }
   });
+
+  // -- University billing save-flow: cancel / pause / reactivate --------------
+  //
+  // Three self-service actions on the member's University (Starwise) Stripe
+  // subscription, all gated by requireUniversityMember (403 for non-members)
+  // and requireNonImpersonating (these mutate billing — never allowed while an
+  // admin is "viewing as customer"). Every call authenticates against the
+  // SEPARATE Starwise account via universityStripeKey(); the subscription id is
+  // read from university_subscriptions (the only writer that uses that key), so
+  // key + subscription id always belong to the same Stripe account — same
+  // pairing guarantee as /stripe-portal.
+  //
+  // "Manage payment & invoices" stays the existing /stripe-portal Customer
+  // Portal hand-off — separate surface, unchanged.
+
+  // Shared prelude: gate (non-impersonating + member), require Stripe to be
+  // configured, then resolve the member's University subscription id. Returns
+  // { accountId, subId } on success, or null after writing the response.
+  async function resolveUniversitySubscription(
+    req: Request,
+    res: Response,
+  ): Promise<{ accountId: string; subId: string } | null> {
+    if (!requireNonImpersonating(req, res)) return null;
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return null;
+    if (!stripeConfigured()) {
+      res.status(503).json({ error: "Stripe not configured" });
+      return null;
+    }
+    let subId: string | null;
+    try {
+      subId = await svc.getUniversityStripeSubscriptionId(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university billing: subscription lookup failed",
+      );
+      res.status(500).json({ error: "Failed to load subscription" });
+      return null;
+    }
+    if (!subId) {
+      res.status(400).json({
+        error:
+          "No University subscription found for this account. Contact support.",
+      });
+      return null;
+    }
+    return { accountId, subId };
+  }
+
+  // POST /university/cancel { reason? }
+  //   → Stripe cancel_at_period_end=true (member keeps access through the paid
+  //     period), persist the optional churn reason, return the access-until ISO.
+  router.post("/university/cancel", async (req: Request, res: Response) => {
+    const resolved = await resolveUniversitySubscription(req, res);
+    if (!resolved) return;
+    const { accountId, subId } = resolved;
+
+    const body = (req.body ?? {}) as { reason?: unknown };
+    const reason =
+      typeof body.reason === "string" ? body.reason.trim().slice(0, 2_000) : "";
+
+    try {
+      const sub = await stripeRequest<{ current_period_end: number }>(
+        "POST",
+        `/subscriptions/${subId}`,
+        { cancel_at_period_end: true },
+        universityStripeKey(),
+      );
+      // Persist the reason AFTER Stripe confirms — we only log churn feedback
+      // for cancels that actually took effect.
+      try {
+        await svc.recordCancelFeedback(accountId, reason || null);
+      } catch (err) {
+        // Feedback is non-critical; a failed insert must NOT fail the cancel.
+        logger.error(
+          { err, accountId },
+          "portal/university/cancel: recordCancelFeedback failed (cancel still applied)",
+        );
+      }
+      void svc.logAction(accountId, "university_cancel_requested", {});
+      res.json({
+        status: "canceling",
+        accessUntil: new Date(sub.current_period_end * 1000).toISOString(),
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/cancel: Stripe update failed",
+      );
+      res.status(500).json({ error: "Failed to cancel membership" });
+    }
+  });
+
+  // POST /university/pause { months? = 1 }
+  //   → Stripe pause_collection { behavior: 'void' } for one billing cycle.
+  //     Voids invoices during the pause; collection resumes at resumes_at.
+  router.post("/university/pause", async (req: Request, res: Response) => {
+    const resolved = await resolveUniversitySubscription(req, res);
+    if (!resolved) return;
+    const { accountId, subId } = resolved;
+
+    // Contract is single-cycle; `months` is accepted for forward-compat but
+    // clamped to 1 (the only supported value today).
+    const body = (req.body ?? {}) as { months?: unknown };
+    const monthsRaw = Number(body.months);
+    const months =
+      Number.isFinite(monthsRaw) && monthsRaw >= 1 ? Math.trunc(monthsRaw) : 1;
+
+    // resumes_at = now + one billing cycle (monthly). Computed from a UTC date
+    // so the day-of-month anchor is preserved across month-length differences.
+    const resumesAtMs = addUtcMonths(new Date(), months).getTime();
+    const resumesAtUnix = Math.floor(resumesAtMs / 1000);
+
+    try {
+      await stripeRequest(
+        "POST",
+        `/subscriptions/${subId}`,
+        { pause_collection: { behavior: "void", resumes_at: resumesAtUnix } },
+        universityStripeKey(),
+      );
+      void svc.logAction(accountId, "university_paused", {});
+      res.json({
+        status: "paused",
+        resumesAt: new Date(resumesAtUnix * 1000).toISOString(),
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/pause: Stripe update failed",
+      );
+      res.status(500).json({ error: "Failed to pause membership" });
+    }
+  });
+
+  // POST /university/reactivate
+  //   → Undo a pending cancel ("keep my membership") AND lift any pause: unset
+  //     cancel_at_period_end and clear pause_collection. Returns active.
+  router.post("/university/reactivate", async (req: Request, res: Response) => {
+    const resolved = await resolveUniversitySubscription(req, res);
+    if (!resolved) return;
+    const { accountId, subId } = resolved;
+
+    try {
+      await stripeRequest(
+        "POST",
+        `/subscriptions/${subId}`,
+        // Empty string clears pause_collection (Stripe's documented unset form).
+        { cancel_at_period_end: false, pause_collection: "" },
+        universityStripeKey(),
+      );
+      void svc.logAction(accountId, "university_reactivated", {});
+      res.json({ status: "active" });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/reactivate: Stripe update failed",
+      );
+      res.status(500).json({ error: "Failed to reactivate membership" });
+    }
+  });
+
+  // -- Optimize Me SSO bridge: issue a launch assertion -----------------------
+  //
+  // Mints a short-lived (120s), single-use, audience-pinned, HMAC-signed
+  // assertion proving this member's email + entitlement status to the Optimize
+  // Me app, and returns the launchUrl the portal opens in a new tab. The
+  // assertion carries ONLY { email, status } — never the accountId or any
+  // portal identifier (keeps University identity out of Optimize Me's activity
+  // zone; see the integration spec).
+  //
+  // Gating uses the STRICT rule: status ∈ {active, past_due}, read from
+  // getAccountWithEntitlements (whose `university` block is already strict-
+  // gated) — NOT the lax isUniversityAccount(), which lets cancelled members
+  // through. A cancelled member with a live portal session gets 403 here.
+  router.post(
+    "/optimize-me/launch",
+    async (req: Request, res: Response) => {
+      // Minting a cross-org access assertion is a privileged action; block it
+      // while an admin is impersonating a customer (read-only mode).
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = requireSession(req, res);
+      if (!accountId) return;
+      try {
+        const result = await svc.getAccountWithEntitlements(accountId);
+        if (!result) {
+          clearSessionCookie(res);
+          res.status(401).json({ error: "Account not found" });
+          return;
+        }
+        const uni = result.entitlements.university;
+        // Strict gate: non-null only for active/past_due. Anything else
+        // (no membership, pending, cancelled) is not entitled.
+        if (!uni) {
+          res.status(403).json({ error: "not_a_member" });
+          return;
+        }
+        const { token } = mintBridgeToken(
+          result.account.email,
+          uni.status as BridgeStatus,
+        );
+        const launchUrl = `${optimizeMeAppUrl()}/api/sso/bridge?token=${encodeURIComponent(
+          token,
+        )}`;
+        void svc.logAction(accountId, "optimize_me_launch", {
+          status: uni.status,
+        });
+        res.json({ launchUrl });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/optimize-me/launch: mint failed",
+        );
+        res.status(500).json({ error: "Failed to create launch link" });
+      }
+    },
+  );
 
   // -- Admin impersonation: exchange nonce → session cookie ------------------
   router.post("/admin-impersonate", async (req: Request, res: Response) => {

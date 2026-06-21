@@ -12,14 +12,18 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 | Account ID | Name | Owns | Where the secret lives |
 |---|---|---|---|
-| **`acct_1TJQywQvkbvTR7Og`** ✅ THE ONE | Coherence Daddy (live) | Every product/price ID in `team-dashboard/.env` and on the VPS. Suffix `*QvkbvTR7Og` on a price ID = this account. | `STRIPE_SECRET_KEY` in `team-dashboard/.env` (rk_live restricted key). Same key in `/opt/team-dashboard/.env.production` on VPS4. |
+| **`acct_1TJQywQvkbvTR7Og`** ✅ THE ONE | Coherence Daddy (live) | Every product/price ID in `team-dashboard/.env` and on the VPS — **except University**. Suffix `*QvkbvTR7Og` on a price ID = this account. | `STRIPE_SECRET_KEY` in `team-dashboard/.env` (rk_live restricted key). Same key in `/opt/team-dashboard/.env.production` on VPS4. |
+| **Starwise Ventures** (University) | Coherent Ones University ONLY | The `university_monthly` price + every University customer / subscription. **Separate legal entity / separate Stripe account** from Coherence Daddy — University revenue is billed here, nothing else is. | `UNIVERSITY_STRIPE_SECRET_KEY` in `/opt/team-dashboard/.env.production` on VPS4. Falls back to `STRIPE_SECRET_KEY` when unset (single-account local/dev/test). |
 | `acct_1QF1QeQwTOfgszhy` | Stale / pre-launch sandbox | Nothing this codebase uses | The locally-installed `stripe` CLI is authed to this — DO NOT rely on `stripe ... --live` to target the right account. See gotcha #1 below. |
+
+> **Two-account split:** University products bill on the **Starwise Ventures** Stripe account; every other product (CreditScore, Watchtower, Directory, Partners, Intel API) bills on **Coherence Daddy**. The shared low-level client (`server/src/services/stripe-client.ts` `stripeRequest()`) defaults to `STRIPE_SECRET_KEY` (Coherence Daddy). University-specific call sites — the price lookup + checkout (`routes/university-checkout.ts`) and the billing-portal session for University members (`routes/portal.ts`) — pass `universityStripeKey()` (= `UNIVERSITY_STRIPE_SECRET_KEY ?? STRIPE_SECRET_KEY`) so they hit Starwise. A University checkout/portal call made with the shared CD key would fail because the `university_monthly` price + the customer live only on Starwise.
 
 ## Live product + price inventory (audited 2026-05-09)
 
 | Product | Price ID prefix | $ | Cadence | lookup_key | Code |
 |---|---|---|---|---|---|
 | **Watchtower** | `price_1TVOu6Q…0GsG` | $29 | monthly | ✅ `watchtower_monthly` | `server/src/services/watchtower-monitor.ts` |
+| **Coherent Ones University** _(Starwise acct — NOT CD)_ | _pending — created on Starwise_ | $50 | monthly | ✅ `university_monthly` | `server/src/services/university-stripe-handler.ts` |
 | CreditScore — Report (one-time) | `price_1TPd1zQ…fP7vP` | $19 | one-time | (none) | `services/creditscore.ts` |
 | CreditScore — Starter | `price_1TPd20Q…A82g0` | $49 | monthly | (none) | same |
 | CreditScore — Growth (Monthly) | `price_1TPd21Q…6jHVk` | $199 | monthly | (none) | same |
@@ -42,6 +46,7 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 | Endpoint URL | Stripe ID prefix | Events | Secret env var | Purpose |
 |---|---|---|---|---|
 | `https://api.coherencedaddy.com/api/watchtower/webhook` | `we_1TVP0qQ…BvpSk` | checkout.session.completed, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_WATCHTOWER` (falls back to global) | Watchtower subscription provisioning |
+| `https://api.coherencedaddy.com/api/university/webhook` | _pending — not yet registered_ | checkout.session.completed, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_UNIVERSITY` (falls back to global) | Coherent Ones University membership provisioning |
 | `https://api.coherencedaddy.com/api/creditscore/webhook` | `we_1TPdKFQ…4PyKd` | checkout.session.completed, invoice.paid, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_CREDITSCORE` | CreditScore subscriptions + reports |
 | `https://api.coherencedaddy.com/api/intel-billing/webhook` | `we_1TMFpeQ…2M26sN` | checkout.session.completed, invoice.payment_succeeded, invoice.payment_failed, customer.subscription.updated, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET` (global default) | Intel API metered billing |
 | `https://api.coherencedaddy.com/api/stripe/webhook` | `we_1TMGBAQ…UnKlSc` | checkout.session.completed, invoice.paid, invoice.payment_failed, customer.subscription.deleted | `STRIPE_WEBHOOK_SECRET_DIRECTORY` | Directory Listings |
@@ -62,12 +67,17 @@ Vercel = the public storefront's Vercel project env settings.
 | `STRIPE_WEBHOOK_SECRET_CREDITSCORE` | VPS | ✅ set | CreditScore webhook signature verification |
 | `STRIPE_WEBHOOK_SECRET_DIRECTORY` | VPS | ✅ set | Directory Listings webhook signature verification |
 | `STRIPE_WEBHOOK_SECRET_WATCHTOWER` | VPS | ⚠️ **TO ADD** (`whsec_xyfUNOcT9nJJ1EQ55lxL2nY9mgBLE5Pt`, captured 2026-05-09) | Watchtower webhook signature verification. **Without this, Stripe's POST gets rejected as invalid signature** because the global secret is for the Intel API endpoint, not Watchtower. |
+| `STRIPE_WEBHOOK_SECRET_UNIVERSITY` | VPS | ⛔ **TO ADD** (capture `whsec_…` when the `/api/university/webhook` endpoint is registered **on the Starwise account**) | Coherent Ones University webhook signature verification. The University webhook endpoint is registered on the **Starwise** account (where University bills), so this signing secret comes from Starwise. Falls back to the global secret if unset, but the global is for the CD Intel API endpoint — set this once the dedicated Starwise webhook exists. |
 | `STRIPE_PRICE_*` (all bare price IDs) | VPS | ✅ all set | Direct price-ID resolution for non-Watchtower products. Must be hand-updated if a price is rotated. |
 | `WATCHTOWER_STRIPE_PRICE_ID` | VPS | ⛔ deliberately unset | Watchtower resolves by lookup_key first — this env var is only the fallback. Leaving unset keeps the lookup_key path canonical. |
 | `WATCHTOWER_ENABLED` | VPS | ⚠️ **`false` — must flip to `true` to launch** | Master gate on the Watchtower service + cron. When false, the cron skips and the checkout endpoint returns 503. |
 | `WATCHTOWER_SUCCESS_URL` | VPS | (default in code) | Default success_url base for Stripe checkout. Falls back to `https://app.coherencedaddy.com/dashboard` (customer portal). |
 | `WATCHTOWER_CANCEL_URL` | VPS | (default in code) | Default cancel_url base. Falls back to `https://coherencedaddy.com/watchtower-home`. |
 | `WATCHTOWER_RETURN_URL` | VPS | (legacy) | Single-URL knob for both success + cancel — only used when SUCCESS_URL/CANCEL_URL are unset. Don't set this for new deployments. |
+| `UNIVERSITY_STRIPE_SECRET_KEY` | VPS | ⛔ **TO ADD** (the Starwise Ventures rk_live/sk_live key) | The secret key for the **Starwise Ventures** Stripe account that University bills on. Used by the University price lookup + checkout (`routes/university-checkout.ts`) and the billing-portal session for University members (`routes/portal.ts`). **Falls back to `STRIPE_SECRET_KEY` when unset** so single-account local/dev/test still work — but in production this MUST be set to the Starwise key, or University checkout hits the wrong (CD) account and 500s (the `university_monthly` price lives only on Starwise). Set ONLY this; the global `STRIPE_SECRET_KEY` must stay the Coherence Daddy key for every other product. |
+| `UNIVERSITY_STRIPE_PRICE_ID` | VPS | ⛔ deliberately unset | Coherent Ones University resolves by lookup_key (`university_monthly`) first — this env var is only the fallback (a bare Starwise price ID). Leave unset to keep the lookup_key path canonical. When set, it is resolved against the Starwise account (the lookup_key path already authenticates with `UNIVERSITY_STRIPE_SECRET_KEY`). |
+| `UNIVERSITY_SUCCESS_URL` | VPS | (default in code) | Default success_url base for University checkout. Falls back to `https://app.coherencedaddy.com/university` (customer portal). |
+| `UNIVERSITY_CANCEL_URL` | VPS | (default in code) | Default cancel_url base for University checkout. Falls back to `https://coherencedaddy.com/university` (storefront signup). |
 | `WATCHTOWER_CALLBACK_KEY` | VPS + Vercel (storefront) | ✅ set on VPS | HMAC shared secret signing `/api/email/watchtower` envelopes (digest + answer-check report). **Must match on both ends or emails fail signature.** Verify the same value is in the Vercel storefront's env. |
 | `WATCHTOWER_EMAIL_CALLBACK_URL` | VPS | ✅ set | Storefront receiver for HMAC-signed email envelopes (default falls back to the freetools.* alias which 301-redirects to coherencedaddy.com). |
 | `WATCHTOWER_CHECKOUT_PUBLIC_URL` | VPS | (default in code) | URL embedded in 429 rate-limit responses for `/api/public/answer-check/run`. Falls back to `coherencedaddy.com/watchtower-home#pricing`. |

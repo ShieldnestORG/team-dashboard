@@ -93,6 +93,10 @@ import {
   watchtowerWebhookRouter,
 } from "./routes/watchtower-checkout.js";
 import { watchtowerAdminRoutes } from "./routes/watchtower-admin.js";
+import {
+  universityCheckoutRoutes,
+  universityWebhookRouter,
+} from "./routes/university-checkout.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -145,6 +149,7 @@ import { startWatchtowerCron } from "./services/watchtower-cron.js";
 import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cron.js";
 import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
+import { startUniversityCrons } from "./services/university-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
@@ -209,6 +214,7 @@ export async function createApp(
   app.use("/api/bundles", bundleWebhookRouter(db));
   app.use("/api/creditscore", creditscoreWebhookRouter(db));
   app.use("/api/watchtower", watchtowerWebhookRouter(db));
+  app.use("/api/university", universityWebhookRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
@@ -342,6 +348,7 @@ export async function createApp(
   api.use("/watchtower", watchtowerExportRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
+  api.use("/university", universityCheckoutRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
@@ -598,6 +605,7 @@ export async function createApp(
     startRizzExtractorCron(db, { companyId: RIZZ_COMPANY_ID });
   }
   startCreditscoreFulfillmentCrons(db);
+  startUniversityCrons(db);
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
