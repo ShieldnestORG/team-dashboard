@@ -53,6 +53,13 @@ export const universityMembers = pgTable(
     // the rate is locked regardless of later cap changes (see migration 0129).
     founding: boolean("founding").notNull().default(false),
     joinedAt: timestamp("joined_at", { withTimezone: true }),
+    // Invisible-agent identity (ADMIN-ONLY; see migration 0136). NEVER serialized
+    // into the member-facing community feed — buildAuthor() stays the sole author
+    // gateway and returns only { displayName, handle, isYou, isMark }.
+    isAgent: boolean("is_agent").notNull().default(false),
+    agentPersonaKey: text("agent_persona_key"), // 'maya' | 'dario' | ... ; NULL for humans
+    agentPausedAt: timestamp("agent_paused_at", { withTimezone: true }), // NULL = running; set = kill-switch engaged
+    agentPauseReason: text("agent_pause_reason"), // why an admin paused this agent
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -65,6 +72,7 @@ export const universityMembers = pgTable(
     accountIdx: index("university_members_account_idx").on(table.accountId),
     statusIdx: index("university_members_status_idx").on(table.status),
     foundingIdx: index("university_members_founding_idx").on(table.founding),
+    isAgentIdx: index("university_members_is_agent_idx").on(table.isAgent),
   }),
 );
 
