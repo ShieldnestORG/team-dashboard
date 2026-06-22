@@ -40,8 +40,8 @@ import {
 } from "./watchtower-accuracy-judge.js";
 
 // Hard ceiling per CLAUDE.md cost protection. A subscription's prompt_cap
-// can be set lower (default 25) but never higher than this.
-export const HARD_PROMPT_CEILING = 50;
+// can be set lower (default 60) but never higher than this.
+export const HARD_PROMPT_CEILING = 75;
 
 // v1 sentiment keyword bags. Lower-cased, whole-word match against the
 // response text alongside the brand mention.
@@ -392,7 +392,7 @@ export async function runSubscription(
 
   // Apply per-subscription cap, then the system-wide hard ceiling.
   const effectiveCap = Math.min(
-    Math.max(1, sub.promptCap ?? 25),
+    Math.max(1, sub.promptCap ?? 60),
     HARD_PROMPT_CEILING,
   );
   const prompts = allPrompts.slice(0, effectiveCap);

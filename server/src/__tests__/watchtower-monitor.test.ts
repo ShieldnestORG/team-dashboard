@@ -187,7 +187,7 @@ describeDb("runSubscription (e2e)", () => {
 
   it("ceiling never exceeds HARD_PROMPT_CEILING", () => {
     // Sanity assertion the constant is what callers expect.
-    expect(HARD_PROMPT_CEILING).toBe(50);
+    expect(HARD_PROMPT_CEILING).toBe(75);
   });
 
   it("skips disabled engines and runs only enabled ones", async () => {

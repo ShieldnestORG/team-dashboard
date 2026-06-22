@@ -6,7 +6,7 @@
 
 | Plan | Price | Cadence | Engines | Prompt cap | Surfaces |
 |---|---|---|---|---|---|
-| **Watchtower** | **$29 / month** recurring | Weekly | All five (chatgpt, claude, perplexity, gemini, grok) | 25 prompts (system hard-cap 50) | Weekly digest email + read-only run viewer at `/api/watchtower/runs/:id` |
+| **Watchtower** | **$29 / month** recurring | Weekly | All five (chatgpt, claude, perplexity, gemini, grok) | 60 prompts (system hard-cap 75) | Weekly digest email + read-only run viewer at `/api/watchtower/runs/:id` |
 
 Stripe price ID lives in `docs/deploy/stripe-products.md`. Frequency `daily` is reserved for a future upsell tier — no cron is wired for it in v1.
 
@@ -42,24 +42,24 @@ Two design decisions deliberately trade fidelity for shipping speed; both are fl
 
 ## Prompt cap rationale
 
-- **Default 25** prompts/subscription. Most operators don't have more than ~10 distinct buyer-intent queries; 25 is the SaaS-norm sweet spot.
-- **Hard ceiling 50.** Enforced in `services/watchtower-monitor.ts` (`HARD_PROMPT_CEILING`). Per `CLAUDE.md` cost protection — a runaway prompt list at 50 × 5 engines = 250 LLM calls per subscription per run; at the math below that's still under $0.05/run, but we want the budget brake to be deliberate.
+- **Default 60** prompts/subscription. Most operators don't have more than ~10 distinct buyer-intent queries; 60 leaves generous headroom for power users without a manual cap bump.
+- **Hard ceiling 75.** Enforced in `services/watchtower-monitor.ts` (`HARD_PROMPT_CEILING`). Per `CLAUDE.md` cost protection — a runaway prompt list at 75 × 5 engines = 375 LLM calls per subscription per run; see the per-run cost table below, but we want the budget brake to be deliberate.
 
-## Cost per run (default 25 prompts × 5 engines = 125 calls)
+## Cost per run (default 60 prompts × 5 engines = 300 calls)
 
 Order-of-magnitude estimates at v1 model choices and ~600 max output tokens. Treat as ceiling — most prompts return less.
 
-| Engine | Model | Per-call ~cost | 25 prompts/week | Notes |
+| Engine | Model | Per-call ~cost | 60 prompts/week | Notes |
 |---|---|---|---|---|
-| ChatGPT | gpt-4o-mini | ~$0.0003 | ~$0.0075 | Cheapest of the five for billed tiers |
-| Claude | claude-haiku-4-5 | ~$0.001 | ~$0.025 | Override via `WATCHTOWER_CLAUDE_MODEL` if quality needs Sonnet |
-| Perplexity | sonar | ~$0.001 | ~$0.025 | Includes citation overhead |
-| Gemini | gemini-2.0-flash | ~$0.00015 | ~$0.004 | Skipped if `GEMINI_API_KEY` unset |
-| Grok | grok-2-1212 | ~$0.006 | ~$0.15 | xAI; OpenAI-compatible API — dominates per-run cost |
-| **Total / week** | | | **≈ $0.21** | |
-| **Total / month** | | | **≈ $0.85** | |
+| ChatGPT | gpt-4o-mini | ~$0.0003 | ~$0.018 | Cheapest of the five for billed tiers |
+| Claude | claude-haiku-4-5 | ~$0.001 | ~$0.06 | Override via `WATCHTOWER_CLAUDE_MODEL` if quality needs Sonnet |
+| Perplexity | sonar | ~$0.001 | ~$0.06 | Includes citation overhead |
+| Gemini | gemini-2.0-flash | ~$0.00015 | ~$0.01 | Skipped if `GEMINI_API_KEY` unset |
+| Grok | grok-2-1212 | ~$0.006 | ~$0.36 | xAI; OpenAI-compatible API — dominates per-run cost |
+| **Total / week** | | | **≈ $0.51** | |
+| **Total / month** | | | **≈ $2.05** | |
 
-**Margin on $29 retail:** ~97%. Even with 10× actual token usage we stay >70% gross margin, which is why this product exists.
+**Margin on $29 retail:** ~93%. Even at 3× the modeled token usage (~$6/mo) we stay near 79% gross margin, which is why this product exists.
 
 ## Env vars (which engines are gated on what)
 

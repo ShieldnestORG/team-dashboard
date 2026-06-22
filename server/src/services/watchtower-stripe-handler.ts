@@ -46,9 +46,9 @@ import { logger } from "../middleware/logger.js";
 
 // HARD upper bound enforced at insert time to prevent a malformed metadata
 // payload from creating a runaway subscription. The route layer enforces
-// the PRD-default cap of 25; this is the runtime backstop and matches
+// the PRD-default cap of 60; this is the runtime backstop and matches
 // HARD_PROMPT_CEILING in services/watchtower-monitor.ts.
-const HARD_PROMPT_CEILING_INSERT = 50;
+const HARD_PROMPT_CEILING_INSERT = 75;
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
