@@ -6,6 +6,7 @@ import {
   integer,
   boolean,
   date,
+  jsonb,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -81,6 +82,12 @@ export const universitySubscriptions = pgTable(
     // Idempotency key — UNIQUE. A replayed checkout updates this row in place.
     stripeSubscriptionId: text("stripe_subscription_id"),
     stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+    // Ad-attribution: campaign stamped from checkout metadata (utm_campaign /
+    // utm_source) so RENEWAL events stay attributed to the originating campaign.
+    // Written by the ad-attribution webhook hook, NOT the shared checkout
+    // handler. Nullable — older rows and organic checkouts have none.
+    utmCampaign: text("utm_campaign"),
+    utmSource: text("utm_source"),
     currentPeriodStart: timestamp("current_period_start", {
       withTimezone: true,
     }),
@@ -214,6 +221,111 @@ export const universityNotes = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University ad-attribution — durable per-lead ad/marketing attribution.
+//
+// One row per lead, keyed on the lowercased `email` (the same durable identity
+// the rest of University uses). Click ids (fbclid/fbc/fbp/ttclid/gclid) + UTM
+// params + landing/referrer context are captured at checkout (carried in Stripe
+// Checkout Session METADATA — never client_reference_id, which the referral
+// branch owns) and upserted here ON CONFLICT (email).
+//
+// First-touch is IMMUTABLE: `first_touch_at` is stamped on the first insert and
+// never overwritten; `last_touch_at` is refreshed on every touch, and any
+// newly-present click ids / stripe ids are filled in. At checkout completion the
+// Stripe customer + subscription are stamped so renewals stay attributed.
+//
+// The webhook firing CAPI/TikTok events is de-duplicated by a SEPARATE small
+// events table keyed UNIQUE on the Stripe `event.id` (see
+// university_attribution_events in the 0127 migration) — that is the replay
+// guard, not this table.
+// ---------------------------------------------------------------------------
+
+export const universityAttribution = pgTable(
+  "university_attribution",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert — one attribution row per
+    // lead (UNIQUE).
+    email: text("email").notNull(),
+    // Click ids.
+    fbclid: text("fbclid"),
+    fbc: text("fbc"),
+    fbp: text("fbp"),
+    ttclid: text("ttclid"),
+    gclid: text("gclid"),
+    // UTM params.
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    utmTerm: text("utm_term"),
+    // Landing context.
+    landingUrl: text("landing_url"),
+    referrer: text("referrer"),
+    // First-touch is immutable; last-touch refreshes on every touch.
+    firstTouchAt: timestamp("first_touch_at", { withTimezone: true }),
+    lastTouchAt: timestamp("last_touch_at", { withTimezone: true }),
+    // Stamped at checkout completion so renewals stay attributed.
+    stripeCustomerId: text("stripe_customer_id"),
+    // Links to the billing row; nullable (checkout may race ahead of the sub).
+    subscriptionId: uuid("subscription_id").references(
+      () => universitySubscriptions.id,
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One attribution row per lead. An upsert keys on the durable email
+    // identity (ON CONFLICT in the service) so it holds before the account link
+    // resolves; account_id is carried for query convenience, NOT the key.
+    emailUq: uniqueIndex("university_attribution_email_key").on(table.email),
+    stripeCustIdx: index("university_attribution_stripe_cust_idx").on(
+      table.stripeCustomerId,
+    ),
+    subscriptionIdx: index("university_attribution_subscription_idx").on(
+      table.subscriptionId,
+    ),
+    accountIdx: index("university_attribution_account_idx").on(table.accountId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// University attribution EVENTS — idempotency / replay guard for the webhook
+// side-effects (Meta CAPI + TikTok Events firing). Stripe redelivers the same
+// `event.id` on retries; an `INSERT ... ON CONFLICT (stripe_event_id) DO
+// NOTHING` that affects 0 rows means the event was already processed → the
+// webhook returns early so CAPI/TikTok never double-fire.
+// ---------------------------------------------------------------------------
+
+export const universityAttributionEvents = pgTable(
+  "university_attribution_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The Stripe event id — the natural idempotency / replay key (UNIQUE).
+    stripeEventId: text("stripe_event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    email: text("email"),
+    stripeCustomerId: text("stripe_customer_id"),
+    payload: jsonb("payload"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    stripeEventUq: uniqueIndex(
+      "university_attribution_events_stripe_event_key",
+    ).on(table.stripeEventId),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -224,3 +336,11 @@ export type UniversityProgress = typeof universityProgress.$inferSelect;
 export type NewUniversityProgress = typeof universityProgress.$inferInsert;
 export type UniversityNote = typeof universityNotes.$inferSelect;
 export type NewUniversityNote = typeof universityNotes.$inferInsert;
+export type UniversityAttribution =
+  typeof universityAttribution.$inferSelect;
+export type NewUniversityAttribution =
+  typeof universityAttribution.$inferInsert;
+export type UniversityAttributionEvent =
+  typeof universityAttributionEvents.$inferSelect;
+export type NewUniversityAttributionEvent =
+  typeof universityAttributionEvents.$inferInsert;

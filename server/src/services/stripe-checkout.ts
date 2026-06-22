@@ -9,6 +9,12 @@ export interface CheckoutOptions {
   priceId: string;
   successUrl: string;
   cancelUrl: string;
+  /**
+   * Arbitrary key/value pairs flattened into the session's `metadata[...]`.
+   * Ad attribution (University M2) rides here under short `at_*` keys — there
+   * is no dedicated attribution param, the generic flatten below carries it.
+   * Keep total keys <=50 and each value <=500 chars (Stripe metadata limits).
+   */
   metadata: Record<string, string>;
   /** Optional: reuse an existing Stripe customer (skips customer_email lookup). */
   customerId?: string;
