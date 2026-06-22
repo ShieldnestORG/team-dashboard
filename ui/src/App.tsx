@@ -64,6 +64,7 @@ import { AutoReply } from "./pages/AutoReply";
 import { CronManagement } from "./pages/CronManagement";
 import { AgentOps } from "./pages/AgentOps";
 import { ApiDashboard } from "./pages/ApiDashboard";
+import { ControlPlane } from "./pages/ControlPlane";
 import { YouTubePipeline } from "./pages/YouTubePipeline";
 import { YouTubeVideos } from "./pages/YouTubeVideos";
 import { VideoEdit } from "./pages/VideoEdit";
@@ -247,6 +248,7 @@ function boardRoutes() {
       <Route path="auto-reply" element={<Navigate to="/socials/auto-reply" replace />} />
       <Route path="system-health" element={<SystemHealth />} />
       <Route path="api-routes" element={<ApiDashboard />} />
+      <Route path="control-plane" element={<ControlPlane />} />
       <Route path="agent-ops" element={<AgentOps />} />
       <Route path="crons" element={<CronManagement />} />
       <Route path="content-review" element={<Navigate to="/socials/content" replace />} />

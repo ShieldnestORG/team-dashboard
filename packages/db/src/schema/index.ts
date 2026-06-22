@@ -191,3 +191,13 @@ export type {
 } from "./watchtower.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";
+export { zernioPostAnalytics } from "./zernio_post_analytics.js";
+export type {
+  ZernioPostAnalytics,
+  NewZernioPostAnalytics,
+} from "./zernio_post_analytics.js";
+export { zernioAccountAnalytics } from "./zernio_account_analytics.js";
+export type {
+  ZernioAccountAnalytics,
+  NewZernioAccountAnalytics,
+} from "./zernio_account_analytics.js";

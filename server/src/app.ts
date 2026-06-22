@@ -53,6 +53,7 @@ import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startSocialCrons } from "./services/social-crons.js";
+import { startZernioAnalyticsPollerCron } from "./services/zernio-analytics-poller-cron.js";
 import { startTrendCrons } from "./services/trend-crons.js";
 import { initFeedbackDb } from "./services/intel-quality.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
@@ -92,9 +93,11 @@ import {
   watchtowerWebhookRouter,
 } from "./routes/watchtower-checkout.js";
 import { watchtowerAdminRoutes } from "./routes/watchtower-admin.js";
+import { controlPlaneRoutes } from "./routes/control-plane.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
+import { socialsAnalyticsRoutes } from "./routes/socials-analytics.js";
 import { logConfiguredPublishers } from "./services/platform-publishers/index.js";
 import { autoReplyRoutes } from "./routes/auto-reply.js";
 import { moltbookRoutes } from "./routes/moltbook.js";
@@ -322,10 +325,12 @@ export async function createApp(
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/socials", socialsRoutes(db, opts.storageService));
+  api.use("/socials/analytics", socialsAnalyticsRoutes(db));
   api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/watchtower", watchtowerRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
+  api.use("/control-plane", controlPlaneRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
@@ -507,6 +512,7 @@ export async function createApp(
   startAlertCrons(db);
   startContentCrons(db);
   startSocialCrons(db, opts.storageService);
+  startZernioAnalyticsPollerCron(db);
   startTrendCrons(db);
   startMaintenanceCrons(db);
   startRetentionCron(db);

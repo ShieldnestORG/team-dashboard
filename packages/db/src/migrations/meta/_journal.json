@@ -855,6 +855,13 @@
       "when": 1775606471000,
       "tag": "0121_affiliate_clawbacks",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1775606472000,
+      "tag": "0122_zernio_analytics",
+      "breakpoints": true
     }
   ]
 }
