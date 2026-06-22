@@ -778,6 +778,86 @@ export function portalRoutes(db: Db): Router {
     }
   });
 
+  // -- University coherence ("feel & see" Accomplishments view) ---------------
+  //
+  // Per-member coherence score + history. Gated to University members via
+  // requireUniversityMember() — same gate as the rep-log — and the write is
+  // blocked under impersonation (read-only), exactly like POST
+  // /university/progress.
+  //
+  // GET  /university/coherence
+  //   → { current: number | null, average7: number | null,
+  //       history: [{ score, at }], recentChecks: [{ body, focus, direction,
+  //       score, at }] }  (history is chronological ascending; recentChecks is
+  //     newest-first, last 7; average7 is the rounded mean of the 7 most-recent
+  //     scores; `at` is an ISO-8601 string; history is the last 30 rows)
+  // POST /university/coherence-check { body, focus, direction }  (each 0–100)
+  //   → { score, current, average7, history, recentChecks }  (score computed
+  //     body*0.4 + focus*0.35 + direction*0.25, rounded; appends a check + a
+  //     history row). 400 on a bad dial value.
+
+  router.get("/university/coherence", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    try {
+      const summary = await svc.getCoherenceSummary(accountId);
+      res.json({
+        current: summary.current,
+        average7: summary.average7,
+        history: summary.history,
+        recentChecks: summary.recentChecks,
+      });
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/coherence: summary failed",
+      );
+      res.status(500).json({ error: "Failed to load coherence" });
+    }
+  });
+
+  router.post(
+    "/university/coherence-check",
+    async (req: Request, res: Response) => {
+      // Recording a check mutates state — block under impersonation (read-only).
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      const body = (req.body ?? {}) as {
+        body?: unknown;
+        focus?: unknown;
+        direction?: unknown;
+      };
+
+      try {
+        const result = await svc.submitCoherenceCheck(accountId, {
+          body: body.body as number,
+          focus: body.focus as number,
+          direction: body.direction as number,
+        });
+        res.status(200).json({
+          score: result.score,
+          current: result.current,
+          average7: result.average7,
+          history: result.history,
+          recentChecks: result.recentChecks,
+        });
+      } catch (err) {
+        // Service throws CommunityError(400) on an invalid dial — surface it.
+        if (err instanceof CommunityError) {
+          res.status(err.status).json({ error: err.message });
+          return;
+        }
+        logger.error(
+          { err, accountId },
+          "portal/university/coherence-check: submit failed",
+        );
+        res.status(500).json({ error: "Failed to record coherence check" });
+      }
+    },
+  );
+
   // -- University notes (in-lesson "write this down") -------------------------
   //
   // Persists the in-lesson note prompts so they survive across sessions and

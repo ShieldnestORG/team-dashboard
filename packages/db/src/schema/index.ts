@@ -200,6 +200,8 @@ export {
   universityReferralCodes,
   universityReferrals,
   universityCreditLedger,
+  coherenceScoreHistory,
+  coherenceCheckSubmissions,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -222,6 +224,10 @@ export type {
   NewUniversityReferral,
   UniversityCreditLedgerRow,
   NewUniversityCreditLedgerRow,
+  CoherenceScoreHistoryRow,
+  NewCoherenceScoreHistoryRow,
+  CoherenceCheckSubmission,
+  NewCoherenceCheckSubmission,
 } from "./university.js";
 export {
   universityCommunityPosts,

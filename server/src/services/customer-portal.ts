@@ -15,6 +15,8 @@ import {
   universityProgress,
   universityNotes,
   universityCancelFeedback,
+  coherenceScoreHistory,
+  coherenceCheckSubmissions,
   universityCommunityPosts,
   universityCommunityComments,
   universityCommunityReactions,
@@ -1198,6 +1200,167 @@ export function customerPortalService(db: Db) {
     }));
 
     return { currentStreak, weekCount, weekGoal: weekGoal(), recent };
+  }
+
+  // -------------------------------------------------------------------------
+  // University COHERENCE — the "feel & see" Accomplishments view.
+  //
+  // A member self-rates three dials (body / focus / direction, each 0..100);
+  // the composite score is computed deterministically (Rule 5 — code-graded,
+  // not model-graded) and appended to the score history so the member can SEE
+  // the line move over time. Identity is resolved the same way as reps.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The member's coherence summary: their current (most recent) score, a 7-point
+   * rolling average, the recent score history for charting, and their recent
+   * raw checks. The score history is the last 30 rows in CHRONOLOGICAL
+   * ASCENDING order (oldest → newest) so the client can plot the line
+   * left-to-right without re-sorting; `current` is the most recent score (the
+   * last element's score), or null if the member has never recorded one.
+   * `average7` is the rounded mean of the 7 most-recent scores, or null when
+   * there are none. `recentChecks` is the last 7 raw check submissions NEWEST
+   * FIRST. `at` is the ISO-8601 string of each row's created_at.
+   */
+  async function getCoherenceSummary(accountId: string): Promise<{
+    current: number | null;
+    average7: number | null;
+    history: Array<{ score: number; at: string }>;
+    recentChecks: Array<{
+      body: number;
+      focus: number;
+      direction: number;
+      score: number;
+      at: string;
+    }>;
+  }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity)
+      return { current: null, average7: null, history: [], recentChecks: [] };
+
+    // Pull the 30 most-recent rows (desc), then reverse to chronological asc
+    // for charting. Matches the email-OR-account_id join keys used elsewhere.
+    const rows = await db
+      .select({
+        score: coherenceScoreHistory.score,
+        createdAt: coherenceScoreHistory.createdAt,
+      })
+      .from(coherenceScoreHistory)
+      .where(
+        or(
+          sql`LOWER(${coherenceScoreHistory.email}) = ${identity.email}`,
+          eq(coherenceScoreHistory.accountId, identity.accountId),
+        ),
+      )
+      .orderBy(desc(coherenceScoreHistory.createdAt))
+      .limit(30);
+
+    const history = rows
+      .slice()
+      .reverse()
+      .map((r) => ({ score: r.score, at: r.createdAt.toISOString() }));
+    const current = history.length ? history[history.length - 1].score : null;
+
+    // Rolling 7-point average over the most-recent scores (rows is desc, so the
+    // first 7 are the newest 7). Null when there are no scores yet.
+    const last7 = rows.slice(0, 7);
+    const average7 = last7.length
+      ? Math.round(last7.reduce((sum, r) => sum + r.score, 0) / last7.length)
+      : null;
+
+    // The last 7 raw check submissions, NEWEST FIRST. Same join keys.
+    const checkRows = await db
+      .select({
+        body: coherenceCheckSubmissions.body,
+        focus: coherenceCheckSubmissions.focus,
+        direction: coherenceCheckSubmissions.direction,
+        score: coherenceCheckSubmissions.score,
+        createdAt: coherenceCheckSubmissions.createdAt,
+      })
+      .from(coherenceCheckSubmissions)
+      .where(
+        or(
+          sql`LOWER(${coherenceCheckSubmissions.email}) = ${identity.email}`,
+          eq(coherenceCheckSubmissions.accountId, identity.accountId),
+        ),
+      )
+      .orderBy(desc(coherenceCheckSubmissions.createdAt))
+      .limit(7);
+
+    const recentChecks = checkRows.map((r) => ({
+      body: r.body,
+      focus: r.focus,
+      direction: r.direction,
+      score: r.score,
+      at: r.createdAt.toISOString(),
+    }));
+
+    return { current, average7, history, recentChecks };
+  }
+
+  /**
+   * Record a coherence check: validate the three dials (each an integer 0..100),
+   * compute the composite score deterministically (body*0.4 + focus*0.35 +
+   * direction*0.25, rounded), then append BOTH a submission row (raw inputs +
+   * score) AND a score-history row (source='check') for the same identity.
+   * Returns the new score plus the refreshed summary. Throws CommunityError(400)
+   * on invalid input — the same typed-error pattern the rest of the portal uses.
+   */
+  async function submitCoherenceCheck(
+    accountId: string,
+    input: { body: number; focus: number; direction: number },
+  ): Promise<{
+    score: number;
+    current: number | null;
+    average7: number | null;
+    history: Array<{ score: number; at: string }>;
+    recentChecks: Array<{
+      body: number;
+      focus: number;
+      direction: number;
+      score: number;
+      at: string;
+    }>;
+  }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    const dial = (value: unknown, name: string): number => {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 0 || n > 100) {
+        throw new CommunityError(400, `${name} must be an integer 0–100`);
+      }
+      return n;
+    };
+    const body = dial(input.body, "body");
+    const focus = dial(input.focus, "focus");
+    const direction = dial(input.direction, "direction");
+
+    const score = Math.round(body * 0.4 + focus * 0.35 + direction * 0.25);
+
+    await db.insert(coherenceCheckSubmissions).values({
+      accountId: identity.accountId,
+      email: identity.email,
+      body,
+      focus,
+      direction,
+      score,
+    });
+    await db.insert(coherenceScoreHistory).values({
+      accountId: identity.accountId,
+      email: identity.email,
+      score,
+      source: "check",
+    });
+
+    const summary = await getCoherenceSummary(accountId);
+    return {
+      score,
+      current: summary.current,
+      average7: summary.average7,
+      history: summary.history,
+      recentChecks: summary.recentChecks,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -2791,6 +2954,8 @@ export function customerPortalService(db: Db) {
     recordRep,
     getProgressSummary,
     computeStreak,
+    getCoherenceSummary,
+    submitCoherenceCheck,
     upsertNote,
     getNotes,
     deleteNote,

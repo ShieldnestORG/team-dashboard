@@ -517,6 +517,79 @@ export const universityCreditLedger = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University COHERENCE — the "feel & see" Accomplishments view.
+//
+// Two append-only tables behind the per-member coherence score:
+//   - coherence_check_submissions — the raw inputs (body/focus/direction dials,
+//                                   each 0..100) plus the computed composite
+//                                   `score`. Stored together so the math is
+//                                   auditable. One row per check (no key).
+//   - coherence_score_history     — the time-series of recorded scores. Every
+//                                   check writes one row here (source='check');
+//                                   `source` is open for future score sources.
+//                                   The portal's "current" score is the most
+//                                   recent row; the chart is the whole series.
+//
+// The member is identified the same way the rest of University is — by the
+// shared customer_accounts login (account_id once the linker has fired) joined
+// on the lowercased `email` as the durable fallback. Both are stored so the
+// lookup works before AND after the account link resolves. Mirrors the
+// university_progress table/index style. See migrations 0134 + 0135.
+// ---------------------------------------------------------------------------
+
+export const coherenceScoreHistory = pgTable(
+  "coherence_score_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    // 0..100 (CHECK enforced in SQL). The recorded coherence score.
+    score: integer("score").notNull(),
+    // Where this score came from — 'check' today; open for future sources.
+    source: text("source").notNull().default("check"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    emailCreatedIdx: index("coherence_score_history_email_created_idx").on(
+      table.email,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const coherenceCheckSubmissions = pgTable(
+  "coherence_check_submissions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    // The three self-rated dials, each 0..100 (CHECK enforced in SQL).
+    body: integer("body").notNull(),
+    focus: integer("focus").notNull(),
+    direction: integer("direction").notNull(),
+    // The computed composite (body*0.4 + focus*0.35 + direction*0.25, rounded).
+    score: integer("score").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    emailCreatedIdx: index("coherence_check_submissions_email_created_idx").on(
+      table.email,
+      table.createdAt,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -546,3 +619,11 @@ export type UniversityCreditLedgerRow =
   typeof universityCreditLedger.$inferSelect;
 export type NewUniversityCreditLedgerRow =
   typeof universityCreditLedger.$inferInsert;
+export type CoherenceScoreHistoryRow =
+  typeof coherenceScoreHistory.$inferSelect;
+export type NewCoherenceScoreHistoryRow =
+  typeof coherenceScoreHistory.$inferInsert;
+export type CoherenceCheckSubmission =
+  typeof coherenceCheckSubmissions.$inferSelect;
+export type NewCoherenceCheckSubmission =
+  typeof coherenceCheckSubmissions.$inferInsert;
