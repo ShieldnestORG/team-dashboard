@@ -80,7 +80,7 @@ only `{id, kind, createdAt}`. No "show value" affordance exists.
 | GET | `/credentials` | cookie | Lists `{id, kind, createdAt}` only. Never plaintext. |
 | POST | `/credentials` | cookie | Body `{kind, value}`. Soft-revokes any prior active credential of the same kind. |
 | DELETE | `/credentials/:id` | cookie | Soft-revoke (sets `revoked_at`). |
-| POST | `/stripe-portal` | cookie | Returns `{url}` for the Stripe Billing Portal. Fails 400 if no `stripe_customer_id` is linked. |
+| POST | `/stripe-portal` | cookie | Returns `{url}` for the Stripe Billing Portal. Fails 400 if no customer id is linked. **Per-account:** University members bill on a separate Stripe account (Starwise), so for a University account the session uses `universityStripeKey()` + the Starwise customer id read from `university_subscriptions` (not the shared `customer_accounts.stripe_customer_id`, which the linker overwrites last-writer-wins). CD-only accounts use the shared key + `customer_accounts.stripe_customer_id`. This is what keeps a customer holding BOTH a University and a CD subscription from sending a customer id to the wrong account. |
 
 ### Entitlement resolution
 

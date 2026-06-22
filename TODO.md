@@ -113,6 +113,7 @@
 - [ ] **Grandfathering for $4 report buyers** — product call. Default: Stripe price IDs grandfathered; new $19 price for new customers only.
 - [x] **Pro tier UI-only status** — resolved. Pro shipped in Phase 2 cutover (checkout) + Phase 3 (Sage + Competitor agents).
 - [ ] **Review queue location for Content Agent drafts** — team-dashboard admin UI vs. coherencedaddy. Lean toward team-dashboard; revisit when Claude API integration begins.
+- [ ] **Separate projects: Coherence Daddy vs tokns** — owner-requested (2026-06-20). tokns is a distinct product but is currently co-mingled with Coherence Daddy in this dashboard: `ui/src/pages/Tokns.tsx` + `TxEcosystem.tsx` alongside CD pages, `ui/src/components/Sidebar.tsx` (Tokns nav item), `ui/src/App.tsx` (`/tokns` route), and the server content layer (`server/src/content-templates/*`, `services/brand-personas.ts`, `services/content.ts`, `data/intel-companies.ts`). Decide the split (separate project namespace / repo / company-scoping) and de-mingle. Per `docs/OWNERSHIP.md` tokns is Supabase-backed with its own repos — it should not share this dashboard's surfaces.
 
 ## Verification
 
