@@ -7,8 +7,9 @@ import { SocialsCalendar } from "./SocialsCalendar";
 import { SocialsCompose } from "./SocialsCompose";
 import { SocialsQueue } from "./SocialsQueue";
 import { SocialsSchedule } from "./SocialsSchedule";
+import { SocialsAnalytics } from "./SocialsAnalytics";
 
-type Tab = "accounts" | "schedule" | "automation" | "calendar" | "compose" | "queue";
+type Tab = "accounts" | "schedule" | "automation" | "calendar" | "compose" | "queue" | "analytics";
 
 export function SocialsLayout() {
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -35,6 +36,7 @@ export function SocialsLayout() {
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="queue">Queue</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts" className="mt-4">
           <SocialsAccounts />
@@ -53,6 +55,9 @@ export function SocialsLayout() {
         </TabsContent>
         <TabsContent value="queue" className="mt-4">
           <SocialsQueue />
+        </TabsContent>
+        <TabsContent value="analytics" className="mt-4">
+          <SocialsAnalytics />
         </TabsContent>
       </Tabs>
     </div>

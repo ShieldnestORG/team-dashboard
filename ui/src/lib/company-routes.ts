@@ -21,6 +21,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "tokns",
   "auto-reply",
   "api-routes",
+  "control-plane",
   "agent-ops",
   "tx-ecosystem",
   "system-health",

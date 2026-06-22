@@ -165,6 +165,7 @@ export function Sidebar() {
           <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
           <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
           <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
+          <SidebarNavItem to="/control-plane" label="Control Plane" icon={GitBranch} />
           <SidebarNavItem to="/approvals" label="Approvals" icon={CheckSquare} />
           <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
