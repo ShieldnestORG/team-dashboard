@@ -53,6 +53,27 @@
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/Users/exe/.local/share/fnm/node-versions/v22.22.0/installation/bin:$PATH && cd /Users/exe/Downloads/Claude/coherence-utility-aitools && node scripts/serve.mjs $PORT"],
       "port": 4323,
       "autoPort": true
+    },
+    {
+      "name": "ui-polish-worktree",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/Users/exe/.local/share/fnm/node-versions/v22.22.0/installation/bin:$PATH && cd /Users/exe/Downloads/Claude/team-dashboard/.claude/worktrees/agent-a573f4fa5764cfa3e/ui && pnpm exec vite --port 5181 --strictPort"],
+      "port": 5181,
+      "autoPort": false
+    },
+    {
+      "name": "animation-bakeoff",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4399", "-d", "/Users/exe/Downloads/Claude"],
+      "port": 4399,
+      "autoPort": false
+    },
+    {
+      "name": "portal-redesign",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/exe/Downloads/Claude/app-coherencedaddy-portal-redesign && npm run dev -- -p $PORT"],
+      "port": 3011,
+      "autoPort": true
     }
   ]
 }

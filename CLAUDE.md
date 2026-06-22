@@ -8,6 +8,12 @@ Primary Company:
 - **Coherence Daddy**
 - `TEAM_DASHBOARD_COMPANY_ID=8365d8c2-ea73-4c04-af78-a7db3ee7ecd4`
 
+## Model routing
+Delegate-by-default per global Rules 11–13 and the `model-routing` skill: bulk reads /
+"where is X" → `Explore`; mechanical edits (renames, codemods) → code or Haiku; drafting,
+first-pass review, classification → Sonnet subagent; architecture + judgment → Opus.
+Keep conclusions in context, not file dumps. This is a large TS repo — scout narrow, fan out.
+
 ## Critical Rules
 
 ### One Writer Per Branch
