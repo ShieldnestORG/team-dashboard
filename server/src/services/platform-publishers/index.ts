@@ -3,6 +3,7 @@ import { youtubePublisher } from "./youtube.js";
 import { tiktokPublisher } from "./tiktok.js";
 import { twitterVideoPublisher } from "./twitter-video.js";
 import { instagramPublisher } from "./instagram.js";
+import { instagramFeedPublisher } from "./instagram-feed.js";
 import { blueskyPublisher } from "./bluesky.js";
 import { zernioPublisher } from "./zernio.js";
 import { logger } from "../../middleware/logger.js";
@@ -12,6 +13,7 @@ const ALL_PUBLISHERS: PlatformPublisher[] = [
   tiktokPublisher,
   twitterVideoPublisher,
   instagramPublisher,
+  instagramFeedPublisher,
   blueskyPublisher,
   // Routes social_accounts.platform === "instagram" to Zernio (the working IG
   // publish path). The native `instagramPublisher` above (name "instagram_reels")
