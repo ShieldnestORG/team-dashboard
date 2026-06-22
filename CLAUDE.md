@@ -23,9 +23,11 @@ Any new backend service, route, or DB migration must be done on a feature branch
 ### Verify Before Merge
 Always run these commands and confirm zero errors before merging or pushing to master:
 ```bash
+pnpm install && pnpm -r build   # populates workspace package dist outputs
 npx tsc --noEmit --project server/tsconfig.json
 cd ui && npx tsc --noEmit
 ```
+The build step matters: `@paperclipai/plugin-sdk` and `@paperclipai/shared` are consumed by `server/` and `ui/` via their `dist/` outputs. A fresh `pnpm install` does not build workspace packages, so without `pnpm -r build` you'll see ~65 phantom `Cannot find module` errors and conclude master is broken. It isn't — your install is incomplete.
 
 ### Git Hygiene
 - Stage specific files only. Do not use `git add -A`.
