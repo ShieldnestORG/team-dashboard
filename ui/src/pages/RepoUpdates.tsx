@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   ExternalLink,
 } from "lucide-react";
+import { useToast } from "../context/ToastContext";
 
 const SEVERITY_STYLES: Record<string, string> = {
   critical: "bg-red-500/10 text-red-700 dark:text-red-300",
@@ -126,6 +127,7 @@ function RunAuditBox() {
 
 function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
   const queryClient = useQueryClient();
+  const { pushToast } = useToast();
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
 
@@ -165,16 +167,17 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
       applyUpdatedSuggestion(data.suggestion);
       if (typeof window !== "undefined") {
         window.open(data.pr.url, "_blank", "noopener");
-        window.alert(
-          `PR #${data.pr.number} drafted: ${data.pr.url}\n\nA human must review and merge manually.`,
-        );
       }
+      pushToast({
+        title: `PR #${data.pr.number} drafted`,
+        body: "A human must review and merge manually.",
+        tone: "success",
+        action: { label: "Open PR", href: data.pr.url },
+      });
     },
     onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to draft PR: ${msg}`);
-      }
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      pushToast({ title: "Failed to draft PR", body: msg, tone: "error" });
     },
   });
   const approve = useMutation({
@@ -187,20 +190,16 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
       draftPr.mutate();
     },
     onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to approve: ${msg}`);
-      }
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      pushToast({ title: "Failed to approve", body: msg, tone: "error" });
     },
   });
   const reject = useMutation({
     mutationFn: () => repoUpdatesApi.reject(s.id, "Rejected from dashboard"),
     onSuccess: (data) => applyUpdatedSuggestion(data.suggestion),
     onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to reject: ${msg}`);
-      }
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      pushToast({ title: "Failed to reject", body: msg, tone: "error" });
     },
   });
   const reply = useMutation({
@@ -211,10 +210,8 @@ function SuggestionCard({ s }: { s: RepoUpdateSuggestion }) {
       applyUpdatedSuggestion(data.suggestion);
     },
     onError: (err: unknown) => {
-      if (typeof window !== "undefined") {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        window.alert(`Failed to post reply: ${msg}`);
-      }
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      pushToast({ title: "Failed to post reply", body: msg, tone: "error" });
     },
   });
 
