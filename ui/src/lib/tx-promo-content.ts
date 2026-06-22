@@ -21,8 +21,8 @@ export interface PromoThread {
 export const TX_PROMO_TWEETS: PromoTweet[] = [
   // Awareness
   {
-    text: "TX is a Cosmos SDK blockchain with full IBC support. Fast finality, cross-chain transfers, and a growing ecosystem of builders. tokns.fi is your gateway in.",
-    hashtags: ["TX", "Cosmos", "IBC", "tokns"],
+    text: "TX is an L1 built on the Cosmos SDK with CometBFT consensus — but the headline is the bridge. XRPL ↔ Cosmos ↔ EVM, with value moving across all three. tokns.fi is your way in.",
+    hashtags: ["TX", "XRPL", "Cosmos", "tokns"],
     venture: "tokns",
     category: "awareness",
   },
@@ -33,14 +33,14 @@ export const TX_PROMO_TWEETS: PromoTweet[] = [
     category: "awareness",
   },
   {
-    text: "The TX chain is IBC-enabled, meaning your assets can move freely across the Cosmos ecosystem. Bridge in, stake, swap, and earn — all from tokns.fi.",
-    hashtags: ["TX", "IBC", "Cosmos", "DeFi"],
+    text: "TX isn't another DeFi casino. It's built for real-world assets on-chain — tokenized stocks and RWAs, institutional-grade, through regulated intermediaries across NA, Europe, and LATAM. Start at tokns.fi.",
+    hashtags: ["TX", "RWA", "tokenization", "tokns"],
     venture: "tokns",
     category: "awareness",
   },
   {
-    text: "TX isn't just another L1. It's built on Cosmos SDK with real IBC interoperability. If you're exploring the interchain future, tokns.fi is the best place to start.",
-    hashtags: ["TX", "Cosmos", "interchain"],
+    text: "Why bridge XRPL, Cosmos, AND EVM under one L1? Because a tokenized real-world asset is worthless if it's trapped on one chain. TX moves it to where the liquidity and buyers are. tokns.fi explains the rest.",
+    hashtags: ["TX", "RWA", "XRPL", "EVM"],
     venture: "tokns",
     category: "awareness",
   },
@@ -85,8 +85,8 @@ export const TX_PROMO_TWEETS: PromoTweet[] = [
     category: "staking",
   },
   {
-    text: "Don't let your TX sit idle. Stake with tokns.fi and earn rewards while contributing to network security. It's the easiest yield in the Cosmos ecosystem.",
-    hashtags: ["TX", "staking", "Cosmos", "yield"],
+    text: "Don't let your TX sit idle. Stake with tokns.fi and earn rewards while contributing to network security. One of the simplest yields in the TX ecosystem.",
+    hashtags: ["TX", "staking", "yield", "tokns"],
     venture: "tokns",
     category: "staking",
   },
@@ -150,13 +150,13 @@ export const TX_PROMO_THREADS: PromoThread[] = [
   {
     tweets: [
       "Why is tokns.fi the best hub for the TX ecosystem? A thread.",
-      "TX is a Cosmos SDK chain with IBC support, fast finality, and a growing community. But until now there hasn't been one place to do everything.",
+      "TX is an L1 built on the Cosmos SDK with CometBFT consensus that bridges XRPL ↔ Cosmos ↔ EVM — purpose-built for real-world-asset tokenization. But until now there hasn't been one place to actually use it.",
       "tokns.fi brings it all together: staking, NFT trading, token swaps, multi-wallet tracking, and educational content — in a single platform.",
       "Built by ShieldNest (shieldnest.org) and Coherence Daddy (coherencedaddy.com), tokns.fi is community infrastructure, not a VC exit strategy.",
       "We run a validator too. Every delegation helps us build more free tools for the TX community. Our goal is to become the #1 validator on the chain.",
       "Whether you're a day-one holder or just discovering TX, tokns.fi is your starting point. Learn. Earn. Stake. Trade. All in one place.",
     ],
-    hashtags: ["TX", "tokns", "Cosmos", "IBC"],
+    hashtags: ["TX", "tokns", "XRPL", "RWA"],
     venture: "tokns",
     category: "ecosystem-overview",
   },
@@ -187,13 +187,14 @@ export const TX_PROMO_THREADS: PromoThread[] = [
   {
     tweets: [
       "New to the TX blockchain? Here's your beginner guide. (Thread)",
-      "TX is built on Cosmos SDK — the same framework behind Cosmos Hub, Osmosis, and dozens of other chains. It supports IBC, so your assets aren't trapped.",
-      "To get started, head to tokns.fi. You'll find educational content explaining how TX works, what makes it unique, and where the ecosystem is headed.",
-      "Next step: set up staking. Delegate your TX to a validator (we recommend tokns.fi) and start earning rewards immediately. It takes under a minute.",
+      "TX is its own L1, built with the Cosmos SDK and CometBFT consensus. Fast finality, its own base layer — not a token living on someone else's network.",
+      "What makes it different is the bridge: TX connects XRPL ↔ Cosmos ↔ EVM, so value can move between three of the biggest worlds in crypto instead of being stranded on one.",
+      "Why all that bridging? Real-world assets. TX is built for on-chain RWAs — tokenized stocks and regulated instruments — institutional-grade, through regulated intermediaries across NA, Europe, and LATAM.",
+      "To get started, head to tokns.fi. You'll find educational content explaining how TX works and where the ecosystem is headed. Then set up staking — delegate to a validator (we recommend tokns.fi) and start earning in under a minute.",
       "Want to go further? app.tokns.fi lets you trade NFTs, swap tokens, and watch multiple wallets. Everything you need as you go deeper into TX.",
       "The TX community is growing fast. Join early, stake smart, and build alongside us. Start at tokns.fi — your home for everything TX.",
     ],
-    hashtags: ["TX", "Cosmos", "crypto", "beginners", "tokns"],
+    hashtags: ["TX", "XRPL", "RWA", "beginners", "tokns"],
     venture: "tokns",
     category: "beginner-guide",
   },
@@ -207,7 +208,7 @@ export const TX_KEY_MESSAGES = {
   medium:
     "tokns.fi brings together everything you need for the TX blockchain: staking with our community validator, NFT trading, token swaps, and multi-wallet tracking. Built by ShieldNest and Coherence Daddy, every feature is designed to make TX accessible and rewarding.",
   long:
-    "tokns.fi is the comprehensive hub for the TX blockchain ecosystem, built by ShieldNest (shieldnest.org) in partnership with Coherence Daddy (coherencedaddy.com). The platform provides a full suite of tools including NFT marketplace trading, token swaps, multi-wallet portfolio tracking, and one-click staking through the tokns.fi validator. As a Cosmos SDK chain with IBC interoperability, TX offers fast finality and cross-chain capability — and tokns.fi makes all of it accessible to both newcomers and power users. Validator commission directly funds the development of free community tools, with the goal of becoming the number one validator on the TX chain.",
+    "tokns.fi is the comprehensive hub for the TX blockchain ecosystem, built by ShieldNest (shieldnest.org) in partnership with Coherence Daddy (coherencedaddy.com). The platform provides a full suite of tools including NFT marketplace trading, token swaps, multi-wallet portfolio tracking, and one-click staking through the tokns.fi validator. TX is an L1 built with the Cosmos SDK and CometBFT consensus that bridges XRPL ↔ Cosmos ↔ EVM, purpose-built for real-world-asset tokenization — tokenized stocks and RWAs, institutional-grade, through regulated intermediaries across NA, Europe, and LATAM — and tokns.fi makes all of it accessible to both newcomers and power users. Validator commission directly funds the development of free community tools, with the goal of becoming the number one validator on the TX chain.",
   tagline: "Learn. Earn. Stake. Trade. All on tokns.fi",
   validatorPitch:
     "The tokns.fi validator is run by ShieldNest, the team behind coherencedaddy.com's free tools. Every TX delegated to our validator funds open community infrastructure — dashboards, analytics, educational content, and more. Our goal is to become the #1 validator on TX chain, because more delegation means more we can build for everyone.",
