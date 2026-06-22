@@ -208,5 +208,18 @@ export type {
   UniversityCancelFeedback,
   NewUniversityCancelFeedback,
 } from "./university.js";
+export {
+  universityAgentReports,
+  universityAgentUsage,
+  universityAgentConfig,
+} from "./university_agent.js";
+export type {
+  UniversityAgentReport,
+  NewUniversityAgentReport,
+  UniversityAgentUsage,
+  NewUniversityAgentUsage,
+  UniversityAgentConfig,
+  NewUniversityAgentConfig,
+} from "./university_agent.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

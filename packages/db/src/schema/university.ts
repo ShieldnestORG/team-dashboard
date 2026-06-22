@@ -47,6 +47,16 @@ export const universityMembers = pgTable(
     status: text("status").notNull().default("pending"),
     // Stable plan key — currently single-tier 'university_monthly'.
     plan: text("plan").notNull().default("university_monthly"),
+    // --- AGENT identity (migration 0127) — ADMIN-ONLY. -----------------------
+    // These distinguish an AI persona "member" from a real human. They MUST
+    // NEVER be serialized into the member-facing community feed (buildAuthor /
+    // CommunityAuthor stays { displayName, handle, isYou, isMark }). Agent-ness
+    // is resolved by joining email->member admin-side, never on /api/portal/*.
+    isAgent: boolean("is_agent").notNull().default(false),
+    agentPersonaKey: text("agent_persona_key"), // 'maya' | 'dario' | ... ; null for humans
+    agentPausedAt: timestamp("agent_paused_at", { withTimezone: true }), // null = running
+    agentPauseReason: text("agent_pause_reason"),
+    // ------------------------------------------------------------------------
     joinedAt: timestamp("joined_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
