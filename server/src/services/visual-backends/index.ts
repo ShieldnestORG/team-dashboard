@@ -2,6 +2,7 @@ import type { VisualBackend, VisualCapability } from "./types.js";
 import { geminiBackend } from "./gemini.js";
 import { grokBackend } from "./grok.js";
 import { canvaBackend } from "./canva.js";
+import { falaiBackend } from "./falai.js";
 import { logger } from "../../middleware/logger.js";
 
 interface BackendEntry {
@@ -13,6 +14,7 @@ const ALL_BACKENDS: BackendEntry[] = [
   { backend: geminiBackend, envKey: "GEMINI_API_KEY" },
   { backend: grokBackend, envKey: "GROK_API_KEY" },
   { backend: canvaBackend, envKey: "CANVA_API_KEY" },
+  { backend: falaiBackend, envKey: "FAL_KEY" },
 ];
 
 function isEnabled(entry: BackendEntry): boolean {

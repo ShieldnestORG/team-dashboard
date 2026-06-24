@@ -106,6 +106,10 @@ export const ytProductions = pgTable(
     scheduledPublishTime: timestamp("scheduled_publish_time", { withTimezone: true }),
     error: text("error"),
     filesPurgedAt: timestamp("files_purged_at", { withTimezone: true }),
+    sourceUrl: text("source_url"),
+    brief: jsonb("brief").$type<Record<string, unknown>>(),
+    scenePlan: jsonb("scene_plan").$type<Record<string, unknown>>(),
+    adMode: text("ad_mode"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -212,5 +216,39 @@ export const ytKeywordPerformance = pgTable(
       table.keyword,
     ),
     scoreIdx: index("yt_keyword_perf_score_idx").on(table.performanceScore),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// yt_ad_assets — one row per generated shot asset (URL → product-ad pipeline)
+// ---------------------------------------------------------------------------
+
+export const ytAdAssets = pgTable(
+  "yt_ad_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id),
+    productionId: uuid("production_id").notNull().references(() => ytProductions.id),
+    shotIndex: integer("shot_index").notNull(),
+    kind: text("kind").notNull(), // product|broll|text_card|cta
+    backend: text("backend"), // grok|gemini|fal|...
+    objectKey: text("object_key"),
+    contentType: text("content_type"),
+    width: integer("width"),
+    height: integer("height"),
+    durationMs: integer("duration_ms"),
+    status: text("status").notNull().default("pending"), // pending|ready|failed
+    costCents: integer("cost_cents"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyProductionIdx: index("yt_ad_assets_company_production_idx").on(
+      table.companyId,
+      table.productionId,
+    ),
+    productionShotIdx: index("yt_ad_assets_production_shot_idx").on(
+      table.productionId,
+      table.shotIndex,
+    ),
   }),
 );
