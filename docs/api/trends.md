@@ -31,6 +31,17 @@ Base path: `/api/trends`
 | `/api/trends/signals` | GET | None | Returns latest cached trend signals |
 | `/api/trends/scan` | POST | `CONTENT_API_KEY` | Force fresh scan of all 4 sources |
 | `/api/trends/generate` | POST | `CONTENT_API_KEY` | Force SEO engine run (pick signal, generate, publish) |
+| `/api/trends/today` | GET | None | Latest **approved** "what's hot" digest (pending never exposed) |
+| `/api/trends/digest/build` | POST | `CONTENT_API_KEY` | Build a fresh **pending** digest |
+| `/api/trends/digest/pending` | GET | `CONTENT_API_KEY` | Review the pending digest |
+| `/api/trends/digest/:date/approve` | POST | `CONTENT_API_KEY` | Rule-7 human approval gate |
+| `/api/trends/digest/:date/reject` | POST | `CONTENT_API_KEY` | Discard a bad pending run |
+| `/api/trends/digest/:date/send` | POST | `CONTENT_API_KEY` | Blast an **approved** digest to the founding list |
+
+> The "what's hot" digest endpoints implement the hardened
+> [anti-hallucination method](../specs/trends-anti-hallucination-method.md):
+> numbers are code-inserted from fetched fields, prose is grounded + citation-checked,
+> verdicts are computed, and a digest is `pending` until a human approves it.
 
 ### Authentication
 
@@ -66,6 +77,8 @@ Protected endpoints require either:
 |-----|----------|-------|-------------|
 | `trends:scan` | `0 */6 * * *` | Echo | Scan all 4 trend sources |
 | `content:seo-engine` | `3 7 * * *` | Sage | Daily blog generation from latest signals |
+| `trends:digest:build` | `0 7 * * 1,4` | Echo | Build a **pending** what's-hot digest (Mon + Thu) — never auto-sends |
+| `trends:digest:bonus` | `0 7 * * 3` | Echo | Community-unlocked bonus digest (Wed), only if engagement clears the threshold |
 
 ## Environment Variables
 
@@ -76,3 +89,8 @@ Protected endpoints require either:
 | `CD_BLOG_API_URL` | Optional | Blog endpoint (default: `https://coherencedaddy.com/api/blog/posts`) |
 | `INDEXNOW_KEY` | Optional | IndexNow verification key for search engine ping |
 | `BING_NEWS_KEY` | Optional | Bing News Search API v7 key (trend scanner works without it) |
+| `ANTHROPIC_API_KEY` | Optional | Haiku prose fallback + citation judge for the digest (absent → Ollama prose, judge fail-soft) |
+| `SERPER_API_KEY` | Optional | SERP saturation enrichment for the digest (absent → scorer degrades gracefully) |
+| `WATCHTOWER_CALLBACK_KEY` | Optional | HMAC secret for the signed digest email envelope to the storefront |
+| `WHATS_HOT_EMAIL_CALLBACK_URL` | Optional | Storefront digest-email receiver (default: apex `/api/email/whats-hot`) |
+| `WHATS_HOT_BONUS_VOTE_THRESHOLD` | Optional | Community engagement needed to unlock the Wed bonus run (default 10) |
