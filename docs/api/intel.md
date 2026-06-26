@@ -590,6 +590,25 @@ coherencedaddy.com         Vercel rewrites          VPS (31.220.61.14)
 
 ## Rate Limits
 
-Public read endpoints have no rate limiting at the application level. Abuse protection is handled upstream by Vercel's edge network and VPS-level firewall rules.
+Public read endpoints are rate-limited at the application level by a plan-aware
+limiter (`server/src/middleware/intel-rate-limit.ts`). Anonymous requests fall back
+to the **free** plan keyed on client IP; authenticated requests (Bearer / `x-api-key`)
+use the plan tied to the API key. Per-minute limits follow the PRD tiers: free 60,
+starter 300, pro 1,000, enterprise 5,000 req/min.
+
+Each response carries both the IETF draft-6 standard headers and legacy aliases,
+all reporting the same authoritative value:
+
+| Header | Meaning |
+|---|---|
+| `RateLimit-Limit` / `X-RateLimit-Limit` | Requests allowed in the current 60s window for the caller's plan |
+| `RateLimit-Remaining` / `X-RateLimit-Remaining` | Requests left in the window |
+| `RateLimit-Reset` | Seconds until the window resets |
+| `RateLimit-Policy` | e.g. `60;w=60` (limit;window-seconds) |
+| `X-Intel-Plan` | Resolved plan slug (`free`, `starter`, …) |
+
+`/api/intel/*` is exempt from the global flat limiter so these plan-aware headers
+are the only ones emitted (no conflicting values). Exceeding the limit returns `429`
+with `Retry-After`.
 
 Protected ingest endpoints are gated by the `X-Intel-Key` and are not exposed publicly.
