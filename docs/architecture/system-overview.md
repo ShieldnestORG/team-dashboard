@@ -1,5 +1,7 @@
 # System Overview — Team Dashboard
 
+> **Cluster:** Architecture · **Tags:** control-plane, ecosystem, subdomains, vps, agents, monetization · **Related:** [Org Structure](org-structure.md), [Project Structure](project-structure.md), [Structure Diagram Policy](structure-diagram-policy.md), [Production Deploy](../deploy/production.md), [Ownership Matrix](../OWNERSHIP.md)
+
 ## What This Project Is
 The internal admin control plane for the Coherence Daddy / 508(c)(1)(A) ecosystem. Coherence Daddy is a faith-based organization on a mission to help humanity be more coherent through private, secure self-help products that teach real skills, broaden awareness, and help the next generation stay secure. This dashboard manages AI agents, data scraping pipelines, directory API, and operational dashboards. **Not public-facing** — requires authentication.
 

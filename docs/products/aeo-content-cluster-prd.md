@@ -1,5 +1,7 @@
 # PRD: AEO Content Cluster — "Why ChatGPT Won't Cite Your Website" (Initiative G)
 
+> **Cluster:** Products · **Tags:** aeo, content-cluster, blog, serp, ai-citation, creditscore · **Related:** [AEO/SEO/AdSense Playbook](./aeo-seo-playbook-prd.md), [Topic Takeover Roadmap](./topic-takeover-roadmap.md), [Blog Distribution](./blog-distribution.md), [CreditScore PRD](./creditscore-prd.md)
+
 **Status:** Planning — unshipped. Drives CreditScore funnel.
 **Parent plan:** [docs/products/topic-takeover-roadmap.md](./topic-takeover-roadmap.md)
 **Target repos:** `coherencedaddy-landing` (blog renderer), team-dashboard (only if cron-published; otherwise repo-managed).

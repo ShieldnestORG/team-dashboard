@@ -1,5 +1,7 @@
 # Admin Affiliate Testing Guide
 
+> **Cluster:** Guides · **Tags:** affiliate, testing, qa, registration, approval, smtp · **Related:** [Affiliate System Upgraded](affiliate-system-upgraded.md), [Affiliate User Journeys](affiliate-user-journeys.md), [Unified Affiliate Hub Plan](../plans/unified-affiliate-hub-plan.md), [Docs Index](../README.md)
+
 Step-by-step walkthrough for the Coherence Daddy team to test, verify, and demo every part of the affiliate system end-to-end. Use this any time you onboard a new team member, verify a deployment, or demo the program.
 
 ---

@@ -1,5 +1,7 @@
 # llms.txt + agents.json Generator
 
+> **Cluster:** Products · **Tags:** llms-txt, agents-json, aeo, crawler, generator, domain · **Related:** [GEO Tactics Roadmap](geo-tactics-roadmap.md), [Topic-Takeover Roadmap](topic-takeover-roadmap.md), [Docs Index](../README.md)
+
 > One-shot service that crawls a customer's domain, summarizes each page
 > against the [llmstxt.org](https://llmstxt.org/) spec, and returns three
 > files: `llms.txt`, `llms-full.txt`, `agents.json`.

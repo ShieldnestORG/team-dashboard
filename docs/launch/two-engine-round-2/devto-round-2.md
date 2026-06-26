@@ -1,5 +1,7 @@
 # dev.to — Round 2 Long-Form
 
+> **Cluster:** Launch · **Tags:** devto, long-form, cost-math, gemma, two-engine · **Related:** [Show HN](hn-show.md), [Reddit Posts](reddit-posts.md), [X Thread](x-thread.md), [Docs Index](../../README.md)
+
 **Round 1 angle (already shipped):** the setup walkthrough — "here's how to do it."
 **Round 2 angle:** the cost-math deep dive — *"I tracked every Claude Code call for 30 days. Here's the breakdown that justified switching to Gemma."*
 

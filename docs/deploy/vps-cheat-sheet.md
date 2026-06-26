@@ -1,5 +1,7 @@
 # VPS Cheat Sheet
 
+> **Cluster:** Deploy · **Tags:** vps, ssh, dns, vps4, vps1, deploy · **Related:** [Production Deployment](production.md), [Environment Variables](env-vars.md), [Tailnet Session Access](tailnet-session-access.md), [Docs Index](../README.md)
+
 **One-page reference. Read before any SSH or deploy operation.**
 
 ## TL;DR — which VPS does what

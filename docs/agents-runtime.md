@@ -1,5 +1,7 @@
 # Agent Runtime Guide
 
+> **Cluster:** Runtime · **Tags:** agents, heartbeat, adapters, wakeup, runtime · **Related:** [MCP Server](api/mcp-server.md), [System Overview](architecture/system-overview.md), [Agent Cron Ownership](guides/agent-cron-ownership.md), [Docs Index](README.md)
+
 Status: User-facing guide
 Last updated: 2026-03-26
 Audience: Operators setting up and running agents in Team Dashboard

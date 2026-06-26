@@ -1,5 +1,7 @@
 # Watchtower — Brand Mention Monitor (v1)
 
+> **Cluster:** Products · **Tags:** watchtower, brand-monitor, answer-engines, subscription, aeo, pricing · **Related:** [Watchtower Portal Audit](../audits/watchtower-portal-audit-2026-05-13.md), [House Ads](house-ads.md), [Docs Index](../README.md)
+
 > The cheap, in-house alternative to Profound / Peec ($300–$1,500/mo SaaS) for tracking how AI answer engines (ChatGPT, Claude, Perplexity, Gemini, Grok) talk about a brand. v1 = the smallest thing that's useful. Not a marketing-claims product yet.
 
 ## Pricing

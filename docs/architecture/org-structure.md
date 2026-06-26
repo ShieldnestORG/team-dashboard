@@ -1,5 +1,7 @@
 # Org Structure — Coherence Daddy Ecosystem
 
+> **Cluster:** Architecture · **Tags:** org-chart, ecosystem, shop, woocommerce, ownership, subdomains · **Related:** [System Overview](system-overview.md), [Project Structure](project-structure.md), [Ownership Matrix](../OWNERSHIP.md), [Production Deploy](../deploy/production.md)
+
 > Business / organizational view of the 508(c)(1)(A) ecosystem — who owns what, which repo deploys where, and how the storefronts fan out. Complements:
 > - `docs/architecture/system-overview.md` — technical control-plane overview
 > - `docs/guides/board-operator/org-structure.md` — agent reporting hierarchy (different "org")

@@ -1,5 +1,7 @@
 # `/admin-impersonate` 500 — Root-Cause Diagnosis
 
+> **Cluster:** Handoffs · **Tags:** diagnosis, migration, admin-impersonate, neon-db, portal · **Related:** [Portal Smoke Test](2026-05-17-portal-smoke.md), [Docs Index](../README.md)
+
 **Date:** 2026-05-17
 **Author:** read-only diagnostic pass (no prod changes)
 **Trigger:** PR #76 smoke test reported `POST /api/portal/admin-impersonate`

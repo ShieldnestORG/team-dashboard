@@ -1,5 +1,7 @@
 # VPS_3 Ollama Setup Guide (HISTORICAL — 2026-04-10)
 
+> **Cluster:** Guides · **Tags:** historical, decommissioned, vps3, ollama, llm, swap · **Related:** [VPS Cheat Sheet](../deploy/vps-cheat-sheet.md), [OpenClaw Docker Setup](openclaw-docker-setup.md), [Docs Index](../README.md)
+
 > **Status:** HISTORICAL. VPS3 (`147.79.78.251`) was nuked alongside VPS2 in the 2026-05-08 XMRig compromise and is decommissioning (Hostinger payment lapse). Do NOT provision new services here. Self-hosted Ollama now lives on VPS1 Tailnet `http://100.67.128.51:11434` (`shield-llm`); content workloads use Ollama Cloud (`https://ollama.com/api`). See [docs/deploy/production.md](../deploy/production.md). This file is preserved for historical reference only.
 
 **Server:** `147.79.78.251` (15GB RAM, ~119GB free disk) — DECOMMISSIONING

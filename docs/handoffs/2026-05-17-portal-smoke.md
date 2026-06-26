@@ -1,5 +1,7 @@
 # Portal cross-origin smoke test — 2026-05-17
 
+> **Cluster:** Handoffs · **Tags:** portal, smoke-test, cors, cookies, verification · **Related:** [Migration 0116 Diagnosis](2026-05-17-migration-0116-diagnosis.md), [Docs Index](../README.md)
+
 Read-only verification of the customer portal flow shipped 2026-05-09.
 Frontend: `https://app.coherencedaddy.com` (Vercel/Next.js).
 Backend: `https://api.coherencedaddy.com` on VPS4 (this repo).

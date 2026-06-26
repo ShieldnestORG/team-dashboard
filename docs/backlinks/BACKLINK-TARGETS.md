@@ -1,5 +1,7 @@
 # Backlink Targets — Coherence Daddy Outreach Playbook
 
+> **Cluster:** Backlinks · **Tags:** backlinks, outreach, aeo, directory, seo · **Related:** [Partner Network PRD](../products/partner-network-prd.md), [Topic Takeover Roadmap](../products/topic-takeover-roadmap.md), [Docs Index](../README.md)
+
 **Status:** Live. Maintained alongside Initiative B (Outbound AEO) and the topic-takeover roadmap.
 **Owner:** Outbound + content. Update as targets close or new ones surface.
 **Companion docs:**

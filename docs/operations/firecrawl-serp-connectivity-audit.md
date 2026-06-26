@@ -1,5 +1,7 @@
 # Firecrawl + SERP Connectivity Audit — Fix List
 
+> **Cluster:** Operations · **Tags:** firecrawl, serp, tailnet, connectivity, audit, embeddings · **Related:** [Tailnet Session Access](../deploy/tailnet-session-access.md), [VPS Cheat Sheet](../deploy/vps-cheat-sheet.md), [Docs Index](../README.md)
+
 **Date:** 2026-06-15
 **Author:** Echo / agent session (static code audit; runtime checks pending a tailnet-connected box)
 **Trigger:** Investigation into whether the self-hosted Firecrawl and the "SERP ingest" pipeline

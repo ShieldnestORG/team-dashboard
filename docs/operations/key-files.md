@@ -1,5 +1,7 @@
 # Key Files Reference — Team Dashboard
 
+> **Cluster:** Operations · **Tags:** key-files, routes, services, reference, architecture, codebase-map · **Related:** [Dashboard Audit 2026-06-07](dashboard-audit-2026-06-07.md), [Cron Inventory](cron-inventory.md), [Docs Index](../README.md)
+
 This document provides a mapping of critical files to their purpose within the system.
 
 ## API & Routes

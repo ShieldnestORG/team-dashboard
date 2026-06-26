@@ -1,5 +1,7 @@
 # MCP Server
 
+> **Cluster:** API · **Tags:** mcp, stdio, agent-tools, issues, projects, rest-client · **Related:** [Twitter/X API](twitter.md), [Project Structure](../architecture/project-structure.md), [System Overview](../architecture/system-overview.md), [Ownership Matrix](../OWNERSHIP.md)
+
 Model Context Protocol server exposing Team Dashboard task management as 35 tools for AI agents.
 
 ## Package

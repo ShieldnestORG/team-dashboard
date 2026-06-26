@@ -1,5 +1,7 @@
 # PRD: Directory Outbound AEO Campaign (Initiative B)
 
+> **Cluster:** Products · **Tags:** directory, outbound, email, outreach, can-spam, prism-agent · **Related:** [Directory SERP Ingest](./directory-serp-ingest-prd.md), [Directory Listings](./directory-listings-prd.md), [Tool Niche Harvest](./tool-niche-harvest-prd.md), [Prospects PRD](./prospects-prd.md)
+
 **Status:** Planning — unshipped.
 **Parent plan:** `coherencedaddy-landing/docs/plans/2026-04-24-directory-expansion.md`
 **Depends on:** Initiative A (Directory SERP Ingest) providing catalog growth. Can start in parallel but outbound volume only makes sense with more companies to reach.

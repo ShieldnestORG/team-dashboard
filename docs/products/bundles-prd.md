@@ -1,5 +1,7 @@
 # PRD: Bundle Packages
 
+> **Cluster:** Products · **Tags:** bundles, pricing, entitlements, stripe, creditscore, directory · **Related:** [All-Inclusive Package](./all-inclusive-prd.md), [CreditScore PRD](./creditscore-prd.md), [Directory Listings](./directory-listings-prd.md), [Stripe Products](../deploy/stripe-products.md)
+
 ## What They Are
 
 Pre-packaged combinations of CreditScore, Directory Listings, Partner Network, and Intel API at a 20–35% discount vs. buying separately. One Stripe subscription ID grants access to all included products via a bundle entitlement system.

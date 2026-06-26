@@ -1,5 +1,7 @@
 # Twitter/X API
 
+> **Cluster:** API · **Tags:** twitter, oauth, rate-limits, engagement, plugin, automation · **Related:** [Media Drops API](media-drops.md), [Trends API](trends.md), [MCP Server](mcp-server.md), [Project Structure](../architecture/project-structure.md), [Ownership Matrix](../OWNERSHIP.md)
+
 Internal API endpoints for X/Twitter automation, OAuth, analytics, and the Chrome extension bot.
 
 ## Authentication

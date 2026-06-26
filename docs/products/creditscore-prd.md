@@ -1,5 +1,7 @@
 # PRD: CreditScore (v2 — reconciled 2026-04-21)
 
+> **Cluster:** Products · **Tags:** creditscore, seo, aeo, audit, scoring, funnel · **Related:** [CreditScore API](../api/creditscore.md), [AEO/SEO/AdSense Playbook](./aeo-seo-playbook-prd.md), [Bundle Packages](./bundles-prd.md), [Directory Listings](./directory-listings-prd.md)
+
 > Supersedes the earlier draft. Pricing and tier structure locked via the ecosystem-wide reconciliation captured in `/Users/exe/.claude/plans/prd-1-looks-good-fluffy-parnas.md`.
 
 ## What It Is

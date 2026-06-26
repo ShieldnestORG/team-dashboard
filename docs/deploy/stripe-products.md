@@ -1,5 +1,7 @@
 # Stripe Products & Prices
 
+> **Cluster:** Deploy · **Tags:** stripe, price-ids, lookup-key, products, billing · **Related:** [Stripe Runbook](stripe-runbook.md), [Customer Portal](../products/customer-portal.md), [Docs Index](../README.md)
+
 > Append-only registry of Stripe products + price IDs that team-dashboard
 > is the source of truth for. Per [docs/OWNERSHIP.md](../OWNERSHIP.md),
 > all checkout-session creation + webhook handling lives in this repo;

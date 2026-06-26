@@ -1,5 +1,7 @@
 # YouTube Speed Test — Side-by-Side Script (CD-63)
 
+> **Cluster:** Launch · **Tags:** youtube, video-script, speed-test, cost-ticker, video-edit · **Related:** [YouTube Day-in-Life Script](youtube-day-in-life-script.md), [YouTube Short Script](youtube-short-script.md), [Video Edit](../../products/video-edit.md), [Docs Index](../../README.md)
+
 **Format:** 16:9 horizontal, 1920×1080.
 **Length:** 90 seconds. Hard ceiling 120.
 **Title (suggested):** `Claude Code vs claude-gemma — same lint task, side by side`

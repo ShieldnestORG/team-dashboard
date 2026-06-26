@@ -1,5 +1,7 @@
 # Tutorials Hub
 
+> **Cluster:** Products · **Tags:** tutorials, hub, storefront, registry, static-html, aeo · **Related:** [GEO Tactics Roadmap](geo-tactics-roadmap.md), [LLMs.txt Generator](llms-txt-generator.md), [Docs Index](../README.md)
+
 Canonical doc for the Coherence Daddy tutorials product surface. The implementation lives in the public-facing storefront repo (`coherencedaddy-landing`); this file records the cross-repo decisions so future agents stop relitigating them.
 
 ## Surface map

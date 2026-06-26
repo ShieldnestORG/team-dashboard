@@ -1,5 +1,7 @@
 # Plan: CreditScore audit — fail loudly when crawler is down
 
+> **Cluster:** Plans · **Tags:** creditscore, audit, firecrawl, fail-loud, sse, health-endpoint · **Related:** [CreditScore PRD](../products/creditscore-prd.md), [CreditScore API](../api/creditscore.md), [Docs Index](../README.md)
+
 **Spec:** Inline handoff in conversation 2026-04-30 (P0: every audit currently saves fake `score:30` data with hardcoded `alt1.example.com` competitors when Firecrawl is unreachable).
 
 **Scope:** Phase 1 only — stop the bleed. Phase 2 signal upgrades and Phase 3 audit trail are tracked separately.

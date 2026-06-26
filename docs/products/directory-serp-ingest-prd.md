@@ -1,5 +1,7 @@
 # PRD: Directory SERP Ingest (Initiative A)
 
+> **Cluster:** Products · **Tags:** directory, serp-ingest, discovery, enrichment, echo-agent, catalog · **Related:** [Directory Outbound AEO](./directory-outreach-prd.md), [Directory Listings](./directory-listings-prd.md), [Tool Niche Harvest](./tool-niche-harvest-prd.md), [Prospects PRD](./prospects-prd.md)
+
 **Status:** Planning — unshipped.
 **Parent plan:** `coherencedaddy-landing/docs/plans/2026-04-24-directory-expansion.md`
 **Target repos:** team-dashboard (schema + crons + agents), storefront (read-only renderer).

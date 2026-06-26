@@ -1,5 +1,7 @@
 # Structure Diagram Policy — Team Dashboard
 
+> **Cluster:** Architecture · **Tags:** mermaid, structure-diagram, auto-sync, topology, maintenance, vps · **Related:** [Project Structure](project-structure.md), [System Overview](system-overview.md), [Org Structure](org-structure.md), [Ownership Matrix](../OWNERSHIP.md)
+
 ## Overview
 
 The company structure Mermaid diagram (rendered at `/structure`) is a **living document** and the single source of truth for the backend topology of the Team Dashboard. It must stay in sync with the codebase at all times.

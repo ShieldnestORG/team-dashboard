@@ -1,5 +1,7 @@
 # PRD: Tool Niche Harvest (Initiative D)
 
+> **Cluster:** Products · **Tags:** tool-niche, harvest, backlog, serp, utility-network, discovery · **Related:** [Topic-Takeover Roadmap](topic-takeover-roadmap.md), [Prospects PRD](prospects-prd.md), [Utility Network](utility-network/README.md), [Docs Index](../README.md)
+
 **Status:** Planning — unshipped. Background priority.
 **Parent plan:** `coherencedaddy-landing/docs/plans/2026-04-24-directory-expansion.md`
 **Target repos:** team-dashboard (backlog table + import script). No runtime impact — this is backlog hygiene.

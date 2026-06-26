@@ -1,5 +1,7 @@
 # Shop Sharers
 
+> **Cluster:** Products · **Tags:** shop, sharers, referral, affiliate, qr-code, email-capture · **Related:** [Partner Network PRD](partner-network-prd.md), [Partners API Reference](../api/partners.md), [Docs Index](../README.md)
+
 Email capture on `shop.coherencedaddy.com` that mints a **referral code, QR
 code, and shareable link** for any visitor, then offers an opt-in path into
 the existing affiliate program via a manual admin approval queue.

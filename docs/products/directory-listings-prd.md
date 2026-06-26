@@ -1,5 +1,7 @@
 # PRD: Directory Listings
 
+> **Cluster:** Products · **Tags:** directory, paid-placement, aeo, ai-citation, listings, monetization · **Related:** [Directory SERP Ingest](./directory-serp-ingest-prd.md), [Directory Outbound AEO](./directory-outreach-prd.md), [Bundle Packages](./bundles-prd.md), [Stripe Products](../deploy/stripe-products.md)
+
 ## What It Is
 
 Paid placement in the Coherence Daddy AI/blockchain company directory (`directory.coherencedaddy.com`). The directory indexes 500+ blockchain, AI, DeFi, and DevTools companies.

@@ -1,5 +1,7 @@
 # Screenshot Shot List — 5 Hero Slides
 
+> **Cluster:** Launch · **Tags:** screenshots, shot-list, hero-slides, assets, two-engine · **Related:** [Hero GIF Shot List](gif-shot-list.md), [X Thread](x-thread.md), [OG Image Spec](og-image-spec.md), [Docs Index](../../README.md)
+
 All screenshots are taken from the live deck at https://coherencedaddy.com/tutorials/use-ollama-to-enhance-claude (or `presentation/index.html` locally — they're identical).
 
 Final dimensions: **1200×675** (16:9, OG-friendly, also fits Twitter inline images cleanly).

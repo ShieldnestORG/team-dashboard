@@ -1,5 +1,7 @@
 # SEO/AEO Checklist for All Properties & Partner Microsites
 
+> **Cluster:** Guides · **Tags:** seo, aeo, robots, sitemap, llms-txt, json-ld, metadata · **Related:** [Docs Index](../README.md)
+
 Every subdomain, microsite, and partner site in the Coherence Daddy ecosystem MUST have the following SEO and AEO infrastructure. This checklist is enforced programmatically via `server/src/services/partner-seo-checklist.ts`.
 
 ## Required Files

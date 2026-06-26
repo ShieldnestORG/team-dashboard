@@ -1,5 +1,7 @@
 # Show HN — Round 2 Draft
 
+> **Cluster:** Launch · **Tags:** hacker-news, show-hn, social-post, cost-math, two-engine · **Related:** [Reddit Posts](reddit-posts.md), [dev.to Round 2](devto-round-2.md), [X Thread](x-thread.md), [Docs Index](../../README.md)
+
 **Round 1 angle (already shipped):** "Show HN: Two-Engine Setup — route Claude Code through Gemma to slash your Anthropic bill" — led with the setup.
 **Round 2 angle:** retrospective. Same product, different framing: *"30 days later — here's what changed."*
 

@@ -1,5 +1,7 @@
 # PRD: DevTools Live-Signal Intel (Initiative I)
 
+> **Cluster:** Products · **Tags:** devtools, live-signals, directory, intel, positioning, vertical · **Related:** [EigenLayer AVS Directory](./eigenlayer-avs-directory-prd.md), [Cosmos IBC Directory](./cosmos-ibc-directory-prd.md), [Topic Takeover Roadmap](./topic-takeover-roadmap.md), [Directory Listings](./directory-listings-prd.md)
+
 **Status:** Planning — unshipped. Positioning shift, not a new vertical.
 **Parent plan:** [docs/products/topic-takeover-roadmap.md](./topic-takeover-roadmap.md)
 **Target repos:** team-dashboard (signal definitions + sort), `directory.coherencedaddy.com` (renderer tweak).

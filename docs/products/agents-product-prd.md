@@ -1,5 +1,7 @@
 # PRD: 100 Agents (v1 — 2026-05-07)
 
+> **Cluster:** Products · **Tags:** agents, aeo, serp-tracking, monitoring, tiers, pricing · **Related:** [Bundle Packages](./bundles-prd.md), [All-Inclusive Package](./all-inclusive-prd.md), [CreditScore PRD](./creditscore-prd.md), [Ownership Matrix](../OWNERSHIP.md)
+
 > Status: planned. Landing page live at `coherencedaddy.com/agents` since 2026-04-30. Backend not yet built. Founding cohort: 14/30 claimed at the time of writing.
 
 ## What It Is

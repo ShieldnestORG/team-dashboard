@@ -1,5 +1,7 @@
 # Watchtower / app.coherencedaddy.com — Multi-Persona Audit
 
+> **Cluster:** Audits · **Tags:** watchtower, portal, audit, customer-portal, upsell · **Related:** [Watchtower](../products/watchtower.md), [Docs Index](../README.md)
+
 **Date:** 2026-05-13
 **Scope:** `app.coherencedaddy.com` (customer portal SPA, separate repo `app-coherencedaddy-portal`) + backend (`api.coherencedaddy.com`, this repo)
 **Trigger:** Watchtower is live and being used by customers; we need the portal to feel like a real product, not a stripped login + entitlements card. Other CD products should appear as natural upsells inside it.

@@ -1,5 +1,7 @@
 # PRD: All-Inclusive Package
 
+> **Cluster:** Products · **Tags:** all-inclusive, package, bundle, aeo, subscription, pricing · **Related:** [Bundle Packages](./bundles-prd.md), [100 Agents](./agents-product-prd.md), [CreditScore PRD](./creditscore-prd.md), [Stripe Products](../deploy/stripe-products.md)
+
 ## What It Is
 
 One invoice. Every Coherence Daddy product at its highest tier. Positioned as the "own the whole ecosystem" option for operators who want maximum AEO presence and intelligence without managing multiple subscriptions.

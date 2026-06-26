@@ -1,5 +1,7 @@
 # Reddit Posts — 3 drafts
 
+> **Cluster:** Launch · **Tags:** reddit, social-post, localllama, claudeai, two-engine · **Related:** [Show HN](hn-show.md), [X Thread](x-thread.md), [Discord Blurbs](discord-blurbs.md), [Docs Index](../../README.md)
+
 **Universal Reddit etiquette:**
 - Lead with value, not the link. The link goes near the bottom or in the first comment.
 - Read each subreddit's pinned rules immediately before posting — they change.

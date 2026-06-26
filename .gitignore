@@ -59,3 +59,8 @@ tests/release-smoke/playwright-report/
 .superset/
 .claude/worktrees/
 ui/.claude/
+
+# graphify code knowledge graph (per-developer, not committed)
+graphify-out/
+.graphify/
+.graphify_cache/

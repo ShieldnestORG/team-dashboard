@@ -1,5 +1,7 @@
 # Branch & Session Safety — Team Dashboard
 
+> **Cluster:** Guides · **Tags:** git, branches, worktrees, concurrency, hygiene, ci · **Related:** [Contributing](../../CONTRIBUTING.md), [Docs Index](../README.md)
+
 ## Concurrent Session Rule
 **Never run multiple agent sessions editing the same branch simultaneously.**
 

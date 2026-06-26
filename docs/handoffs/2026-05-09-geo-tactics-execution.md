@@ -1,5 +1,7 @@
 # Handoff — GEO/AEO Tactics Execution (2026-05-09)
 
+> **Cluster:** Handoffs · **Tags:** geo, aeo, handoff, worktree, orchestration · **Related:** [GEO Tactics Roadmap](../products/geo-tactics-roadmap.md), [Topic Takeover Roadmap](../products/topic-takeover-roadmap.md), [Docs Index](../README.md)
+
 **From:** Strategy + dispatch chat (Opus, ~50% context, dispatched-at: 2026-05-09)
 **To:** Orchestrator chat (Opus recommended; you will integrate, verify, merge, and deploy)
 **Authority granted:** CEO authorization for VPS actions, push/pull, and merge to master once typecheck is clean. See "Authority & guardrails" below for what authorization does NOT cover.

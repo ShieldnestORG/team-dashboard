@@ -1,5 +1,7 @@
 # KG Cleanup Sprint — Handoff (2026-04-28)
 
+> **Cluster:** Architecture · **Tags:** knowledge-graph, nexus, sbom, relationship-extractor, intel-api, handoff · **Related:** [KG Extractor Prompt Fix](kg-extractor-prompt-fix.md), [SBOM Parser Design](sbom-parser-design.md), [Knowledge Graph Positioning](../products/knowledge-graph-positioning.md), [Intel API](../api/intel.md), [Ownership Matrix](../OWNERSHIP.md)
+
 **Status:** All 5 PRs merged, both migrations applied to prod Neon, VPS1 deployed and healthy on `c6fd3b89`. Open work below.
 
 This file is the single source of truth for the next agent or operator picking up this workstream. Read it cold; everything you need is linked from here.

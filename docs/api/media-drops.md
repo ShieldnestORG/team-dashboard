@@ -1,5 +1,7 @@
 # Media Drops API
 
+> **Cluster:** API · **Tags:** media, canva, twitter, upload, agent-tools, content-pipeline · **Related:** [Twitter/X API](twitter.md), [Trends API](trends.md), [Project Structure](../architecture/project-structure.md), [Ownership Matrix](../OWNERSHIP.md)
+
 Upload images, GIFs, and videos from Canva (or anywhere) so agents can post them to Twitter/X via the API.
 
 ## How It Works

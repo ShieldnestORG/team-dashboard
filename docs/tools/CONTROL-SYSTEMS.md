@@ -1,5 +1,7 @@
 # Tools Control Systems & Verification Report (ARCHIVED)
 
+> **Cluster:** Tools (archived) · **Tags:** tools, archived, verification, build-checks, migrated, backlinks · **Related:** [Tools Master Documentation](TOOLS-MASTER-DOCUMENTATION.md), [Docs Index](../README.md)
+
 > **Status:** MIGRATED — The 27 public tools now live in [ShieldnestORG/coherencedaddy](https://github.com/ShieldnestORG/coherencedaddy).
 > This file is preserved for historical reference.
 

@@ -1,5 +1,7 @@
 # Trends & SEO Engine API
 
+> **Cluster:** API · **Tags:** trends, seo, blog-generation, indexnow, coingecko, content-pipeline · **Related:** [Twitter/X API](twitter.md), [Media Drops API](media-drops.md), [Intel API](intel.md), [System Overview](../architecture/system-overview.md), [Ownership Matrix](../OWNERSHIP.md)
+
 Trend scanning and automated blog generation for the Coherence Daddy content pipeline.
 
 ## How It Works

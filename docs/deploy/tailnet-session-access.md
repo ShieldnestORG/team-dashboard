@@ -1,5 +1,7 @@
 # Tailnet Access for Web / Agent Sessions
 
+> **Cluster:** Deploy · **Tags:** tailscale, firecrawl, egress, agent-sessions, acl · **Related:** [Production Deployment](production.md), [VPS Cheat Sheet](vps-cheat-sheet.md), [Firecrawl SERP Connectivity Audit](../operations/firecrawl-serp-connectivity-audit.md), [Docs Index](../README.md)
+
 **Goal:** let a Claude Code on the web (or any ephemeral agent) session reach
 **tailnet-only services** — primarily the self-hosted **Firecrawl `:3002`** and
 the embedding API — so the agent can drive them directly instead of handing you

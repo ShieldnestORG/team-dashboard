@@ -1,5 +1,7 @@
 # Pivot Brief: tokencount.dev → LLM API Cost Optimization
 
+> **Cluster:** Utility Network · **Tags:** tokencount, pivot, llm-cost, tokenizer, optimization, seo · **Related:** [Utility Network](README.md), [dailycompound Pivot Brief](dailycompound-pivot-brief.md), [Topic-Takeover Roadmap](../topic-takeover-roadmap.md), [Docs Index](../../README.md)
+
 **Status:** Proposal. Pivot, not rewrite — keep the existing tokenizer surface, layer cost optimization on top.
 **Owner:** Utility-network playbook.
 **Companion:** [docs/products/topic-takeover-roadmap.md](../topic-takeover-roadmap.md)

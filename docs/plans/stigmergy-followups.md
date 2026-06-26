@@ -1,5 +1,7 @@
 # Stigmergy Bridge — Running Followups
 
+> **Cluster:** Plans · **Tags:** stigmergy, agent-memory, obsidian, qdrant, knowledge-extractor, followups · **Related:** [Skills Pipeline Integration](skills-pipeline-integration.md), [Docs Index](../README.md)
+
 Tracks remaining work after the initial stigmergy bridge shipped in
 [PR #57](https://github.com/ShieldnestORG/team-dashboard/pull/57) on 2026-05-11.
 

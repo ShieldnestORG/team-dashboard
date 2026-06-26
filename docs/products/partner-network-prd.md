@@ -1,5 +1,7 @@
 # PRD: Partner Network
 
+> **Cluster:** Products · **Tags:** partner-network, aeo, microsites, smb, stripe, citations · **Related:** [Shop Sharers](shop-sharers.md), [Partners API Reference](../api/partners.md), [Docs Index](../README.md)
+
 ## What It Is
 
 AEO content marketing for SMBs and local businesses. Coherence Daddy's content agents write and publish articles, blog posts, and social content that mention the partner company, building AI citation mass so the company appears when people ask AI engines for recommendations.

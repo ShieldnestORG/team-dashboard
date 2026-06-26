@@ -1,5 +1,7 @@
 # Awesome List PR Templates
 
+> **Cluster:** Launch · **Tags:** awesome-list, github-pr, backlinks, two-engine, outreach · **Related:** [Reddit Posts](reddit-posts.md), [Show HN](hn-show.md), [GSC + Bing Checklist](gsc-bing-checklist.md), [Docs Index](../../README.md)
+
 Three PR drafts for the canonical "awesome" lists. Each PR adds one line linking the repo. Keep PRs minimal — awesome list maintainers reject anything that looks like marketing.
 
 > **Verify on submission day:** awesome list repos move; if any of the canonical URLs below have changed, re-search before forking. As of writing the canonical URLs are:

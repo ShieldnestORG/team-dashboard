@@ -1,5 +1,7 @@
 # GEO / AEO / AI-Visibility Tactics — Running Roadmap
 
+> **Cluster:** Products · **Tags:** geo, aeo, ai-visibility, roadmap, seo, tactics · **Related:** [Topic-Takeover Roadmap](topic-takeover-roadmap.md), [Knowledge Graph Positioning](knowledge-graph-positioning.md), [Docs Index](../README.md)
+
 **Status:** Living doc. Last updated 2026-05-09.
 **Owner:** Coherence Daddy ecosystem (team-dashboard + coherencedaddy-landing).
 **Origin:** Three-persona analysis (Contrarian, Enthusiast, Realist — all run on Opus) over the GEO/AEO/SEO tactic stack circa 2026.

@@ -1,5 +1,7 @@
 # AdSense Go-Live Checklist
 
+> **Cluster:** Products · **Tags:** adsense, monetization, ad-slots, go-live, approval, seo · **Related:** [AEO/SEO/AdSense Playbook](./aeo-seo-playbook-prd.md), [AEO Content Cluster](./aeo-content-cluster-prd.md), [House Ads](./house-ads.md), [Ownership Matrix](../OWNERSHIP.md)
+
 Triggered when Google emails "Your AdSense account is ready." Keep this
 checklist updated whenever slot configs change so the day-of flip is a
 five-minute task, not archaeology.
