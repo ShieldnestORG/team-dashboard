@@ -12,6 +12,17 @@ export interface CheckoutOptions {
   metadata: Record<string, string>;
   /** Optional: reuse an existing Stripe customer (skips customer_email lookup). */
   customerId?: string;
+  /**
+   * Optional Stripe `client_reference_id` — surfaced back on the completed
+   * checkout session (e.g. a referral code captured on the landing page).
+   */
+  clientReferenceId?: string;
+  /**
+   * Optional Stripe account override. Defaults to STRIPE_SECRET_KEY (shared
+   * Coherence Daddy account). University passes universityStripeKey() so the
+   * session is created on the Starwise account where the university price lives.
+   */
+  secretKey?: string;
 }
 
 export interface CheckoutResult {
@@ -26,7 +37,9 @@ export interface CheckoutResult {
 export async function createCheckoutSession(
   opts: CheckoutOptions,
 ): Promise<CheckoutResult> {
-  if (!stripeConfigured()) {
+  // An explicit secretKey (e.g. University → Starwise) is sufficient on its
+  // own; otherwise require the shared STRIPE_SECRET_KEY.
+  if (!opts.secretKey && !stripeConfigured()) {
     throw new Error("STRIPE_SECRET_KEY not configured");
   }
 
@@ -37,6 +50,8 @@ export async function createCheckoutSession(
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,
   };
+
+  if (opts.clientReferenceId) params.client_reference_id = opts.clientReferenceId;
 
   // Prefer customer ID when available (avoids duplicate Stripe customers).
   if (opts.customerId) {
@@ -54,6 +69,7 @@ export async function createCheckoutSession(
     "POST",
     "/checkout/sessions",
     params,
+    opts.secretKey,
   );
 
   return { checkoutUrl: session.url, sessionId: session.id };

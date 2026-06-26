@@ -27,7 +27,31 @@ export type CreditscoreEmailKind =
   | "weekly_report"
   | "fix_priority_monthly"
   | "score_drop_alert"
-  | "sage_weekly_digest";
+  | "sage_weekly_digest"
+  // Coherent Ones University ($50/mo membership). Templates live storefront-side
+  // (docs/OWNERSHIP.md); this contract is the team-dashboard → storefront kind list.
+  | "university_welcome"
+  | "university_receipt"
+  | "university_past_due"
+  | "university_canceled"
+  | "university_onboarding_d1"
+  | "university_onboarding_d3"
+  | "university_winback"
+  // Streak nudge ("you're about to break your streak"). Fired by the
+  // university:streak-nudge cron to active members who repped yesterday but not
+  // yet today. Commercial-classed storefront-side (suppression + unsubscribe).
+  | "university_streak_nudge"
+  // Community reply notification ("someone replied to your post"). The storefront
+  // Resend template is owner-gated (must ship CAN-SPAM compliant); until it
+  // exists this kind no-ops via the warn-and-continue callback, so the in-app
+  // unread badge works without it.
+  | "university_community_reply"
+  // Live-session lifecycle. Windowed reminder crons fan these out to RSVP'd
+  // members (T-24h / T-1h); the canceled notice is event-driven from the admin
+  // cancel route. Templates live storefront-side (owner-gated).
+  | "university_session_reminder_24h"
+  | "university_session_reminder_1h"
+  | "university_session_canceled";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;

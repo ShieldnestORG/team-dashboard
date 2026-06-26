@@ -239,6 +239,16 @@ export function createIntelRateLimit(db: Db): RequestHandler {
     }
 
     const remaining = Math.max(0, rateLimit - entry.count);
+    const resetSeconds = Math.max(0, Math.ceil((entry.resetAt - now) / 1000));
+    // This is the single authoritative limiter for /api/intel/* (the global
+    // express-rate-limit is excluded from these routes). Emit the IETF draft-6
+    // standard headers from the plan-aware value so the advertised limit matches
+    // what is actually enforced (free 60 → enterprise 5000 req/min per the PRD).
+    res.set("RateLimit-Limit", String(rateLimit));
+    res.set("RateLimit-Remaining", String(remaining));
+    res.set("RateLimit-Reset", String(resetSeconds));
+    res.set("RateLimit-Policy", `${rateLimit};w=${Math.round(WINDOW_MS / 1000)}`);
+    // Legacy aliases kept for existing clients — same value, so no conflict.
     res.set("X-RateLimit-Limit", String(rateLimit));
     res.set("X-RateLimit-Remaining", String(remaining));
     res.set("X-Intel-Plan", planSlug);

@@ -33,6 +33,11 @@ import {
 import { logger } from "../middleware/logger.js";
 import { ALL_ENGINES, type EngineAdapter } from "./watchtower-engines/index.js";
 import { runRankCheck, type RankEntry } from "./watchtower-rank.js";
+import {
+  judgeRunAccuracy,
+  type AccuracyAlert,
+  type JudgeCell,
+} from "./watchtower-accuracy-judge.js";
 
 // Hard ceiling per CLAUDE.md cost protection. A subscription's prompt_cap
 // can be set lower (default 25) but never higher than this.
@@ -120,6 +125,14 @@ export interface RunSummary {
    * existing (mention-only) runs keep their exact summary shape.
    */
   rank?: RankEntry[];
+  /**
+   * Hallucination / accuracy alerts (Watchtower accuracy judge, migration
+   * 0123). Present only for subscriptions that supplied `ground_truth` AND
+   * where the Haiku judge flagged at least one engine answer as contradicting
+   * it. Omitted entirely otherwise so existing runs keep their exact summary
+   * shape (same pattern as `rank`).
+   */
+  accuracyAlerts?: AccuracyAlert[];
 }
 
 export interface PerEngineOutput {
@@ -471,6 +484,25 @@ export async function runSubscription(
     }
   }
 
+  // Accuracy judge (migration 0123). Only when the subscription supplied
+  // ground truth. Judges each answered cell against that reference and flags
+  // contradictions. Fail-soft (judgeRunAccuracy never throws) and skipped
+  // entirely without ground truth — zero added cost for the common case.
+  let accuracyAlerts: AccuracyAlert[] | undefined;
+  if (sub.groundTruth && sub.groundTruth.trim()) {
+    const judgeCells: JudgeCell[] = outputs.map((o) => ({
+      engine: o.engine,
+      prompt: o.prompt,
+      answer: o.text,
+    }));
+    const alerts = await judgeRunAccuracy(
+      sub.brandName,
+      sub.groundTruth,
+      judgeCells,
+    );
+    if (alerts.length > 0) accuracyAlerts = alerts;
+  }
+
   // Resolve the active prompt version BEFORE opening the transaction so a
   // missing version row only logs a warn and doesn't roll back the run.
   // Tests can override via opts.promptVersionId to pin a specific id (or
@@ -497,6 +529,7 @@ export async function runSubscription(
 
     const summary = buildSummary(outputs, enginesUsed, skippedEngines);
     if (rankEntries) summary.rank = rankEntries;
+    if (accuracyAlerts?.length) summary.accuracyAlerts = accuracyAlerts;
 
     const [runRow] = await tx
       .insert(watchtowerRuns)

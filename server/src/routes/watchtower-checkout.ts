@@ -90,6 +90,10 @@ interface CheckoutBody {
   prompts?: unknown;
   email?: unknown;
   returnUrl?: unknown;
+  // Free-text "what's true about your brand" used by the weekly accuracy
+  // judge (migration 0123). Optional + backwards-compatible — absent bodies
+  // produce a byte-identical metadata object (no ground_truth key).
+  groundTruth?: unknown;
 }
 
 function asString(v: unknown): string {
@@ -119,6 +123,7 @@ export function watchtowerCheckoutRoutes(db: Db): Router {
     const domain = asString(body.domain);
     const email = asString(body.email).toLowerCase();
     const returnUrl = asString(body.returnUrl);
+    const groundTruth = asString(body.groundTruth);
     const prompts = asPrompts(body.prompts);
 
     // Validation
@@ -200,6 +205,11 @@ export function watchtowerCheckoutRoutes(db: Db): Router {
           // an empty array (handler logs the parse failure).
           prompts: JSON.stringify(prompts).slice(0, 490),
           customerEmail: email,
+          // Accuracy-judge ground truth (migration 0123). Stripe caps each
+          // metadata value at 500 chars; truncate to 490 like `prompts`. The
+          // judge tolerates a clipped reference. Only included when supplied
+          // so subscriptions without ground truth keep an unchanged payload.
+          ...(groundTruth ? { ground_truth: groundTruth.slice(0, 490) } : {}),
         },
       });
 

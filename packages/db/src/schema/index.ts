@@ -189,5 +189,61 @@ export type {
   WatchtowerPromptVersion,
   NewWatchtowerPromptVersion,
 } from "./watchtower.js";
+export {
+  universityMembers,
+  universitySubscriptions,
+  universityProgress,
+  universityNotes,
+  universityCancelFeedback,
+  universitySessions,
+  universitySessionRsvps,
+  universityReferralCodes,
+  universityReferrals,
+  universityCreditLedger,
+} from "./university.js";
+export type {
+  UniversityMember,
+  NewUniversityMember,
+  UniversitySubscription,
+  NewUniversitySubscription,
+  UniversityProgress,
+  NewUniversityProgress,
+  UniversityNote,
+  NewUniversityNote,
+  UniversityCancelFeedback,
+  NewUniversityCancelFeedback,
+  UniversitySession,
+  NewUniversitySession,
+  UniversitySessionRsvp,
+  NewUniversitySessionRsvp,
+  UniversityReferralCode,
+  NewUniversityReferralCode,
+  UniversityReferral,
+  NewUniversityReferral,
+  UniversityCreditLedgerRow,
+  NewUniversityCreditLedgerRow,
+} from "./university.js";
+export {
+  universityCommunityPosts,
+  universityCommunityComments,
+  universityCommunityReactions,
+  universityCommunityIdeaVotes,
+  universityCommunityReports,
+  universityCommunityNotifications,
+} from "./university_community.js";
+export type {
+  UniversityCommunityPost,
+  NewUniversityCommunityPost,
+  UniversityCommunityComment,
+  NewUniversityCommunityComment,
+  UniversityCommunityReaction,
+  NewUniversityCommunityReaction,
+  UniversityCommunityIdeaVote,
+  NewUniversityCommunityIdeaVote,
+  UniversityCommunityReport,
+  NewUniversityCommunityReport,
+  UniversityCommunityNotification,
+  NewUniversityCommunityNotification,
+} from "./university_community.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

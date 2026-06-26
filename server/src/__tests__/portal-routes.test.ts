@@ -12,6 +12,10 @@ const mockStripeRequest = vi.hoisted(() => vi.fn());
 vi.mock("../services/stripe-client.js", () => ({
   stripeRequest: mockStripeRequest,
   stripeConfigured: () => true,
+  // /stripe-portal now resolves a per-account key (University → Starwise).
+  // None of these tests exercise that path, but mock it to match the module
+  // surface the route imports.
+  universityStripeKey: () => "rk_test_university",
 }));
 
 import { portalRoutes } from "../routes/portal.js";
@@ -349,6 +353,6 @@ describe("portal routes", () => {
       .set("Cookie", sessionCookie as string);
     expect(me.status).toBe(200);
     expect(me.body.account.email).toBe("bob@example.com");
-    expect(me.body.entitlements).toEqual({ creditscore: null, bundles: [], watchtower: null });
+    expect(me.body.entitlements).toEqual({ creditscore: null, bundles: [], watchtower: null, university: null });
   });
 });

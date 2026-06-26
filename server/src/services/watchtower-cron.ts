@@ -181,6 +181,12 @@ async function sendDigest(
     // Present only for trackRank subscriptions (migration 0119); omitted
     // otherwise so the digest payload is unchanged for existing customers.
     ...(summary.rank && summary.rank.length > 0 ? { rank: summary.rank } : {}),
+    // Present only when the accuracy judge (migration 0123) flagged
+    // contradictions; omitted otherwise so the payload is unchanged for
+    // subscriptions without ground truth.
+    ...(summary.accuracyAlerts && summary.accuracyAlerts.length > 0
+      ? { accuracyAlerts: summary.accuracyAlerts }
+      : {}),
   };
 
   await sendWatchtowerDigest({

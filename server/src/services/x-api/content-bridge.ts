@@ -223,7 +223,6 @@ export async function generateTweetWithContext(
   topic: string,
   personality: string,
   companyId: string,
-  accountSlug = "tx_rizz",
 ): Promise<{ id: string; content: string; topic: string }> {
   const personaConfig = PERSONALITIES[personality];
   if (!personaConfig) {
@@ -241,18 +240,6 @@ export async function generateTweetWithContext(
   const systemPrompt = personaConfig.SYSTEM_PROMPT.replace("{CONTEXT}", intelContext);
   const tweetTypePrompt = personaConfig.CONTENT_TYPE_PROMPTS["tweet"] || "Write a single tweet under 280 characters.";
 
-  // Ecosystem cross-mentions are only auto-injected for the amplifier account (tx_rizz).
-  // coherencedaddy and tokns_fi post their own distinct streams without forced mentions.
-  const ecosystemMentionLines = accountSlug === "tx_rizz"
-    ? [
-        "When relevant, mention 1-2 ecosystem accounts WITH CONTEXT about what they do:",
-        "- @txEcosystem — the TX blockchain L1 (Cosmos SDK, IBC-enabled)",
-        "- @tokns_fi — TX portfolio tracker, NFT marketplace, staking, swaps at app.tokns.fi",
-        "- @txDevHub — TX developer tools, SDKs, and technical infrastructure built on TX",
-        "Reference what they're building, not just the handle. Don't force all three into one tweet.",
-      ]
-    : [];
-
   const fullPrompt = [
     systemPrompt,
     topTweets,
@@ -261,7 +248,11 @@ export async function generateTweetWithContext(
     tweetTypePrompt,
     "",
     `IMPORTANT: The tweet MUST be under ${MAX_TWEET_CHARS} characters. Count carefully.`,
-    ...ecosystemMentionLines,
+    "When relevant, mention 1-2 ecosystem accounts WITH CONTEXT about what they do:",
+    "- @txEcosystem — the TX blockchain L1 (Cosmos SDK, IBC-enabled)",
+    "- @tokns_fi — TX portfolio tracker, NFT marketplace, staking, swaps at app.tokns.fi",
+    "- @txDevHub — TX developer tools, SDKs, and technical infrastructure built on TX",
+    "Reference what they're building, not just the handle. Don't force all three into one tweet.",
     `Topic: ${topic}`,
   ].join("\n");
 
@@ -389,7 +380,7 @@ export async function autoGenerateAndQueue(
     resolvedTopic = await pickTopicForBridge(db);
   }
 
-  const result = await generateTweetWithContext(db, resolvedTopic, personality, companyId, accountSlug);
+  const result = await generateTweetWithContext(db, resolvedTopic, personality, companyId);
 
   // Auto-post if X API budget allows
   const budget = canUseDailyBudget("post");
@@ -419,202 +410,6 @@ export async function autoGenerateAndQueue(
     logger.info(
       { contentId: result.id, personality, remaining: budget.remaining },
       "content-bridge: daily budget exhausted — tweet saved as draft",
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Thread generation + posting (multi-part). Mirrors the single-tweet path
-// above without changing it. Each part is <= MAX_TWEET_CHARS.
-// ---------------------------------------------------------------------------
-
-/** Delimiter the LLM is asked to place between thread parts. */
-const THREAD_PART_DELIMITER = "---";
-
-/**
- * Generate an N-part thread using Ollama with the same embedding-enriched
- * context + engagement-feedback signals as generateTweetWithContext.
- * Returns the parts as a string[] (root first), each <= MAX_TWEET_CHARS.
- * Does NOT store anything — queueAndPostThread handles persistence/posting.
- */
-export async function generateThreadWithContext(
-  db: Db,
-  topic: string,
-  personality: string,
-  companyId: string,
-  parts = 3,
-  accountSlug = "tx_rizz",
-): Promise<string[]> {
-  const personaConfig = PERSONALITIES[personality];
-  if (!personaConfig) {
-    throw new Error(`Unknown personality: ${personality}. Valid: ${Object.keys(PERSONALITIES).join(", ")}`);
-  }
-
-  // Gather all context in parallel (same signals as the single-tweet path)
-  const [intelContext, topTweets, feedbackCtx] = await Promise.all([
-    fetchQualityContextSafe(db, topic),
-    fetchTopPerformingTweets(db, companyId),
-    buildFeedbackContext(db, companyId, personality),
-  ]);
-
-  const systemPrompt = personaConfig.SYSTEM_PROMPT.replace("{CONTEXT}", intelContext);
-
-  // Ecosystem cross-mentions are only auto-injected for the amplifier (tx_rizz).
-  const ecosystemMentionLines = accountSlug === "tx_rizz"
-    ? [
-        "When relevant, mention 1-2 ecosystem accounts WITH CONTEXT about what they do:",
-        "- @txEcosystem — the TX blockchain L1 (Cosmos SDK, IBC-enabled)",
-        "- @tokns_fi — TX portfolio tracker, NFT marketplace, staking, swaps at app.tokns.fi",
-        "- @txDevHub — TX developer tools, SDKs, and technical infrastructure built on TX",
-        "Reference what they're building, not just the handle. Don't force all three into one tweet.",
-      ]
-    : [];
-
-  const threadPrompt = [
-    systemPrompt,
-    topTweets,
-    feedbackCtx,
-    "",
-    `Write a ${parts}-part X thread on the topic below.`,
-    `Each part MUST be under ${MAX_TWEET_CHARS} characters. Count carefully.`,
-    `Separate each part with a line containing only "${THREAD_PART_DELIMITER}".`,
-    "Part 1 is the hook. Build a coherent narrative across the parts.",
-    "Output ONLY the thread parts and delimiters — no numbering, no preamble, no quotes.",
-    ...ecosystemMentionLines,
-    `Topic: ${topic}`,
-  ].join("\n");
-
-  const raw = await callOllama(threadPrompt);
-
-  // Split on the delimiter, trim, drop empties. Fall back to the whole output
-  // as a single part if the model ignored the delimiter.
-  let rawParts = raw
-    .split(new RegExp(`^\\s*${THREAD_PART_DELIMITER}\\s*$`, "m"))
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-  if (rawParts.length === 0) {
-    rawParts = [raw.trim()];
-  }
-
-  // Enforce the char limit per part (same enforcement used for single tweets).
-  const enforced: string[] = [];
-  for (let i = 0; i < rawParts.length; i++) {
-    const part = await enforceCharLimit(
-      rawParts[i],
-      MAX_TWEET_CHARS,
-      callOllama,
-      (attempt) =>
-        `Rewrite the following X thread part to be ${MAX_TWEET_CHARS} characters or fewer, including spaces and emojis (attempt ${attempt}). Keep the meaning. Output ONLY the text — no preamble, no quotes.\n\n${rawParts[i]}`,
-      { personalityId: personality, contentType: "thread" },
-    );
-    if (part.trim().length > 0) {
-      enforced.push(part);
-    }
-  }
-
-  logger.info(
-    { personality, topic, parts: enforced.length, accountSlug },
-    "content-bridge: thread generated with enriched context",
-  );
-
-  return enforced;
-}
-
-/**
- * Generate a thread and post it to X as a connected reply-chain.
- * Mirrors autoGenerateAndQueue but for multi-part threads. Stores each posted
- * part as a published content_item and dispatches via client.postThread().
- */
-export async function queueAndPostThread(
-  db: Db,
-  personality: string,
-  companyId: string,
-  topic?: string,
-  accountSlug = "tx_rizz",
-  parts = 3,
-): Promise<void> {
-  // Check daily cap (a thread part counts the same as a tweet toward the cap)
-  const todayCount = await countTodaysTweets(db, companyId);
-  if (todayCount >= MAX_TWEETS_PER_DAY) {
-    logger.info(
-      { todayCount, maxPerDay: MAX_TWEETS_PER_DAY },
-      "content-bridge: daily tweet cap reached, skipping thread",
-    );
-    return;
-  }
-
-  // Pick topic if not provided
-  let resolvedTopic = topic;
-  if (!resolvedTopic) {
-    const { pickTopicForBridge } = await import("./content-bridge-topics.js");
-    resolvedTopic = await pickTopicForBridge(db);
-  }
-
-  const threadParts = await generateThreadWithContext(
-    db,
-    resolvedTopic,
-    personality,
-    companyId,
-    parts,
-    accountSlug,
-  );
-  if (threadParts.length === 0) {
-    logger.warn({ personality, topic: resolvedTopic }, "content-bridge: thread generation produced no parts");
-    return;
-  }
-
-  // Persist each part as a draft content_item before posting.
-  const contentIds: string[] = [];
-  for (const part of threadParts) {
-    const contentId = randomUUID();
-    contentIds.push(contentId);
-    await db.insert(contentItems).values({
-      id: contentId,
-      companyId,
-      personalityId: personality,
-      contentType: "thread",
-      platform: "twitter",
-      status: "draft",
-      content: part,
-      topic: resolvedTopic,
-      contextQuery: resolvedTopic,
-      model: OLLAMA_MODEL,
-      charCount: part.length,
-      charLimit: MAX_TWEET_CHARS,
-      reviewStatus: "pending",
-    });
-  }
-
-  // Post the thread if X API budget allows.
-  const budget = canUseDailyBudget("post");
-  if (budget.allowed) {
-    try {
-      const client = new XApiClient(db, companyId, accountSlug);
-      const tweetIds = await client.postThread(threadParts);
-
-      // Mark each persisted part as published.
-      const now = new Date();
-      for (const id of contentIds) {
-        await db
-          .update(contentItems)
-          .set({ status: "published", publishedAt: now, updatedAt: now })
-          .where(eq(contentItems.id, id));
-      }
-
-      logger.info(
-        { personality, topic: resolvedTopic, parts: threadParts.length, rootTweetId: tweetIds[0], accountSlug },
-        "content-bridge: thread posted to X",
-      );
-    } catch (postErr) {
-      logger.warn(
-        { err: postErr, personality, parts: threadParts.length },
-        "content-bridge: failed to post thread — parts stay as drafts",
-      );
-    }
-  } else {
-    logger.info(
-      { personality, parts: threadParts.length, remaining: budget.remaining },
-      "content-bridge: daily budget exhausted — thread saved as drafts",
     );
   }
 }

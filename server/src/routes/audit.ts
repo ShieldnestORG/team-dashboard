@@ -77,7 +77,29 @@ export type AuditResult = {
   url: string;
   score: number;
   breakdown: {
-    aiAccess: { score: number; max: 25; issues: string[] };
+    aiAccess: {
+      score: number;
+      max: 25;
+      issues: string[];
+      // Live per-bot reachability (fetched with each bot's real UA), NOT just
+      // robots.txt parsing. Optional + additive — absent on older deploys and
+      // on cached payloads that predate this feature, so the storefront type
+      // marks it optional too. Distinct from the robots.txt-derived
+      // `issues`/`score` above; a live edge-block can only ever ADD issues,
+      // it never raises the numeric score.
+      liveAccess?: {
+        bots: Array<{
+          name: "GPTBot" | "ClaudeBot" | "PerplexityBot" | "Google-Extended";
+          ua: string; // exact User-Agent string sent
+          status: number | null; // HTTP status from the live fetch; null = network error/timeout
+          reachable: boolean; // 2xx/3xx AND not a known block page
+          blocked: boolean; // robots.txt OR live 403/451 OR Cloudflare AI block
+          blockReason: "robots" | "http_403" | "http_451" | "cloudflare_ai" | "timeout" | null;
+        }>;
+        cloudflareAiBlock: boolean; // true if Cloudflare default "Block AI bots" challenge detected
+        checkedAt: string; // ISO timestamp of the live probe
+      };
+    };
     structuredData: { score: number; max: 25; schemas: string[]; issues: string[] };
     contentQuality: { score: number; max: 20; issues: string[] };
     freshness: { score: number; max: 15; issues: string[] };
@@ -337,6 +359,188 @@ async function fcSearch(
     .map((d) => ({ url: d.url!, title: d.title ?? d.url! }));
 }
 
+// ── Live crawler-access probe ───────────────────────────────────────────────
+//
+// Fetches the target URL with each AI crawler's REAL User-Agent string and
+// records whether the bot is actually reachable at the edge — distinct from
+// what robots.txt *claims*. A site can return Allow in robots.txt yet have a
+// Cloudflare "Block AI bots" rule that 403s the same UA, or vice-versa. This
+// surfaces that contradiction.
+//
+// Design constraints (see contract risks):
+//  - SSRF-safe: re-validate the hostname against PRIVATE_IP_RE before fetching,
+//    even though the job URL was already vetted by validateAuditUrl upstream.
+//  - Bounded latency: all probes run in parallel via Promise.allSettled with a
+//    short per-fetch AbortSignal timeout, so a hung site adds at most one
+//    timeout window to the audit (not 4×).
+//  - Fail-soft: any fetch error => { reachable:false, status:null,
+//    blockReason:"timeout" }. This function NEVER throws; a probe failure must
+//    not abort the SSE stream or change the robots.txt-derived score.
+
+// The scoring set, with each bot's canonical live User-Agent. Google-Extended
+// is the AI-training opt-out UA token (no standalone live UA — it's a robots.txt
+// directive only), so we probe with the documented Google-Extended UA string
+// recommended for testing; a block here still reflects edge policy.
+const LIVE_BOT_UAS: Array<{
+  name: "GPTBot" | "ClaudeBot" | "PerplexityBot" | "Google-Extended";
+  ua: string;
+}> = [
+  {
+    name: "GPTBot",
+    ua: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot",
+  },
+  {
+    name: "ClaudeBot",
+    ua: "Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)",
+  },
+  {
+    name: "PerplexityBot",
+    ua: "Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)",
+  },
+  {
+    name: "Google-Extended",
+    ua: "Mozilla/5.0 (compatible; Google-Extended/1.0; +https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers)",
+  },
+];
+
+const LIVE_PROBE_TIMEOUT_MS = 8_000;
+
+export type LiveBotAccess = {
+  name: "GPTBot" | "ClaudeBot" | "PerplexityBot" | "Google-Extended";
+  ua: string;
+  status: number | null;
+  reachable: boolean;
+  blocked: boolean;
+  blockReason: "robots" | "http_403" | "http_451" | "cloudflare_ai" | "timeout" | null;
+};
+
+export type LiveAccessResult = {
+  bots: LiveBotAccess[];
+  cloudflareAiBlock: boolean;
+  checkedAt: string;
+};
+
+// Heuristic Cloudflare default-AI-block detection. There is no definitive
+// signal, so this is intentionally conservative and additive-only: it informs
+// the `cloudflareAiBlock` boolean and an issue string, but never the score.
+// Signals: the `cf-mitigated` header (Cloudflare sets this to "challenge" when
+// a managed/AI-bot challenge fires) + a Cloudflare-served challenge/forbidden
+// status (403/503 with `server: cloudflare`).
+function detectCloudflareAiBlock(headers: Headers, status: number): boolean {
+  const server = (headers.get("server") ?? "").toLowerCase();
+  const isCloudflare = server.includes("cloudflare") || headers.has("cf-ray");
+  if (!isCloudflare) return false;
+  // cf-mitigated: "challenge" is Cloudflare's explicit "we challenged this
+  // request" signal — the strongest indicator of a managed/AI-bot block.
+  const mitigated = (headers.get("cf-mitigated") ?? "").toLowerCase();
+  if (mitigated.includes("challenge")) return true;
+  // A Cloudflare-origin 403/503 to a spoofed AI UA is the classic "Block AI
+  // bots" managed-rule response.
+  if (status === 403 || status === 503) return true;
+  return false;
+}
+
+// Probe a single bot UA against the target URL. Never throws.
+async function probeBotLive(
+  url: string,
+  bot: { name: LiveBotAccess["name"]; ua: string },
+  robotsBlocked: boolean,
+): Promise<LiveBotAccess> {
+  // If robots.txt already disallows this bot, that's the authoritative block —
+  // record it without a live fetch (and still attempt the fetch below only to
+  // detect edge behaviour). robots is the highest-priority blockReason.
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": bot.ua,
+        Accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(LIVE_PROBE_TIMEOUT_MS),
+    });
+  } catch {
+    // Network error / timeout / abort → unreachable, fail-soft.
+    return {
+      name: bot.name,
+      ua: bot.ua,
+      status: null,
+      reachable: false,
+      blocked: robotsBlocked,
+      blockReason: robotsBlocked ? "robots" : "timeout",
+    };
+  }
+
+  const status = res.status;
+  const cfBlock = detectCloudflareAiBlock(res.headers, status);
+  const httpBlocked = status === 403 || status === 451;
+  // 2xx/3xx and not an edge block → reachable.
+  const reachable = status >= 200 && status < 400 && !cfBlock;
+  const blocked = robotsBlocked || httpBlocked || cfBlock;
+
+  // blockReason priority: robots (policy) > cloudflare_ai (edge guess) >
+  // http_403/451 (explicit edge status). null when not blocked.
+  let blockReason: LiveBotAccess["blockReason"] = null;
+  if (robotsBlocked) blockReason = "robots";
+  else if (cfBlock) blockReason = "cloudflare_ai";
+  else if (status === 403) blockReason = "http_403";
+  else if (status === 451) blockReason = "http_451";
+
+  return {
+    name: bot.name,
+    ua: bot.ua,
+    status,
+    reachable,
+    blocked,
+    blockReason,
+  };
+}
+
+// Run all bot probes in parallel and aggregate. `robotsBlockedFor` maps a bot
+// name → whether robots.txt disallows it (computed from the same parse the
+// score uses). Never throws — returns null only if the URL is unsafe.
+async function runLiveCrawlerCheck(
+  url: string,
+  robotsBlockedFor: (name: LiveBotAccess["name"]) => boolean,
+): Promise<LiveAccessResult | null> {
+  // Defense-in-depth: the job URL was vetted by validateAuditUrl, but re-check
+  // here so this helper is safe in isolation.
+  try {
+    const parsed = new URL(url);
+    if (PRIVATE_IP_RE.test(parsed.hostname)) return null;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  } catch {
+    return null;
+  }
+
+  const settled = await Promise.allSettled(
+    LIVE_BOT_UAS.map((bot) => probeBotLive(url, bot, robotsBlockedFor(bot.name))),
+  );
+
+  const bots: LiveBotAccess[] = settled.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    // probeBotLive never rejects, but stay fail-soft if it ever does.
+    const bot = LIVE_BOT_UAS[i]!;
+    return {
+      name: bot.name,
+      ua: bot.ua,
+      status: null,
+      reachable: false,
+      blocked: robotsBlockedFor(bot.name),
+      blockReason: robotsBlockedFor(bot.name) ? "robots" : "timeout",
+    };
+  });
+
+  const cloudflareAiBlock = bots.some((b) => b.blockReason === "cloudflare_ai");
+
+  return {
+    bots,
+    cloudflareAiBlock,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
 // ── Audit pipeline ────────────────────────────────────────────────────────────
 
 export async function runAudit(
@@ -380,22 +584,27 @@ export async function runAudit(
   const aiAccessIssues: string[] = [];
   let aiAccessScore = 0;
 
-  if (robotsText) {
-    const lines = robotsText.split("\n").map((l) => l.trim().toLowerCase());
-    const isDisallowed = (agentPattern: RegExp): boolean => {
-      let inBlock = false;
-      for (const line of lines) {
-        if (line.startsWith("user-agent:")) {
-          const agent = line.slice("user-agent:".length).trim();
-          inBlock = agent === "*" || agentPattern.test(agent);
-        }
-        if (inBlock && line.startsWith("disallow:") && line.slice("disallow:".length).trim() === "/") {
-          return true;
-        }
+  // robots.txt disallow lookup, hoisted out of the scoring loop so the live
+  // crawler probe below can reuse it. Returns false when robots.txt is absent.
+  const robotsLines = robotsText
+    ? robotsText.split("\n").map((l) => l.trim().toLowerCase())
+    : [];
+  const isDisallowed = (agentPattern: RegExp): boolean => {
+    if (!robotsText) return false;
+    let inBlock = false;
+    for (const line of robotsLines) {
+      if (line.startsWith("user-agent:")) {
+        const agent = line.slice("user-agent:".length).trim();
+        inBlock = agent === "*" || agentPattern.test(agent);
       }
-      return false;
-    };
+      if (inBlock && line.startsWith("disallow:") && line.slice("disallow:".length).trim() === "/") {
+        return true;
+      }
+    }
+    return false;
+  };
 
+  if (robotsText) {
     const scoringBots = ["GPTBot", "ClaudeBot", "PerplexityBot", "anthropic-ai", "Googlebot"];
     for (const bot of botsToCheck) {
       const blocked = isDisallowed(bot.pattern);
@@ -409,6 +618,62 @@ export async function runAudit(
     aiAccessScore = 25;
   }
   aiAccessScore = Math.min(aiAccessScore, 25);
+
+  // ── Live per-bot reachability probe ──────────────────────────────────────
+  // Fetch the target with each scoring bot's REAL User-Agent to see whether the
+  // edge (Cloudflare, WAF, 403/451) blocks a bot that robots.txt *allows* — and
+  // vice-versa. Bounded (parallel + 8s/probe timeout) and fail-soft: a probe
+  // failure yields reachable:false and never aborts the audit. The robots.txt
+  // patterns for the live scoring set; Google-Extended is the AI opt-out token.
+  const liveRobotsPatterns: Record<LiveBotAccess["name"], RegExp> = {
+    GPTBot: /GPTBot/i,
+    ClaudeBot: /ClaudeBot/i,
+    PerplexityBot: /PerplexityBot/i,
+    "Google-Extended": /Google-Extended/i,
+  };
+  let liveAccess: LiveAccessResult | null = null;
+  try {
+    liveAccess = await runLiveCrawlerCheck(url, (name) =>
+      isDisallowed(liveRobotsPatterns[name]),
+    );
+  } catch (err) {
+    // runLiveCrawlerCheck is designed never to throw; log + continue if it does.
+    logger.warn(
+      { url, errorMessage: (err as Error).message },
+      "audit: live crawler check threw — falling back to robots-only aiAccess",
+    );
+    liveAccess = null;
+  }
+
+  if (liveAccess) {
+    for (const bot of liveAccess.bots) {
+      // Surface live EDGE blocks that robots.txt did not already report.
+      // robots-derived blocks are handled by the scoring loop above.
+      if (bot.blocked && bot.blockReason !== "robots") {
+        if (bot.blockReason === "http_403") {
+          aiAccessIssues.push(`${bot.name} blocked at edge (HTTP 403)`);
+        } else if (bot.blockReason === "http_451") {
+          aiAccessIssues.push(`${bot.name} blocked at edge (HTTP 451)`);
+        } else if (bot.blockReason === "cloudflare_ai") {
+          aiAccessIssues.push(`${bot.name} blocked by Cloudflare AI bot rule`);
+        }
+        // A live edge-block that contradicts a robots.txt allow: dock the 5
+        // points robots.txt awarded for this bot, since it isn't truly
+        // reachable. Floor at 0. (cloudflare_ai is a heuristic — handled below
+        // as the score adjustment is still gated on an explicit live block.)
+        if (
+          !isDisallowed(liveRobotsPatterns[bot.name]) &&
+          (bot.blockReason === "http_403" || bot.blockReason === "http_451")
+        ) {
+          aiAccessScore = Math.max(0, aiAccessScore - 5);
+        }
+      }
+    }
+    if (liveAccess.cloudflareAiBlock) {
+      aiAccessIssues.push("Cloudflare appears to be blocking AI bots");
+    }
+  }
+  aiAccessScore = Math.min(Math.max(aiAccessScore, 0), 25);
 
   const aiDetail =
     aiAccessIssues.length === 0 ? "All AI bots allowed" : aiAccessIssues.join(", ");
@@ -818,7 +1083,14 @@ export async function runAudit(
     url,
     score: totalScore,
     breakdown: {
-      aiAccess: { score: aiAccessScore, max: 25, issues: aiAccessIssues },
+      aiAccess: {
+        score: aiAccessScore,
+        max: 25,
+        issues: aiAccessIssues,
+        // Additive: present only when the live probe ran. Older deploys /
+        // cached payloads omit it, and the storefront type marks it optional.
+        ...(liveAccess ? { liveAccess } : {}),
+      },
       structuredData: { score: structuredDataScore, max: 25, schemas: foundSchemas, issues: structuredDataIssues },
       contentQuality: { score: contentScore, max: 20, issues: contentIssues },
       freshness: { score: freshnessScore, max: 15, issues: freshnessIssues },

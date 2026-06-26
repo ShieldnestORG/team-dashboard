@@ -22,6 +22,7 @@
 |---|---|---|---|---|---|
 | llms.txt generator | $19 one-time | _pending — see lookup_key_ | one-time | llms-txt-generator | `server/src/services/llms-txt-generator.ts` |
 | Watchtower | $29/mo | `price_1TVOu6QvkbvTR7Og3xrx0GsG` (lookup_key `watchtower_monthly`, prod `prod_UUNfgdeWldCIQS`) | monthly | watchtower | `server/src/services/watchtower-monitor.ts`, `server/src/services/watchtower-cron.ts` |
+| Coherent Ones University | $50/mo | _pending — lookup_key `university_monthly` (run `scripts/setup-university-stripe-product.ts`)_ | monthly | university | `server/src/services/university-stripe-handler.ts`, `server/src/routes/university-checkout.ts` |
 
 ## llms.txt generator — $19 one-time
 
@@ -86,6 +87,49 @@ Brand-mention monitor. See [docs/products/watchtower.md](../products/watchtower.
   in `server/src/services/watchtower-stripe-handler.ts`. All idempotent.
 - **Fulfillment:** monthly bill triggers no immediate fulfillment;
   weekly cron `watchtower:weekly-runs` (Mon 09:00 UTC) does the work.
+
+## Coherent Ones University — $50/mo
+
+Monthly membership in the Coherence Daddy ecosystem. A University member is its
+**own member class** (`university_members`), not just an access flag — the
+member entity is real, while login reuses the shared magic-link
+`customer_accounts` identity and the existing Stripe pipeline.
+
+- **Stripe product name:** `Coherent Ones University`
+- **Price:** $50 USD recurring monthly (unit_amount `5000`)
+- **Price lookup_key:** `university_monthly` (preferred resolution path)
+- **Price ID env var (fallback):** `UNIVERSITY_STRIPE_PRICE_ID`
+- **Status:** ⛔ Product + Price **not yet created**. Create via
+  `scripts/setup-university-stripe-product.ts` (idempotent; uses the CD
+  account `STRIPE_SECRET_KEY` — see runbook Gotcha #1 about the CLI account
+  mismatch). Backend resolves by lookup_key, so `UNIVERSITY_STRIPE_PRICE_ID`
+  stays unset once the lookup_key path is live.
+- **Post-checkout flow:** success → `https://app.coherencedaddy.com/university?status=success&session_id=…&product=university`
+  (customer portal — surfaces the new membership). Cancel →
+  `https://coherencedaddy.com/university?status=cancelled` (storefront signup).
+  Override either via `UNIVERSITY_SUCCESS_URL` / `UNIVERSITY_CANCEL_URL`.
+- **Webhook secret env var:** `STRIPE_WEBHOOK_SECRET_UNIVERSITY`
+  (falls back to global `STRIPE_WEBHOOK_SECRET` if unset)
+- **Webhook endpoint:** `POST /api/university/webhook`
+- **Checkout endpoint:** `POST /api/university/checkout`
+  Body: `{ email: string, displayName?: string, returnUrl?: string }`
+- **Webhook events handled:**
+  - `checkout.session.completed` → chains `linkStripeCustomerToAccount`,
+    upserts `university_subscriptions` (idempotent on `stripe_subscription_id`)
+    + upserts `university_members` (status active, joined_at set)
+  - `customer.subscription.updated` → mirror `status` onto BOTH rows:
+    `active|trialing → active`, `past_due|unpaid → past_due`,
+    `canceled|incomplete_expired → cancelled`. University has **no paused
+    member state**, so Stripe `paused` is a deliberate no-op.
+  - `customer.subscription.deleted` → set `status='cancelled'` on both rows
+    (rows preserved for history)
+- **Backend handlers:** `handleUniversityCheckout`,
+  `handleUniversitySubscriptionUpdated`, `handleUniversitySubscriptionDeleted`
+  in `server/src/services/university-stripe-handler.ts`. All idempotent.
+- **Portal entitlement:** detected in `getAccountWithEntitlements`
+  (`server/src/services/customer-portal.ts`) by the newest
+  `university_members` row matching the account email (or account_id) with
+  status IN ('active','past_due').
 
 ## Adding a new product
 

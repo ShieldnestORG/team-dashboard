@@ -56,6 +56,23 @@ export interface WatchtowerWeeklyDigestData {
     matchedUrl: string | null;
     topUrl: string | null;
   }>;
+  /**
+   * Hallucination / accuracy alerts (Watchtower accuracy judge, 2026-06).
+   * Present only when the subscription supplied ground-truth text AND the
+   * Haiku judge flagged at least one engine answer as contradicting it.
+   * Optional + backward-compatible: absent for subscriptions without ground
+   * truth and for older team-dashboard deploys that predate the feature.
+   * Rendered as an "Accuracy alerts" section only when this is a non-empty
+   * array; no-ops entirely when absent or empty (same guard as rankSection /
+   * competitorsSection).
+   */
+  accuracyAlerts?: Array<{
+    engine: string            // EngineId: chatgpt | claude | perplexity | gemini | grok
+    prompt: string            // the prompt whose answer contradicted ground truth
+    claim: string             // the specific incorrect statement the judge extracted
+    correction: string        // what the ground truth actually says
+    severity: "high" | "low"  // judge-assigned; high = factual contradiction, low = misleading/incomplete
+  }>;
   // TODO(stream-f): when Agent E ships the `watchtower_prompt_versions`
   // table (PR pending), add an optional `promptVersionChange` field here
   // and inline a "prompt set changed since last run" notice in the

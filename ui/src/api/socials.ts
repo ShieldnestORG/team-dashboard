@@ -47,7 +47,7 @@ export interface SocialPost {
   altTexts: string[];
   replyToUrl: string | null;
   scheduledAt: string;
-  status: "scheduled" | "publishing" | "posted" | "failed" | "canceled";
+  status: "scheduled" | "pending_approval" | "publishing" | "posted" | "failed" | "canceled";
   attempts: number;
   maxAttempts: number;
   postedUrl: string | null;
@@ -58,6 +58,9 @@ export interface SocialPost {
   platform: string;
   brand: string;
   handle: string;
+  createdByUserId?: string | null;
+  authorEmail?: string | null;
+  authorName?: string | null;
 }
 
 export interface NewSocialPost {
@@ -142,7 +145,9 @@ export const socialsApi = {
     return api.get<{ posts: SocialPost[] }>(`/socials/posts${qs ? `?${qs}` : ""}`);
   },
   createPost: (data: NewSocialPost) =>
-    api.post<{ post: SocialPost }>("/socials/posts", data),
+    api.post<{ post: SocialPost; pendingApproval: boolean }>("/socials/posts", data),
+  approvePost: (id: string, body?: { scheduledAt?: string }) =>
+    api.post<{ post: SocialPost }>(`/socials/posts/${id}/approve`, body ?? {}),
   cancelPost: (id: string) => api.delete<{ ok: true }>(`/socials/posts/${id}`),
   relayNow: () => api.post<RelayerTickResult>("/socials/posts/relay-now", {}),
   listPlatformCaps: () =>

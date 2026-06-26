@@ -37,11 +37,14 @@ export function SocialsCompose() {
 
   const createMut = useMutation({
     mutationFn: socialsApi.createPost,
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["socials", "posts"] });
       setText("");
       setMediaUrlsText("");
-      setFeedback({ kind: "ok", msg: "Post queued" });
+      setFeedback({
+        kind: "ok",
+        msg: res.pendingApproval ? "Submitted for approval" : "Post queued",
+      });
     },
     onError: (err) => {
       setFeedback({ kind: "err", msg: err instanceof Error ? err.message : String(err) });

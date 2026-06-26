@@ -82,7 +82,21 @@ export async function startServer(): Promise<StartedServer> {
   if (process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE === undefined) {
     process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
   }
-  
+
+  // Fail loud: authenticated (production) mode must run against an explicit
+  // external Postgres. Without DATABASE_URL the server would silently fall back
+  // to an ephemeral embedded Postgres — meaning a deployed box could come up
+  // healthy on a throwaway database (silent data loss / wrong DB). Refuse to
+  // start instead. Embedded Postgres remains the convenience default only for
+  // local_trusted dev.
+  if (config.deploymentMode === "authenticated" && !config.databaseUrl) {
+    throw new Error(
+      "authenticated mode requires DATABASE_URL (external Postgres); refusing to " +
+        "start on ephemeral embedded Postgres. Set DATABASE_URL to your managed " +
+        "Postgres connection string.",
+    );
+  }
+
   type MigrationSummary =
     | "skipped"
     | "already applied"

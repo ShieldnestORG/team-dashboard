@@ -73,7 +73,7 @@ async function saveTweetAsIntel(
         ${`@${tweet.author_username}: ${tweet.text.slice(0, 120)}`},
         ${JSON.stringify({ text: tweet.text, author: tweet.author_username, tweet_id: tweet.id })},
         ${`https://x.com/${tweet.author_username}/status/${tweet.id}`},
-        ${tweet.created_at ? new Date(tweet.created_at) : new Date()}
+        ${tweet.created_at ? new Date(tweet.created_at).toISOString() : new Date().toISOString()}
       )
       ON CONFLICT DO NOTHING
     `);

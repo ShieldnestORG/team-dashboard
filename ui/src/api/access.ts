@@ -92,7 +92,18 @@ type CompanyInviteCreated = {
   inviteMessage?: string | null;
 };
 
+type BoardAccessSnapshot = {
+  user: { id: string; name: string | null; email: string | null };
+  userId: string;
+  isInstanceAdmin: boolean;
+  companyIds: string[];
+  source: string;
+  keyId: string | null;
+};
+
 export const accessApi = {
+  getBoardAccess: () => api.get<BoardAccessSnapshot>("/cli-auth/me"),
+
   createCompanyInvite: (
     companyId: string,
     input: {

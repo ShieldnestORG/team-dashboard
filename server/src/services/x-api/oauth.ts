@@ -41,7 +41,6 @@ export interface XCredentials {
  * Returns the X OAuth credentials for the given account slug.
  * - 'tx_rizz'       → X_CLIENT_ID_TX / X_CLIENT_SECRET_TX / X_CALLBACK_URL_TX
  * - 'coherencedaddy' → X_CLIENT_ID_CD / X_CLIENT_SECRET_CD / X_CALLBACK_URL_CD
- * - 'tokns_fi'      → X_CLIENT_ID_TOKNS / X_CLIENT_SECRET_TOKNS / X_CALLBACK_URL_TOKNS
  * - anything else   → X_CLIENT_ID / X_CLIENT_SECRET / X_CALLBACK_URL
  */
 export function getXCredentials(accountSlug?: string): XCredentials {
@@ -57,13 +56,6 @@ export function getXCredentials(accountSlug?: string): XCredentials {
       clientId: process.env.X_CLIENT_ID_CD || X_CLIENT_ID,
       clientSecret: process.env.X_CLIENT_SECRET_CD || X_CLIENT_SECRET,
       callbackUrl: process.env.X_CALLBACK_URL_CD || X_CALLBACK_URL,
-    };
-  }
-  if (accountSlug === "tokns_fi") {
-    return {
-      clientId: process.env.X_CLIENT_ID_TOKNS || X_CLIENT_ID,
-      clientSecret: process.env.X_CLIENT_SECRET_TOKNS || X_CLIENT_SECRET,
-      callbackUrl: process.env.X_CALLBACK_URL_TOKNS || X_CALLBACK_URL,
     };
   }
   return {

@@ -52,6 +52,12 @@ export const watchtowerSubscriptions = pgTable("watchtower_subscriptions", {
   // of keyword queries; when null the run falls back to `prompts`.
   trackRank: boolean("track_rank").notNull().default(false),
   rankQueries: jsonb("rank_queries"),
+  // Optional free-text "what's true about this brand" (migration 0123).
+  // When set, the weekly run fires a cheap Haiku accuracy judge that compares
+  // each engine answer against this reference and flags factual
+  // contradictions (see watchtower-accuracy-judge.ts). Nullable + additive:
+  // subscriptions without ground truth skip the judge entirely.
+  groundTruth: text("ground_truth"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

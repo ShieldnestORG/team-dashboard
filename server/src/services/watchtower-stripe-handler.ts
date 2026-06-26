@@ -119,6 +119,10 @@ export async function handleWatchtowerCheckout(
 
   const brandName = metadata.brandName?.trim();
   const domain = metadata.domain?.trim() || null;
+  // Accuracy-judge ground truth (migration 0123). Forwarded from checkout
+  // metadata (truncated to 490 chars there). Null when absent so existing
+  // subscriptions and ground-truth-less checkouts stay untouched.
+  const groundTruth = metadata.ground_truth?.trim() || null;
   const stripeCustomerId =
     typeof session.customer === "string" ? session.customer : null;
   const stripeSubscriptionId =
@@ -197,6 +201,7 @@ export async function handleWatchtowerCheckout(
         brandName,
         domain,
         prompts,
+        groundTruth,
         stripeCustomerId,
         email,
         accountId,
@@ -211,6 +216,7 @@ export async function handleWatchtowerCheckout(
         brandName,
         domain,
         prompts,
+        groundTruth,
         status: "active",
         frequency: "weekly",
         plan: "watchtower_monthly",

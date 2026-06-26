@@ -1,0 +1,1 @@
+ALTER TABLE "social_posts" ALTER COLUMN "created_by_user_id" SET DATA TYPE text;

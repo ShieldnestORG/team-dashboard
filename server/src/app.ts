@@ -7,7 +7,7 @@ import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
-import { globalRateLimit } from "./middleware/global-rate-limit.js";
+import { authRateLimit, globalRateLimit } from "./middleware/global-rate-limit.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
@@ -87,11 +87,16 @@ import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { socialsRoutes } from "./routes/socials.js";
 import { launchMonitorRoutes } from "./routes/launch-monitor.js";
 import { watchtowerRoutes } from "./routes/watchtower.js";
+import { watchtowerExportRoutes } from "./routes/watchtower-export.js";
 import {
   watchtowerCheckoutRoutes,
   watchtowerWebhookRouter,
 } from "./routes/watchtower-checkout.js";
 import { watchtowerAdminRoutes } from "./routes/watchtower-admin.js";
+import {
+  universityCheckoutRoutes,
+  universityWebhookRouter,
+} from "./routes/university-checkout.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -144,12 +149,14 @@ import { startWatchtowerCron } from "./services/watchtower-cron.js";
 import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cron.js";
 import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
+import { startUniversityCrons } from "./services/university-crons.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { portalRoutes } from "./routes/portal.js";
 import { portalAgentsRoutes } from "./routes/portal-agents.js";
 import { portalUpsellRoutes } from "./routes/portal-upsell.js";
+import { universityReferralRoutes } from "./routes/university-referrals.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -183,6 +190,17 @@ export async function createApp(
 ) {
   const app = express();
 
+  // Behind a reverse proxy (nginx), Express must trust the proxy hop(s) so
+  // req.ip reflects the real client — otherwise the auth/global rate limiters
+  // key every client to the single proxy IP. Off by default (direct/local);
+  // set PAPERCLIP_TRUST_PROXY to the hop count (e.g. 1 for one nginx in front)
+  // in proxied deployments. Do not over-set it: too many trusted hops lets a
+  // client spoof X-Forwarded-For to evade rate limits.
+  const trustProxyHops = Number(process.env.PAPERCLIP_TRUST_PROXY);
+  if (Number.isFinite(trustProxyHops) && trustProxyHops > 0) {
+    app.set("trust proxy", trustProxyHops);
+  }
+
   app.use(cors({
     origin: [
       /\.vercel\.app$/,
@@ -197,6 +215,7 @@ export async function createApp(
   app.use("/api/bundles", bundleWebhookRouter(db));
   app.use("/api/creditscore", creditscoreWebhookRouter(db));
   app.use("/api/watchtower", watchtowerWebhookRouter(db));
+  app.use("/api/university", universityWebhookRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
@@ -243,7 +262,10 @@ export async function createApp(
     });
   });
   if (opts.betterAuthHandler) {
-    app.all("/api/auth/*authPath", opts.betterAuthHandler);
+    // Stricter limit on auth endpoints (login/signup/reset) to blunt
+    // brute-force / credential-stuffing; the general limiter (300/min) is too
+    // loose for credential checks.
+    app.all("/api/auth/*authPath", authRateLimit, opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
 
@@ -324,8 +346,10 @@ export async function createApp(
   api.use("/socials", socialsRoutes(db, opts.storageService));
   api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/watchtower", watchtowerRoutes(db));
+  api.use("/watchtower", watchtowerExportRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
+  api.use("/university", universityCheckoutRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
@@ -416,6 +440,9 @@ export async function createApp(
   app.use("/api/portal/agents", portalAgentsRoutes(db));
   // Contextual upsell cards for logged-in portal users — mounted under /api/portal.
   app.use("/api/portal", portalUpsellRoutes(db));
+  // University refer-a-friend — GET /api/portal/university/referral. Inherits
+  // the cd_portal_session cookie; gated to University members (Phase 2).
+  app.use("/api/portal", universityReferralRoutes(db));
   // Public AEO audit — no auth required. `db` is passed so every audit
   // attempt gets a row in creditscore_audit_runs for post-hoc debugging.
   app.use("/api/public", auditRoutes(db));
@@ -582,6 +609,7 @@ export async function createApp(
     startRizzExtractorCron(db, { companyId: RIZZ_COMPANY_ID });
   }
   startCreditscoreFulfillmentCrons(db);
+  startUniversityCrons(db);
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
