@@ -1,5 +1,7 @@
 # Discord Blurbs
 
+> **Cluster:** Launch · **Tags:** discord, social-post, blurbs, two-engine, ollama · **Related:** [Reddit Posts](reddit-posts.md), [X Thread](x-thread.md), [Hero GIF Shot List](gif-shot-list.md), [Docs Index](../../README.md)
+
 Discord is one of the few channels where minimal emoji use is normalized — keeping it sparse. Lead with the GIF (`assets/verify-demo.gif`), not the link. Drop blurbs in the right channel only — wrong-channel posts get nuked and burn the operator's reputation.
 
 ---

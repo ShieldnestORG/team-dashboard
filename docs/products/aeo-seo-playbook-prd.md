@@ -1,5 +1,7 @@
 # PRD: AEO / SEO / AdSense Playbook (v1 — 2026-04-22)
 
+> **Cluster:** Products · **Tags:** aeo, seo, adsense, rulebook, ranking, ai-citation · **Related:** [AEO Content Cluster](./aeo-content-cluster-prd.md), [AdSense Go-Live Checklist](./adsense-go-live-checklist.md), [Blog Distribution](./blog-distribution.md), [CreditScore PRD](./creditscore-prd.md)
+
 > The explicit "Do / Don't" rulebook that every CreditScore agent output is generated against and every admin-review approval is scored against. Owned by the CreditScore product; consumed ecosystem-wide.
 
 ## Purpose

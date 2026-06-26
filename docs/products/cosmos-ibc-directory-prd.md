@@ -1,5 +1,7 @@
 # PRD: Cosmos IBC Ecosystem Directory (Initiative H)
 
+> **Cluster:** Products · **Tags:** cosmos, ibc, directory, live-signals, relayer-health, vertical · **Related:** [EigenLayer AVS Directory](./eigenlayer-avs-directory-prd.md), [DevTools Live-Signal Intel](./devtools-live-signals-prd.md), [Topic Takeover Roadmap](./topic-takeover-roadmap.md), [Directory Listings](./directory-listings-prd.md)
+
 **Status:** Planning — unshipped. Sibling to Initiative E (restaking).
 **Parent plan:** [docs/products/topic-takeover-roadmap.md](./topic-takeover-roadmap.md)
 **Target repos:** team-dashboard (vertical seed + relayer health cron), `directory.coherencedaddy.com` (renderer).

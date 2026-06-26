@@ -1,5 +1,7 @@
 # Running OpenClaw in Docker (Local Development)
 
+> **Cluster:** Guides · **Tags:** openclaw, docker, adapter, smoke-test, agent-join, local-dev · **Related:** [Plugin Registration](plugin-registration.md), [Discord Bot Plugin](discord-bot-plugin.md), [Docs Index](../README.md)
+
 How to get OpenClaw running in a Docker container for local development and testing the Team Dashboard OpenClaw adapter integration.
 
 ## Automated Join Smoke Test (Recommended First)

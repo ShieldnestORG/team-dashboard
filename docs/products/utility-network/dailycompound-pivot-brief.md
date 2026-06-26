@@ -1,5 +1,7 @@
 # Pivot Brief: dailycompound.app → Crypto Yield Compound Calculator
 
+> **Cluster:** Utility Network · **Tags:** dailycompound, pivot, crypto-yield, calculator, staking, seo · **Related:** [Utility Network](README.md), [tokencount Pivot Brief](tokencount-pivot-brief.md), [Topic-Takeover Roadmap](../topic-takeover-roadmap.md), [Docs Index](../../README.md)
+
 **Status:** Proposal. Pivot up-stack from generic compound interest into crypto-yield compounding.
 **Owner:** Utility-network playbook.
 **Companion:** [docs/products/topic-takeover-roadmap.md](../topic-takeover-roadmap.md)

@@ -1,5 +1,7 @@
 # Coherence Daddy Affiliate System — Upgraded Spec
 
+> **Cluster:** Guides · **Tags:** affiliate, lead-lock, attribution, commissions, payouts, compliance · **Related:** [Affiliate User Journeys](affiliate-user-journeys.md), [Admin Affiliate Testing](admin-affiliate-testing.md), [Unified Affiliate Hub Plan](../plans/unified-affiliate-hub-plan.md), [Docs Index](../README.md)
+
 Complete system breakdown for the upgraded affiliate program. Supersedes the narrower scope of [affiliate-user-journeys.md](affiliate-user-journeys.md) where the two overlap, and extends it with lead-lock, attribution, commissions, payouts, engagement, and compliance.
 
 Use this for product planning, CRM logic, admin operations, affiliate UX, database design, engineering handoff, and onboarding docs.

@@ -1,5 +1,7 @@
 # CreditScore API
 
+> **Cluster:** API · **Tags:** creditscore, stripe, checkout, webhook, entitlements, seo-audit · **Related:** [Partners API](partners.md), [Trends API](trends.md), [Ownership Matrix](../OWNERSHIP.md), [System Overview](../architecture/system-overview.md)
+
 Owned end-to-end by team-dashboard per [`docs/OWNERSHIP.md`](../OWNERSHIP.md). Product spec: [`docs/products/creditscore-prd.md`](../products/creditscore-prd.md).
 
 Base path: `/api/creditscore`. Public host: `https://api.coherencedaddy.com`.

@@ -3,6 +3,8 @@
 
 # Unified Affiliate Hub — Implementation Plan
 
+> **Cluster:** Plans · **Tags:** affiliate, commission-ledger, attribution, payouts, shop, polymorphic-source · **Related:** [Affiliate System Upgraded](../guides/affiliate-system-upgraded.md), [Affiliate User Journeys](../guides/affiliate-user-journeys.md), [Admin Affiliate Testing](../guides/admin-affiliate-testing.md), [Docs Index](../README.md)
+
 **Status:** Design / sequencing doc. No code in this document.
 **Author:** Integration Architect (synthesis of 6 design tracks, all grounded in current `master` + `fix/affiliate-quick-wins` code).
 **Date:** 2026-06-18

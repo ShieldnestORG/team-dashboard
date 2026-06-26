@@ -1,5 +1,7 @@
 # Ownership Matrix — team-dashboard ↔ sibling repos
 
+> **Cluster:** Architecture · **Tags:** ownership, boundaries, repos, vercel, stripe, entitlements · **Related:** [Docs Map of Content](README.md), [System Overview](architecture/system-overview.md), [Org Structure](architecture/org-structure.md), [Production Deploy](deploy/production.md)
+
 This repo is the **engine room** for the Coherence Daddy + ShieldnestORG ecosystem. The public-facing properties live in sibling repos, each deployed to its own Vercel project under the `shieldnestorg` account.
 
 | Repo | Local path | GitHub | Vercel project | Public domain(s) |

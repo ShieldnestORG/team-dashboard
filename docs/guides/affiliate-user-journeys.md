@@ -1,5 +1,7 @@
 # Affiliate System — User Journey Flows
 
+> **Cluster:** Guides · **Tags:** affiliate, user-journey, flowchart, registration, commission, lifecycle · **Related:** [Affiliate System Upgraded](affiliate-system-upgraded.md), [Admin Affiliate Testing](admin-affiliate-testing.md), [Unified Affiliate Hub Plan](../plans/unified-affiliate-hub-plan.md), [Docs Index](../README.md)
+
 Ten journeys covering the full affiliate lifecycle: registration, login, password recovery, new client submission, failed re-submission, prospect management, admin oversight, email touchpoints, commission conversion, and the full end-to-end lifecycle.
 
 ---

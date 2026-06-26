@@ -1,5 +1,7 @@
 # Plugin Registration
 
+> **Cluster:** Guides · **Tags:** plugins, registration, plugin-loader, install, activation, scheduler · **Related:** [Discord Bot Plugin](discord-bot-plugin.md), [OpenClaw Docker Setup](openclaw-docker-setup.md), [Docs Index](../README.md)
+
 This note explains how workspace plugins under `packages/plugins/` (e.g.
 `plugin-discord`, `plugin-twitter`, `plugin-moltbook`, `plugin-firecrawl`) go
 from "source in the monorepo" to "rows in `plugins` + `plugin_config` that

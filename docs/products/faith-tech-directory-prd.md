@@ -1,5 +1,7 @@
 # PRD: Faith-Based Tech Companies Directory (Initiative F)
 
+> **Cluster:** Products · **Tags:** faith-tech, directory, 508c1a, vertical, moat, ecosystem · **Related:** [EigenLayer AVS Directory](./eigenlayer-avs-directory-prd.md), [Cosmos IBC Directory](./cosmos-ibc-directory-prd.md), [Topic Takeover Roadmap](./topic-takeover-roadmap.md), [Directory Listings](./directory-listings-prd.md)
+
 **Status:** Planning — unshipped. Strategic moat priority.
 **Parent plan:** [docs/products/topic-takeover-roadmap.md](./topic-takeover-roadmap.md)
 **Target repos:** team-dashboard (vertical seed + governance), `directory.coherencedaddy.com` (renderer).

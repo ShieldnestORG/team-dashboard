@@ -1,5 +1,7 @@
 # OG Image Spec — Per-Tutorial
 
+> **Cluster:** Launch · **Tags:** og-image, assets, brand-tokens, social-unfurl, two-engine · **Related:** [Screenshot Shot List](screenshot-shot-list.md), [GSC + Bing Checklist](gsc-bing-checklist.md), [Hero GIF Shot List](gif-shot-list.md), [Docs Index](../../README.md)
+
 For the `/tutorials/use-ollama-to-enhance-claude` page. Static `1200×630` PNG, sRGB. Save to wherever the storefront expects per-tutorial OG art (commonly `app/tutorials/[slug]/opengraph-image.tsx` or a static file in `public/og/`).
 
 ## Dimensions + format

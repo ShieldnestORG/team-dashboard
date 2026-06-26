@@ -1,0 +1,41 @@
+# Graphify scope = CODE ONLY (offline, no LLM Phase 2).
+# node_modules/.next/.git/__pycache__ are excluded by Graphify defaults.
+# Doc / prose / data extensions Graphify would route to LLM "Phase 2":
+*.md
+*.mdx
+*.qmd
+*.txt
+*.rst
+*.html
+*.htm
+*.yaml
+*.yml
+*.pdf
+*.jsonl
+*.jsonl.gz
+*.csv
+*.svg
+*.mmd
+*.mermaid
+# image / binary assets (Graphify routes these to LLM image extraction)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.bmp
+*.ico
+*.tiff
+*.avif
+# generated / non-source artifacts
+/out/
+/dist/
+/build/
+/.next/
+/.vercel/
+/coverage/
+/target/
+/releases/
+/report/
+/CD-og/
+graphify-out/

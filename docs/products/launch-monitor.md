@@ -1,5 +1,7 @@
 # Launch Comment Monitor
 
+> **Cluster:** Products · **Tags:** launch-monitor, socials, comments, cron, marketing, scribe · **Related:** [Socials Hub](socials-hub.md), [Socials Phase 2 Handoff](socials-phase2-handoff.md), [Docs Index](../README.md)
+
 Surface: `/socials/launch-monitor` (admin-only, behind auth)
 Cron: `launch-monitor:poll-comments` — every 3 minutes
 Owner agent: `scribe` (launch-adjacent marketing agent)

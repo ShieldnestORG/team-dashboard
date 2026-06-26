@@ -1,5 +1,7 @@
 # Intel API -- Blockchain Directory
 
+> **Cluster:** API · **Tags:** intel, semantic-search, pgvector, bge-m3, ingestion, rate-limits · **Related:** [Public Intel API](intel-public.md), [Trends API](trends.md), [Intel API PRD](../products/intel-api-prd.md), [Knowledge Graph Positioning](../products/knowledge-graph-positioning.md), [Ownership Matrix](../OWNERSHIP.md)
+
 ## Overview
 
 Public API for querying blockchain project intelligence. Powers [directory.coherencedaddy.com](https://directory.coherencedaddy.com). The Intel Engine tracks 114 blockchain companies across 12 categories, ingesting data from five sources (CoinGecko, RSS/Atom feeds, Nitter/RSSHub, GitHub, Reddit) on automated cron schedules.

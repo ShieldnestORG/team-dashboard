@@ -1,5 +1,7 @@
 # Agent Companies Specification
 
+> **Cluster:** Companies · **Tags:** company-package, agent-skills, yaml-frontmatter, vendor-neutral, spec · **Related:** [ClipHub Plan](../specs/cliphub-plan.md), [Agent Config UI](../specs/agent-config-ui.md), [Agent Runtime Guide](../agents-runtime.md), [Docs Index](../README.md)
+
 Extension of the Agent Skills Specification
 
 Version: `agentcompanies/v1-draft`

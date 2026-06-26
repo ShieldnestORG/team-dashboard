@@ -1,5 +1,7 @@
 # Hero GIF — Shot List
 
+> **Cluster:** Launch · **Tags:** gif, shot-list, verify-engines, assets, two-engine · **Related:** [Screenshot Shot List](screenshot-shot-list.md), [Discord Blurbs](discord-blurbs.md), [Video Edit](../../products/video-edit.md), [Docs Index](../../README.md)
+
 Goal: a 6–10s looping GIF of the **verify-both-engines** moment. This is the climax slide of the 21-slide deck made real. Drop it in the GitHub README at `assets/verify-demo.gif` and reuse it on Discord posts.
 
 ## Window layout

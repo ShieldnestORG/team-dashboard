@@ -1,5 +1,7 @@
 # Socials Hub
 
+> **Cluster:** Products · **Tags:** socials, dashboard, automations, release-calendar, content, crons · **Related:** [Socials Phase 2 Handoff](socials-phase2-handoff.md), [Launch Comment Monitor](launch-monitor.md), [Twitter API Reference](../api/twitter.md), [Docs Index](../README.md)
+
 Single pane of glass for every social account the Coherence Daddy ecosystem
 operates, the automations driving them, and a unified release calendar.
 

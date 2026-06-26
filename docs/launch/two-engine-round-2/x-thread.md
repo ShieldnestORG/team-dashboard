@@ -1,5 +1,7 @@
 # X / Twitter Thread — 7 tweets
 
+> **Cluster:** Launch · **Tags:** twitter, x-thread, social-post, screenshots, two-engine · **Related:** [Reddit Posts](reddit-posts.md), [Show HN](hn-show.md), [Screenshot Shot List](screenshot-shot-list.md), [Docs Index](../../README.md)
+
 **Posting time:** Sunday evening Eastern, **7:30–8:30pm ET**. That window catches US devs winding down + EU devs at Monday morning coffee. Avoid posting during NFL primetime in fall.
 
 **Personal handle:** `@<your-personal-x-handle>` (placeholder — fill in before posting).

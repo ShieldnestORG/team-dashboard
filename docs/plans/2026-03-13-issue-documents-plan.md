@@ -1,5 +1,7 @@
 # Issue Documents Plan
 
+> **Cluster:** Plans · **Tags:** issues, documents, revisions, artifacts, plan-document, pap-448 · **Related:** [Skills Pipeline Integration](skills-pipeline-integration.md), [Docs Index](../README.md)
+
 Status: Draft  
 Owner: Backend + UI + Agent Protocol  
 Date: 2026-03-13  

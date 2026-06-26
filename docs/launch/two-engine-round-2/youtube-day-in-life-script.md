@@ -1,5 +1,7 @@
 # YouTube Day-in-the-Life Montage Script (CD-64)
 
+> **Cluster:** Launch · **Tags:** youtube, video-script, montage, two-engine, video-edit · **Related:** [YouTube Short Script](youtube-short-script.md), [YouTube Speed Test Script](youtube-speed-test-script.md), [Video Edit](../../products/video-edit.md), [Docs Index](../../README.md)
+
 **Format:** 16:9 horizontal, 1920×1080. Also re-cut to 9:16 vertical for Shorts.
 **Length:** 45 seconds. Hard ceiling 60.
 **Title (suggested):** `A day with the two-engine workflow`

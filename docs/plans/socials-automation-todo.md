@@ -1,5 +1,7 @@
 # TODO — Socials Automation Roadmap
 
+> **Cluster:** Plans · **Tags:** socials, automation, publishing, approval, platform-caps, retention · **Related:** [Cron Inventory](../operations/cron-inventory.md), [Stigmergy Followups](stigmergy-followups.md), [Docs Index](../README.md)
+
 > Running tracker for the multi-phase build that turns the `/socials` hub from
 > a passive inventory into an active control plane: agent-generated drafts →
 > human-gated approval → multi-platform auto-publishing → bounded data growth.

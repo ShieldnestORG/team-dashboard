@@ -1,5 +1,7 @@
 # Knowledge Graph Extractor — Subject/Object Reversal & Cross-Subject Bleed Fix
 
+> **Cluster:** Architecture · **Tags:** knowledge-graph, extractor, prompt, dependabot, subject-bleed, nexus · **Related:** [SBOM Parser Design](sbom-parser-design.md), [KG Cleanup Handoff](kg-2026-04-28-handoff.md), [Knowledge Graph Positioning](../products/knowledge-graph-positioning.md), [Intel API](../api/intel.md), [Ownership Matrix](../OWNERSHIP.md)
+
 **Owner:** Nexus agent
 **File under review:** `server/src/services/relationship-extractor.ts`
 **Doc-only proposal — no code changes here. Implementation is a follow-up PR.**

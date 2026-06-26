@@ -1,5 +1,7 @@
 # Stripe Runbook — Coherence Daddy
 
+> **Cluster:** Deploy · **Tags:** stripe, accounts, webhooks, gotchas, university, starwise · **Related:** [Stripe Products & Prices](stripe-products.md), [Customer Portal](../products/customer-portal.md), [Docs Index](../README.md)
+
 **Last audited:** 2026-05-09 by full inventory + cross-check against codebase + VPS env.
 
 This is the operational source of truth for all Stripe wiring across the

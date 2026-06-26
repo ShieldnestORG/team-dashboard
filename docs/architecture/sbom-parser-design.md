@@ -1,5 +1,7 @@
 # SBOM Deterministic Parser — Design
 
+> **Cluster:** Architecture · **Tags:** sbom, depends-on, knowledge-graph, package-json, go-mod, nexus · **Related:** [KG Extractor Prompt Fix](kg-extractor-prompt-fix.md), [KG Cleanup Handoff](kg-2026-04-28-handoff.md), [Knowledge Graph Positioning](../products/knowledge-graph-positioning.md), [Ownership Matrix](../OWNERSHIP.md)
+
 **Owner:** Nexus agent
 **Status:** v1 (this PR)
 **Source recommendation:** [`kg-extractor-prompt-fix.md`](./kg-extractor-prompt-fix.md) §4

@@ -1,5 +1,7 @@
 # Utility Site Network
 
+> **Cluster:** Utility Network · **Tags:** utility-network, microsites, calculators, display-ads, ga4, portfolio · **Related:** [dailycompound Pivot Brief](dailycompound-pivot-brief.md), [tokencount Pivot Brief](tokencount-pivot-brief.md), [Tool Niche Harvest PRD](../tool-niche-harvest-prd.md), [Docs Index](../../README.md)
+
 Portfolio of small, focused utility sites (single-tool or small-tool clusters:
 generators, calculators, converters), monetized via display ads, with minimal
 textual brand linking back to coherencedaddy.com and tokns.fi for LLM/brand

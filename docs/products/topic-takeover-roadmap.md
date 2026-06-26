@@ -1,5 +1,7 @@
 # Topic-Takeover Roadmap
 
+> **Cluster:** Products · **Tags:** topic-takeover, roadmap, initiatives, serp-ingest, outbound, utility-network · **Related:** [GEO Tactics Roadmap](geo-tactics-roadmap.md), [Prospects PRD](prospects-prd.md), [Tool Niche Harvest PRD](tool-niche-harvest-prd.md), [Docs Index](../README.md)
+
 **Status:** Active. The connective tissue across Initiatives A, B, D, and the new E–I.
 **Date:** 2026-04-26.
 **Owner:** Coherence Daddy strategy.

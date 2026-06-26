@@ -1,5 +1,7 @@
 # Discord Bot Plugin (`plugin-discord`)
 
+> **Cluster:** Guides · **Tags:** discord, plugin, moderation, ticketing, bot, paperclip · **Related:** [Plugin Registration](plugin-registration.md), [OpenClaw Docker Setup](openclaw-docker-setup.md), [Docs Index](../README.md)
+
 ## Overview
 
 The Discord bot plugin integrates community moderation and ticketing for the Next.ai Discord server (ShieldNest x TOKNS) into the Team Dashboard as a Paperclip plugin. It runs as a Discord.js client inside the plugin worker process — no separate deployment needed.

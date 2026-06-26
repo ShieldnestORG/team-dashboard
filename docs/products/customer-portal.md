@@ -1,5 +1,7 @@
 # Customer Portal — MVP
 
+> **Cluster:** Products · **Tags:** customer-portal, auth, magic-link, entitlements, billing, stripe · **Related:** [Bundle Packages](./bundles-prd.md), [CreditScore PRD](./creditscore-prd.md), [Stripe Runbook](../deploy/stripe-runbook.md), [Ownership Matrix](../OWNERSHIP.md)
+
 The customer portal is the first **customer-facing** (non-board) auth surface in
 team-dashboard. Until this exists, every AEO upsell SKU has nowhere to send the
 buyer after checkout — no place to manage credentials, no place to view

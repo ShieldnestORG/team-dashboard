@@ -1,5 +1,7 @@
 # Project Structure — Team Dashboard
 
+> **Cluster:** Architecture · **Tags:** directory-map, services, routes, schema, plugins, agents · **Related:** [System Overview](system-overview.md), [Org Structure](org-structure.md), [Structure Diagram Policy](structure-diagram-policy.md), [Ownership Matrix](../OWNERSHIP.md)
+
 ## Directory Map
 
 ```

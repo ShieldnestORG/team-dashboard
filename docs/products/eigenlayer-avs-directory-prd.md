@@ -1,5 +1,7 @@
 # PRD: EigenLayer / Restaking AVS Directory (Initiative E)
 
+> **Cluster:** Products · **Tags:** eigenlayer, restaking, avs, directory, live-signals, vertical · **Related:** [Cosmos IBC Directory](./cosmos-ibc-directory-prd.md), [DevTools Live-Signal Intel](./devtools-live-signals-prd.md), [Topic Takeover Roadmap](./topic-takeover-roadmap.md), [Directory Listings](./directory-listings-prd.md)
+
 **Status:** Planning — unshipped. Highest priority among topic-takeover initiatives.
 **Parent plan:** [docs/products/topic-takeover-roadmap.md](./topic-takeover-roadmap.md)
 **Target repos:** team-dashboard (schema seed + crons), `directory.coherencedaddy.com` (rendered subpage).

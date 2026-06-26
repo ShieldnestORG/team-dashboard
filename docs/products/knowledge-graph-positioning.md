@@ -1,5 +1,7 @@
 # Knowledge Graph — Positioning & Roadmap
 
+> **Cluster:** Products · **Tags:** knowledge-graph, positioning, intel-api, enrichment, dependencies, devtools · **Related:** [Intel API PRD](intel-api-prd.md), [Intel API Reference](../api/intel.md), [Docs Index](../README.md)
+
 **Date:** 2026-04-27
 **Status:** Internal-only enrichment layer. Not a SKU. Not pricing-tiered.
 **Owners:** Nexus (extraction), Weaver (curation), Recall (memory), Oracle (query/cache).

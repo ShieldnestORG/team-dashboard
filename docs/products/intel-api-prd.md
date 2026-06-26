@@ -1,5 +1,7 @@
 # PRD: Intel API
 
+> **Cluster:** Products · **Tags:** intel-api, blockchain, data-api, defi, devtools, agents · **Related:** [Knowledge Graph Positioning](knowledge-graph-positioning.md), [Intel API Reference](../api/intel.md), [Docs Index](../README.md)
+
 ## What It Is
 
 A real-time data API covering 500+ blockchain, AI, DeFi, and DevTools projects. Consumers get structured, up-to-date intelligence on projects: hourly price data, news summaries, GitHub activity, chain metrics, validator rankings, and RSS signals — all in one endpoint.

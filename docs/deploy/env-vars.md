@@ -1,5 +1,7 @@
 # Environment Variables — Team Dashboard
 
+> **Cluster:** Deploy · **Tags:** env-vars, vps, secrets, stripe, portal, auth · **Related:** [Production Deployment](production.md), [VPS Cheat Sheet](vps-cheat-sheet.md), [Tailnet Session Access](tailnet-session-access.md), [Docs Index](../README.md)
+
 ## Overview
 These variables are required for the project to function. **VPS** requires all variables in `.env.production` at `/opt/team-dashboard/`. **Vercel** gets `DATABASE_URL` via Neon integration and requires no other variables as it only serves the static UI.
 

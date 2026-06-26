@@ -1,5 +1,7 @@
 # Google Search Console + Bing Webmaster Submission Checklist
 
+> **Cluster:** Launch · **Tags:** seo, search-console, bing-webmaster, indexing, two-engine · **Related:** [OG Image Spec](og-image-spec.md), [Awesome PR Templates](awesome-pr-templates.md), [Docs Index](../../README.md)
+
 Goal: get both live tutorials manually inspected and indexed. Sitemap submission alone takes days; URL Inspection forces the crawler now.
 
 ## URLs to submit

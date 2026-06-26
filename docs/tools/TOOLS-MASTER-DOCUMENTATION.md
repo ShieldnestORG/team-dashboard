@@ -1,5 +1,7 @@
 # Team Dashboard — Tools Documentation (ARCHIVED)
 
+> **Cluster:** Tools (archived) · **Tags:** tools, archived, documentation, migrated, catalog, backlinks · **Related:** [Tools Control Systems](CONTROL-SYSTEMS.md), [Docs Index](../README.md)
+
 > **Last Updated:** 2026-04-01
 > **Status:** MIGRATED — The 27 public tools have been moved to the [coherencedaddy repo](https://github.com/ShieldnestORG/coherencedaddy).
 > **New location:** See `docs/TOOLS.md` in the coherencedaddy repo for the current tool catalog.

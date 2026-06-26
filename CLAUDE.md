@@ -125,3 +125,13 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Launch Monitor](docs/products/launch-monitor.md) — HN/Reddit/dev.to launch-post comment poller + Haiku pattern classifier + human-in-the-loop reply queue at `/socials/launch-monitor`.
 - [Video Edit](docs/products/video-edit.md) — Sibling to the YouTube synth pipeline. Edits **real footage** via browser-use/video-use at `/video-edit`. Backend + UI shipped; engine integration pending `VIDEO_USE_BIN`. Automation TODO list lives in this doc.
 - [Watchtower](docs/products/watchtower.md) — $29/mo brand-mention monitor across five AI answer engines (ChatGPT, Claude, Perplexity, Gemini, Grok). Weekly digest + read-only run viewer; admin at `/watchtower`. In-house alternative to Profound/Peec.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

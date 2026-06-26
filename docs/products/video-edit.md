@@ -1,5 +1,7 @@
 # Video Edit Pipeline
 
+> **Cluster:** Products · **Tags:** video-edit, pipeline, footage, youtube, video-use, media · **Related:** [Socials Hub](socials-hub.md), [Tutorials Hub](tutorials-hub.md), [Docs Index](../README.md)
+
 Sibling to the YouTube production pipeline (`server/src/services/youtube/`). Where YouTube
 **synthesizes** videos from a topic (script → TTS → slide screenshots → MP4),
 the Video Edit pipeline **edits real footage** using

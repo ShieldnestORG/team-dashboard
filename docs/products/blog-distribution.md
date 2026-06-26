@@ -1,5 +1,7 @@
 # Blog Distribution — Team Dashboard
 
+> **Cluster:** Products · **Tags:** blog, content-pipeline, publishing, indexnow, crons, distribution · **Related:** [AEO Content Cluster](./aeo-content-cluster-prd.md), [AEO/SEO/AdSense Playbook](./aeo-seo-playbook-prd.md), [Topic Takeover Roadmap](./topic-takeover-roadmap.md), [Ownership Matrix](../OWNERSHIP.md)
+
 Canonical state of blog generation and distribution across the Coherence Daddy + ShieldnestORG ecosystem. Last audited: 2026-04-22 (post-deploy, all surfaces live).
 
 ## Pipeline

@@ -1,5 +1,7 @@
 # TODO — Skills-Pipeline + kepano-obsidian integration
 
+> **Cluster:** Plans · **Tags:** skills, obsidian, kepano, vault-scaffolding, integration, claude-skills · **Related:** [Stigmergy Followups](stigmergy-followups.md), [Docs Index](../README.md)
+
 > Running tracker for grafting two upstream organization patterns onto this
 > ecosystem: Anthropic-style skills from
 > [Sleestk/Skills-Pipeline](https://github.com/Sleestk/Skills-Pipeline) into

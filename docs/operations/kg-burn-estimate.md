@@ -1,5 +1,7 @@
 # Knowledge Graph — 30-Day Infrastructure Burn Estimate
 
+> **Cluster:** Operations · **Tags:** knowledge-graph, cost, burn, ollama, crons, neon · **Related:** [Cron Inventory](cron-inventory.md), [Agent-Cron Ownership](../guides/agent-cron-ownership.md), [Docs Index](../README.md)
+
 **Date:** 2026-04-27
 **Scope:** The 9 KG cron jobs registered in `server/src/services/knowledge-graph-crons.ts` plus the storage they accumulate in Neon. Owned by Nexus (extraction), Weaver (curation), Recall (memory), Oracle (cache).
 **Purpose:** Produce a hard-number monthly cash burn so monetization decisions for the KG asset can be grounded.

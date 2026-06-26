@@ -1,5 +1,7 @@
 # Demographic Targeting Report — Coherence Daddy Ecosystem
 
+> **Cluster:** Products · **Tags:** demographics, personas, funnel, targeting, channels, ltv · **Related:** [CreditScore PRD](./creditscore-prd.md), [Directory Listings](./directory-listings-prd.md), [100 Agents](./agents-product-prd.md), [Ownership Matrix](../OWNERSHIP.md)
+
 **Date:** 2026-04-30
 **Purpose:** Map every revenue surface to a primary buyer persona, the channel that reaches them, and the path back to `coherencedaddy.com` as the central portal.
 

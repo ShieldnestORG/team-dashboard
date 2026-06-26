@@ -1,5 +1,7 @@
 # Phase 2 Handoff — Socials Control Panel
 
+> **Cluster:** Products · **Tags:** socials, handoff, control-panel, automation-mode, content-crons, phase2 · **Related:** [Socials Hub](socials-hub.md), [Launch Comment Monitor](launch-monitor.md), [Twitter API Reference](../api/twitter.md), [Docs Index](../README.md)
+
 **Date:** 2026-05-07
 **Status:** Phase 1 shipped (PR #34). Phase 2 not started.
 

@@ -1,5 +1,7 @@
 # PRD: Unwebsited Prospects Engine (Initiative C)
 
+> **Cluster:** Products · **Tags:** prospects, outbound, unwebsited, serp, demo-sites, funnel · **Related:** [Topic-Takeover Roadmap](topic-takeover-roadmap.md), [Tool Niche Harvest PRD](tool-niche-harvest-prd.md), [Docs Index](../README.md)
+
 **Status:** Planning — unshipped. **New product, not a directory feature.**
 **Parent plan:** `coherencedaddy-landing/docs/plans/2026-04-24-directory-expansion.md`
 **Target repos:** team-dashboard (schema, crons, classifier, demo generator, admin UI, Stripe), storefront (preview subdomain + pitch landing + email templates).

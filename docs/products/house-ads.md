@@ -1,5 +1,7 @@
 # House Ads
 
+> **Cluster:** Products · **Tags:** house-ads, adsense, creatives, subdomains, upsell, fallback · **Related:** [Watchtower](watchtower.md), [Shop Sharers](shop-sharers.md), [Docs Index](../README.md)
+
 Admin-managed in-house creatives served to `*.coherencedaddy.com` subdomains
 while AdSense approval is pending — and a permanent fallback for AdSense
 no-fill impressions once it's live.

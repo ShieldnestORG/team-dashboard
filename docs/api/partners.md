@@ -1,5 +1,7 @@
 # AEO Partner Network API
 
+> **Cluster:** API · **Tags:** partners, aeo, referrals, click-tracking, microsites, onboarding · **Related:** [CreditScore API](creditscore.md), [Trends API](trends.md), [System Overview](../architecture/system-overview.md), [Ownership Matrix](../OWNERSHIP.md)
+
 ## Overview
 
 Internal API for managing the AEO Partner Network -- referral partners, service providers, and affiliates within the Coherence Daddy ecosystem. Partners are tracked with click metrics, content mentions, and individual dashboard access via token-authenticated endpoints.

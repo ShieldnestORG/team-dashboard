@@ -1,5 +1,7 @@
 # Cron Inventory — Team Dashboard
 
+> **Cluster:** Operations · **Tags:** cron, intel, content, socials, schedules, owner-agent · **Related:** [Agent-Cron Ownership](../guides/agent-cron-ownership.md), [KG Burn Estimate](kg-burn-estimate.md), [Docs Index](../README.md)
+
 ## Cron Overview
 The system relies on a vast array of scheduled jobs to power the intel engine, content generation, and agent memories. All cron jobs are associated with an `ownerAgent` for accountability and operational clarity.
 

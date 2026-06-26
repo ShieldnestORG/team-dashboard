@@ -1,5 +1,7 @@
 # Agent-Cron Ownership Architecture
 
+> **Cluster:** Guides · **Tags:** agents, cron, heartbeat, wakeup, ownership, scheduler · **Related:** [Cron Inventory](../operations/cron-inventory.md), [KG Burn Estimate](../operations/kg-burn-estimate.md), [Docs Index](../README.md)
+
 How agents map to cron jobs and how the 24/7 execution model works on the VPS.
 
 ## Two Execution Models

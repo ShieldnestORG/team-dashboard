@@ -1,5 +1,7 @@
 # YouTube Short / TikTok / Reels — 60-90s Script
 
+> **Cluster:** Launch · **Tags:** youtube-short, tiktok, reels, video-script, video-edit · **Related:** [YouTube Day-in-Life Script](youtube-day-in-life-script.md), [YouTube Speed Test Script](youtube-speed-test-script.md), [Video Edit](../../products/video-edit.md), [Docs Index](../../README.md)
+
 **Caption:** `Free Claude Code in 90 seconds.`
 **Aspect ratio:** 9:16 vertical, 1080×1920.
 **Length target:** 75 seconds. Hard ceiling 90.

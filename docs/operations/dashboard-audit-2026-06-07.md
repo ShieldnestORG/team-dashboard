@@ -1,5 +1,7 @@
 # Dashboard Audit & To-Do — 2026-06-07
 
+> **Cluster:** Operations · **Tags:** audit, todo, bugs, affiliate, crons, build-health · **Related:** [Cron Inventory](cron-inventory.md), [Key Files Reference](key-files.md), [Docs Index](../README.md)
+
 Generated from a 6-agent parallel audit (build health, backend routes/services, UI pages,
 crons/automation, affiliate program, docs/TODO drift). Ground-truth verified, not assumed.
 
