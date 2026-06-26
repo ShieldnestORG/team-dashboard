@@ -63,7 +63,9 @@ export function intelRoutes(db: Db) {
   // ---- Public read endpoints (no auth) ----
 
   router.get("/search", async (req, res) => {
-    const q = req.query.q as string | undefined;
+    // Accept either `q` (primary) or `query` (alias). Both have shipped in
+    // client examples and the storefront, so honour whichever is present.
+    const q = (req.query.q ?? req.query.query) as string | undefined;
     if (!q || q.trim().length === 0) {
       res.json({ results: [] });
       return;
