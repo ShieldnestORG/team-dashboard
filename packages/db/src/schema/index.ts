@@ -247,3 +247,5 @@ export type {
 } from "./university_community.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";
+export { trendsDigests } from "./trends_digests.js";
+export type { TrendsDigestRow, NewTrendsDigestRow } from "./trends_digests.js";

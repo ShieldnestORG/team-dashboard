@@ -54,6 +54,7 @@ import { startAlertCrons } from "./services/alert-crons.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startSocialCrons } from "./services/social-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
+import { startTrendsDigestCrons } from "./services/trends-digest/digest-crons.js";
 import { initFeedbackDb } from "./services/intel-quality.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
 import { startRetentionCron } from "./services/maintenance-retention-cron.js";
@@ -535,6 +536,7 @@ export async function createApp(
   startContentCrons(db);
   startSocialCrons(db, opts.storageService);
   startTrendCrons(db);
+  startTrendsDigestCrons(db);
   startMaintenanceCrons(db);
   startRetentionCron(db);
   startAdminAccessLogRetentionCron(db);
