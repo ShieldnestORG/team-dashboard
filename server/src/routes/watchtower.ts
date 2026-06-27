@@ -34,7 +34,7 @@
 
 import type { Request, Response } from "express";
 import { Router } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   watchtowerSubscriptions,
@@ -103,12 +103,24 @@ export function watchtowerRoutes(db: Db) {
    * Writes the appropriate error status to `res` and returns false otherwise.
    * Board actors bypass the ownership check; everyone else must hold a
    * portal session for the same account_id as the subscription.
+   *
+   * Email-match fallback (mirrors what `/me` / getAccountWithEntitlements
+   * already does): promo subscriptions are created with `account_id` NULL —
+   * they're matched to a customer by `email` at checkout, and the
+   * customer-account-linker only backfills `account_id` later. Until that
+   * runs, a NULL account_id would hard-403 the owning customer out of their
+   * own dashboard. So when the subscription's account_id is NULL or differs
+   * from the session, we resolve the session account's email and authorize on
+   * a lowercased match against the subscription's `email` column. On a
+   * successful match where account_id was NULL we lazily backfill it so the
+   * fast path takes over next time (self-heals).
    */
-  function authorizeSubscriptionRead(
+  async function authorizeSubscriptionRead(
     req: Request,
     res: Response,
+    subscriptionId: string,
     subscriptionAccountId: string | null,
-  ): boolean {
+  ): Promise<boolean> {
     if (req.actor?.type === "board") return true;
 
     // Impersonation cookie: admin viewing as the target customer. Read-only
@@ -129,11 +141,50 @@ export function watchtowerRoutes(db: Db) {
       res.status(401).json({ error: "unauthenticated" });
       return false;
     }
-    if (!subscriptionAccountId || session.accountId !== subscriptionAccountId) {
-      res.status(403).json({ error: "forbidden" });
-      return false;
+    // Fast path: account_id already linked to this session's account.
+    if (subscriptionAccountId && session.accountId === subscriptionAccountId) {
+      return true;
     }
-    return true;
+
+    // Email-match fallback for unlinked (account_id NULL) or otherwise
+    // not-yet-fast-pathing subscriptions. Compare the session account's email
+    // (lowercased) to the subscription's email column.
+    const account = await portal.getAccount(session.accountId);
+    if (account) {
+      const sessionEmail = account.email.trim().toLowerCase();
+      const [subEmailRow] = await db
+        .select({ email: watchtowerSubscriptions.email })
+        .from(watchtowerSubscriptions)
+        .where(eq(watchtowerSubscriptions.id, subscriptionId));
+      const subEmail = subEmailRow?.email?.trim().toLowerCase();
+      if (subEmail && subEmail === sessionEmail) {
+        // Lazily backfill account_id when it was NULL so the fast path takes
+        // over on subsequent reads (self-heals; never overwrites a set value).
+        if (!subscriptionAccountId) {
+          try {
+            await db
+              .update(watchtowerSubscriptions)
+              .set({ accountId: session.accountId })
+              .where(
+                and(
+                  eq(watchtowerSubscriptions.id, subscriptionId),
+                  isNull(watchtowerSubscriptions.accountId),
+                ),
+              );
+          } catch (err) {
+            // Backfill is best-effort; authorization still succeeds.
+            logger.warn(
+              { err, subscriptionId, accountId: session.accountId },
+              "watchtower: account_id backfill failed (authorized via email)",
+            );
+          }
+        }
+        return true;
+      }
+    }
+
+    res.status(403).json({ error: "forbidden" });
+    return false;
   }
 
   function refuseUnderImpersonation(req: Request, res: Response): boolean {
@@ -158,7 +209,8 @@ export function watchtowerRoutes(db: Db) {
       .where(eq(watchtowerSubscriptions.id, id));
 
     if (!sub) return res.status(404).json({ error: "not_found" });
-    if (!authorizeSubscriptionRead(req, res, sub.accountId ?? null)) return;
+    if (!(await authorizeSubscriptionRead(req, res, id, sub.accountId ?? null)))
+      return;
 
     const recentRuns = await db
       .select({
@@ -210,7 +262,8 @@ export function watchtowerRoutes(db: Db) {
       .where(eq(watchtowerSubscriptions.id, id));
 
     if (!sub) return res.status(404).json({ error: "not_found" });
-    if (!authorizeSubscriptionRead(req, res, sub.accountId ?? null)) return;
+    if (!(await authorizeSubscriptionRead(req, res, id, sub.accountId ?? null)))
+      return;
 
     const body = req.body as { prompts?: unknown } | undefined;
     const incoming = body?.prompts;
@@ -357,7 +410,15 @@ export function watchtowerRoutes(db: Db) {
       .from(watchtowerSubscriptions)
       .where(eq(watchtowerSubscriptions.id, run.subscriptionId));
 
-    if (!authorizeSubscriptionRead(req, res, owningSub?.accountId ?? null)) return;
+    if (
+      !(await authorizeSubscriptionRead(
+        req,
+        res,
+        run.subscriptionId,
+        owningSub?.accountId ?? null,
+      ))
+    )
+      return;
 
     const results = await db
       .select()
@@ -423,7 +484,8 @@ export function watchtowerRoutes(db: Db) {
       .where(eq(watchtowerSubscriptions.id, id));
 
     if (!sub) return res.status(404).json({ error: "not_found" });
-    if (!authorizeSubscriptionRead(req, res, sub.accountId ?? null)) return;
+    if (!(await authorizeSubscriptionRead(req, res, id, sub.accountId ?? null)))
+      return;
     if (!requireNonImpersonating(req, res)) return;
 
     if (req.actor?.type !== "board") {
