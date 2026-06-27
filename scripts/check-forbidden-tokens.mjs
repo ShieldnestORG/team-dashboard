@@ -21,6 +21,14 @@ function uniqueNonEmpty(values) {
   return Array.from(new Set(values.map((value) => value?.trim() ?? "").filter(Boolean)));
 }
 
+// Auto-derived usernames shorter than this are too noisy to use as substring
+// forbidden tokens: a 3-char username like "exe" matches ".exe", "cmd.exe",
+// "indexed", "executeTool" and intentional local-path docs — zero real signal,
+// only false positives. Explicit entries in forbidden-tokens.txt are NOT
+// subject to this guard; that remains the way to forbid a short or specific
+// string deliberately.
+export const MIN_DYNAMIC_TOKEN_LENGTH = 4;
+
 export function resolveDynamicForbiddenTokens(env = process.env, osModule = os) {
   const candidates = [env.USER, env.LOGNAME, env.USERNAME];
 
@@ -30,7 +38,9 @@ export function resolveDynamicForbiddenTokens(env = process.env, osModule = os) 
     // Some environments do not expose userInfo; env vars are enough fallback.
   }
 
-  return uniqueNonEmpty(candidates);
+  return uniqueNonEmpty(candidates).filter(
+    (token) => token.length >= MIN_DYNAMIC_TOKEN_LENGTH,
+  );
 }
 
 export function readForbiddenTokensFile(tokensFile) {
