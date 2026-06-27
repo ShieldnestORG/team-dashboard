@@ -9,13 +9,25 @@ const {
 describe("forbidden token check", () => {
   it("derives username tokens without relying on whoami", () => {
     const tokens = resolveDynamicForbiddenTokens(
-      { USER: "paperclip", LOGNAME: "paperclip", USERNAME: "pc" },
+      { USER: "paperclip", LOGNAME: "paperclip", USERNAME: "pcsmith" },
       {
         userInfo: () => ({ username: "paperclip" }),
       },
     );
 
-    expect(tokens).toEqual(["paperclip", "pc"]);
+    expect(tokens).toEqual(["paperclip", "pcsmith"]);
+  });
+
+  it("drops auto-derived usernames shorter than the min length (too noisy as substrings)", () => {
+    // A 3-char username like "exe" matches ".exe", "indexed", "executeTool" and
+    // intentional local-path docs — pure false positives, so it is guarded out.
+    // Deliberate short tokens still go via forbidden-tokens.txt.
+    const tokens = resolveDynamicForbiddenTokens(
+      { USER: "exe", LOGNAME: "pc", USERNAME: "jdoe" },
+      { userInfo: () => ({ username: "exe" }) },
+    );
+
+    expect(tokens).toEqual(["jdoe"]);
   });
 
   it("falls back cleanly when user resolution fails", () => {
