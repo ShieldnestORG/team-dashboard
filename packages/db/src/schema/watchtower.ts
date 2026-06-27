@@ -58,6 +58,19 @@ export const watchtowerSubscriptions = pgTable("watchtower_subscriptions", {
   // contradictions (see watchtower-accuracy-judge.ts). Nullable + additive:
   // subscriptions without ground truth skip the judge entirely.
   groundTruth: text("ground_truth"),
+  // Opt-in GA4 traffic tracking (migration 0139). When trackGa4 is true and a
+  // ga4PropertyId is set, the weekly run pulls last-7-days sessions/users/
+  // newUsers/leads from the GA4 Data API and adds a "Performance" section to
+  // the digest. Off by default + additive: subscriptions without it are
+  // unaffected (no extra API calls, no behavior change).
+  trackGa4: boolean("track_ga4").notNull().default(false),
+  ga4PropertyId: text("ga4_property_id"),
+  // Opt-in Google Ads spend tracking (migration 0139). When trackAds is true
+  // and a googleAdsCustomerId is set, the weekly run pulls last-7-days spend/
+  // clicks/conversions from the Google Ads API for the same "Performance"
+  // section. Off by default + additive.
+  trackAds: boolean("track_ads").notNull().default(false),
+  googleAdsCustomerId: text("google_ads_customer_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -73,6 +73,19 @@ export interface WatchtowerWeeklyDigestData {
     correction: string        // what the ground truth actually says
     severity: "high" | "low"  // judge-assigned; high = factual contradiction, low = misleading/incomplete
   }>;
+  /**
+   * GA4 traffic + Google Ads spend (migration 0139). Present only for
+   * trackGa4 / trackAds subscriptions where the respective fetch succeeded.
+   * Optional + backward-compatible: absent for subscriptions without the
+   * opt-in and for older team-dashboard deploys that predate the feature.
+   * The storefront digest template renders a "Performance" section only when
+   * `traffic` or `ads` is present; no-ops entirely otherwise (same guard as
+   * rankSection / accuracyAlerts).
+   */
+  performance?: {
+    traffic?: { sessions: number; users: number; newUsers: number; leads: number };
+    ads?: { spendCents: number; clicks: number; conversions: number; costPerLeadCents: number | null };
+  };
   // TODO(stream-f): when Agent E ships the `watchtower_prompt_versions`
   // table (PR pending), add an optional `promptVersionChange` field here
   // and inline a "prompt set changed since last run" notice in the

@@ -38,6 +38,8 @@ import {
   type AccuracyAlert,
   type JudgeCell,
 } from "./watchtower-accuracy-judge.js";
+import { fetchGa4Traffic } from "./watchtower-ga4.js";
+import { fetchAdsPerformance } from "./watchtower-google-ads.js";
 
 // Hard ceiling per CLAUDE.md cost protection. A subscription's prompt_cap
 // can be set lower (default 25) but never higher than this.
@@ -133,6 +135,17 @@ export interface RunSummary {
    * shape (same pattern as `rank`).
    */
   accuracyAlerts?: AccuracyAlert[];
+  /**
+   * GA4 traffic + Google Ads spend (migration 0139). Present only for
+   * subscriptions with trackGa4/trackAds enabled and the matching id set, and
+   * only when the respective fail-soft fetch returned data. Omitted entirely
+   * otherwise so existing runs keep their exact summary shape (same pattern as
+   * `rank` / `accuracyAlerts`).
+   */
+  performance?: {
+    traffic?: { sessions: number; users: number; newUsers: number; leads: number };
+    ads?: { spendCents: number; clicks: number; conversions: number; costPerLeadCents: number | null };
+  };
 }
 
 export interface PerEngineOutput {
@@ -503,6 +516,47 @@ export async function runSubscription(
     if (alerts.length > 0) accuracyAlerts = alerts;
   }
 
+  // Opt-in Performance section (migration 0139). GA4 traffic and/or Google Ads
+  // spend, each gated on its own flag + id. Both fetchers are fail-soft (return
+  // null on missing creds or any error, never throw), so a misconfigured
+  // property/customer degrades to a missing Performance section rather than a
+  // failed run. Only built when at least one source returned data.
+  let performance: RunSummary["performance"] | undefined;
+  {
+    const traffic =
+      sub.trackGa4 && sub.ga4PropertyId
+        ? await fetchGa4Traffic(sub.ga4PropertyId)
+        : null;
+    const ads =
+      sub.trackAds && sub.googleAdsCustomerId
+        ? await fetchAdsPerformance(sub.googleAdsCustomerId)
+        : null;
+    if (traffic || ads) {
+      performance = {
+        ...(traffic
+          ? {
+              traffic: {
+                sessions: traffic.sessions,
+                users: traffic.totalUsers,
+                newUsers: traffic.newUsers,
+                leads: traffic.conversions,
+              },
+            }
+          : {}),
+        ...(ads
+          ? {
+              ads: {
+                spendCents: ads.costCents,
+                clicks: ads.clicks,
+                conversions: ads.conversions,
+                costPerLeadCents: ads.costPerLeadCents,
+              },
+            }
+          : {}),
+      };
+    }
+  }
+
   // Resolve the active prompt version BEFORE opening the transaction so a
   // missing version row only logs a warn and doesn't roll back the run.
   // Tests can override via opts.promptVersionId to pin a specific id (or
@@ -530,6 +584,7 @@ export async function runSubscription(
     const summary = buildSummary(outputs, enginesUsed, skippedEngines);
     if (rankEntries) summary.rank = rankEntries;
     if (accuracyAlerts?.length) summary.accuracyAlerts = accuracyAlerts;
+    if (performance) summary.performance = performance;
 
     const [runRow] = await tx
       .insert(watchtowerRuns)

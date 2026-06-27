@@ -187,6 +187,13 @@ async function sendDigest(
     ...(summary.accuracyAlerts && summary.accuracyAlerts.length > 0
       ? { accuracyAlerts: summary.accuracyAlerts }
       : {}),
+    // Present only for trackGa4/trackAds subscriptions where a fetch returned
+    // data (migration 0139); omitted otherwise so the payload is unchanged for
+    // existing customers.
+    ...(summary.performance &&
+    (summary.performance.traffic || summary.performance.ads)
+      ? { performance: summary.performance }
+      : {}),
   };
 
   await sendWatchtowerDigest({
