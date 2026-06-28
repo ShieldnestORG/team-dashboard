@@ -282,6 +282,9 @@ interface GenerateOpts {
   companyId?: string;
   /** brand controls which X account / publish target this content belongs to (default: 'cd') */
   brand?: string;
+  /** Partner Network attribution — set by partner:mentions:generate so the
+   *  monthly per-partner mention quota can be counted against content_items. */
+  partnerId?: string;
 }
 
 interface ProducedText {
@@ -395,6 +398,7 @@ export function contentService(db: Db) {
       charLimit,
       reviewStatus: "pending",
       brand: opts.brand ?? "cd",
+      partnerId: opts.partnerId ?? null,
     }).returning();
 
     logger.info(
