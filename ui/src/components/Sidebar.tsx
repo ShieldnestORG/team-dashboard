@@ -31,6 +31,7 @@ import {
   Eye,
   CreditCard,
   Film,
+  GraduationCap,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -140,6 +141,7 @@ export function Sidebar() {
           <SidebarNavItem to="/intel" label="Intel" icon={Database} />
           <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={CreditCard} />
           <SidebarNavItem to="/watchtower" label="Watchtower" icon={Eye} />
+          <SidebarNavItem to="/university" label="University" icon={GraduationCap} />
           <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
           <SidebarNavItem to="/org" label="Org" icon={Building2} />
           <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
