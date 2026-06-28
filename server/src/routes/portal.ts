@@ -256,14 +256,14 @@ function renderAuthInterstitial(token: string): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
-<title>Sign in — Coherence Daddy</title>
+<title>Enter — Coherence Daddy</title>
 <style>
   :root { color-scheme: dark; }
   html, body { height: 100%; }
   body {
     margin: 0;
-    background: #0a0a0a;
-    color: #f5f5f5;
+    background: #0E0E10;
+    color: #FAFAF8;
     font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     display: grid;
     place-items: center;
@@ -274,33 +274,33 @@ function renderAuthInterstitial(token: string): string {
     font-size: 12px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: #f97316;
+    color: #FF6B4A;
     margin-bottom: 24px;
   }
   h1 { font-size: 24px; margin: 0 0 12px; font-weight: 600; }
-  p { color: #a1a1aa; margin: 0 0 28px; }
+  p { color: #B8B5AE; margin: 0 0 28px; }
   button {
     appearance: none;
     border: 0;
-    background: #f97316;
-    color: #0a0a0a;
+    background: #FF6B4A;
+    color: #0E0E10;
     font: inherit;
     font-weight: 600;
     padding: 12px 24px;
     border-radius: 8px;
     cursor: pointer;
   }
-  button:hover { background: #fb923c; }
-  .fineprint { margin-top: 24px; font-size: 12px; color: #71717a; }
+  button:hover { background: #E5553A; }
+  .fineprint { margin-top: 24px; font-size: 12px; color: #78756E; }
 </style>
 </head>
 <body>
 <main>
   <div class="brand">Coherence Daddy</div>
-  <h1>Sign in to your account</h1>
-  <p>Click below to complete sign-in. This link is single-use and expires shortly.</p>
+  <h1>Step inside</h1>
+  <p>You're verified — click below to enter. This link is single-use and expires shortly.</p>
   <form method="POST" action="/api/portal/auth?token=${safeToken}">
-    <button type="submit">Sign in</button>
+    <button type="submit">Enter</button>
   </form>
   <div class="fineprint">If you didn't request this, you can safely ignore the email.</div>
 </main>
