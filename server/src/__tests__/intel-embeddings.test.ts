@@ -110,3 +110,61 @@ describe("intel-embeddings request body", () => {
     await expect(getEmbeddings(["x"])).rejects.toThrow(/unexpected shape/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Resilience: transient embedding failures (TEI restarts, Tailnet blips) had
+// been hard-failing the embed crons with a bare "fetch failed" because
+// getEmbeddings did one fetch with no timeout and no retry. These pin the
+// retry-on-transient / surface-permanent-immediately behavior.
+// ---------------------------------------------------------------------------
+describe("intel-embeddings resilience (retry + timeout)", () => {
+  it("retries a transient network failure ('fetch failed') then succeeds", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(jsonResponse([[0.1, 0.2]]));
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    const out = await getEmbeddings(["x"]);
+
+    expect(out).toEqual([[0.1, 0.2]]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a transient 5xx (TEI restarting) then succeeds", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: "restarting" }, { status: 503 }))
+      .mockResolvedValueOnce(jsonResponse([[0.3]]));
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    const out = await getEmbeddings(["x"]);
+
+    expect(out).toEqual([[0.3]]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a permanent 4xx (e.g. 422 bad body) — surfaces immediately", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "missing field `inputs`" }, { status: 422 }),
+    );
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    await expect(getEmbeddings(["x"])).rejects.toThrow(/422/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT retry an unexpected-shape error (our own thrown Error)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ unexpected: true }));
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    await expect(getEmbeddings(["x"])).rejects.toThrow(/unexpected shape/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("exhausts retries on a persistent network failure (1 + 2 retries = 3 calls)", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+
+    const { getEmbeddings } = await import("../services/intel-embeddings.js");
+    await expect(getEmbeddings(["x"])).rejects.toThrow(/fetch failed/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});

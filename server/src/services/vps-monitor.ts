@@ -103,7 +103,7 @@ export const INFRA_COSTS: Array<{ name: string; cost: ServiceCost }> = [
 function getServiceChecks(): ServiceCheck[] {
   const port = process.env.PORT || "3100";
   const ollamaUrl = SHARED_OLLAMA_URL;
-  const embedUrl = process.env.EMBED_URL || "http://147.79.78.251:8000";
+  const embedUrl = process.env.EMBED_URL || "http://100.67.128.51:8080";
 
   return [
     { name: "Backend API", url: `http://127.0.0.1:${port}/api/health/readiness` },
