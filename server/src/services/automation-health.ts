@@ -96,10 +96,12 @@ export interface AutomationHealthSnapshot {
  *  - fixed minute + fixed hour + `*` day (DOW unrestricted) → 1 day
  *  - fixed minute + fixed hour + `*` day + specific DOW → ceil(7/dowCount) days
  *    e.g. "0 10 * * 3,6" (Wed+Sat) → 4 days, "0 9 * * 1" (Mon only) → 7 days
+ *  - fixed minute + fixed hour + specific day-of-month (DOW unrestricted) →
+ *    ceil(30/domCount) days (monthly), e.g. "0 9 1 * *" → 30 days
  *  - else → 1 week
  * Returns milliseconds.
  */
-function estimateIntervalMs(schedule: string): number {
+export function estimateIntervalMs(schedule: string): number {
   try {
     const parsed = parseCron(schedule);
     const minuteCount = parsed.minutes.length;
@@ -114,21 +116,32 @@ function estimateIntervalMs(schedule: string): number {
       return Math.max(1, Math.floor(60 / minuteCount)) * 60 * 1000;
     }
     if (hourCount >= 24) return 60 * 60 * 1000; // every hour
+    const DAY = 24 * 60 * 60 * 1000;
     if (domCount >= 28) {
       // DOM is "every day of the month" — but DOW may restrict actual run days.
       // If DOW is a subset of the week, true interval = ceil(7 / dowCount) days.
       if (dowCount < 7) {
-        return Math.ceil(7 / dowCount) * 24 * 60 * 60 * 1000;
+        return Math.ceil(7 / dowCount) * DAY;
       }
-      return 24 * 60 * 60 * 1000; // truly every day
+      return DAY; // truly every day
     }
-    return 7 * 24 * 60 * 60 * 1000; // weekly fallback
+    // DOM restricted to specific calendar day(s) with no DOW restriction →
+    // monthly-style schedule ("0 9 1 * *" or "0 0 1,15 * *"). True interval ≈
+    // 30/domCount days. Without this branch these fell through to the weekly
+    // fallback, and the 2.5×-interval "critical" threshold (17.5d) tripped for
+    // ~13 days of every month — flagging healthy monthly crons as "critically
+    // stale" (the 2026-06-23 false-positive alert). DOM-AND-DOW restricted = cron
+    // OR-semantics → at least weekly, so those correctly fall through below.
+    if (dowCount >= 7) {
+      return Math.ceil(30 / domCount) * DAY;
+    }
+    return 7 * DAY; // weekly fallback (DOW-restricted)
   } catch {
     return 24 * 60 * 60 * 1000;
   }
 }
 
-function computeStaleness(job: CronJobState, now: Date): Staleness {
+export function computeStaleness(job: CronJobState, now: Date): Staleness {
   if (!job.enabled) return "ok";
   const intervalMs = estimateIntervalMs(
     job.scheduleOverride || job.schedule,
