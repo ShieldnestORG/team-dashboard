@@ -68,7 +68,7 @@ async function getMentionsThisMonth(db: Db, partnerId: string): Promise<number> 
   const result = await db.execute(sql`
     SELECT COUNT(*)::int AS cnt
     FROM content_items
-    WHERE metadata->>'partner_id' = ${partnerId}
+    WHERE partner_id = ${partnerId}::uuid
       AND created_at >= ${startOfMonth.toISOString()}
   `);
   const rows = result as unknown as Array<{ cnt: number }>;
@@ -105,6 +105,7 @@ async function generatePartnerMentions(db: Db): Promise<void> {
           contentType: item.contentType,
           topic: `${partner.name} — ${partner.industry} partner spotlight`,
           companyId: COMPANY_ID,
+          partnerId: partner.id,
         });
       } catch (err) {
         logger.error(
@@ -143,6 +144,7 @@ async function generatePremiumStrategyDocs(db: Db): Promise<void> {
         contentType: "strategy_doc",
         topic: `AEO strategy review for ${partner.name} — ${partner.industry} — biweekly performance analysis and next-cycle content plan`,
         companyId: COMPANY_ID,
+        partnerId: partner.id,
       });
       logger.info({ partnerId: partner.id }, "partner:strategy-doc — generated for premium partner");
     } catch (err) {

@@ -1,0 +1,3 @@
+ALTER TABLE "content_items" ADD COLUMN "partner_id" uuid;--> statement-breakpoint
+ALTER TABLE "content_items" ADD CONSTRAINT "content_items_partner_id_partner_companies_id_fk" FOREIGN KEY ("partner_id") REFERENCES "public"."partner_companies"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "content_items_partner_created_idx" ON "content_items" USING btree ("partner_id","created_at");
