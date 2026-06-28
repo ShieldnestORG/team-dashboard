@@ -63,11 +63,36 @@ async function deduplicateTags(db: Db): Promise<number> {
       WHERE id = ${dup.keep_id}
     `);
 
-    // Redirect all edges from the removed tag to the survivor
+    // Redirect all edges from the removed tag to the survivor.
+    // A redirect can collide with an edge the survivor already holds — the
+    // cr_unique_edge index covers (source_type, source_id, relationship,
+    // target_type, target_id), so the UPDATE would trip a unique violation
+    // (Postgres 23505). Delete the colliding remove-slug edges first (the
+    // survivor already carries the equivalent edge), then redirect the rest.
+    await db.execute(sql`
+      DELETE FROM company_relationships cr
+      WHERE cr.source_type = 'tag' AND cr.source_id = ${dup.remove_slug}
+        AND EXISTS (
+          SELECT 1 FROM company_relationships e
+          WHERE e.source_type = 'tag' AND e.source_id = ${dup.keep_slug}
+            AND e.relationship = cr.relationship
+            AND e.target_type = cr.target_type AND e.target_id = cr.target_id
+        )
+    `);
     await db.execute(sql`
       UPDATE company_relationships
       SET source_id = ${dup.keep_slug}, updated_at = NOW()
       WHERE source_type = 'tag' AND source_id = ${dup.remove_slug}
+    `);
+    await db.execute(sql`
+      DELETE FROM company_relationships cr
+      WHERE cr.target_type = 'tag' AND cr.target_id = ${dup.remove_slug}
+        AND EXISTS (
+          SELECT 1 FROM company_relationships e
+          WHERE e.target_type = 'tag' AND e.target_id = ${dup.keep_slug}
+            AND e.relationship = cr.relationship
+            AND e.source_type = cr.source_type AND e.source_id = cr.source_id
+        )
     `);
     await db.execute(sql`
       UPDATE company_relationships
