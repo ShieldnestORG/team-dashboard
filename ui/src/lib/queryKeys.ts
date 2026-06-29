@@ -99,6 +99,8 @@ export const queryKeys = {
     providers: (companyId: string) => ["secret-providers", companyId] as const,
   },
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
+  siteMetrics: (companyId: string, filters?: { siteId?: string; period?: string; limit?: number }) =>
+    ["site-metrics", companyId, filters ?? {}] as const,
   agentOps: (companyId: string) => ["agent-ops", companyId] as const,
   sidebarBadges: (companyId: string) => ["sidebar-badges", companyId] as const,
   activity: (companyId: string) => ["activity", companyId] as const,

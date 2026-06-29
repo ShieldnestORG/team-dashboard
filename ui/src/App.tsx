@@ -45,6 +45,7 @@ import { SystemHealth } from "./pages/SystemHealth";
 import { ContentReview } from "./pages/ContentReview";
 import { CreditScoreReview } from "./pages/CreditScoreReview";
 import { ContentAnalytics } from "./pages/ContentAnalytics";
+import { SiteAnalytics } from "./pages/SiteAnalytics";
 import { OwnedSites } from "./pages/OwnedSites";
 import { Structure } from "./pages/Structure";
 import { TopicTakeoverFlow } from "./pages/TopicTakeoverFlow";
@@ -258,6 +259,7 @@ function boardRoutes() {
       <Route path="creditscore-review/scans" element={<CreditScoreReview />} />
       <Route path="creditscore-review/docs" element={<CreditScoreReview />} />
       <Route path="content-analytics" element={<Navigate to="/socials/analytics" replace />} />
+      <Route path="site-analytics" element={<SiteAnalytics />} />
       <Route path="owned-sites" element={<OwnedSites />} />
       <Route path="structure" element={<Structure />} />
       <Route path="topic-takeover" element={<TopicTakeoverFlow />} />

@@ -39,6 +39,22 @@ const productRevenueRowSchema = z.object({
   ),
 });
 
+const emailFeedbackSrcSchema = z.object({
+  src: z.string().min(1),
+  up: z.number().int().nonnegative(),
+  down: z.number().int().nonnegative(),
+  comments: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+
+const emailFeedbackSchema = z.object({
+  total: z.number().int().nonnegative(),
+  up: z.number().int().nonnegative(),
+  down: z.number().int().nonnegative(),
+  comments: z.number().int().nonnegative(),
+  bySrc: z.array(emailFeedbackSrcSchema),
+});
+
 const ingestBodySchema = z.object({
   siteId: z.string().min(1),
   metrics: z.object({
@@ -49,6 +65,7 @@ const ingestBodySchema = z.object({
     directoryClicks: z.number().int().nonnegative().optional(),
     topReferrers: z.array(referrerSchema).optional(),
     productRevenue: z.array(productRevenueRowSchema).optional(),
+    emailFeedback: emailFeedbackSchema.optional(),
     period: z.enum(["hourly", "daily", "weekly"]),
     timestamp: z.string().refine(
       (v) => !Number.isNaN(Date.parse(v)),

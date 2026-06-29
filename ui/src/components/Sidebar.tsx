@@ -31,6 +31,7 @@ import {
   Eye,
   CreditCard,
   Film,
+  BarChart3,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -140,6 +141,7 @@ export function Sidebar() {
           <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
           <SidebarNavItem to="/cities" label="City Collector" icon={MapPin} />
           <SidebarNavItem to="/watchtower" label="Watchtower" icon={Eye} />
+          <SidebarNavItem to="/site-analytics" label="Site Analytics" icon={BarChart3} />
         </SidebarSection>
 
         <SidebarSection label="Content & Socials" accentClassName="text-violet-400">
