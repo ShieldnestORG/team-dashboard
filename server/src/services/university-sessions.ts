@@ -96,7 +96,18 @@ export interface RsvpRosterEntry {
 }
 
 export type RsvpResult =
-  | { ok: true; session: SessionView }
+  | {
+      ok: true;
+      session: SessionView;
+      // The member's durable (lowercased) email — the route uses it as the
+      // rsvp-confirm recipient without re-resolving identity.
+      memberEmail: string;
+      // True when this RSVP TRANSITIONED into `going` (a brand-new RSVP OR a
+      // re-activation of a prior `canceled` row). False on a no-op repeat where
+      // the member was already `going`. The route fires the rsvp-confirm email
+      // only when this is true, so a double-tap doesn't re-send.
+      newlyGoing: boolean;
+    }
   | { ok: false; code: "not_found" | "canceled" | "ended" | "full" };
 
 function normalizeEmail(email: string): string {
@@ -350,7 +361,15 @@ export function universitySessionsService(db: Db) {
     const session = await getSessionView(accountId, sessionId, now);
     // session is non-null here (row exists), but guard for the type.
     if (!session) return { ok: false, code: "not_found" };
-    return { ok: true, session };
+    // `existing` was the member's status BEFORE this upsert. A transition into
+    // `going` is anything that wasn't already `going` (new RSVP or re-activated
+    // from `canceled`) — the route gates the rsvp-confirm send on this.
+    return {
+      ok: true,
+      session,
+      memberEmail: identity.email,
+      newlyGoing: existing !== "going",
+    };
   }
 
   /**
@@ -458,6 +477,24 @@ export function universitySessionsService(db: Db) {
   // Admin mutations
   // -------------------------------------------------------------------------
 
+  /**
+   * All ACTIVE University members (email + displayName), for broadcast fan-out
+   * (e.g. the new-session announcement). Mirrors the active-member selection in
+   * university-crons.ts (onboarding): status='active'. Emails are returned as
+   * stored; callers lowercase as needed for de-dup / messageId keys.
+   */
+  async function listActiveMemberEmails(): Promise<
+    Array<{ email: string; displayName: string | null }>
+  > {
+    return db
+      .select({
+        email: universityMembers.email,
+        displayName: universityMembers.displayName,
+      })
+      .from(universityMembers)
+      .where(eq(universityMembers.status, "active"));
+  }
+
   /** Insert a single `scheduled` session row. Returns the created row. */
   async function createSession(
     input: CreateSessionInput,
@@ -542,6 +579,7 @@ export function universitySessionsService(db: Db) {
     buildIcs,
     getAdminSessionById,
     listSessionRsvps,
+    listActiveMemberEmails,
     createSession,
     patchSession,
     cancelSession,

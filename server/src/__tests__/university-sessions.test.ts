@@ -73,10 +73,13 @@ import {
   isSessionLive,
   renderIcs,
   JOIN_OPENS_BEFORE_MINUTES,
+  JOIN_GRACE_AFTER_MINUTES,
 } from "../services/university-sessions.js";
 import {
   runUniversitySessionReminder24h,
   runUniversitySessionReminder1h,
+  runUniversitySessionStartingNow,
+  runUniversitySessionRecap,
 } from "../services/university-crons.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
@@ -904,6 +907,247 @@ describeDb("university session reminder crons (windowing)", () => {
     await svc.cancelRsvp(rsvpAccountId, id);
 
     const sent = await runUniversitySessionReminder1h(db);
+    expect(sent).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-minute crons — "starting now" + recap. These sweep every wall-clock
+// minute and MUST be exactly-once via MINUTE-ALIGNED, DISJOINT windows derived
+// from date_trunc('minute', now()) — NOT downstream messageId dedup (the
+// landing receiver does not dedup). The boundary cases below prove the slices
+// tile perfectly: a session whose start lands on a minute boundary is emailed
+// in exactly ONE minute's sweep, never two.
+//
+// Windows under test:
+//   starting-now: starts_at  ∈ [M,      M + 1m)   where M = date_trunc(min,now)
+//   recap:        ended_at   ∈ [M - 1m, M)        ended_at = start+dur+grace
+// ---------------------------------------------------------------------------
+
+describeDb("university per-minute session crons (minute-aligned windows)", () => {
+  let db!: ReturnType<typeof createDb>;
+  let cleanup: (() => Promise<void>) | null = null;
+  let svc!: ReturnType<typeof universitySessionsService>;
+  let rsvpAccountId!: string;
+
+  beforeAll(async () => {
+    process.env.PORTAL_SESSION_SECRET = PORTAL_SECRET;
+
+    if (dbMode === "fullChain") {
+      const tempDb = await startEmbeddedPostgresTestDatabase(
+        "university-perminute-",
+      );
+      db = createDb(tempDb.connectionString);
+      cleanup = tempDb.cleanup;
+    } else {
+      const tempDb = await startNoPgvectorTestDatabase(
+        "university-perminute-novec-",
+      );
+      db = tempDb.db;
+      cleanup = tempDb.cleanup;
+    }
+    svc = universitySessionsService(db);
+
+    const [acct] = await db
+      .insert(customerAccounts)
+      .values({ email: "rsvp@perminute.test" })
+      .returning();
+    rsvpAccountId = acct.id;
+    await db.insert(universityMembers).values({
+      accountId: rsvpAccountId,
+      email: "rsvp@perminute.test",
+      displayName: "Min Boundary",
+      status: "active",
+      joinedAt: new Date(),
+    });
+  }, 60_000);
+
+  afterEach(async () => {
+    sendEmailMock.mockClear();
+    await db.delete(universitySessionRsvps);
+    await db.delete(universitySessions);
+  });
+
+  afterAll(async () => {
+    await cleanup?.();
+  });
+
+  // These tests pin session times relative to the current minute boundary M,
+  // while the cron derives its own M from SQL date_trunc('minute', now()). If a
+  // test straddled a wall-clock minute edge between the JS floor and the SQL
+  // floor the two M's would differ by a minute and the assertion would flake.
+  // We avoid that by NEVER running these assertions in the last/first ~3s of a
+  // minute: wait out the danger zone first, then JS and SQL agree on M for the
+  // whole body. (The 5s margin is generous vs. the sub-ms gap between seed and
+  // cron run.)
+  async function settleIntoMinute(): Promise<void> {
+    const secondsIntoMinute = (Date.now() % 60_000) / 1000;
+    const SAFE_LO = 3;
+    const SAFE_HI = 55;
+    if (secondsIntoMinute < SAFE_LO) {
+      await new Promise((r) => setTimeout(r, (SAFE_LO - secondsIntoMinute) * 1000 + 200));
+    } else if (secondsIntoMinute > SAFE_HI) {
+      // Too close to the next minute — wait it out, then we're early in the new one.
+      await new Promise((r) => setTimeout(r, (60 - secondsIntoMinute + SAFE_LO) * 1000 + 200));
+    }
+  }
+
+  // The current minute boundary M, floored the same way the cron floors in SQL
+  // (date_trunc('minute', now())). Call settleIntoMinute() first.
+  function currentMinuteBoundary(): Date {
+    const m = new Date();
+    m.setUTCSeconds(0, 0);
+    return m;
+  }
+
+  // Insert a scheduled session directly at the EXACT instant we want (the
+  // createSession path rejects non-future starts; the column has no such
+  // constraint, and the cron reads only the column). A going RSVP is inserted
+  // directly too, mirroring the email-only-RSVP seed in the integration block.
+  async function seedSessionAt(
+    startsAt: Date,
+    durationMinutes = 60,
+  ): Promise<string> {
+    const [row] = await db
+      .insert(universitySessions)
+      .values({
+        title: "Minute Sit",
+        hostName: "Mark",
+        startsAt,
+        durationMinutes,
+        joinUrl: "https://whereby.com/minute-room",
+        capacity: null,
+        status: "scheduled",
+      })
+      .returning();
+    await db.insert(universitySessionRsvps).values({
+      sessionId: row.id,
+      email: "rsvp@perminute.test",
+      accountId: rsvpAccountId,
+      status: "going",
+    });
+    return row.id;
+  }
+
+  // ----- starting-now --------------------------------------------------------
+
+  it("starting-now fires for a session starting THIS minute; not one starting next minute", async () => {
+    await settleIntoMinute();
+    const m = currentMinuteBoundary();
+    // In-window: 30s into the current minute → ∈ [M, M+1m).
+    await seedSessionAt(new Date(m.getTime() + 30 * 1000));
+    // Out-of-window: 30s into the NEXT minute → ∈ [M+1m, M+2m), so the M sweep
+    // must NOT pick it up (it belongs to next minute's sweep).
+    await seedSessionAt(new Date(m.getTime() + 90 * 1000));
+
+    const sent = await runUniversitySessionStartingNow(db);
+    expect(sent).toBe(1);
+
+    const calls = sendEmailMock.mock.calls.filter(
+      (c) => c[0]?.kind === "university_session_starting_now",
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].to).toBe("rsvp@perminute.test");
+    // The live email carries the real join_url.
+    expect(calls[0][0].data.joinUrl).toBe("https://whereby.com/minute-room");
+  });
+
+  it("BOUNDARY exactly-once: a start AT the boundary M lands in exactly ONE minute slice — the M sweep claims it, the M-1m slice does not", async () => {
+    await settleIntoMinute();
+    const m = currentMinuteBoundary();
+
+    // (a) A session starting EXACTLY on M. Window [M, M+1m) has an INCLUSIVE
+    // lower bound, so this minute's sweep claims it → exactly one send.
+    await seedSessionAt(new Date(m.getTime()));
+    const sentOnBoundary = await runUniversitySessionStartingNow(db);
+    expect(sentOnBoundary).toBe(1);
+    expect(
+      sendEmailMock.mock.calls.filter(
+        (c) => c[0]?.kind === "university_session_starting_now",
+      ),
+    ).toHaveLength(1);
+
+    // Reset between the two halves so the second assertion is clean.
+    sendEmailMock.mockClear();
+    await db.delete(universitySessionRsvps);
+    await db.delete(universitySessions);
+
+    // (b) A session starting exactly one minute BEFORE M (i.e. on the boundary
+    // of the PRIOR minute slice [M-1m, M)). The current sweep's window [M, M+1m)
+    // has an EXCLUSIVE relationship to it — M-1m < M — so this sweep must NOT
+    // claim it. That start was the prior sweep's responsibility. Adjacent
+    // windows are disjoint: a boundary instant belongs to exactly one of them.
+    await seedSessionAt(new Date(m.getTime() - 60 * 1000));
+    const sentPriorBoundary = await runUniversitySessionStartingNow(db);
+    expect(sentPriorBoundary).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("starting-now does NOT fire for a session that started a full minute ago", async () => {
+    await settleIntoMinute();
+    const m = currentMinuteBoundary();
+    // starts_at = M - 90s → ∈ [M-2m, M-1m): well before the [M, M+1m) window.
+    await seedSessionAt(new Date(m.getTime() - 90 * 1000));
+
+    const sent = await runUniversitySessionStartingNow(db);
+    expect(sent).toBe(0);
+  });
+
+  it("starting-now excludes canceled sessions", async () => {
+    await settleIntoMinute();
+    const m = currentMinuteBoundary();
+    const id = await seedSessionAt(new Date(m.getTime() + 30 * 1000));
+    await svc.cancelSession(id);
+
+    const sent = await runUniversitySessionStartingNow(db);
+    expect(sent).toBe(0);
+  });
+
+  // ----- recap ---------------------------------------------------------------
+
+  it("recap fires for a session that ENDED in the previous minute; not one ending this minute", async () => {
+    await settleIntoMinute();
+    const m = currentMinuteBoundary();
+    const grace = JOIN_GRACE_AFTER_MINUTES;
+    // ended_at = starts_at + duration + grace. We want ended_at ∈ [M-1m, M).
+    // Pick duration 60, so starts_at = endedAt - (60 + grace) minutes.
+    const endedInPrevMinute = new Date(m.getTime() - 30 * 1000); // ∈ [M-1m, M)
+    await seedSessionAt(
+      new Date(endedInPrevMinute.getTime() - (60 + grace) * MINUTE),
+      60,
+    );
+    // A session ending 30s into THIS minute (ended_at ∈ [M, M+1m)) must NOT
+    // recap yet — it belongs to next minute's sweep.
+    const endsThisMinute = new Date(m.getTime() + 30 * 1000);
+    await seedSessionAt(
+      new Date(endsThisMinute.getTime() - (60 + grace) * MINUTE),
+      60,
+    );
+
+    const sent = await runUniversitySessionRecap(db);
+    expect(sent).toBe(1);
+
+    const calls = sendEmailMock.mock.calls.filter(
+      (c) => c[0]?.kind === "university_session_recap",
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].to).toBe("rsvp@perminute.test");
+    // recording_url column doesn't exist yet → null in the payload.
+    expect(calls[0][0].data.recordingUrl).toBeNull();
+  });
+
+  it("recap excludes canceled sessions", async () => {
+    await settleIntoMinute();
+    const m = currentMinuteBoundary();
+    const grace = JOIN_GRACE_AFTER_MINUTES;
+    const endedInPrevMinute = new Date(m.getTime() - 30 * 1000);
+    const id = await seedSessionAt(
+      new Date(endedInPrevMinute.getTime() - (60 + grace) * MINUTE),
+      60,
+    );
+    await svc.cancelSession(id);
+
+    const sent = await runUniversitySessionRecap(db);
     expect(sent).toBe(0);
   });
 });

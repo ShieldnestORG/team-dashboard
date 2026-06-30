@@ -42,6 +42,7 @@ import {
   UNIVERSITY_SESSIONS_URL,
   firstNameFromDisplayName,
 } from "./university-email.js";
+import { JOIN_GRACE_AFTER_MINUTES } from "./university-sessions.js";
 import { logger } from "../middleware/logger.js";
 
 // A "rep day" comes back from the Postgres `date` column as 'YYYY-MM-DD'. The
@@ -304,6 +305,213 @@ export async function runUniversitySessionReminder1h(db: Db): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// "We are live now" — sent at start time to going RSVPs WITH the real join_url.
+//
+// CADENCE: this is the finest-cadence cron in the file. The shared cron
+// scheduler supports standard 5-field cron with PER-MINUTE granularity
+// (cron.ts parses `* * * * *` / `*/N`; the registry ticks every 30s), so this
+// runs EVERY MINUTE. The scheduler advances each job's nextRun to the NEXT
+// whole minute after every fire (cron.ts nextCronTick floors to the minute),
+// so a `* * * * *` job's handler runs EXACTLY ONCE per wall-clock minute —
+// never twice — but a few seconds INTO that minute (tick jitter).
+//
+// WINDOW (minute-aligned, disjoint, exactly-once): we floor `now` to the
+// current minute boundary M = date_trunc('minute', now()) and use a 1-minute
+// slice keyed off M, NOT off jittery now():
+//
+//   starts_at ∈ [M, M + 1 minute)
+//
+// Because every fire-instant within a wall-clock minute (12:00:01 … 12:00:59)
+// floors to the SAME M, the window is identical regardless of sub-minute
+// jitter. Consecutive minutes' windows tile perfectly — [M, M+1m), [M+1m,
+// M+2m), … — disjoint and adjacent, no gap, no overlap. A session falls into
+// EXACTLY ONE slice (the minute its start lands in), so its "live now" email
+// fires exactly once. The room is already live at T-0 (the join window opens at
+// T-JOIN_OPENS_BEFORE_MINUTES), so join_url is valid to hand out here.
+//
+// CORRECTNESS DOES NOT DEPEND ON DOWNSTREAM DEDUP. The landing email receiver
+// does NOT de-duplicate by messageId, so exactly-once must be — and is —
+// guaranteed by the disjoint windows alone. The messageId below is kept for
+// tracing only; do NOT reintroduce an overlapping window on the assumption that
+// the storefront will drop duplicates (it won't).
+//
+// DE-DUP vs the T-1h reminder: that cron's window is starts_at ∈ [now+1h,
+// now+2h); this one is the T-0 minute slice. The windows do not overlap, so a
+// session never gets both in the same sweep. Unlike the reminders this sweeps
+// every minute (not hourly), because a 1-hour window at T-0 would mean blasting
+// the join link up to an hour early.
+// ---------------------------------------------------------------------------
+
+export async function runUniversitySessionStartingNow(db: Db): Promise<number> {
+  // Minute-aligned slice immune to sub-minute tick jitter: floor now() to the
+  // minute boundary M, then match starts_at ∈ [M, M+1m). Each start minute is
+  // hit by exactly one sweep. We pull join_url here (the room is live at T-0) —
+  // this is the one session email that carries it.
+  const minuteBoundary = sql`date_trunc('minute', now())`;
+  const due = await db
+    .select({
+      email: universitySessionRsvps.email,
+      displayName: universityMembers.displayName,
+      sessionId: universitySessions.id,
+      title: universitySessions.title,
+      hostName: universitySessions.hostName,
+      joinUrl: universitySessions.joinUrl,
+    })
+    .from(universitySessionRsvps)
+    .innerJoin(
+      universitySessions,
+      eq(universitySessionRsvps.sessionId, universitySessions.id),
+    )
+    .leftJoin(
+      universityMembers,
+      sql`LOWER(${universityMembers.email}) = LOWER(${universitySessionRsvps.email})`,
+    )
+    .where(
+      and(
+        eq(universitySessionRsvps.status, "going"),
+        eq(universitySessions.status, "scheduled"),
+        gte(universitySessions.startsAt, minuteBoundary),
+        lt(universitySessions.startsAt, sql`${minuteBoundary} + interval '1 minute'`),
+      ),
+    );
+
+  let sent = 0;
+  for (const r of due) {
+    try {
+      await sendCreditscoreEmail({
+        kind: "university_session_starting_now",
+        to: r.email,
+        // Trace-only. Exactly-once is guaranteed by the disjoint minute window
+        // above — the landing receiver does NOT dedup by messageId.
+        messageId: `starting-now:${r.sessionId}:${r.email.trim().toLowerCase()}`,
+        data: {
+          sessionId: r.sessionId,
+          sessionTitle: r.title,
+          hostName: r.hostName,
+          joinUrl: r.joinUrl,
+          sessionsUrl: UNIVERSITY_SESSIONS_URL,
+          // firstName isn't in the landing contract for this kind, but the
+          // template can ignore extra fields; keep payloads consistent.
+          firstName: firstNameFromDisplayName(r.displayName),
+        },
+      });
+      sent += 1;
+    } catch (err) {
+      logger.error(
+        { err, email: r.email, kind: "university_session_starting_now" },
+        "university:session-starting-now — send failed for RSVP (non-fatal)",
+      );
+    }
+  }
+  logger.info(
+    { considered: due.length, sent },
+    "university:session-starting-now — cycle complete",
+  );
+  return sent;
+}
+
+// ---------------------------------------------------------------------------
+// Post-session recap — sent shortly AFTER a session ends to going RSVPs.
+//
+// CADENCE: per-minute, same as starting-now (the scheduler runs a `* * * * *`
+// job exactly once per wall-clock minute — see runUniversitySessionStartingNow
+// above). The "ended" instant is computed per-row as starts_at +
+// duration_minutes + JOIN_GRACE_AFTER_MINUTES (the same boundary the live
+// window + member list use).
+//
+// WINDOW (minute-aligned, disjoint, exactly-once): floor now() to the current
+// minute boundary M = date_trunc('minute', now()) and match the PRECEDING
+// 1-minute slice keyed off M, NOT off jittery now():
+//
+//   ended_at ∈ [M - 1 minute, M)
+//
+// As with starting-now, every fire-instant within a wall-clock minute floors to
+// the same M, so the window is immune to sub-minute tick jitter. Consecutive
+// minutes' windows tile perfectly — …, [M-1m, M), [M, M+1m), … — disjoint and
+// adjacent, no gap, no overlap. A session's computed ended_at falls into
+// EXACTLY ONE slice, so its recap fires once, in the minute just after its live
+// window closes.
+//
+// CORRECTNESS DOES NOT DEPEND ON DOWNSTREAM DEDUP. The landing email receiver
+// does NOT de-duplicate by messageId, so exactly-once is guaranteed by the
+// disjoint windows alone. The messageId below is trace-only; do NOT reintroduce
+// an overlapping window assuming the storefront drops duplicates (it won't).
+//
+// recordingUrl is NULL for now — the `recording_url` column does not exist yet
+// (a later wave adds it). We pass it absent; the landing template handles the
+// null gracefully ("recording not posted").
+// ---------------------------------------------------------------------------
+
+export async function runUniversitySessionRecap(db: Db): Promise<number> {
+  // ended_at = starts_at + (duration + grace) minutes. Minute-aligned slice
+  // immune to tick jitter: floor now() to the minute boundary M, then match
+  // ended_at ∈ [M-1m, M) — the single minute just after the session ended.
+  // Canceled sessions are excluded.
+  const minuteBoundary = sql`date_trunc('minute', now())`;
+  const endedAt = sql`${universitySessions.startsAt} + make_interval(mins => ${universitySessions.durationMinutes} + ${JOIN_GRACE_AFTER_MINUTES})`;
+
+  const due = await db
+    .select({
+      email: universitySessionRsvps.email,
+      displayName: universityMembers.displayName,
+      sessionId: universitySessions.id,
+      title: universitySessions.title,
+      hostName: universitySessions.hostName,
+    })
+    .from(universitySessionRsvps)
+    .innerJoin(
+      universitySessions,
+      eq(universitySessionRsvps.sessionId, universitySessions.id),
+    )
+    .leftJoin(
+      universityMembers,
+      sql`LOWER(${universityMembers.email}) = LOWER(${universitySessionRsvps.email})`,
+    )
+    .where(
+      and(
+        eq(universitySessionRsvps.status, "going"),
+        eq(universitySessions.status, "scheduled"),
+        gte(endedAt, sql`${minuteBoundary} - interval '1 minute'`),
+        lt(endedAt, minuteBoundary),
+      ),
+    );
+
+  let sent = 0;
+  for (const r of due) {
+    try {
+      await sendCreditscoreEmail({
+        kind: "university_session_recap",
+        to: r.email,
+        // Trace-only. Exactly-once is guaranteed by the disjoint minute window
+        // above — the landing receiver does NOT dedup by messageId.
+        messageId: `recap:${r.sessionId}:${r.email.trim().toLowerCase()}`,
+        data: {
+          sessionId: r.sessionId,
+          sessionTitle: r.title,
+          hostName: r.hostName,
+          // recording_url column doesn't exist yet — pass null; the landing
+          // template renders an honest "recording not posted" in that case.
+          recordingUrl: null,
+          sessionsUrl: UNIVERSITY_SESSIONS_URL,
+          firstName: firstNameFromDisplayName(r.displayName),
+        },
+      });
+      sent += 1;
+    } catch (err) {
+      logger.error(
+        { err, email: r.email, kind: "university_session_recap" },
+        "university:session-recap — send failed for RSVP (non-fatal)",
+      );
+    }
+  }
+  logger.info(
+    { considered: due.length, sent },
+    "university:session-recap — cycle complete",
+  );
+  return sent;
+}
+
+// ---------------------------------------------------------------------------
 // Streak nudge — ACTIVE members whose streak is alive but at risk today.
 //
 // "At risk" = the member logged a rep YESTERDAY (UTC) and has NOT logged one
@@ -467,6 +675,28 @@ export function startUniversityCrons(db: Db): void {
     ownerAgent: "mark",
     sourceFile: "university-crons.ts",
     handler: () => runUniversitySessionReminder1h(db),
+  });
+
+  // "We are live now" + recap run EVERY MINUTE — both use a 1-minute window
+  // aligned to start time (T-0) / end time, which must be swept per-minute for
+  // exactly-once delivery. The scheduler supports per-minute cron (cron.ts) and
+  // ticks every 30s, so `* * * * *` is the finest cadence available and is the
+  // right one here. The 1-minute window IS the idempotency (same design as the
+  // hourly reminders, just a tighter slice).
+  registerCronJob({
+    jobName: "university:session-starting-now",
+    schedule: "* * * * *", // every minute
+    ownerAgent: "mark",
+    sourceFile: "university-crons.ts",
+    handler: () => runUniversitySessionStartingNow(db),
+  });
+
+  registerCronJob({
+    jobName: "university:session-recap",
+    schedule: "* * * * *", // every minute
+    ownerAgent: "mark",
+    sourceFile: "university-crons.ts",
+    handler: () => runUniversitySessionRecap(db),
   });
 
   // Streak nudge runs LATE in the UTC day so members have had the whole day to

@@ -32,7 +32,10 @@ import {
 } from "../services/optimize-me-bridge.js";
 import { universitySessionsService } from "../services/university-sessions.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
-import { UNIVERSITY_SESSIONS_URL } from "../services/university-email.js";
+import {
+  UNIVERSITY_SESSIONS_URL,
+  universitySessionIcsUrl,
+} from "../services/university-email.js";
 
 // Optimize Me ("architect") app surface. The bridge handoff lands at
 // /api/sso/bridge there. Overridable via env for staging/local.
@@ -1685,6 +1688,35 @@ export function portalRoutes(db: Db): Router {
               return;
           }
         }
+        // RSVP-confirmation email — ONLY on a transition INTO going (new RSVP or
+        // re-activation of a prior canceled). A no-op repeat (already going)
+        // sends nothing. Transactional; the storefront template owns subject/
+        // body. The .ics calendarUrl is the member-authenticated download route.
+        // Per-send failure must not fail the RSVP — log and continue.
+        if (result.ok && result.newlyGoing) {
+          const s = result.session;
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_rsvp_confirm",
+              to: result.memberEmail,
+              data: {
+                sessionId: s.id,
+                sessionTitle: s.title,
+                hostName: s.hostName,
+                startsAt: s.startsAt,
+                durationMinutes: s.durationMinutes,
+                description: s.description ?? undefined,
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+                calendarUrl: universitySessionIcsUrl(s.id),
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email: result.memberEmail, sessionId },
+              "portal/university/sessions: rsvp-confirm send failed (non-fatal)",
+            );
+          }
+        }
         res.status(200).json({ session: result.session });
       } catch (err) {
         logger.error(
@@ -1823,6 +1855,46 @@ export function portalRoutes(db: Db): Router {
         ...parsed.value,
         createdByAccount: accountId,
       });
+
+      // New-session announcement — broadcast to ALL active members. COMMERCIAL:
+      // the storefront adds postal address + working unsubscribe + the
+      // suppression gate; team-dashboard only fans the envelope to active
+      // members. messageId = announce:<sessionId>:<emailLower> so a retry of the
+      // same broadcast is idempotent storefront-side. Per-send failures must NOT
+      // fail the create (the session is already persisted) — log and continue.
+      try {
+        const members = await sessionsSvc.listActiveMemberEmails();
+        for (const m of members) {
+          const emailLower = m.email.trim().toLowerCase();
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_announce",
+              to: m.email,
+              messageId: `announce:${row.id}:${emailLower}`,
+              data: {
+                sessionId: row.id,
+                sessionTitle: row.title,
+                hostName: row.hostName,
+                startsAt: row.startsAt.toISOString(),
+                durationMinutes: row.durationMinutes,
+                description: row.description ?? undefined,
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email: m.email, sessionId: row.id },
+              "portal/university/sessions: announce send failed (non-fatal)",
+            );
+          }
+        }
+      } catch (announceErr) {
+        logger.error(
+          { err: announceErr, sessionId: row.id },
+          "portal/university/sessions: announce fan-out failed (non-fatal)",
+        );
+      }
+
       res.status(200).json({ session: serializeAdminSession(row) });
     } catch (err) {
       logger.error(

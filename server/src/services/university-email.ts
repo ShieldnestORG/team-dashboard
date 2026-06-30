@@ -29,6 +29,21 @@ export const UNIVERSITY_REJOIN_URL =
 export const UNIVERSITY_SESSIONS_URL =
   "https://app.coherencedaddy.com/university/sessions";
 
+// Base origin for the member-authenticated .ics download route. The portal API
+// is mounted under /api/portal, so the per-session calendar file lives at
+// `${ORIGIN}/api/portal/university/sessions/:id/ics`. Origin matches the
+// Sessions tab deep-link (app.coherencedaddy.com).
+const UNIVERSITY_APP_ORIGIN = "https://app.coherencedaddy.com";
+
+/**
+ * Member .ics download URL for a session — the "Add to calendar" link embedded
+ * in the RSVP-confirmation email (`calendarUrl`). Authenticated route: the
+ * member must be logged in for it to resolve (it contains the join link).
+ */
+export function universitySessionIcsUrl(sessionId: string): string {
+  return `${UNIVERSITY_APP_ORIGIN}/api/portal/university/sessions/${sessionId}/ics`;
+}
+
 // Receipt display values, per plan. Monthly is $50/mo; annual is $500/yr
 // (two months free). The plan key is the stable 'university_monthly' /
 // 'university_annual' set at checkout.

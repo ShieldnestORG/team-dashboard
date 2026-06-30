@@ -51,7 +51,26 @@ export type CreditscoreEmailKind =
   // cancel route. Templates live storefront-side (owner-gated).
   | "university_session_reminder_24h"
   | "university_session_reminder_1h"
-  | "university_session_canceled";
+  | "university_session_canceled"
+  // RSVP confirmation — sent the moment a member RSVPs `going` (new OR
+  // re-activated from a prior canceled; NOT on a no-op repeat going). Carries
+  // the .ics calendarUrl so the member can add the sit to their calendar.
+  // Transactional storefront-side.
+  | "university_session_rsvp_confirm"
+  // "We are live now" — sent at start time to going RSVPs with the real
+  // join_url (the room is live once the join window opens). Fired by the
+  // per-minute windowed cron `university:session-starting-now`. Transactional.
+  | "university_session_starting_now"
+  // New-session announcement — broadcast to ALL active members when an admin
+  // creates a session (event-driven from createSession). COMMERCIAL storefront-
+  // side: the storefront adds postal address + working unsubscribe + suppression
+  // gate. messageId = announce:<sessionId>:<emailLower> for retry idempotency.
+  | "university_session_announce"
+  // Post-session recap — sent shortly after a session ends to going RSVPs.
+  // recordingUrl is null until a later wave adds the column; the storefront
+  // template handles the null gracefully. Fired by the per-minute windowed cron
+  // `university:session-recap`. Transactional.
+  | "university_session_recap";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;
