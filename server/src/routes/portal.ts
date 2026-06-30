@@ -1752,6 +1752,59 @@ export function portalRoutes(db: Db): Router {
     },
   );
 
+  // -- Admin reads (env allow-list) -------------------------------------------
+
+  // Full AdminSession (join_url ALWAYS included) for the admin edit form. The
+  // member list view gates join_url, so the form reads the room link from here.
+  router.get(
+    "/university/sessions/:id",
+    async (req: Request, res: Response) => {
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const row = await sessionsSvc.getAdminSessionById(sessionId);
+        if (!row) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res.status(200).json({ session: serializeAdminSession(row) });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: admin get failed",
+        );
+        res.status(500).json({ error: "Failed to load session" });
+      }
+    },
+  );
+
+  // RSVP roster for a session (going + canceled, oldest first). Admin attendee
+  // list; `name` is the member displayName when known.
+  router.get(
+    "/university/sessions/:id/rsvps",
+    async (req: Request, res: Response) => {
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const row = await sessionsSvc.getAdminSessionById(sessionId);
+        if (!row) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        const rsvps = await sessionsSvc.listSessionRsvps(sessionId);
+        res.status(200).json({ rsvps });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: rsvps list failed",
+        );
+        res.status(500).json({ error: "Failed to load RSVPs" });
+      }
+    },
+  );
+
   // -- Admin authoring (env allow-list) ---------------------------------------
 
   router.post("/university/sessions", async (req: Request, res: Response) => {

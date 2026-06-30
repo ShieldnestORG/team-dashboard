@@ -663,6 +663,138 @@ describeDb("university sessions endpoints (integration)", () => {
       true,
     );
   });
+
+  // ----- Admin reads (env allow-list) — join_url leak guard ------------------
+  // The admin GET :id returns the full AdminSession (join_url ALWAYS present)
+  // and GET :id/rsvps returns the attendee roster. Both are gated on
+  // requireSessionAdmin (membership AND the UNIVERSITY_SESSION_ADMINS list).
+  // The leak risk: the always-join-url AdminSession reaching a non-admin.
+
+  it("admin GET :id returns 200 with joinUrl in the full AdminSession shape", async () => {
+    const sessionId = await seedSession({
+      joinUrl: "https://whereby.com/admin-room",
+      capacity: 25,
+    });
+
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}`)
+      .set("Cookie", adminCookie());
+    expect(res.status).toBe(200);
+    const s = res.body.session;
+    expect(s.id).toBe(sessionId);
+    // join_url is ALWAYS included in the admin shape (un-gated).
+    expect(s.joinUrl).toBe("https://whereby.com/admin-room");
+    // Full AdminSession fields the member view never exposes unconditionally.
+    expect(s.status).toBe("scheduled");
+    expect(s.capacity).toBe(25);
+    expect(typeof s.startsAt).toBe("string");
+    expect(typeof s.createdAt).toBe("string");
+    expect(typeof s.updatedAt).toBe("string");
+  });
+
+  it("LEAK GUARD: admin GET :id is 403 for a valid member NOT on the allow-list — never leaks joinUrl", async () => {
+    const sessionId = await seedSession({
+      joinUrl: "https://whereby.com/secret-room",
+    });
+
+    // memberCookie() is a real, active University member — but not an admin.
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}`)
+      .set("Cookie", memberCookie());
+    expect(res.status).toBe(403);
+    // The room link must never appear in a non-admin response body.
+    expect(JSON.stringify(res.body)).not.toContain("secret-room");
+  });
+
+  it("LEAK GUARD: admin GET :id/rsvps is 403 for a valid member NOT on the allow-list", async () => {
+    const sessionId = await seedSession();
+
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}/rsvps`)
+      .set("Cookie", otherMemberCookie());
+    expect(res.status).toBe(403);
+    expect(res.body.rsvps).toBeUndefined();
+  });
+
+  it("LEAK GUARD: both admin reads are 403 when the allow-list is EMPTY (admin disabled), even for an allow-listed email", async () => {
+    const sessionId = await seedSession({
+      joinUrl: "https://whereby.com/disabled-room",
+    });
+    const prev = process.env.UNIVERSITY_SESSION_ADMINS;
+    process.env.UNIVERSITY_SESSION_ADMINS = "";
+    try {
+      // Even the normally-admin account is denied when admin is not enabled.
+      const get = await request(app)
+        .get(`/api/portal/university/sessions/${sessionId}`)
+        .set("Cookie", adminCookie());
+      expect(get.status).toBe(403);
+      expect(JSON.stringify(get.body)).not.toContain("disabled-room");
+
+      const rsvps = await request(app)
+        .get(`/api/portal/university/sessions/${sessionId}/rsvps`)
+        .set("Cookie", adminCookie());
+      expect(rsvps.status).toBe(403);
+      expect(rsvps.body.rsvps).toBeUndefined();
+    } finally {
+      process.env.UNIVERSITY_SESSION_ADMINS = prev;
+    }
+  });
+
+  it("admin GET :id/rsvps resolves name from displayName; null for an email-only RSVP", async () => {
+    const sessionId = await seedSession();
+
+    // A real member RSVP (name should resolve from university_members).
+    await request(app)
+      .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Cookie", memberCookie());
+
+    // An email-only RSVP with NO university_members row (name → null). Insert
+    // directly; seeded later so createdAt sorts after the member RSVP.
+    await db.insert(universitySessionRsvps).values({
+      sessionId,
+      email: "guest-no-member@sessions.test",
+      accountId: null,
+      status: "going",
+    });
+
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}/rsvps`)
+      .set("Cookie", adminCookie());
+    expect(res.status).toBe(200);
+    const roster: Array<{
+      email: string;
+      name: string | null;
+      accountId: string | null;
+      status: string;
+    }> = res.body.rsvps;
+
+    const member = roster.find((r) => r.email === MEMBER_EMAIL);
+    expect(member).toBeTruthy();
+    expect(member!.name).toBe("Casey Member");
+    expect(member!.accountId).toBe(memberAccountId);
+    expect(member!.status).toBe("going");
+
+    const guest = roster.find(
+      (r) => r.email === "guest-no-member@sessions.test",
+    );
+    expect(guest).toBeTruthy();
+    expect(guest!.name).toBeNull();
+    expect(guest!.accountId).toBeNull();
+  });
+
+  it("admin GET :id and :id/rsvps → 404 for a non-existent session", async () => {
+    const missing = "00000000-0000-0000-0000-000000000000";
+
+    const get = await request(app)
+      .get(`/api/portal/university/sessions/${missing}`)
+      .set("Cookie", adminCookie());
+    expect(get.status).toBe(404);
+
+    const rsvps = await request(app)
+      .get(`/api/portal/university/sessions/${missing}/rsvps`)
+      .set("Cookie", adminCookie());
+    expect(rsvps.status).toBe(404);
+  });
 });
 
 // ---------------------------------------------------------------------------

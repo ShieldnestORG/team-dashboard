@@ -21,6 +21,7 @@ import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   customerAccounts,
+  universityMembers,
   universitySessions,
   universitySessionRsvps,
 } from "@paperclipai/db";
@@ -80,6 +81,18 @@ export interface PatchSessionInput {
 interface MemberIdentity {
   email: string;
   accountId: string;
+}
+
+// One roster row for the admin attendee list. `name` is the member's
+// displayName (joined from university_members by the durable email key) when
+// available — there is no name column on the RSVP or customer_accounts row.
+// `status` is included so the UI can distinguish going vs canceled.
+export interface RsvpRosterEntry {
+  email: string;
+  name: string | null;
+  accountId: string | null;
+  status: RsvpStatus;
+  createdAt: string;
 }
 
 export type RsvpResult =
@@ -390,6 +403,58 @@ export function universitySessionsService(db: Db) {
   }
 
   // -------------------------------------------------------------------------
+  // Admin reads
+  // -------------------------------------------------------------------------
+
+  /**
+   * Fetch the full session row for an admin (the un-gated shape — includes
+   * join_url unconditionally, same as create/patch/cancel responses). The route
+   * runs it through serializeAdminSession. Returns null when not found. The
+   * member list view gates join_url, so the admin edit form can't read the room
+   * link from it — this is the read path it uses instead.
+   */
+  async function getAdminSessionById(
+    sessionId: string,
+  ): Promise<typeof universitySessions.$inferSelect | null> {
+    return getSessionRow(sessionId);
+  }
+
+  /**
+   * The full RSVP roster for a session (admin attendee list). Returns ALL rows
+   * (going + canceled) so the UI can show who's coming vs who dropped, ordered
+   * by sign-up time (ascending). `name` is the member's displayName, resolved
+   * via a LEFT JOIN on the durable email key (lowercased) — null when the
+   * member has no displayName or isn't a University member row.
+   */
+  async function listSessionRsvps(
+    sessionId: string,
+  ): Promise<RsvpRosterEntry[]> {
+    const rows = await db
+      .select({
+        email: universitySessionRsvps.email,
+        accountId: universitySessionRsvps.accountId,
+        status: universitySessionRsvps.status,
+        createdAt: universitySessionRsvps.createdAt,
+        displayName: universityMembers.displayName,
+      })
+      .from(universitySessionRsvps)
+      .leftJoin(
+        universityMembers,
+        sql`LOWER(${universityMembers.email}) = LOWER(${universitySessionRsvps.email})`,
+      )
+      .where(eq(universitySessionRsvps.sessionId, sessionId))
+      .orderBy(asc(universitySessionRsvps.createdAt));
+
+    return rows.map((r) => ({
+      email: r.email,
+      name: r.displayName ?? null,
+      accountId: r.accountId ?? null,
+      status: r.status === "canceled" ? "canceled" : "going",
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  // -------------------------------------------------------------------------
   // Admin mutations
   // -------------------------------------------------------------------------
 
@@ -475,6 +540,8 @@ export function universitySessionsService(db: Db) {
     rsvp,
     cancelRsvp,
     buildIcs,
+    getAdminSessionById,
+    listSessionRsvps,
     createSession,
     patchSession,
     cancelSession,
