@@ -371,6 +371,11 @@ export const universitySessionRsvps = pgTable(
       table.sessionId,
       table.status,
     ),
+    // Promote-on-cancel needs the OLDEST waitlist row for a session: filter by
+    // (session_id, status='waitlist') then order by created_at. Migration 0139.
+    sessionStatusCreatedIdx: index(
+      "university_session_rsvps_session_status_created_idx",
+    ).on(table.sessionId, table.status, table.createdAt),
     emailIdx: index("university_session_rsvps_email_idx").on(table.email),
     accountIdx: index("university_session_rsvps_account_idx").on(
       table.accountId,

@@ -36,7 +36,15 @@ const PAST_LIMIT = 50;
 const MINUTE_MS = 60_000;
 
 export type SessionScope = "upcoming" | "past";
-export type RsvpStatus = "going" | "canceled";
+// The stored RSVP statuses. `waitlist` (migration 0139) parks a member behind a
+// full finite-capacity session; the oldest waitlister is promoted to `going`
+// when a seat frees on cancel.
+export type RsvpStatus = "going" | "waitlist" | "canceled";
+
+// The member-facing view of their own RSVP state. "none" = no row at all (never
+// RSVP'd or the row was never created); distinct from "canceled" (had a seat,
+// dropped it). The UI uses this to choose between RSVP / Cancel / "On waitlist".
+export type MyRsvpStatus = "going" | "waitlist" | "canceled" | "none";
 
 // The serialized shape returned to the portal. Timestamps are ISO strings.
 // `joinUrl` is present ONLY when isLive && myRsvp === "going".
@@ -49,7 +57,23 @@ export interface SessionView {
   durationMinutes: number;
   status: string; // scheduled | canceled
   capacity: number | null;
+  // Count of confirmed `going` seats. spotsLeft (below) is derived from THIS,
+  // never from waitlist rows — a waitlisted member does not occupy a seat.
   goingCount: number;
+  // Number of people parked on the waitlist (status='waitlist', non-canceled).
+  // 0 when the session is unlimited or under capacity.
+  waitlistCount: number;
+  // The member's own RSVP state for this session. "none" when they have no row.
+  myRsvpStatus: MyRsvpStatus;
+  // 1-based position in the waitlist queue, present ONLY when
+  // myRsvpStatus === "waitlist" (else null). Computed as the count of earlier
+  // (older created_at) non-canceled waitlist rows + 1.
+  myWaitlistPosition: number | null;
+  // Confirmed seats remaining: max(capacity - goingCount, 0); null when the
+  // session is unlimited. Waitlist rows never reduce this.
+  spotsLeft: number | null;
+  // DEPRECATED alias of myRsvpStatus, kept so the existing member list UI and
+  // route keep compiling. "going" | "waitlist" | "canceled" | null ("none").
   myRsvp: RsvpStatus | null;
   isLive: boolean;
   joinUrl?: string;
@@ -104,17 +128,53 @@ export interface RsvpRosterEntry {
 export type RsvpResult =
   | {
       ok: true;
+      // Discriminates a confirmed seat from a waitlisted RSVP. "going" when a
+      // seat was claimed (capacity available or unlimited); "waitlist" when the
+      // session was full and the member was parked behind it.
+      rsvpStatus: "going" | "waitlist";
       session: SessionView;
       // The member's durable (lowercased) email — the route uses it as the
       // rsvp-confirm recipient without re-resolving identity.
       memberEmail: string;
       // True when this RSVP TRANSITIONED into `going` (a brand-new RSVP OR a
       // re-activation of a prior `canceled` row). False on a no-op repeat where
-      // the member was already `going`. The route fires the rsvp-confirm email
-      // only when this is true, so a double-tap doesn't re-send.
+      // the member was already `going`, AND false whenever rsvpStatus is
+      // "waitlist". The route fires the rsvp-confirm email only when this is
+      // true, so a double-tap (or a waitlist park) doesn't re-send.
       newlyGoing: boolean;
+      // 1-based queue position, present ONLY when rsvpStatus === "waitlist"
+      // (else null). The route can surface "You're #N on the waitlist".
+      waitlistPosition: number | null;
     }
+  // `full` is retained in the type for callers/tests that assert the old
+  // contract, but rsvp() no longer returns it — a full finite-capacity session
+  // now yields ok:true with rsvpStatus:"waitlist" instead of an error.
   | { ok: false; code: "not_found" | "canceled" | "ended" | "full" };
+
+// The member promoted off the waitlist when a `going` seat freed on cancel.
+// Carries everything the route's "you're in" email needs WITHOUT re-querying
+// the session — email is the recipient, the rest is the email body.
+export interface PromotedMember {
+  email: string;
+  sessionId: string;
+  sessionTitle: string;
+  hostName: string;
+  startsAt: string; // ISO
+  durationMinutes: number;
+  description: string | null;
+}
+
+export type CancelRsvpResult =
+  // ok:false ONLY when the session doesn't exist (→ 404). Everything else (no
+  // row / already canceled / nothing to promote) is ok:true with promoted:null.
+  | { ok: false }
+  | {
+      ok: true;
+      // The member auto-promoted off the waitlist into the freed `going` seat,
+      // or null when there was no waitlist / no seat was freed. The route fires
+      // the waitlist-promoted notification only when this is non-null.
+      promoted: PromotedMember | null;
+    };
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -178,13 +238,16 @@ export function universitySessionsService(db: Db) {
     return rows[0]?.n ?? 0;
   }
 
-  // The member's RSVP status for a session (going | canceled | null).
+  // The member's RSVP status for a session (going | waitlist | canceled | null).
   async function myRsvpStatus(
     identity: MemberIdentity,
     sessionId: string,
   ): Promise<RsvpStatus | null> {
     const rows = await db
-      .select({ status: universitySessionRsvps.status })
+      .select({
+        status: universitySessionRsvps.status,
+        createdAt: universitySessionRsvps.createdAt,
+      })
       .from(universitySessionRsvps)
       .where(
         and(
@@ -197,16 +260,80 @@ export function universitySessionsService(db: Db) {
       )
       .limit(1);
     const s = rows[0]?.status;
-    return s === "going" || s === "canceled" ? s : null;
+    return s === "going" || s === "waitlist" || s === "canceled" ? s : null;
+  }
+
+  // Count of `waitlist` RSVPs for a session (non-canceled).
+  async function waitlistCount(sessionId: string): Promise<number> {
+    const rows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(universitySessionRsvps)
+      .where(
+        and(
+          eq(universitySessionRsvps.sessionId, sessionId),
+          eq(universitySessionRsvps.status, "waitlist"),
+        ),
+      );
+    return rows[0]?.n ?? 0;
+  }
+
+  // 1-based waitlist position for a member: count of EARLIER (older created_at)
+  // non-canceled waitlist rows for the session + 1. Returns null when the member
+  // is not currently waitlisted. The created_at ordering is the queue order the
+  // promote-on-cancel logic also uses, so the displayed position matches who
+  // actually gets promoted next.
+  async function myWaitlistPosition(
+    identity: MemberIdentity,
+    sessionId: string,
+  ): Promise<number | null> {
+    const mine = await db
+      .select({ createdAt: universitySessionRsvps.createdAt })
+      .from(universitySessionRsvps)
+      .where(
+        and(
+          eq(universitySessionRsvps.sessionId, sessionId),
+          eq(universitySessionRsvps.status, "waitlist"),
+          or(
+            sql`LOWER(${universitySessionRsvps.email}) = ${identity.email}`,
+            eq(universitySessionRsvps.accountId, identity.accountId),
+          ),
+        ),
+      )
+      .limit(1);
+    const myCreatedAt = mine[0]?.createdAt;
+    if (!myCreatedAt) return null;
+    const earlier = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(universitySessionRsvps)
+      .where(
+        and(
+          eq(universitySessionRsvps.sessionId, sessionId),
+          eq(universitySessionRsvps.status, "waitlist"),
+          sql`${universitySessionRsvps.createdAt} < ${myCreatedAt.toISOString()}::timestamptz`,
+        ),
+      );
+    return (earlier[0]?.n ?? 0) + 1;
   }
 
   // Serialize a session row into the member-facing view. join_url is gated:
   // only included when the session is live AND the member RSVP'd `going`.
   function toView(
     row: typeof universitySessions.$inferSelect,
-    opts: { goingCount: number; myRsvp: RsvpStatus | null; now: Date },
+    opts: {
+      goingCount: number;
+      waitlistCount: number;
+      myRsvp: RsvpStatus | null;
+      myWaitlistPosition: number | null;
+      now: Date;
+    },
   ): SessionView {
     const isLive = isSessionLive(row, opts.now);
+    const capacity = row.capacity ?? null;
+    // spotsLeft is derived from confirmed `going` seats ONLY — waitlist rows do
+    // not occupy a seat. null = unlimited.
+    const spotsLeft =
+      capacity === null ? null : Math.max(capacity - opts.goingCount, 0);
+    const myRsvpStatus: MyRsvpStatus = opts.myRsvp ?? "none";
     const view: SessionView = {
       id: row.id,
       title: row.title,
@@ -215,8 +342,13 @@ export function universitySessionsService(db: Db) {
       startsAt: row.startsAt.toISOString(),
       durationMinutes: row.durationMinutes,
       status: row.status,
-      capacity: row.capacity ?? null,
+      capacity,
       goingCount: opts.goingCount,
+      waitlistCount: opts.waitlistCount,
+      myRsvpStatus,
+      myWaitlistPosition:
+        myRsvpStatus === "waitlist" ? opts.myWaitlistPosition : null,
+      spotsLeft,
       myRsvp: opts.myRsvp,
       isLive,
       // Not gated — fine to expose to any member (it's the past-session replay
@@ -275,11 +407,21 @@ export function universitySessionsService(db: Db) {
 
     const views: SessionView[] = [];
     for (const row of rows) {
-      const [count, mine] = await Promise.all([
+      const [count, waiting, mine, myPos] = await Promise.all([
         goingCount(row.id),
+        waitlistCount(row.id),
         myRsvpStatus(identity, row.id),
+        myWaitlistPosition(identity, row.id),
       ]);
-      views.push(toView(row, { goingCount: count, myRsvp: mine, now }));
+      views.push(
+        toView(row, {
+          goingCount: count,
+          waitlistCount: waiting,
+          myRsvp: mine,
+          myWaitlistPosition: myPos,
+          now,
+        }),
+      );
     }
     return views;
   }
@@ -297,11 +439,19 @@ export function universitySessionsService(db: Db) {
     if (!identity) return null;
     const row = await getSessionRow(sessionId);
     if (!row) return null;
-    const [count, mine] = await Promise.all([
+    const [count, waiting, mine, myPos] = await Promise.all([
       goingCount(sessionId),
+      waitlistCount(sessionId),
       myRsvpStatus(identity, sessionId),
+      myWaitlistPosition(identity, sessionId),
     ]);
-    return toView(row, { goingCount: count, myRsvp: mine, now });
+    return toView(row, {
+      goingCount: count,
+      waitlistCount: waiting,
+      myRsvp: mine,
+      myWaitlistPosition: myPos,
+      now,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -309,11 +459,15 @@ export function universitySessionsService(db: Db) {
   // -------------------------------------------------------------------------
 
   /**
-   * RSVP `going` for this member+session (idempotent upsert on
-   * UNIQUE(session_id, email)). Re-RSVPing flips a prior `canceled` back to
-   * `going`. Capacity is enforced here: if the session is full and the member
-   * does not already hold a `going` row, returns { code: "full" } (→ 409).
-   * Rejects canceled / already-ended sessions (→ 400).
+   * RSVP for this member+session (idempotent upsert on UNIQUE(session_id,
+   * email)). The target status is decided by capacity:
+   *   - already `going`          → no-op (stays going).
+   *   - unlimited OR under cap   → `going` (claims/re-claims a seat).
+   *   - finite cap & at capacity → `waitlist` (parked behind the full session)
+   *                                instead of the old { code: "full" } error.
+   * Re-RSVPing a still-full session while already `waitlist` is a no-op (no
+   * duplicate). Returns a discriminated result: rsvpStatus "going" | "waitlist"
+   * (+ waitlistPosition when waitlisted). Rejects canceled / ended sessions.
    */
   async function rsvp(
     accountId: string,
@@ -334,15 +488,14 @@ export function universitySessionsService(db: Db) {
     if (now.getTime() >= endedAt) return { ok: false, code: "ended" };
 
     const existing = await myRsvpStatus(identity, sessionId);
-    // Capacity check: only blocks NEW going seats. A member already `going`
-    // re-RSVPing is a no-op; a `canceled` member re-claims a seat only if there
-    // is room.
-    if (
-      row.capacity !== null &&
-      existing !== "going"
-    ) {
+    // Decide the target status. A member already `going` keeps their seat
+    // regardless of count. Otherwise a finite-capacity session that is already
+    // at/over capacity in `going` seats sends the member to the waitlist; an
+    // unlimited or under-capacity session confirms a `going` seat.
+    let target: "going" | "waitlist" = "going";
+    if (row.capacity !== null && existing !== "going") {
       const count = await goingCount(sessionId);
-      if (count >= row.capacity) return { ok: false, code: "full" };
+      if (count >= row.capacity) target = "waitlist";
     }
 
     await db
@@ -351,7 +504,7 @@ export function universitySessionsService(db: Db) {
         sessionId,
         accountId: identity.accountId,
         email: identity.email,
-        status: "going",
+        status: target,
       })
       .onConflictDoUpdate({
         target: [
@@ -359,10 +512,14 @@ export function universitySessionsService(db: Db) {
           universitySessionRsvps.email,
         ],
         set: {
-          // Backfill the account link if it resolved after the first RSVP, and
-          // flip a prior `canceled` back to `going`.
+          // Backfill the account link if it resolved after the first RSVP.
           accountId: identity.accountId,
-          status: "going",
+          // Re-RSVPing flips a prior `canceled` back to the target status
+          // (going, or waitlist if still full). A member already on the
+          // waitlist re-RSVPing a still-full session resolves to waitlist
+          // again — the same row, NOT a duplicate (UNIQUE(session_id, email)),
+          // and created_at is preserved so their queue position is unchanged.
+          status: target,
           updatedAt: now,
         },
       });
@@ -371,13 +528,19 @@ export function universitySessionsService(db: Db) {
     // session is non-null here (row exists), but guard for the type.
     if (!session) return { ok: false, code: "not_found" };
     // `existing` was the member's status BEFORE this upsert. A transition into
-    // `going` is anything that wasn't already `going` (new RSVP or re-activated
-    // from `canceled`) — the route gates the rsvp-confirm send on this.
+    // `going` is anything that wasn't already `going` AND landed on a real seat
+    // (target === "going") — the route gates the rsvp-confirm send on this, so a
+    // waitlist park never fires the going-confirmation email.
     return {
       ok: true,
+      rsvpStatus: target,
       session,
       memberEmail: identity.email,
-      newlyGoing: existing !== "going",
+      newlyGoing: target === "going" && existing !== "going",
+      waitlistPosition:
+        target === "waitlist"
+          ? await myWaitlistPosition(identity, sessionId)
+          : null,
     };
   }
 
@@ -390,11 +553,15 @@ export function universitySessionsService(db: Db) {
     accountId: string,
     sessionId: string,
     now: Date = new Date(),
-  ): Promise<boolean> {
+  ): Promise<CancelRsvpResult> {
     const identity = await resolveMemberIdentity(accountId);
-    if (!identity) return false;
+    if (!identity) return { ok: false };
     const row = await getSessionRow(sessionId);
-    if (!row) return false;
+    if (!row) return { ok: false };
+
+    // Was this member holding a `going` seat? Only a freed seat can trigger a
+    // promotion — canceling a waitlist row (or a no-op on no row) frees nothing.
+    const priorStatus = await myRsvpStatus(identity, sessionId);
 
     await db
       .update(universitySessionRsvps)
@@ -408,7 +575,58 @@ export function universitySessionsService(db: Db) {
           ),
         ),
       );
-    return true;
+
+    // Promote the oldest waitlister into the freed seat — ONLY when an actual
+    // `going` seat was given up, the session is scheduled with a finite
+    // capacity, and there's now room (cancel could have dropped going below
+    // capacity). The promotion is a SINGLE atomic UPDATE whose target row is
+    // chosen by a correlated subselect (oldest non-canceled waitlist row,
+    // FOR UPDATE SKIP LOCKED) so two near-simultaneous cancels can never promote
+    // the same waitlist row twice — the second cancel's subselect skips the
+    // row the first already locked/updated and picks the next one (or none).
+    if (
+      priorStatus !== "going" ||
+      row.status !== "scheduled" ||
+      row.capacity === null
+    ) {
+      return { ok: true, promoted: null };
+    }
+
+    const goingNow = await goingCount(sessionId);
+    if (goingNow >= row.capacity) {
+      // Cancel didn't actually open a seat (still at/over cap somehow).
+      return { ok: true, promoted: null };
+    }
+
+    const promotedRows = (await db.execute(sql`
+      UPDATE university_session_rsvps
+         SET status = 'going', updated_at = ${now.toISOString()}::timestamptz
+       WHERE id = (
+         SELECT id FROM university_session_rsvps
+          WHERE session_id = ${sessionId}
+            AND status = 'waitlist'
+          ORDER BY created_at ASC
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+       )
+      RETURNING email
+    `)) as unknown as Array<{ email: string }>;
+
+    const promotedEmail = promotedRows[0]?.email ?? null;
+    if (!promotedEmail) return { ok: true, promoted: null };
+
+    return {
+      ok: true,
+      promoted: {
+        email: promotedEmail,
+        sessionId: row.id,
+        sessionTitle: row.title,
+        hostName: row.hostName,
+        startsAt: row.startsAt.toISOString(),
+        durationMinutes: row.durationMinutes,
+        description: row.description ?? null,
+      },
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -477,7 +695,14 @@ export function universitySessionsService(db: Db) {
       email: r.email,
       name: r.displayName ?? null,
       accountId: r.accountId ?? null,
-      status: r.status === "canceled" ? "canceled" : "going",
+      // Surface all three stored states so the admin sees the waitlist (in
+      // created_at order, set by the orderBy above) distinct from going/canceled.
+      status:
+        r.status === "canceled"
+          ? "canceled"
+          : r.status === "waitlist"
+            ? "waitlist"
+            : "going",
       createdAt: r.createdAt.toISOString(),
     }));
   }

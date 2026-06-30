@@ -1785,10 +1785,38 @@ export function portalRoutes(db: Db): Router {
       if (!accountId) return;
       const sessionId = String(req.params.id);
       try {
-        const ok = await sessionsSvc.cancelRsvp(accountId, sessionId);
-        if (!ok) {
+        const result = await sessionsSvc.cancelRsvp(accountId, sessionId);
+        if (!result.ok) {
           res.status(404).json({ error: "Session not found" });
           return;
+        }
+        // Waitlist promotion notice — ONLY when canceling this member's `going`
+        // seat auto-promoted the oldest waitlister into it. Transactional; the
+        // storefront template owns subject/body and no-ops until it ships.
+        // Per-send failure must not fail the cancel — log and continue.
+        if (result.promoted) {
+          const p = result.promoted;
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_waitlist_open",
+              to: p.email,
+              data: {
+                sessionId: p.sessionId,
+                sessionTitle: p.sessionTitle,
+                hostName: p.hostName,
+                startsAt: p.startsAt,
+                durationMinutes: p.durationMinutes,
+                description: p.description ?? undefined,
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+                calendarUrl: universitySessionIcsUrl(p.sessionId),
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email: p.email, sessionId },
+              "portal/university/sessions: waitlist-promoted send failed (non-fatal)",
+            );
+          }
         }
         res.status(200).json({ ok: true });
       } catch (err) {

@@ -246,41 +246,74 @@ function Roster({ sessionId }: { sessionId: string }) {
     queryFn: () => sessionsAdminApi.getRsvps(sessionId),
   });
 
-  const going: Rsvp[] = (rsvpsQuery.data?.rsvps ?? []).filter(
-    (r) => r.status === "going",
-  );
+  const rows = rsvpsQuery.data?.rsvps ?? [];
+  const going: Rsvp[] = rows.filter((r) => r.status === "going");
+  // Already ordered by created_at ASC server-side, so this is the queue order.
+  const waitlist: Rsvp[] = rows.filter((r) => r.status === "waitlist");
 
   return (
-    <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-        Going ({going.length})
-      </h3>
-      {rsvpsQuery.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading roster…</p>
-      ) : rsvpsQuery.error ? (
-        <p className="text-sm text-red-500">Failed to load roster.</p>
-      ) : going.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No RSVPs yet.</p>
-      ) : (
-        <ul className="space-y-1">
-          {going.map((r) => (
-            <li
-              key={r.email}
-              className="flex items-center justify-between gap-3 rounded border border-border/60 px-2 py-1.5 text-sm"
-            >
-              <span className="truncate">
-                {r.name ?? (
-                  <span className="text-muted-foreground">no name</span>
-                )}
-              </span>
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                {r.email}
-              </span>
-            </li>
-          ))}
-        </ul>
+    <div className="space-y-4">
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+          Going ({going.length})
+        </h3>
+        {rsvpsQuery.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading roster…</p>
+        ) : rsvpsQuery.error ? (
+          <p className="text-sm text-red-500">Failed to load roster.</p>
+        ) : going.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No RSVPs yet.</p>
+        ) : (
+          <ul className="space-y-1">
+            {going.map((r) => (
+              <li
+                key={r.email}
+                className="flex items-center justify-between gap-3 rounded border border-border/60 px-2 py-1.5 text-sm"
+              >
+                <span className="truncate">
+                  {r.name ?? (
+                    <span className="text-muted-foreground">no name</span>
+                  )}
+                </span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {r.email}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {!rsvpsQuery.isLoading && !rsvpsQuery.error && waitlist.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            Waitlist ({waitlist.length})
+          </h3>
+          <ul className="space-y-1">
+            {waitlist.map((r, i) => (
+              <li
+                key={r.email}
+                className="flex items-center justify-between gap-3 rounded border border-border/60 px-2 py-1.5 text-sm"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    #{i + 1}
+                  </span>
+                  <span className="truncate">
+                    {r.name ?? (
+                      <span className="text-muted-foreground">no name</span>
+                    )}
+                  </span>
+                </span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {r.email}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -762,7 +795,17 @@ function UpcomingTable({
                     {capacityLabel(row.goingCount, row.capacity)}
                   </td>
                   <td className="px-2 py-2 text-right font-mono text-xs">
-                    {row.goingCount}
+                    {row.waitlistCount > 0 ? (
+                      <span>
+                        {row.goingCount} going
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {row.waitlistCount} waitlist
+                        </span>
+                      </span>
+                    ) : (
+                      row.goingCount
+                    )}
                   </td>
                   <td className="px-2 py-2">
                     <StatusBadge status={row.status} isLive={row.isLive} />

@@ -12,7 +12,8 @@
 //   - 403 for a logged-in NON-member (membership gate)
 //   - 403 under impersonation on mutations (read-only)
 //   - RSVP upsert is idempotent; cancel-RSVP is soft + idempotent
-//   - capacity full → 409 (and a re-RSVP by an already-going member is fine)
+//   - capacity full → waitlist (200, not 409); cancel a going seat promotes the
+//     oldest waitlister to going; unlimited never waitlists; no double-promote
 //   - join_url is returned ONLY when the session is live AND caller RSVP'd
 //     going — never before the window, never to non-RSVPs
 //   - admin create/patch/cancel gated on the env allow-list
@@ -27,6 +28,7 @@
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { and, eq, sql } from "drizzle-orm";
 
 // The portal service + crons import the email callback at module load. Mock it
 // so nothing touches the network AND so we can assert reminder fan-out. The
@@ -352,32 +354,39 @@ describeDb("university sessions endpoints (integration)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("capacity full → 409 for a new member; already-going re-RSVP is fine", async () => {
+  it("capacity full → waitlist (200) for a new member; already-going re-RSVP is fine", async () => {
     const sessionId = await seedSession({ capacity: 1 });
 
-    // First member claims the only seat.
+    // First member claims the only seat → going.
     const a = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
       .set("Cookie", memberCookie());
     expect(a.status).toBe(200);
+    expect(a.body.session.myRsvpStatus).toBe("going");
+    expect(a.body.session.spotsLeft).toBe(0);
 
-    // Same member re-RSVPing is NOT blocked (no new seat).
+    // Same member re-RSVPing is NOT blocked (no new seat) — stays going.
     const aAgain = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
       .set("Cookie", memberCookie());
     expect(aAgain.status).toBe(200);
+    expect(aAgain.body.session.myRsvpStatus).toBe("going");
 
-    // A different member is rejected — full.
+    // A different member is no longer rejected — they're waitlisted (200) at
+    // position #1, and the going seat count is unchanged.
     const b = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
       .set("Cookie", otherMemberCookie());
-    expect(b.status).toBe(409);
-    expect(b.body.error).toMatch(/full/i);
+    expect(b.status).toBe(200);
+    expect(b.body.session.myRsvpStatus).toBe("waitlist");
+    expect(b.body.session.myWaitlistPosition).toBe(1);
+    expect(b.body.session.waitlistCount).toBe(1);
+    expect(b.body.session.goingCount).toBe(1);
+    expect(b.body.session.spotsLeft).toBe(0);
 
-    const going = (await db.select().from(universitySessionRsvps)).filter(
-      (r) => r.status === "going",
-    );
-    expect(going).toHaveLength(1);
+    const all = await db.select().from(universitySessionRsvps);
+    expect(all.filter((r) => r.status === "going")).toHaveLength(1);
+    expect(all.filter((r) => r.status === "waitlist")).toHaveLength(1);
   });
 
   it("RSVP to a canceled session → 400", async () => {
@@ -1153,5 +1162,275 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
 
     const sent = await runUniversitySessionRecap(db);
     expect(sent).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Waitlist (migration 0139) — the data-model + promote-on-cancel logic.
+//   - a FULL finite-capacity session parks a new RSVP as `waitlist` with a
+//     1-based position (instead of erroring `full`)
+//   - canceling a GOING seat promotes the OLDEST waitlister (by created_at) to
+//     `going` and returns that member for the route's email
+//   - unlimited capacity NEVER waitlists
+//   - no double-promote: two sequential cancels each promote a DISTINCT
+//     waitlister (the queue drains one per freed seat)
+//
+// Determinism: waitlist QUEUE ORDER is created_at. svc.rsvp inserts with the DB
+// clock, which could tie within a millisecond, so where order is load-bearing
+// we OVERWRITE created_at to fixed, well-separated timestamps after the RSVP —
+// no reliance on wall-clock spacing or minute boundaries.
+// ---------------------------------------------------------------------------
+
+describeDb("university session waitlist (data model + promote-on-cancel)", () => {
+  let db!: ReturnType<typeof createDb>;
+  let cleanup: (() => Promise<void>) | null = null;
+  let svc!: ReturnType<typeof universitySessionsService>;
+  // Account ids keyed by a stable label so tests read clearly.
+  const acct: Record<string, string> = {};
+
+  // Fixed, well-separated created_at stamps for deterministic queue order.
+  const T0 = new Date("2026-01-01T00:00:00.000Z");
+  const T1 = new Date("2026-01-01T00:01:00.000Z");
+  const T2 = new Date("2026-01-01T00:02:00.000Z");
+
+  beforeAll(async () => {
+    process.env.PORTAL_SESSION_SECRET = PORTAL_SECRET;
+
+    if (dbMode === "fullChain") {
+      const tempDb = await startEmbeddedPostgresTestDatabase(
+        "university-sess-waitlist-",
+      );
+      db = createDb(tempDb.connectionString);
+      cleanup = tempDb.cleanup;
+    } else {
+      const tempDb = await startNoPgvectorTestDatabase(
+        "university-sess-waitlist-novec-",
+      );
+      db = tempDb.db;
+      cleanup = tempDb.cleanup;
+    }
+    svc = universitySessionsService(db);
+
+    // Seed a holder of the only seat plus three waitlisters.
+    for (const label of ["seat", "w1", "w2", "w3"]) {
+      const email = `${label}@waitlist.test`;
+      const [row] = await db
+        .insert(customerAccounts)
+        .values({ email })
+        .returning();
+      acct[label] = row.id;
+      await db.insert(universityMembers).values({
+        accountId: row.id,
+        email,
+        displayName: label.toUpperCase(),
+        status: "active",
+        joinedAt: new Date(),
+      });
+    }
+  }, 60_000);
+
+  afterEach(async () => {
+    sendEmailMock.mockClear();
+    await db.delete(universitySessionRsvps);
+    await db.delete(universitySessions);
+  });
+
+  afterAll(async () => {
+    await cleanup?.();
+  });
+
+  // A future, finite-capacity session.
+  async function seedCappedSession(capacity: number | null): Promise<string> {
+    const row = await svc.createSession({
+      title: "Capped Sit",
+      hostName: "Mark",
+      startsAt: new Date(Date.now() + 3 * HOUR),
+      joinUrl: "https://whereby.com/capped",
+      capacity,
+    });
+    return row.id;
+  }
+
+  // Force a member's RSVP created_at so the waitlist queue order is exact.
+  async function setRsvpCreatedAt(
+    sessionId: string,
+    email: string,
+    when: Date,
+  ): Promise<void> {
+    await db
+      .update(universitySessionRsvps)
+      .set({ createdAt: when })
+      .where(
+        and(
+          eq(universitySessionRsvps.sessionId, sessionId),
+          sql`LOWER(${universitySessionRsvps.email}) = ${email.toLowerCase()}`,
+        ),
+      );
+  }
+
+  it("full session → new RSVP becomes waitlist with a 1-based position", async () => {
+    const id = await seedCappedSession(1);
+
+    const seat = await svc.rsvp(acct.seat, id);
+    expect(seat.ok && seat.rsvpStatus).toBe("going");
+    expect(seat.ok && seat.waitlistPosition).toBe(null);
+    expect(seat.ok && seat.newlyGoing).toBe(true);
+
+    // First waitlister.
+    const r1 = await svc.rsvp(acct.w1, id);
+    expect(r1.ok && r1.rsvpStatus).toBe("waitlist");
+    expect(r1.ok && r1.waitlistPosition).toBe(1);
+    // A waitlist park is NOT a going transition → no rsvp-confirm gating.
+    expect(r1.ok && r1.newlyGoing).toBe(false);
+
+    // Second waitlister lands behind the first.
+    await svc.rsvp(acct.w2, id);
+    // Pin queue order: w1 older than w2.
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T1);
+
+    const w2View = await svc.getSessionView(acct.w2, id);
+    expect(w2View?.myRsvpStatus).toBe("waitlist");
+    expect(w2View?.myWaitlistPosition).toBe(2);
+    expect(w2View?.waitlistCount).toBe(2);
+    expect(w2View?.goingCount).toBe(1);
+    expect(w2View?.spotsLeft).toBe(0);
+
+    // Re-RSVPing while still full does NOT duplicate or advance position.
+    const r1Again = await svc.rsvp(acct.w1, id);
+    expect(r1Again.ok && r1Again.rsvpStatus).toBe("waitlist");
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    expect(rows.filter((r) => r.status === "waitlist")).toHaveLength(2);
+  });
+
+  it("cancel a going seat promotes the OLDEST waitlister to going + returns them for email", async () => {
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id);
+    await svc.rsvp(acct.w1, id);
+    await svc.rsvp(acct.w2, id);
+    // w1 enqueued before w2.
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T1);
+
+    const result = await svc.cancelRsvp(acct.seat, id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    // Oldest waitlister (w1) promoted, and the full promote shape returned.
+    expect(result.promoted?.email).toBe("w1@waitlist.test");
+    expect(result.promoted?.sessionId).toBe(id);
+    expect(result.promoted?.sessionTitle).toBe("Capped Sit");
+    expect(result.promoted?.hostName).toBe("Mark");
+    expect(typeof result.promoted?.startsAt).toBe("string");
+    expect(result.promoted?.durationMinutes).toBe(60);
+
+    // w1 is now going; w2 still waiting at position 1; seat canceled.
+    const w1 = await svc.getSessionView(acct.w1, id);
+    expect(w1?.myRsvpStatus).toBe("going");
+    const w2 = await svc.getSessionView(acct.w2, id);
+    expect(w2?.myRsvpStatus).toBe("waitlist");
+    expect(w2?.myWaitlistPosition).toBe(1);
+    expect(w2?.goingCount).toBe(1);
+    expect(w2?.waitlistCount).toBe(1);
+  });
+
+  it("unlimited capacity never waitlists; cancel promotes nobody", async () => {
+    const id = await seedCappedSession(null);
+    const a = await svc.rsvp(acct.seat, id);
+    const b = await svc.rsvp(acct.w1, id);
+    const c = await svc.rsvp(acct.w2, id);
+    expect(a.ok && a.rsvpStatus).toBe("going");
+    expect(b.ok && b.rsvpStatus).toBe("going");
+    expect(c.ok && c.rsvpStatus).toBe("going");
+
+    const view = await svc.getSessionView(acct.seat, id);
+    expect(view?.waitlistCount).toBe(0);
+    expect(view?.spotsLeft).toBe(null);
+
+    const cancel = await svc.cancelRsvp(acct.seat, id);
+    expect(cancel.ok).toBe(true);
+    if (!cancel.ok) throw new Error("unreachable");
+    expect(cancel.promoted).toBe(null);
+  });
+
+  it("no double-promote: two sequential cancels promote two DISTINCT waitlisters", async () => {
+    // Capacity 2: seat + w3 hold the two going seats; w1, w2 wait.
+    const id = await seedCappedSession(2);
+    await svc.rsvp(acct.seat, id);
+    await svc.rsvp(acct.w3, id);
+    await svc.rsvp(acct.w1, id);
+    await svc.rsvp(acct.w2, id);
+    // Queue order w1 (T0) before w2 (T1).
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T1);
+
+    // First cancel frees one seat → promotes w1 (oldest).
+    const first = await svc.cancelRsvp(acct.seat, id);
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error("unreachable");
+    expect(first.promoted?.email).toBe("w1@waitlist.test");
+
+    // Second cancel frees another seat → promotes w2 (the NEXT one), never w1
+    // again.
+    const second = await svc.cancelRsvp(acct.w3, id);
+    expect(second.ok).toBe(true);
+    if (!second.ok) throw new Error("unreachable");
+    expect(second.promoted?.email).toBe("w2@waitlist.test");
+
+    // End state: exactly two going (w1, w2), zero waitlist, two canceled.
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    const going = rows
+      .filter((r) => r.status === "going")
+      .map((r) => r.email)
+      .sort();
+    expect(going).toEqual(["w1@waitlist.test", "w2@waitlist.test"]);
+    expect(rows.filter((r) => r.status === "waitlist")).toHaveLength(0);
+    expect(rows.filter((r) => r.status === "canceled")).toHaveLength(2);
+  });
+
+  it("canceling a WAITLIST row (not a going seat) promotes nobody", async () => {
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id); // going
+    await svc.rsvp(acct.w1, id); // waitlist
+
+    // w1 (a waitlister) cancels — frees no going seat, so no promotion.
+    const cancel = await svc.cancelRsvp(acct.w1, id);
+    expect(cancel.ok).toBe(true);
+    if (!cancel.ok) throw new Error("unreachable");
+    expect(cancel.promoted).toBe(null);
+
+    // seat is still the sole going RSVP.
+    const seatView = await svc.getSessionView(acct.seat, id);
+    expect(seatView?.goingCount).toBe(1);
+    expect(seatView?.waitlistCount).toBe(0);
+  });
+
+  it("admin roster includes waitlist rows with status + created_at, in queue order", async () => {
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id); // going
+    await svc.rsvp(acct.w1, id); // waitlist
+    await svc.rsvp(acct.w2, id); // waitlist
+    await setRsvpCreatedAt(id, "seat@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T1);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T2);
+
+    const roster = await svc.listSessionRsvps(id);
+    expect(roster.map((r) => r.email)).toEqual([
+      "seat@waitlist.test",
+      "w1@waitlist.test",
+      "w2@waitlist.test",
+    ]);
+    expect(roster.map((r) => r.status)).toEqual([
+      "going",
+      "waitlist",
+      "waitlist",
+    ]);
+    // created_at surfaced so the admin sees the queue order.
+    expect(roster.every((r) => typeof r.createdAt === "string")).toBe(true);
   });
 });

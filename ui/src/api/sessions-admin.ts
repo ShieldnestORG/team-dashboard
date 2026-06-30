@@ -37,6 +37,9 @@ export interface AdminSession {
 // Member-facing list view (university-sessions.ts SessionView). joinUrl is only
 // present when the session is live AND the caller RSVP'd `going` — admins read
 // it for the lifecycle flags (isLive) + goingCount, NOT the room link.
+// Member RSVP state. "none" distinguishes never-RSVP'd from "canceled".
+export type MyRsvpStatus = "going" | "waitlist" | "canceled" | "none";
+
 export interface SessionView {
   id: string;
   title: string;
@@ -47,7 +50,15 @@ export interface SessionView {
   status: string; // scheduled | canceled
   capacity: number | null;
   goingCount: number;
-  myRsvp: "going" | "canceled" | null;
+  // Count of non-canceled waitlist rows (0 when unlimited / under capacity).
+  waitlistCount: number;
+  // Deprecated alias kept for back-compat; now also yields "waitlist".
+  myRsvp: "going" | "waitlist" | "canceled" | null;
+  myRsvpStatus: MyRsvpStatus;
+  // 1-based queue position — present ONLY when myRsvpStatus === "waitlist".
+  myWaitlistPosition: number | null;
+  // max(capacity - goingCount, 0); null when unlimited. GOING seats only.
+  spotsLeft: number | null;
   isLive: boolean;
   joinUrl?: string;
   // Not gated (unlike joinUrl) — the past-session "Watch recording" link.
@@ -56,11 +67,13 @@ export interface SessionView {
 
 // One roster row (university-sessions.ts RsvpRosterEntry). `name` is the
 // member's displayName when known (null for email-only / walk-in RSVPs).
+// Roster now surfaces waitlist rows (was collapsing waitlist→going), ordered
+// by created_at ASC — so waitlist order is the queue order.
 export interface Rsvp {
   email: string;
   name: string | null;
   accountId: string | null;
-  status: "going" | "canceled";
+  status: "going" | "waitlist" | "canceled";
   createdAt: string;
 }
 

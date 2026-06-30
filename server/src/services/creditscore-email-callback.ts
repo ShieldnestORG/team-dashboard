@@ -70,7 +70,12 @@ export type CreditscoreEmailKind =
   // recordingUrl is null until a later wave adds the column; the storefront
   // template handles the null gracefully. Fired by the per-minute windowed cron
   // `university:session-recap`. Transactional.
-  | "university_session_recap";
+  | "university_session_recap"
+  // Waitlist promotion — "a seat opened, you're in". Sent the moment a member is
+  // auto-promoted off the waitlist into a freed `going` seat (event-driven from
+  // the member cancel-RSVP route). Transactional. Same data shape family as
+  // `university_session_rsvp_confirm`; the storefront ships the real template.
+  | "university_session_waitlist_open";
 
 export interface SendArgs {
   kind: CreditscoreEmailKind;
