@@ -151,7 +151,7 @@ import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cro
 import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
 import { startUniversityCrons } from "./services/university-crons.js";
-import { startAgentRunner } from "./services/agent-runner/index.js";
+import { startAgentRunner, agentRunnerEnabled } from "./services/agent-runner/index.js";
 import { customerPortalService } from "./services/customer-portal.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
@@ -617,7 +617,7 @@ export async function createApp(
   // Community helper agents (invisible AI members). OFF by default — only starts
   // when AGENTS_RUNNER_ENABLED=true (or AGENT_DAILY_TOKEN_BUDGET is set) AND an
   // ANTHROPIC_API_KEY is present. Inert otherwise; never crashes boot.
-  if (process.env.AGENTS_RUNNER_ENABLED === "true" || process.env.AGENT_DAILY_TOKEN_BUDGET) {
+  if (agentRunnerEnabled()) {
     const portalSvc = customerPortalService(db);
     startAgentRunner({
       db,

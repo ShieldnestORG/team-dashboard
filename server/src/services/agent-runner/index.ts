@@ -110,6 +110,12 @@ export function startAgentRunner(deps: AgentRunnerDeps): AgentRunnerHandle | nul
       clearTimeout(startTimer);
       if (ambientTimer) clearInterval(ambientTimer);
       if (feedTimer) clearInterval(feedTimer);
+      // Release the single-runner advisory lock + its reserved connection so a
+      // clean stop hands off to another replica immediately. Fire-and-forget;
+      // never throws (engine swallows + logs internally).
+      engine.releaseAdvisoryLock().catch((err) =>
+        logger.error({ err }, "agent-runner: releaseAdvisoryLock failed on stop"),
+      );
       logger.info("agent-runner: stopped");
     },
   };

@@ -23,13 +23,19 @@
 // import time.
 // ---------------------------------------------------------------------------
 
-import { and, desc, eq, gt, isNull, like, not, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, like, not } from "drizzle-orm";
 import {
   universityMembers,
   universityAgentConfig,
   universityCommunityPosts,
   type Db,
 } from "@paperclipai/db";
+
+// The reserved-connection type, derived structurally from the drizzle client so
+// we don't need a direct `postgres` dependency in the server package. `$client`
+// is the underlying postgres.js Sql; `.reserve()` resolves to a ReservedSql
+// (a one-connection Sql with an extra `.release()`).
+type ReservedConn = Awaited<ReturnType<Db["$client"]["reserve"]>>;
 import { logger } from "../../middleware/logger.js";
 import {
   AGENT_PERSONAS,
@@ -135,6 +141,14 @@ export class AgentEngine {
   private readonly state = new AgentRunnerState();
   // Did we already file today's budget_exceeded report? Keyed by UTC date.
   private budgetReportDate: string | null = null;
+  // Dedicated connection that holds the single-runner advisory lock for the
+  // runner's lifetime. pg_try_advisory_lock is SESSION-scoped (pinned to one
+  // backend connection), so the lock MUST live on a reserved connection we
+  // control — never on an arbitrary pooled connection that can be reaped or
+  // reused, which would silently drop the lock or skip ticks. Null until first
+  // acquired; reset to null whenever the connection is found dead so the next
+  // tick re-reserves and re-acquires.
+  private lockConn: ReservedConn | null = null;
 
   constructor(deps: EngineDeps) {
     this.deps = deps;
@@ -164,18 +178,85 @@ export class AgentEngine {
   }
 
   /**
-   * Acquire the single-runner advisory lock. Returns true only for the holder;
-   * non-holders skip the tick (no double-posting during rolling restarts).
+   * Acquire/confirm the single-runner advisory lock on a DEDICATED reserved
+   * connection. Returns true only for the holder; non-holders skip the tick (no
+   * double-posting during rolling restarts).
+   *
+   * Why a reserved connection: pg_try_advisory_lock takes a SESSION-level lock
+   * bound to one specific backend connection. On a pool, a later tick can land
+   * on a different connection (gets false, silently skips its own ticks) and an
+   * idle/lifetime-reaped connection silently releases the lock on disconnect —
+   * letting a second replica grab it (the exact double-post this lock prevents).
+   * We therefore hold the lock on a connection we reserve out of the pool and
+   * keep for the runner's lifetime, re-asserting liveness each tick.
    */
   private async holdsAdvisoryLock(): Promise<boolean> {
+    // Already holding the lock on our reserved connection: re-assert it's alive
+    // with a cheap round-trip. If the connection died, drop it and fall through
+    // to re-reserve + re-acquire below.
+    if (this.lockConn) {
+      try {
+        await this.lockConn`SELECT 1`;
+        return true;
+      } catch (err) {
+        logger.error({ err }, "agent-runner: lock connection lost; re-acquiring");
+        try {
+          this.lockConn.release();
+        } catch {
+          // already gone — ignore
+        }
+        this.lockConn = null;
+      }
+    }
+
+    // No live reserved connection: reserve one and try to take the lock ON IT.
+    let conn: ReservedConn | null = null;
     try {
-      const rows = (await this.deps.db.execute(
-        sql`SELECT pg_try_advisory_lock(${ADVISORY_LOCK_KEY}) AS locked`,
-      )) as unknown as Array<{ locked: boolean }>;
-      return rows[0]?.locked === true;
-    } catch (err) {
-      logger.error({ err }, "agent-runner: advisory lock check failed (skipping tick)");
+      conn = await this.deps.db.$client.reserve();
+      const rows = (await conn`SELECT pg_try_advisory_lock(${ADVISORY_LOCK_KEY}) AS locked`) as unknown as Array<{
+        locked: boolean;
+      }>;
+      if (rows[0]?.locked === true) {
+        // Keep the connection reserved (out of the pool) so the session lock
+        // can never be reaped/reused out from under us.
+        this.lockConn = conn;
+        return true;
+      }
+      // Another replica holds the lock — return this connection to the pool.
+      conn.release();
       return false;
+    } catch (err) {
+      logger.error({ err }, "agent-runner: advisory lock acquire failed (skipping tick)");
+      if (conn) {
+        try {
+          conn.release();
+        } catch {
+          // ignore
+        }
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Release the advisory lock and return its reserved connection to the pool.
+   * Called on runner shutdown so a clean stop hands the lock to another replica
+   * immediately rather than waiting for the connection to be reaped.
+   */
+  async releaseAdvisoryLock(): Promise<void> {
+    if (!this.lockConn) return;
+    const conn = this.lockConn;
+    this.lockConn = null;
+    try {
+      await conn`SELECT pg_advisory_unlock(${ADVISORY_LOCK_KEY})`;
+    } catch (err) {
+      logger.error({ err }, "agent-runner: advisory unlock failed on shutdown");
+    } finally {
+      try {
+        conn.release();
+      } catch {
+        // ignore
+      }
     }
   }
 
