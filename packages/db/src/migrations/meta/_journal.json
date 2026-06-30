@@ -946,6 +946,20 @@
       "when": 1782615600458,
       "tag": "0134_magenta_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1782615600459,
+      "tag": "0136_university_agent_identity",
+      "breakpoints": false
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1782615600460,
+      "tag": "0137_university_agent_config",
+      "breakpoints": false
     }
   ]
 }

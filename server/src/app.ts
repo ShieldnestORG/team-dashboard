@@ -93,6 +93,7 @@ import {
   watchtowerWebhookRouter,
 } from "./routes/watchtower-checkout.js";
 import { watchtowerAdminRoutes } from "./routes/watchtower-admin.js";
+import { universityAgentsAdminRoutes } from "./routes/university-agents-admin.js";
 import {
   universityCheckoutRoutes,
   universityWebhookRouter,
@@ -150,6 +151,8 @@ import { startRizzCommentMonitorCron } from "./services/rizz-comment-monitor-cro
 import { startRizzExtractorCron } from "./services/rizz-tiktok-extractor-cron.js";
 import { startCreditscoreFulfillmentCrons } from "./services/creditscore-fulfillment-crons.js";
 import { startUniversityCrons } from "./services/university-crons.js";
+import { startAgentRunner } from "./services/agent-runner/index.js";
+import { customerPortalService } from "./services/customer-portal.js";
 import { startOwnedSitesCrons } from "./services/hostinger-crons.js";
 import { ownedSitesRoutes } from "./routes/owned-sites.js";
 import { campaignRoutes } from "./routes/campaigns.js";
@@ -349,6 +352,7 @@ export async function createApp(
   api.use("/watchtower", watchtowerExportRoutes(db));
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
+  api.use("/university-agents-admin", universityAgentsAdminRoutes(db));
   api.use("/university", universityCheckoutRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
@@ -610,6 +614,19 @@ export async function createApp(
   }
   startCreditscoreFulfillmentCrons(db);
   startUniversityCrons(db);
+  // Community helper agents (invisible AI members). OFF by default — only starts
+  // when AGENTS_RUNNER_ENABLED=true (or AGENT_DAILY_TOKEN_BUDGET is set) AND an
+  // ANTHROPIC_API_KEY is present. Inert otherwise; never crashes boot.
+  if (process.env.AGENTS_RUNNER_ENABLED === "true" || process.env.AGENT_DAILY_TOKEN_BUDGET) {
+    const portalSvc = customerPortalService(db);
+    startAgentRunner({
+      db,
+      community: {
+        createCommunityPost: portalSvc.createCommunityPost,
+        createCommunityComment: portalSvc.createCommunityComment,
+      },
+    });
+  }
   startOwnedSitesCrons(db);
   startCityCollectorCrons(db);
   // startCanvaMediaCrons(db); // paused until Canva folder API is sorted
