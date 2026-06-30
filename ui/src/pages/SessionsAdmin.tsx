@@ -296,6 +296,7 @@ interface FormState {
   capacity: string;
   description: string;
   hostEmail: string;
+  recordingUrl: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -308,6 +309,7 @@ const EMPTY_FORM: FormState = {
   capacity: "",
   description: "",
   hostEmail: "",
+  recordingUrl: "",
 };
 
 function fromAdminSession(s: AdminSession): FormState {
@@ -322,6 +324,7 @@ function fromAdminSession(s: AdminSession): FormState {
     capacity: s.capacity === null ? "" : String(s.capacity),
     description: s.description ?? "",
     hostEmail: s.hostEmail ?? "",
+    recordingUrl: s.recordingUrl ?? "",
   };
 }
 
@@ -354,6 +357,9 @@ function validateForm(form: FormState, requireFuture: boolean): string | null {
   }
   if (form.description.length > 4000)
     return "Description must be 4000 characters or fewer";
+  const recordingUrl = form.recordingUrl.trim();
+  if (recordingUrl !== "" && !/^https?:\/\//i.test(recordingUrl))
+    return "Recording URL must be an http(s) link (or blank)";
   return null;
 }
 
@@ -438,6 +444,10 @@ function SessionSheet({
       capacity: form.capacity.trim() === "" ? null : Number(form.capacity),
       description: form.description.trim() === "" ? null : form.description,
       hostEmail: form.hostEmail.trim() === "" ? null : form.hostEmail.trim(),
+      // Blank clears it (null); otherwise the trimmed link. On patch this means
+      // an emptied field explicitly removes a previously-set recording.
+      recordingUrl:
+        form.recordingUrl.trim() === "" ? null : form.recordingUrl.trim(),
     };
   }
 
@@ -576,6 +586,26 @@ function SessionSheet({
               onChange={(e) => set("description", e.target.value)}
               placeholder="What members should expect…"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="sess-recording">
+              Recording URL{" "}
+              <span className="font-normal text-muted-foreground">
+                (optional)
+              </span>
+            </Label>
+            <Input
+              id="sess-recording"
+              type="url"
+              value={form.recordingUrl}
+              onChange={(e) => set("recordingUrl", e.target.value)}
+              placeholder="https://zoom.us/rec/share/… or unlisted YouTube link"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Paste a Zoom-cloud or unlisted-YouTube link — shown to members on
+              past sessions. Leave blank to clear.
+            </p>
           </div>
 
           <div className="space-y-1.5">

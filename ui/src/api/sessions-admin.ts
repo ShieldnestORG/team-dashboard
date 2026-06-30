@@ -26,6 +26,9 @@ export interface AdminSession {
   durationMinutes: number;
   joinUrl: string;
   capacity: number | null;
+  // Manual recording link (v1) — Zoom-cloud / unlisted-YouTube share URL the
+  // admin pastes after the call. Always present for admins; null until set.
+  recordingUrl: string | null;
   status: string; // scheduled | canceled
   createdAt: string;
   updatedAt: string;
@@ -47,6 +50,8 @@ export interface SessionView {
   myRsvp: "going" | "canceled" | null;
   isLive: boolean;
   joinUrl?: string;
+  // Not gated (unlike joinUrl) — the past-session "Watch recording" link.
+  recordingUrl: string | null;
 }
 
 // One roster row (university-sessions.ts RsvpRosterEntry). `name` is the
@@ -71,6 +76,8 @@ export interface CreateSessionBody {
   capacity?: number | null;
   description?: string | null;
   hostEmail?: string | null;
+  // Optional recording link. Server validates as an http(s) URL; null clears it.
+  recordingUrl?: string | null;
 }
 
 // Body for patch — every field optional, but at least one must be present or

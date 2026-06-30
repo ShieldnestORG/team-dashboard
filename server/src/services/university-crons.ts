@@ -437,9 +437,9 @@ export async function runUniversitySessionStartingNow(db: Db): Promise<number> {
 // disjoint windows alone. The messageId below is trace-only; do NOT reintroduce
 // an overlapping window assuming the storefront drops duplicates (it won't).
 //
-// recordingUrl is NULL for now — the `recording_url` column does not exist yet
-// (a later wave adds it). We pass it absent; the landing template handles the
-// null gracefully ("recording not posted").
+// recordingUrl carries the session's manual recording link (v1) when an admin
+// has pasted one (Zoom-cloud / unlisted YouTube), or null otherwise. The
+// landing template handles the null gracefully ("recording not posted").
 // ---------------------------------------------------------------------------
 
 export async function runUniversitySessionRecap(db: Db): Promise<number> {
@@ -457,6 +457,7 @@ export async function runUniversitySessionRecap(db: Db): Promise<number> {
       sessionId: universitySessions.id,
       title: universitySessions.title,
       hostName: universitySessions.hostName,
+      recordingUrl: universitySessions.recordingUrl,
     })
     .from(universitySessionRsvps)
     .innerJoin(
@@ -489,9 +490,10 @@ export async function runUniversitySessionRecap(db: Db): Promise<number> {
           sessionId: r.sessionId,
           sessionTitle: r.title,
           hostName: r.hostName,
-          // recording_url column doesn't exist yet — pass null; the landing
-          // template renders an honest "recording not posted" in that case.
-          recordingUrl: null,
+          // The manual recording link (v1) if the admin pasted one; null
+          // otherwise — the landing template renders an honest "recording not
+          // posted" in the null case.
+          recordingUrl: r.recordingUrl ?? null,
           sessionsUrl: UNIVERSITY_SESSIONS_URL,
           firstName: firstNameFromDisplayName(r.displayName),
         },

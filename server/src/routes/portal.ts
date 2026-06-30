@@ -322,6 +322,7 @@ interface SessionCreateValue {
   durationMinutes: number;
   joinUrl: string;
   capacity: number | null;
+  recordingUrl: string | null;
 }
 
 // Bounds shared by create + patch validation.
@@ -340,6 +341,39 @@ function isHttpsUrl(value: string): boolean {
     return false;
   }
   return u.protocol === "https:";
+}
+
+// A manual recording link is more permissive than join_url: allow http OR https
+// (Zoom-cloud / YouTube share links are always https in practice, but we don't
+// reject a plain http link). Empty/whitespace is treated as "clear" upstream.
+function isHttpUrl(value: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    return false;
+  }
+  return u.protocol === "https:" || u.protocol === "http:";
+}
+
+// Parse an optional recordingUrl field shared by create + patch.
+//   - undefined        → { value: undefined } (field absent; leave as-is)
+//   - null / ""        → { value: null }      (explicit clear)
+//   - non-empty string → must be an http(s) URL, returned trimmed
+function parseRecordingUrl(
+  raw: unknown,
+): { value: string | null | undefined } | { error: string } {
+  if (raw === undefined) return { value: undefined };
+  if (raw === null) return { value: null };
+  if (typeof raw !== "string") {
+    return { error: "recordingUrl must be a string URL or null" };
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "") return { value: null };
+  if (!isHttpUrl(trimmed)) {
+    return { error: "recordingUrl must be an http(s) URL" };
+  }
+  return { value: trimmed };
 }
 
 // Validate an optional capacity field. Returns the parsed value, undefined when
@@ -406,6 +440,9 @@ export function parseSessionCreate(
   const cap = parseCapacity(body.capacity);
   if ("error" in cap) return { error: cap.error };
 
+  const rec = parseRecordingUrl(body.recordingUrl);
+  if ("error" in rec) return { error: rec.error };
+
   const description =
     typeof body.description === "string"
       ? body.description.slice(0, SESSION_LIMITS.descMax)
@@ -425,6 +462,8 @@ export function parseSessionCreate(
       durationMinutes,
       joinUrl,
       capacity: cap.value,
+      // Absent on create → null; otherwise the validated value.
+      recordingUrl: rec.value ?? null,
     },
   };
 }
@@ -477,6 +516,12 @@ export function parseSessionPatch(
     if ("error" in cap) return { error: cap.error };
     out.capacity = cap.value;
   }
+  if (body.recordingUrl !== undefined) {
+    const rec = parseRecordingUrl(body.recordingUrl);
+    if ("error" in rec) return { error: rec.error };
+    // value is null (cleared) or a validated string — never undefined here.
+    out.recordingUrl = rec.value ?? null;
+  }
   if (body.description !== undefined) {
     out.description =
       typeof body.description === "string"
@@ -508,6 +553,7 @@ function serializeAdminSession(row: {
   durationMinutes: number;
   joinUrl: string;
   capacity: number | null;
+  recordingUrl: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -522,6 +568,8 @@ function serializeAdminSession(row: {
     durationMinutes: row.durationMinutes,
     joinUrl: row.joinUrl,
     capacity: row.capacity ?? null,
+    // Always present for admins (so the edit form can pre-fill it).
+    recordingUrl: row.recordingUrl ?? null,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

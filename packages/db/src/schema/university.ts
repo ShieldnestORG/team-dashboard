@@ -306,6 +306,10 @@ export const universitySessions = pgTable(
     joinUrl: text("join_url").notNull(),
     // Nullable = unlimited. Capacity is enforced in the service at RSVP time.
     capacity: integer("capacity"),
+    // Manual recording link (v1). Admin pastes a Zoom Cloud / unlisted-YouTube
+    // share URL after the call; members see "Watch recording" on past sessions.
+    // NOT sensitive like join_url — exposed in the member view unconditionally.
+    recordingUrl: text("recording_url"),
     // scheduled | canceled
     status: text("status").notNull().default("scheduled"),
     // v2 recurrence (NULL at MVP; one-off rows only). iCal RRULE string.

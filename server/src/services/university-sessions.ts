@@ -53,6 +53,10 @@ export interface SessionView {
   myRsvp: RsvpStatus | null;
   isLive: boolean;
   joinUrl?: string;
+  // Manual recording link (v1). Unlike joinUrl this is NOT gated — it points at
+  // a Zoom-cloud / unlisted-YouTube share URL and is what lights up the
+  // member-facing "Watch recording" link on past sessions. null until pasted.
+  recordingUrl: string | null;
 }
 
 export interface CreateSessionInput {
@@ -64,6 +68,7 @@ export interface CreateSessionInput {
   durationMinutes?: number;
   joinUrl: string;
   capacity?: number | null;
+  recordingUrl?: string | null;
   createdByAccount?: string | null;
 }
 
@@ -76,6 +81,7 @@ export interface PatchSessionInput {
   durationMinutes?: number;
   joinUrl?: string;
   capacity?: number | null;
+  recordingUrl?: string | null;
 }
 
 interface MemberIdentity {
@@ -213,6 +219,9 @@ export function universitySessionsService(db: Db) {
       goingCount: opts.goingCount,
       myRsvp: opts.myRsvp,
       isLive,
+      // Not gated — fine to expose to any member (it's the past-session replay
+      // link). null until the admin pastes it.
+      recordingUrl: row.recordingUrl ?? null,
     };
     if (isLive && opts.myRsvp === "going") {
       view.joinUrl = row.joinUrl;
@@ -510,6 +519,7 @@ export function universitySessionsService(db: Db) {
         durationMinutes: input.durationMinutes ?? 60,
         joinUrl: input.joinUrl,
         capacity: input.capacity ?? null,
+        recordingUrl: input.recordingUrl ?? null,
         createdByAccount: input.createdByAccount ?? null,
       })
       .returning();
@@ -534,6 +544,8 @@ export function universitySessionsService(db: Db) {
       set.durationMinutes = input.durationMinutes;
     if (input.joinUrl !== undefined) set.joinUrl = input.joinUrl;
     if (input.capacity !== undefined) set.capacity = input.capacity;
+    // recordingUrl: undefined = leave as-is; null = clear; string = set.
+    if (input.recordingUrl !== undefined) set.recordingUrl = input.recordingUrl;
 
     const [row] = await db
       .update(universitySessions)

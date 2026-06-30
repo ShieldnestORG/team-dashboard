@@ -1007,6 +1007,7 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
   async function seedSessionAt(
     startsAt: Date,
     durationMinutes = 60,
+    recordingUrl: string | null = null,
   ): Promise<string> {
     const [row] = await db
       .insert(universitySessions)
@@ -1018,6 +1019,7 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
         joinUrl: "https://whereby.com/minute-room",
         capacity: null,
         status: "scheduled",
+        recordingUrl,
       })
       .returning();
     await db.insert(universitySessionRsvps).values({
@@ -1112,9 +1114,11 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
     // ended_at = starts_at + duration + grace. We want ended_at ∈ [M-1m, M).
     // Pick duration 60, so starts_at = endedAt - (60 + grace) minutes.
     const endedInPrevMinute = new Date(m.getTime() - 30 * 1000); // ∈ [M-1m, M)
+    const recordingUrl = "https://zoom.us/rec/share/minute-sit-replay";
     await seedSessionAt(
       new Date(endedInPrevMinute.getTime() - (60 + grace) * MINUTE),
       60,
+      recordingUrl,
     );
     // A session ending 30s into THIS minute (ended_at ∈ [M, M+1m)) must NOT
     // recap yet — it belongs to next minute's sweep.
@@ -1132,8 +1136,8 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
     );
     expect(calls).toHaveLength(1);
     expect(calls[0][0].to).toBe("rsvp@perminute.test");
-    // recording_url column doesn't exist yet → null in the payload.
-    expect(calls[0][0].data.recordingUrl).toBeNull();
+    // The session's manual recording link flows through to the recap payload.
+    expect(calls[0][0].data.recordingUrl).toBe(recordingUrl);
   });
 
   it("recap excludes canceled sessions", async () => {
