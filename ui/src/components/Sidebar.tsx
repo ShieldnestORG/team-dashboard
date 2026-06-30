@@ -32,6 +32,7 @@ import {
   CreditCard,
   Film,
   BarChart3,
+  Video,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -149,6 +150,7 @@ export function Sidebar() {
         </SidebarSection>
 
         <SidebarSection label="Products" accentClassName="text-emerald-400">
+          <SidebarNavItem to="/sessions" label="Sessions" icon={Video} />
           <SidebarNavItem to="/creditscore-review" label="CreditScore Review" icon={Gauge} />
           <SidebarNavItem to="/video-edit" label="Video Edit" icon={Film} />
           <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />

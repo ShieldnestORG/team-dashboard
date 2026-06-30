@@ -306,6 +306,10 @@ export const universitySessions = pgTable(
     joinUrl: text("join_url").notNull(),
     // Nullable = unlimited. Capacity is enforced in the service at RSVP time.
     capacity: integer("capacity"),
+    // Manual recording link (v1). Admin pastes a Zoom Cloud / unlisted-YouTube
+    // share URL after the call; members see "Watch recording" on past sessions.
+    // NOT sensitive like join_url — exposed in the member view unconditionally.
+    recordingUrl: text("recording_url"),
     // scheduled | canceled
     status: text("status").notNull().default("scheduled"),
     // v2 recurrence (NULL at MVP; one-off rows only). iCal RRULE string.
@@ -367,6 +371,11 @@ export const universitySessionRsvps = pgTable(
       table.sessionId,
       table.status,
     ),
+    // Promote-on-cancel needs the OLDEST waitlist row for a session: filter by
+    // (session_id, status='waitlist') then order by created_at. Migration 0139.
+    sessionStatusCreatedIdx: index(
+      "university_session_rsvps_session_status_created_idx",
+    ).on(table.sessionId, table.status, table.createdAt),
     emailIdx: index("university_session_rsvps_email_idx").on(table.email),
     accountIdx: index("university_session_rsvps_account_idx").on(
       table.accountId,

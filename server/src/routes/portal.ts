@@ -32,7 +32,10 @@ import {
 } from "../services/optimize-me-bridge.js";
 import { universitySessionsService } from "../services/university-sessions.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
-import { UNIVERSITY_SESSIONS_URL } from "../services/university-email.js";
+import {
+  UNIVERSITY_SESSIONS_URL,
+  universitySessionIcsUrl,
+} from "../services/university-email.js";
 
 // Optimize Me ("architect") app surface. The bridge handoff lands at
 // /api/sso/bridge there. Overridable via env for staging/local.
@@ -319,6 +322,7 @@ interface SessionCreateValue {
   durationMinutes: number;
   joinUrl: string;
   capacity: number | null;
+  recordingUrl: string | null;
 }
 
 // Bounds shared by create + patch validation.
@@ -337,6 +341,39 @@ function isHttpsUrl(value: string): boolean {
     return false;
   }
   return u.protocol === "https:";
+}
+
+// A manual recording link is more permissive than join_url: allow http OR https
+// (Zoom-cloud / YouTube share links are always https in practice, but we don't
+// reject a plain http link). Empty/whitespace is treated as "clear" upstream.
+function isHttpUrl(value: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    return false;
+  }
+  return u.protocol === "https:" || u.protocol === "http:";
+}
+
+// Parse an optional recordingUrl field shared by create + patch.
+//   - undefined        → { value: undefined } (field absent; leave as-is)
+//   - null / ""        → { value: null }      (explicit clear)
+//   - non-empty string → must be an http(s) URL, returned trimmed
+function parseRecordingUrl(
+  raw: unknown,
+): { value: string | null | undefined } | { error: string } {
+  if (raw === undefined) return { value: undefined };
+  if (raw === null) return { value: null };
+  if (typeof raw !== "string") {
+    return { error: "recordingUrl must be a string URL or null" };
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "") return { value: null };
+  if (!isHttpUrl(trimmed)) {
+    return { error: "recordingUrl must be an http(s) URL" };
+  }
+  return { value: trimmed };
 }
 
 // Validate an optional capacity field. Returns the parsed value, undefined when
@@ -403,6 +440,9 @@ export function parseSessionCreate(
   const cap = parseCapacity(body.capacity);
   if ("error" in cap) return { error: cap.error };
 
+  const rec = parseRecordingUrl(body.recordingUrl);
+  if ("error" in rec) return { error: rec.error };
+
   const description =
     typeof body.description === "string"
       ? body.description.slice(0, SESSION_LIMITS.descMax)
@@ -422,6 +462,8 @@ export function parseSessionCreate(
       durationMinutes,
       joinUrl,
       capacity: cap.value,
+      // Absent on create → null; otherwise the validated value.
+      recordingUrl: rec.value ?? null,
     },
   };
 }
@@ -474,6 +516,12 @@ export function parseSessionPatch(
     if ("error" in cap) return { error: cap.error };
     out.capacity = cap.value;
   }
+  if (body.recordingUrl !== undefined) {
+    const rec = parseRecordingUrl(body.recordingUrl);
+    if ("error" in rec) return { error: rec.error };
+    // value is null (cleared) or a validated string — never undefined here.
+    out.recordingUrl = rec.value ?? null;
+  }
   if (body.description !== undefined) {
     out.description =
       typeof body.description === "string"
@@ -505,6 +553,7 @@ function serializeAdminSession(row: {
   durationMinutes: number;
   joinUrl: string;
   capacity: number | null;
+  recordingUrl: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -519,6 +568,8 @@ function serializeAdminSession(row: {
     durationMinutes: row.durationMinutes,
     joinUrl: row.joinUrl,
     capacity: row.capacity ?? null,
+    // Always present for admins (so the edit form can pre-fill it).
+    recordingUrl: row.recordingUrl ?? null,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -1685,6 +1736,35 @@ export function portalRoutes(db: Db): Router {
               return;
           }
         }
+        // RSVP-confirmation email — ONLY on a transition INTO going (new RSVP or
+        // re-activation of a prior canceled). A no-op repeat (already going)
+        // sends nothing. Transactional; the storefront template owns subject/
+        // body. The .ics calendarUrl is the member-authenticated download route.
+        // Per-send failure must not fail the RSVP — log and continue.
+        if (result.ok && result.newlyGoing) {
+          const s = result.session;
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_rsvp_confirm",
+              to: result.memberEmail,
+              data: {
+                sessionId: s.id,
+                sessionTitle: s.title,
+                hostName: s.hostName,
+                startsAt: s.startsAt,
+                durationMinutes: s.durationMinutes,
+                description: s.description ?? undefined,
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+                calendarUrl: universitySessionIcsUrl(s.id),
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email: result.memberEmail, sessionId },
+              "portal/university/sessions: rsvp-confirm send failed (non-fatal)",
+            );
+          }
+        }
         res.status(200).json({ session: result.session });
       } catch (err) {
         logger.error(
@@ -1705,10 +1785,38 @@ export function portalRoutes(db: Db): Router {
       if (!accountId) return;
       const sessionId = String(req.params.id);
       try {
-        const ok = await sessionsSvc.cancelRsvp(accountId, sessionId);
-        if (!ok) {
+        const result = await sessionsSvc.cancelRsvp(accountId, sessionId);
+        if (!result.ok) {
           res.status(404).json({ error: "Session not found" });
           return;
+        }
+        // Waitlist promotion notice — ONLY when canceling this member's `going`
+        // seat auto-promoted the oldest waitlister into it. Transactional; the
+        // storefront template owns subject/body and no-ops until it ships.
+        // Per-send failure must not fail the cancel — log and continue.
+        if (result.promoted) {
+          const p = result.promoted;
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_waitlist_open",
+              to: p.email,
+              data: {
+                sessionId: p.sessionId,
+                sessionTitle: p.sessionTitle,
+                hostName: p.hostName,
+                startsAt: p.startsAt,
+                durationMinutes: p.durationMinutes,
+                description: p.description ?? undefined,
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+                calendarUrl: universitySessionIcsUrl(p.sessionId),
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email: p.email, sessionId },
+              "portal/university/sessions: waitlist-promoted send failed (non-fatal)",
+            );
+          }
         }
         res.status(200).json({ ok: true });
       } catch (err) {
@@ -1752,6 +1860,59 @@ export function portalRoutes(db: Db): Router {
     },
   );
 
+  // -- Admin reads (env allow-list) -------------------------------------------
+
+  // Full AdminSession (join_url ALWAYS included) for the admin edit form. The
+  // member list view gates join_url, so the form reads the room link from here.
+  router.get(
+    "/university/sessions/:id",
+    async (req: Request, res: Response) => {
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const row = await sessionsSvc.getAdminSessionById(sessionId);
+        if (!row) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        res.status(200).json({ session: serializeAdminSession(row) });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: admin get failed",
+        );
+        res.status(500).json({ error: "Failed to load session" });
+      }
+    },
+  );
+
+  // RSVP roster for a session (going + canceled, oldest first). Admin attendee
+  // list; `name` is the member displayName when known.
+  router.get(
+    "/university/sessions/:id/rsvps",
+    async (req: Request, res: Response) => {
+      const accountId = await requireSessionAdmin(req, res);
+      if (!accountId) return;
+      const sessionId = String(req.params.id);
+      try {
+        const row = await sessionsSvc.getAdminSessionById(sessionId);
+        if (!row) {
+          res.status(404).json({ error: "Session not found" });
+          return;
+        }
+        const rsvps = await sessionsSvc.listSessionRsvps(sessionId);
+        res.status(200).json({ rsvps });
+      } catch (err) {
+        logger.error(
+          { err, accountId, sessionId },
+          "portal/university/sessions: rsvps list failed",
+        );
+        res.status(500).json({ error: "Failed to load RSVPs" });
+      }
+    },
+  );
+
   // -- Admin authoring (env allow-list) ---------------------------------------
 
   router.post("/university/sessions", async (req: Request, res: Response) => {
@@ -1770,6 +1931,46 @@ export function portalRoutes(db: Db): Router {
         ...parsed.value,
         createdByAccount: accountId,
       });
+
+      // New-session announcement — broadcast to ALL active members. COMMERCIAL:
+      // the storefront adds postal address + working unsubscribe + the
+      // suppression gate; team-dashboard only fans the envelope to active
+      // members. messageId = announce:<sessionId>:<emailLower> so a retry of the
+      // same broadcast is idempotent storefront-side. Per-send failures must NOT
+      // fail the create (the session is already persisted) — log and continue.
+      try {
+        const members = await sessionsSvc.listActiveMemberEmails();
+        for (const m of members) {
+          const emailLower = m.email.trim().toLowerCase();
+          try {
+            await sendCreditscoreEmail({
+              kind: "university_session_announce",
+              to: m.email,
+              messageId: `announce:${row.id}:${emailLower}`,
+              data: {
+                sessionId: row.id,
+                sessionTitle: row.title,
+                hostName: row.hostName,
+                startsAt: row.startsAt.toISOString(),
+                durationMinutes: row.durationMinutes,
+                description: row.description ?? undefined,
+                sessionsUrl: UNIVERSITY_SESSIONS_URL,
+              },
+            });
+          } catch (sendErr) {
+            logger.error(
+              { err: sendErr, email: m.email, sessionId: row.id },
+              "portal/university/sessions: announce send failed (non-fatal)",
+            );
+          }
+        }
+      } catch (announceErr) {
+        logger.error(
+          { err: announceErr, sessionId: row.id },
+          "portal/university/sessions: announce fan-out failed (non-fatal)",
+        );
+      }
+
       res.status(200).json({ session: serializeAdminSession(row) });
     } catch (err) {
       logger.error(

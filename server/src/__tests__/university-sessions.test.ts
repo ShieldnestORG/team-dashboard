@@ -12,7 +12,8 @@
 //   - 403 for a logged-in NON-member (membership gate)
 //   - 403 under impersonation on mutations (read-only)
 //   - RSVP upsert is idempotent; cancel-RSVP is soft + idempotent
-//   - capacity full → 409 (and a re-RSVP by an already-going member is fine)
+//   - capacity full → waitlist (200, not 409); cancel a going seat promotes the
+//     oldest waitlister to going; unlimited never waitlists; no double-promote
 //   - join_url is returned ONLY when the session is live AND caller RSVP'd
 //     going — never before the window, never to non-RSVPs
 //   - admin create/patch/cancel gated on the env allow-list
@@ -27,6 +28,7 @@
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { and, eq, sql } from "drizzle-orm";
 
 // The portal service + crons import the email callback at module load. Mock it
 // so nothing touches the network AND so we can assert reminder fan-out. The
@@ -73,10 +75,13 @@ import {
   isSessionLive,
   renderIcs,
   JOIN_OPENS_BEFORE_MINUTES,
+  JOIN_GRACE_AFTER_MINUTES,
 } from "../services/university-sessions.js";
 import {
   runUniversitySessionReminder24h,
   runUniversitySessionReminder1h,
+  runUniversitySessionStartingNow,
+  runUniversitySessionRecap,
 } from "../services/university-crons.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
@@ -349,32 +354,39 @@ describeDb("university sessions endpoints (integration)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("capacity full → 409 for a new member; already-going re-RSVP is fine", async () => {
+  it("capacity full → waitlist (200) for a new member; already-going re-RSVP is fine", async () => {
     const sessionId = await seedSession({ capacity: 1 });
 
-    // First member claims the only seat.
+    // First member claims the only seat → going.
     const a = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
       .set("Cookie", memberCookie());
     expect(a.status).toBe(200);
+    expect(a.body.session.myRsvpStatus).toBe("going");
+    expect(a.body.session.spotsLeft).toBe(0);
 
-    // Same member re-RSVPing is NOT blocked (no new seat).
+    // Same member re-RSVPing is NOT blocked (no new seat) — stays going.
     const aAgain = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
       .set("Cookie", memberCookie());
     expect(aAgain.status).toBe(200);
+    expect(aAgain.body.session.myRsvpStatus).toBe("going");
 
-    // A different member is rejected — full.
+    // A different member is no longer rejected — they're waitlisted (200) at
+    // position #1, and the going seat count is unchanged.
     const b = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
       .set("Cookie", otherMemberCookie());
-    expect(b.status).toBe(409);
-    expect(b.body.error).toMatch(/full/i);
+    expect(b.status).toBe(200);
+    expect(b.body.session.myRsvpStatus).toBe("waitlist");
+    expect(b.body.session.myWaitlistPosition).toBe(1);
+    expect(b.body.session.waitlistCount).toBe(1);
+    expect(b.body.session.goingCount).toBe(1);
+    expect(b.body.session.spotsLeft).toBe(0);
 
-    const going = (await db.select().from(universitySessionRsvps)).filter(
-      (r) => r.status === "going",
-    );
-    expect(going).toHaveLength(1);
+    const all = await db.select().from(universitySessionRsvps);
+    expect(all.filter((r) => r.status === "going")).toHaveLength(1);
+    expect(all.filter((r) => r.status === "waitlist")).toHaveLength(1);
   });
 
   it("RSVP to a canceled session → 400", async () => {
@@ -663,6 +675,138 @@ describeDb("university sessions endpoints (integration)", () => {
       true,
     );
   });
+
+  // ----- Admin reads (env allow-list) — join_url leak guard ------------------
+  // The admin GET :id returns the full AdminSession (join_url ALWAYS present)
+  // and GET :id/rsvps returns the attendee roster. Both are gated on
+  // requireSessionAdmin (membership AND the UNIVERSITY_SESSION_ADMINS list).
+  // The leak risk: the always-join-url AdminSession reaching a non-admin.
+
+  it("admin GET :id returns 200 with joinUrl in the full AdminSession shape", async () => {
+    const sessionId = await seedSession({
+      joinUrl: "https://whereby.com/admin-room",
+      capacity: 25,
+    });
+
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}`)
+      .set("Cookie", adminCookie());
+    expect(res.status).toBe(200);
+    const s = res.body.session;
+    expect(s.id).toBe(sessionId);
+    // join_url is ALWAYS included in the admin shape (un-gated).
+    expect(s.joinUrl).toBe("https://whereby.com/admin-room");
+    // Full AdminSession fields the member view never exposes unconditionally.
+    expect(s.status).toBe("scheduled");
+    expect(s.capacity).toBe(25);
+    expect(typeof s.startsAt).toBe("string");
+    expect(typeof s.createdAt).toBe("string");
+    expect(typeof s.updatedAt).toBe("string");
+  });
+
+  it("LEAK GUARD: admin GET :id is 403 for a valid member NOT on the allow-list — never leaks joinUrl", async () => {
+    const sessionId = await seedSession({
+      joinUrl: "https://whereby.com/secret-room",
+    });
+
+    // memberCookie() is a real, active University member — but not an admin.
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}`)
+      .set("Cookie", memberCookie());
+    expect(res.status).toBe(403);
+    // The room link must never appear in a non-admin response body.
+    expect(JSON.stringify(res.body)).not.toContain("secret-room");
+  });
+
+  it("LEAK GUARD: admin GET :id/rsvps is 403 for a valid member NOT on the allow-list", async () => {
+    const sessionId = await seedSession();
+
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}/rsvps`)
+      .set("Cookie", otherMemberCookie());
+    expect(res.status).toBe(403);
+    expect(res.body.rsvps).toBeUndefined();
+  });
+
+  it("LEAK GUARD: both admin reads are 403 when the allow-list is EMPTY (admin disabled), even for an allow-listed email", async () => {
+    const sessionId = await seedSession({
+      joinUrl: "https://whereby.com/disabled-room",
+    });
+    const prev = process.env.UNIVERSITY_SESSION_ADMINS;
+    process.env.UNIVERSITY_SESSION_ADMINS = "";
+    try {
+      // Even the normally-admin account is denied when admin is not enabled.
+      const get = await request(app)
+        .get(`/api/portal/university/sessions/${sessionId}`)
+        .set("Cookie", adminCookie());
+      expect(get.status).toBe(403);
+      expect(JSON.stringify(get.body)).not.toContain("disabled-room");
+
+      const rsvps = await request(app)
+        .get(`/api/portal/university/sessions/${sessionId}/rsvps`)
+        .set("Cookie", adminCookie());
+      expect(rsvps.status).toBe(403);
+      expect(rsvps.body.rsvps).toBeUndefined();
+    } finally {
+      process.env.UNIVERSITY_SESSION_ADMINS = prev;
+    }
+  });
+
+  it("admin GET :id/rsvps resolves name from displayName; null for an email-only RSVP", async () => {
+    const sessionId = await seedSession();
+
+    // A real member RSVP (name should resolve from university_members).
+    await request(app)
+      .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Cookie", memberCookie());
+
+    // An email-only RSVP with NO university_members row (name → null). Insert
+    // directly; seeded later so createdAt sorts after the member RSVP.
+    await db.insert(universitySessionRsvps).values({
+      sessionId,
+      email: "guest-no-member@sessions.test",
+      accountId: null,
+      status: "going",
+    });
+
+    const res = await request(app)
+      .get(`/api/portal/university/sessions/${sessionId}/rsvps`)
+      .set("Cookie", adminCookie());
+    expect(res.status).toBe(200);
+    const roster: Array<{
+      email: string;
+      name: string | null;
+      accountId: string | null;
+      status: string;
+    }> = res.body.rsvps;
+
+    const member = roster.find((r) => r.email === MEMBER_EMAIL);
+    expect(member).toBeTruthy();
+    expect(member!.name).toBe("Casey Member");
+    expect(member!.accountId).toBe(memberAccountId);
+    expect(member!.status).toBe("going");
+
+    const guest = roster.find(
+      (r) => r.email === "guest-no-member@sessions.test",
+    );
+    expect(guest).toBeTruthy();
+    expect(guest!.name).toBeNull();
+    expect(guest!.accountId).toBeNull();
+  });
+
+  it("admin GET :id and :id/rsvps → 404 for a non-existent session", async () => {
+    const missing = "00000000-0000-0000-0000-000000000000";
+
+    const get = await request(app)
+      .get(`/api/portal/university/sessions/${missing}`)
+      .set("Cookie", adminCookie());
+    expect(get.status).toBe(404);
+
+    const rsvps = await request(app)
+      .get(`/api/portal/university/sessions/${missing}/rsvps`)
+      .set("Cookie", adminCookie());
+    expect(rsvps.status).toBe(404);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -773,5 +917,597 @@ describeDb("university session reminder crons (windowing)", () => {
 
     const sent = await runUniversitySessionReminder1h(db);
     expect(sent).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-minute crons — "starting now" + recap. These sweep every wall-clock
+// minute and MUST be exactly-once via MINUTE-ALIGNED, DISJOINT windows derived
+// from date_trunc('minute', now()) — NOT downstream messageId dedup (the
+// landing receiver does not dedup). The boundary cases below prove the slices
+// tile perfectly: a session whose start lands on a minute boundary is emailed
+// in exactly ONE minute's sweep, never two.
+//
+// Windows under test:
+//   starting-now: starts_at  ∈ [M,      M + 1m)   where M = date_trunc(min,now)
+//   recap:        ended_at   ∈ [M - 1m, M)        ended_at = start+dur+grace
+// ---------------------------------------------------------------------------
+
+describeDb("university per-minute session crons (minute-aligned windows)", () => {
+  let db!: ReturnType<typeof createDb>;
+  let cleanup: (() => Promise<void>) | null = null;
+  let svc!: ReturnType<typeof universitySessionsService>;
+  let rsvpAccountId!: string;
+
+  beforeAll(async () => {
+    process.env.PORTAL_SESSION_SECRET = PORTAL_SECRET;
+
+    if (dbMode === "fullChain") {
+      const tempDb = await startEmbeddedPostgresTestDatabase(
+        "university-perminute-",
+      );
+      db = createDb(tempDb.connectionString);
+      cleanup = tempDb.cleanup;
+    } else {
+      const tempDb = await startNoPgvectorTestDatabase(
+        "university-perminute-novec-",
+      );
+      db = tempDb.db;
+      cleanup = tempDb.cleanup;
+    }
+    svc = universitySessionsService(db);
+
+    const [acct] = await db
+      .insert(customerAccounts)
+      .values({ email: "rsvp@perminute.test" })
+      .returning();
+    rsvpAccountId = acct.id;
+    await db.insert(universityMembers).values({
+      accountId: rsvpAccountId,
+      email: "rsvp@perminute.test",
+      displayName: "Min Boundary",
+      status: "active",
+      joinedAt: new Date(),
+    });
+  }, 60_000);
+
+  afterEach(async () => {
+    sendEmailMock.mockClear();
+    await db.delete(universitySessionRsvps);
+    await db.delete(universitySessions);
+  });
+
+  afterAll(async () => {
+    await cleanup?.();
+  });
+
+  // These tests pin session times relative to a minute boundary M computed in
+  // JS, then pass that SAME instant to the cron (the optional `now` arg), so the
+  // cron floors the identical instant to the identical M. JS-M and SQL-M are
+  // therefore derived from one fixed instant — there is NO wall-clock-boundary
+  // race even if the body straddles a real minute edge under load. (Previously
+  // the cron floored its own SQL now(), which could land a minute past the JS
+  // floor when the two-file parallel run starved the embedded-PG instances of
+  // CPU, flaking the disjoint-window assertions. The old fix — a settleIntoMinute()
+  // wait of up to ~8s to dodge minute edges — was removed: it was no longer
+  // load-bearing once the instant is injected, AND its long sleep blew past the
+  // 5s default test timeout under load, aborting the test mid-body and leaking
+  // committed rows into the next test — the actual residual flake.)
+
+  // The current minute boundary M, floored the same way the cron floors in SQL
+  // (date_trunc('minute', <injected instant>)). This exact instant is passed to
+  // the cron so both sides agree on M.
+  function currentMinuteBoundary(): Date {
+    const m = new Date();
+    m.setUTCSeconds(0, 0);
+    return m;
+  }
+
+  // Insert a scheduled session directly at the EXACT instant we want (the
+  // createSession path rejects non-future starts; the column has no such
+  // constraint, and the cron reads only the column). A going RSVP is inserted
+  // directly too, mirroring the email-only-RSVP seed in the integration block.
+  async function seedSessionAt(
+    startsAt: Date,
+    durationMinutes = 60,
+    recordingUrl: string | null = null,
+  ): Promise<string> {
+    const [row] = await db
+      .insert(universitySessions)
+      .values({
+        title: "Minute Sit",
+        hostName: "Mark",
+        startsAt,
+        durationMinutes,
+        joinUrl: "https://whereby.com/minute-room",
+        capacity: null,
+        status: "scheduled",
+        recordingUrl,
+      })
+      .returning();
+    await db.insert(universitySessionRsvps).values({
+      sessionId: row.id,
+      email: "rsvp@perminute.test",
+      accountId: rsvpAccountId,
+      status: "going",
+    });
+    return row.id;
+  }
+
+  // ----- starting-now --------------------------------------------------------
+
+  it("starting-now fires for a session starting THIS minute; not one starting next minute", async () => {
+    const m = currentMinuteBoundary();
+    // In-window: 30s into the current minute → ∈ [M, M+1m).
+    await seedSessionAt(new Date(m.getTime() + 30 * 1000));
+    // Out-of-window: 30s into the NEXT minute → ∈ [M+1m, M+2m), so the M sweep
+    // must NOT pick it up (it belongs to next minute's sweep).
+    await seedSessionAt(new Date(m.getTime() + 90 * 1000));
+
+    const sent = await runUniversitySessionStartingNow(db, m);
+    expect(sent).toBe(1);
+
+    const calls = sendEmailMock.mock.calls.filter(
+      (c) => c[0]?.kind === "university_session_starting_now",
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].to).toBe("rsvp@perminute.test");
+    // The live email carries the real join_url.
+    expect(calls[0][0].data.joinUrl).toBe("https://whereby.com/minute-room");
+  });
+
+  it("BOUNDARY exactly-once: a start AT the boundary M lands in exactly ONE minute slice — the M sweep claims it, the M-1m slice does not", async () => {
+    const m = currentMinuteBoundary();
+
+    // (a) A session starting EXACTLY on M. Window [M, M+1m) has an INCLUSIVE
+    // lower bound, so this minute's sweep claims it → exactly one send.
+    await seedSessionAt(new Date(m.getTime()));
+    const sentOnBoundary = await runUniversitySessionStartingNow(db, m);
+    expect(sentOnBoundary).toBe(1);
+    expect(
+      sendEmailMock.mock.calls.filter(
+        (c) => c[0]?.kind === "university_session_starting_now",
+      ),
+    ).toHaveLength(1);
+
+    // Reset between the two halves so the second assertion is clean.
+    sendEmailMock.mockClear();
+    await db.delete(universitySessionRsvps);
+    await db.delete(universitySessions);
+
+    // (b) A session starting exactly one minute BEFORE M (i.e. on the boundary
+    // of the PRIOR minute slice [M-1m, M)). The current sweep's window [M, M+1m)
+    // has an EXCLUSIVE relationship to it — M-1m < M — so this sweep must NOT
+    // claim it. That start was the prior sweep's responsibility. Adjacent
+    // windows are disjoint: a boundary instant belongs to exactly one of them.
+    await seedSessionAt(new Date(m.getTime() - 60 * 1000));
+    const sentPriorBoundary = await runUniversitySessionStartingNow(db, m);
+    expect(sentPriorBoundary).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("starting-now does NOT fire for a session that started a full minute ago", async () => {
+    const m = currentMinuteBoundary();
+    // starts_at = M - 90s → ∈ [M-2m, M-1m): well before the [M, M+1m) window.
+    await seedSessionAt(new Date(m.getTime() - 90 * 1000));
+
+    const sent = await runUniversitySessionStartingNow(db, m);
+    expect(sent).toBe(0);
+  });
+
+  it("starting-now excludes canceled sessions", async () => {
+    const m = currentMinuteBoundary();
+    const id = await seedSessionAt(new Date(m.getTime() + 30 * 1000));
+    await svc.cancelSession(id);
+
+    const sent = await runUniversitySessionStartingNow(db, m);
+    expect(sent).toBe(0);
+  });
+
+  // ----- recap ---------------------------------------------------------------
+
+  it("recap fires for a session that ENDED in the previous minute; not one ending this minute", async () => {
+    const m = currentMinuteBoundary();
+    const grace = JOIN_GRACE_AFTER_MINUTES;
+    // ended_at = starts_at + duration + grace. We want ended_at ∈ [M-1m, M).
+    // Pick duration 60, so starts_at = endedAt - (60 + grace) minutes.
+    const endedInPrevMinute = new Date(m.getTime() - 30 * 1000); // ∈ [M-1m, M)
+    const recordingUrl = "https://zoom.us/rec/share/minute-sit-replay";
+    await seedSessionAt(
+      new Date(endedInPrevMinute.getTime() - (60 + grace) * MINUTE),
+      60,
+      recordingUrl,
+    );
+    // A session ending 30s into THIS minute (ended_at ∈ [M, M+1m)) must NOT
+    // recap yet — it belongs to next minute's sweep.
+    const endsThisMinute = new Date(m.getTime() + 30 * 1000);
+    await seedSessionAt(
+      new Date(endsThisMinute.getTime() - (60 + grace) * MINUTE),
+      60,
+    );
+
+    const sent = await runUniversitySessionRecap(db, m);
+    expect(sent).toBe(1);
+
+    const calls = sendEmailMock.mock.calls.filter(
+      (c) => c[0]?.kind === "university_session_recap",
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].to).toBe("rsvp@perminute.test");
+    // The session's manual recording link flows through to the recap payload.
+    expect(calls[0][0].data.recordingUrl).toBe(recordingUrl);
+  });
+
+  it("recap excludes canceled sessions", async () => {
+    const m = currentMinuteBoundary();
+    const grace = JOIN_GRACE_AFTER_MINUTES;
+    const endedInPrevMinute = new Date(m.getTime() - 30 * 1000);
+    const id = await seedSessionAt(
+      new Date(endedInPrevMinute.getTime() - (60 + grace) * MINUTE),
+      60,
+    );
+    await svc.cancelSession(id);
+
+    const sent = await runUniversitySessionRecap(db, m);
+    expect(sent).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Waitlist (migration 0139) — the data-model + promote-on-cancel logic.
+//   - a FULL finite-capacity session parks a new RSVP as `waitlist` with a
+//     1-based position (instead of erroring `full`)
+//   - canceling a GOING seat promotes the OLDEST waitlister (by created_at) to
+//     `going` and returns that member for the route's email
+//   - unlimited capacity NEVER waitlists
+//   - no double-promote: two sequential cancels each promote a DISTINCT
+//     waitlister (the queue drains one per freed seat)
+//
+// Determinism: waitlist QUEUE ORDER is created_at. svc.rsvp inserts with the DB
+// clock, which could tie within a millisecond, so where order is load-bearing
+// we OVERWRITE created_at to fixed, well-separated timestamps after the RSVP —
+// no reliance on wall-clock spacing or minute boundaries.
+// ---------------------------------------------------------------------------
+
+describeDb("university session waitlist (data model + promote-on-cancel)", () => {
+  let db!: ReturnType<typeof createDb>;
+  let cleanup: (() => Promise<void>) | null = null;
+  let svc!: ReturnType<typeof universitySessionsService>;
+  // Account ids keyed by a stable label so tests read clearly.
+  const acct: Record<string, string> = {};
+
+  // Fixed, well-separated created_at stamps for deterministic queue order.
+  const T0 = new Date("2026-01-01T00:00:00.000Z");
+  const T1 = new Date("2026-01-01T00:01:00.000Z");
+  const T2 = new Date("2026-01-01T00:02:00.000Z");
+
+  beforeAll(async () => {
+    process.env.PORTAL_SESSION_SECRET = PORTAL_SECRET;
+
+    if (dbMode === "fullChain") {
+      const tempDb = await startEmbeddedPostgresTestDatabase(
+        "university-sess-waitlist-",
+      );
+      db = createDb(tempDb.connectionString);
+      cleanup = tempDb.cleanup;
+    } else {
+      const tempDb = await startNoPgvectorTestDatabase(
+        "university-sess-waitlist-novec-",
+      );
+      db = tempDb.db;
+      cleanup = tempDb.cleanup;
+    }
+    svc = universitySessionsService(db);
+
+    // Seed a holder of the only seat plus three waitlisters.
+    for (const label of ["seat", "w1", "w2", "w3"]) {
+      const email = `${label}@waitlist.test`;
+      const [row] = await db
+        .insert(customerAccounts)
+        .values({ email })
+        .returning();
+      acct[label] = row.id;
+      await db.insert(universityMembers).values({
+        accountId: row.id,
+        email,
+        displayName: label.toUpperCase(),
+        status: "active",
+        joinedAt: new Date(),
+      });
+    }
+  }, 60_000);
+
+  afterEach(async () => {
+    sendEmailMock.mockClear();
+    await db.delete(universitySessionRsvps);
+    await db.delete(universitySessions);
+  });
+
+  afterAll(async () => {
+    await cleanup?.();
+  });
+
+  // A future, finite-capacity session.
+  async function seedCappedSession(capacity: number | null): Promise<string> {
+    const row = await svc.createSession({
+      title: "Capped Sit",
+      hostName: "Mark",
+      startsAt: new Date(Date.now() + 3 * HOUR),
+      joinUrl: "https://whereby.com/capped",
+      capacity,
+    });
+    return row.id;
+  }
+
+  // Force a member's RSVP created_at so the waitlist queue order is exact.
+  async function setRsvpCreatedAt(
+    sessionId: string,
+    email: string,
+    when: Date,
+  ): Promise<void> {
+    await db
+      .update(universitySessionRsvps)
+      .set({ createdAt: when })
+      .where(
+        and(
+          eq(universitySessionRsvps.sessionId, sessionId),
+          sql`LOWER(${universitySessionRsvps.email}) = ${email.toLowerCase()}`,
+        ),
+      );
+  }
+
+  it("full session → new RSVP becomes waitlist with a 1-based position", async () => {
+    const id = await seedCappedSession(1);
+
+    const seat = await svc.rsvp(acct.seat, id);
+    expect(seat.ok && seat.rsvpStatus).toBe("going");
+    expect(seat.ok && seat.waitlistPosition).toBe(null);
+    expect(seat.ok && seat.newlyGoing).toBe(true);
+
+    // First waitlister.
+    const r1 = await svc.rsvp(acct.w1, id);
+    expect(r1.ok && r1.rsvpStatus).toBe("waitlist");
+    expect(r1.ok && r1.waitlistPosition).toBe(1);
+    // A waitlist park is NOT a going transition → no rsvp-confirm gating.
+    expect(r1.ok && r1.newlyGoing).toBe(false);
+
+    // Second waitlister lands behind the first.
+    await svc.rsvp(acct.w2, id);
+    // Pin queue order: w1 older than w2.
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T1);
+
+    const w2View = await svc.getSessionView(acct.w2, id);
+    expect(w2View?.myRsvpStatus).toBe("waitlist");
+    expect(w2View?.myWaitlistPosition).toBe(2);
+    expect(w2View?.waitlistCount).toBe(2);
+    expect(w2View?.goingCount).toBe(1);
+    expect(w2View?.spotsLeft).toBe(0);
+
+    // Re-RSVPing while still full does NOT duplicate or advance position.
+    const r1Again = await svc.rsvp(acct.w1, id);
+    expect(r1Again.ok && r1Again.rsvpStatus).toBe("waitlist");
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    expect(rows.filter((r) => r.status === "waitlist")).toHaveLength(2);
+  });
+
+  it("cancel a going seat promotes the OLDEST waitlister to going + returns them for email", async () => {
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id);
+    await svc.rsvp(acct.w1, id);
+    await svc.rsvp(acct.w2, id);
+    // w1 enqueued before w2.
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T1);
+
+    const result = await svc.cancelRsvp(acct.seat, id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    // Oldest waitlister (w1) promoted, and the full promote shape returned.
+    expect(result.promoted?.email).toBe("w1@waitlist.test");
+    expect(result.promoted?.sessionId).toBe(id);
+    expect(result.promoted?.sessionTitle).toBe("Capped Sit");
+    expect(result.promoted?.hostName).toBe("Mark");
+    expect(typeof result.promoted?.startsAt).toBe("string");
+    expect(result.promoted?.durationMinutes).toBe(60);
+
+    // w1 is now going; w2 still waiting at position 1; seat canceled.
+    const w1 = await svc.getSessionView(acct.w1, id);
+    expect(w1?.myRsvpStatus).toBe("going");
+    const w2 = await svc.getSessionView(acct.w2, id);
+    expect(w2?.myRsvpStatus).toBe("waitlist");
+    expect(w2?.myWaitlistPosition).toBe(1);
+    expect(w2?.goingCount).toBe(1);
+    expect(w2?.waitlistCount).toBe(1);
+  });
+
+  it("unlimited capacity never waitlists; cancel promotes nobody", async () => {
+    const id = await seedCappedSession(null);
+    const a = await svc.rsvp(acct.seat, id);
+    const b = await svc.rsvp(acct.w1, id);
+    const c = await svc.rsvp(acct.w2, id);
+    expect(a.ok && a.rsvpStatus).toBe("going");
+    expect(b.ok && b.rsvpStatus).toBe("going");
+    expect(c.ok && c.rsvpStatus).toBe("going");
+
+    const view = await svc.getSessionView(acct.seat, id);
+    expect(view?.waitlistCount).toBe(0);
+    expect(view?.spotsLeft).toBe(null);
+
+    const cancel = await svc.cancelRsvp(acct.seat, id);
+    expect(cancel.ok).toBe(true);
+    if (!cancel.ok) throw new Error("unreachable");
+    expect(cancel.promoted).toBe(null);
+  });
+
+  it("no double-promote: two sequential cancels promote two DISTINCT waitlisters", async () => {
+    // Capacity 2: seat + w3 hold the two going seats; w1, w2 wait.
+    const id = await seedCappedSession(2);
+    await svc.rsvp(acct.seat, id);
+    await svc.rsvp(acct.w3, id);
+    await svc.rsvp(acct.w1, id);
+    await svc.rsvp(acct.w2, id);
+    // Queue order w1 (T0) before w2 (T1).
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T1);
+
+    // First cancel frees one seat → promotes w1 (oldest).
+    const first = await svc.cancelRsvp(acct.seat, id);
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error("unreachable");
+    expect(first.promoted?.email).toBe("w1@waitlist.test");
+
+    // Second cancel frees another seat → promotes w2 (the NEXT one), never w1
+    // again.
+    const second = await svc.cancelRsvp(acct.w3, id);
+    expect(second.ok).toBe(true);
+    if (!second.ok) throw new Error("unreachable");
+    expect(second.promoted?.email).toBe("w2@waitlist.test");
+
+    // End state: exactly two going (w1, w2), zero waitlist, two canceled.
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    const going = rows
+      .filter((r) => r.status === "going")
+      .map((r) => r.email)
+      .sort();
+    expect(going).toEqual(["w1@waitlist.test", "w2@waitlist.test"]);
+    expect(rows.filter((r) => r.status === "waitlist")).toHaveLength(0);
+    expect(rows.filter((r) => r.status === "canceled")).toHaveLength(2);
+  });
+
+  it("canceling a WAITLIST row (not a going seat) promotes nobody", async () => {
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id); // going
+    await svc.rsvp(acct.w1, id); // waitlist
+
+    // w1 (a waitlister) cancels — frees no going seat, so no promotion.
+    const cancel = await svc.cancelRsvp(acct.w1, id);
+    expect(cancel.ok).toBe(true);
+    if (!cancel.ok) throw new Error("unreachable");
+    expect(cancel.promoted).toBe(null);
+
+    // seat is still the sole going RSVP.
+    const seatView = await svc.getSessionView(acct.seat, id);
+    expect(seatView?.goingCount).toBe(1);
+    expect(seatView?.waitlistCount).toBe(0);
+  });
+
+  it("admin roster includes waitlist rows with status + created_at, in queue order", async () => {
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id); // going
+    await svc.rsvp(acct.w1, id); // waitlist
+    await svc.rsvp(acct.w2, id); // waitlist
+    await setRsvpCreatedAt(id, "seat@waitlist.test", T0);
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T1);
+    await setRsvpCreatedAt(id, "w2@waitlist.test", T2);
+
+    const roster = await svc.listSessionRsvps(id);
+    expect(roster.map((r) => r.email)).toEqual([
+      "seat@waitlist.test",
+      "w1@waitlist.test",
+      "w2@waitlist.test",
+    ]);
+    expect(roster.map((r) => r.status)).toEqual([
+      "going",
+      "waitlist",
+      "waitlist",
+    ]);
+    // created_at surfaced so the admin sees the queue order.
+    expect(roster.every((r) => typeof r.createdAt === "string")).toBe(true);
+  });
+
+  // --- Atomicity guards (Wave 4B concurrency nits) --------------------------
+  // These prove the INVARIANTS the FOR-UPDATE transaction protects. True
+  // concurrency is hard to force deterministically against a single embedded
+  // Postgres connection pool (the two RSVPs would serialize on the same
+  // connection anyway), so these assert the post-condition the lock guarantees:
+  // confirmed `going` seats NEVER exceed capacity, and cancel+promote is
+  // observed as a single all-or-nothing state transition.
+
+  it("ATOMICITY: going seats never exceed capacity across many concurrent RSVPs", async () => {
+    // Capacity 2, but fire FIVE RSVPs at once (Promise.all). Whatever the
+    // interleaving, the locked recount must keep `going` ≤ capacity — the
+    // remainder land on the waitlist. Before the fix a read-then-insert race
+    // could let two last-seat RSVPs both go `going` (3 going on a cap-2 sit).
+    const id = await seedCappedSession(2);
+
+    // Five distinct members. seed/w1/w2/w3 exist; add a fifth account here.
+    const [fifth] = await db
+      .insert(customerAccounts)
+      .values({ email: "w4@waitlist.test" })
+      .returning();
+    await db.insert(universityMembers).values({
+      accountId: fifth.id,
+      email: "w4@waitlist.test",
+      displayName: "W4",
+      status: "active",
+      joinedAt: new Date(),
+    });
+
+    const ids = [acct.seat, acct.w1, acct.w2, acct.w3, fifth.id];
+    const results = await Promise.all(ids.map((a) => svc.rsvp(a, id)));
+
+    // Every RSVP succeeded.
+    expect(results.every((r) => r.ok)).toBe(true);
+
+    // The hard invariant: confirmed seats never exceed capacity.
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    const going = rows.filter((r) => r.status === "going");
+    const waiting = rows.filter((r) => r.status === "waitlist");
+    expect(going.length).toBe(2); // exactly capacity, never 3+
+    expect(waiting.length).toBe(3); // the overflow parked, none lost
+    expect(going.length + waiting.length).toBe(5);
+
+    // And the service view agrees: spotsLeft floored at 0, goingCount == cap.
+    const view = await svc.getSessionView(acct.seat, id);
+    expect(view?.goingCount).toBe(2);
+    expect(view?.spotsLeft).toBe(0);
+    expect(view?.waitlistCount).toBe(3);
+
+    // Cleanup the extra account so other tests' counts are unaffected.
+    await db
+      .delete(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+  });
+
+  it("ATOMICITY: cancel+promote is all-or-nothing (no freed-seat-without-promote)", async () => {
+    // Capacity 1: seat holds the seat, w1 waits. A cancel of the seat must, in
+    // ONE committed transaction, both free the seat (seat→canceled) AND promote
+    // w1 (waitlist→going). After it, the seat count is conserved: still exactly
+    // one going, zero waitlist — never a window where the seat is free and
+    // nobody was promoted (that would show 0 going + 1 waitlist).
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id);
+    await svc.rsvp(acct.w1, id);
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+
+    const result = await svc.cancelRsvp(acct.seat, id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.promoted?.email).toBe("w1@waitlist.test");
+
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    const going = rows.filter((r) => r.status === "going").map((r) => r.email);
+    const waiting = rows.filter((r) => r.status === "waitlist");
+    const canceled = rows.filter((r) => r.status === "canceled");
+    // The freed seat was filled in the SAME commit: exactly one going (w1),
+    // none left waiting, the original holder canceled. No intermediate
+    // free-seat-without-promote state is ever observable post-commit.
+    expect(going).toEqual(["w1@waitlist.test"]);
+    expect(waiting).toHaveLength(0);
+    expect(canceled).toHaveLength(1);
+    expect(canceled[0].email).toBe("seat@waitlist.test");
   });
 });
