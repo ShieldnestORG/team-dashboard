@@ -342,12 +342,22 @@ export async function runUniversitySessionReminder1h(db: Db): Promise<number> {
 // the join link up to an hour early.
 // ---------------------------------------------------------------------------
 
-export async function runUniversitySessionStartingNow(db: Db): Promise<number> {
+export async function runUniversitySessionStartingNow(
+  db: Db,
+  // Optional reference instant, floored to the minute boundary M. Defaults to
+  // the DB clock (now()). Tests pass a fixed instant so the JS-computed M used
+  // to seed sessions and the SQL-computed M used here are derived from the SAME
+  // instant — eliminating the wall-clock-boundary race that flakes under load.
+  // Production never passes this; behavior is identical to now().
+  now?: Date,
+): Promise<number> {
   // Minute-aligned slice immune to sub-minute tick jitter: floor now() to the
   // minute boundary M, then match starts_at ∈ [M, M+1m). Each start minute is
   // hit by exactly one sweep. We pull join_url here (the room is live at T-0) —
   // this is the one session email that carries it.
-  const minuteBoundary = sql`date_trunc('minute', now())`;
+  const minuteBoundary = now
+    ? sql`date_trunc('minute', ${now.toISOString()}::timestamptz)`
+    : sql`date_trunc('minute', now())`;
   const due = await db
     .select({
       email: universitySessionRsvps.email,
@@ -442,12 +452,19 @@ export async function runUniversitySessionStartingNow(db: Db): Promise<number> {
 // landing template handles the null gracefully ("recording not posted").
 // ---------------------------------------------------------------------------
 
-export async function runUniversitySessionRecap(db: Db): Promise<number> {
+export async function runUniversitySessionRecap(
+  db: Db,
+  // See runUniversitySessionStartingNow: optional fixed reference instant for
+  // deterministic tests; defaults to the DB clock. Production never passes it.
+  now?: Date,
+): Promise<number> {
   // ended_at = starts_at + (duration + grace) minutes. Minute-aligned slice
   // immune to tick jitter: floor now() to the minute boundary M, then match
   // ended_at ∈ [M-1m, M) — the single minute just after the session ended.
   // Canceled sessions are excluded.
-  const minuteBoundary = sql`date_trunc('minute', now())`;
+  const minuteBoundary = now
+    ? sql`date_trunc('minute', ${now.toISOString()}::timestamptz)`
+    : sql`date_trunc('minute', now())`;
   const endedAt = sql`${universitySessions.startsAt} + make_interval(mins => ${universitySessions.durationMinutes} + ${JOIN_GRACE_AFTER_MINUTES})`;
 
   const due = await db

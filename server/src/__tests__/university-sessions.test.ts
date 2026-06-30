@@ -981,28 +981,22 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
     await cleanup?.();
   });
 
-  // These tests pin session times relative to the current minute boundary M,
-  // while the cron derives its own M from SQL date_trunc('minute', now()). If a
-  // test straddled a wall-clock minute edge between the JS floor and the SQL
-  // floor the two M's would differ by a minute and the assertion would flake.
-  // We avoid that by NEVER running these assertions in the last/first ~3s of a
-  // minute: wait out the danger zone first, then JS and SQL agree on M for the
-  // whole body. (The 5s margin is generous vs. the sub-ms gap between seed and
-  // cron run.)
-  async function settleIntoMinute(): Promise<void> {
-    const secondsIntoMinute = (Date.now() % 60_000) / 1000;
-    const SAFE_LO = 3;
-    const SAFE_HI = 55;
-    if (secondsIntoMinute < SAFE_LO) {
-      await new Promise((r) => setTimeout(r, (SAFE_LO - secondsIntoMinute) * 1000 + 200));
-    } else if (secondsIntoMinute > SAFE_HI) {
-      // Too close to the next minute — wait it out, then we're early in the new one.
-      await new Promise((r) => setTimeout(r, (60 - secondsIntoMinute + SAFE_LO) * 1000 + 200));
-    }
-  }
+  // These tests pin session times relative to a minute boundary M computed in
+  // JS, then pass that SAME instant to the cron (the optional `now` arg), so the
+  // cron floors the identical instant to the identical M. JS-M and SQL-M are
+  // therefore derived from one fixed instant — there is NO wall-clock-boundary
+  // race even if the body straddles a real minute edge under load. (Previously
+  // the cron floored its own SQL now(), which could land a minute past the JS
+  // floor when the two-file parallel run starved the embedded-PG instances of
+  // CPU, flaking the disjoint-window assertions. The old fix — a settleIntoMinute()
+  // wait of up to ~8s to dodge minute edges — was removed: it was no longer
+  // load-bearing once the instant is injected, AND its long sleep blew past the
+  // 5s default test timeout under load, aborting the test mid-body and leaking
+  // committed rows into the next test — the actual residual flake.)
 
   // The current minute boundary M, floored the same way the cron floors in SQL
-  // (date_trunc('minute', now())). Call settleIntoMinute() first.
+  // (date_trunc('minute', <injected instant>)). This exact instant is passed to
+  // the cron so both sides agree on M.
   function currentMinuteBoundary(): Date {
     const m = new Date();
     m.setUTCSeconds(0, 0);
@@ -1043,7 +1037,6 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
   // ----- starting-now --------------------------------------------------------
 
   it("starting-now fires for a session starting THIS minute; not one starting next minute", async () => {
-    await settleIntoMinute();
     const m = currentMinuteBoundary();
     // In-window: 30s into the current minute → ∈ [M, M+1m).
     await seedSessionAt(new Date(m.getTime() + 30 * 1000));
@@ -1051,7 +1044,7 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
     // must NOT pick it up (it belongs to next minute's sweep).
     await seedSessionAt(new Date(m.getTime() + 90 * 1000));
 
-    const sent = await runUniversitySessionStartingNow(db);
+    const sent = await runUniversitySessionStartingNow(db, m);
     expect(sent).toBe(1);
 
     const calls = sendEmailMock.mock.calls.filter(
@@ -1064,13 +1057,12 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
   });
 
   it("BOUNDARY exactly-once: a start AT the boundary M lands in exactly ONE minute slice — the M sweep claims it, the M-1m slice does not", async () => {
-    await settleIntoMinute();
     const m = currentMinuteBoundary();
 
     // (a) A session starting EXACTLY on M. Window [M, M+1m) has an INCLUSIVE
     // lower bound, so this minute's sweep claims it → exactly one send.
     await seedSessionAt(new Date(m.getTime()));
-    const sentOnBoundary = await runUniversitySessionStartingNow(db);
+    const sentOnBoundary = await runUniversitySessionStartingNow(db, m);
     expect(sentOnBoundary).toBe(1);
     expect(
       sendEmailMock.mock.calls.filter(
@@ -1089,35 +1081,32 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
     // claim it. That start was the prior sweep's responsibility. Adjacent
     // windows are disjoint: a boundary instant belongs to exactly one of them.
     await seedSessionAt(new Date(m.getTime() - 60 * 1000));
-    const sentPriorBoundary = await runUniversitySessionStartingNow(db);
+    const sentPriorBoundary = await runUniversitySessionStartingNow(db, m);
     expect(sentPriorBoundary).toBe(0);
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
   it("starting-now does NOT fire for a session that started a full minute ago", async () => {
-    await settleIntoMinute();
     const m = currentMinuteBoundary();
     // starts_at = M - 90s → ∈ [M-2m, M-1m): well before the [M, M+1m) window.
     await seedSessionAt(new Date(m.getTime() - 90 * 1000));
 
-    const sent = await runUniversitySessionStartingNow(db);
+    const sent = await runUniversitySessionStartingNow(db, m);
     expect(sent).toBe(0);
   });
 
   it("starting-now excludes canceled sessions", async () => {
-    await settleIntoMinute();
     const m = currentMinuteBoundary();
     const id = await seedSessionAt(new Date(m.getTime() + 30 * 1000));
     await svc.cancelSession(id);
 
-    const sent = await runUniversitySessionStartingNow(db);
+    const sent = await runUniversitySessionStartingNow(db, m);
     expect(sent).toBe(0);
   });
 
   // ----- recap ---------------------------------------------------------------
 
   it("recap fires for a session that ENDED in the previous minute; not one ending this minute", async () => {
-    await settleIntoMinute();
     const m = currentMinuteBoundary();
     const grace = JOIN_GRACE_AFTER_MINUTES;
     // ended_at = starts_at + duration + grace. We want ended_at ∈ [M-1m, M).
@@ -1137,7 +1126,7 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
       60,
     );
 
-    const sent = await runUniversitySessionRecap(db);
+    const sent = await runUniversitySessionRecap(db, m);
     expect(sent).toBe(1);
 
     const calls = sendEmailMock.mock.calls.filter(
@@ -1150,7 +1139,6 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
   });
 
   it("recap excludes canceled sessions", async () => {
-    await settleIntoMinute();
     const m = currentMinuteBoundary();
     const grace = JOIN_GRACE_AFTER_MINUTES;
     const endedInPrevMinute = new Date(m.getTime() - 30 * 1000);
@@ -1160,7 +1148,7 @@ describeDb("university per-minute session crons (minute-aligned windows)", () =>
     );
     await svc.cancelSession(id);
 
-    const sent = await runUniversitySessionRecap(db);
+    const sent = await runUniversitySessionRecap(db, m);
     expect(sent).toBe(0);
   });
 });
@@ -1432,5 +1420,94 @@ describeDb("university session waitlist (data model + promote-on-cancel)", () =>
     ]);
     // created_at surfaced so the admin sees the queue order.
     expect(roster.every((r) => typeof r.createdAt === "string")).toBe(true);
+  });
+
+  // --- Atomicity guards (Wave 4B concurrency nits) --------------------------
+  // These prove the INVARIANTS the FOR-UPDATE transaction protects. True
+  // concurrency is hard to force deterministically against a single embedded
+  // Postgres connection pool (the two RSVPs would serialize on the same
+  // connection anyway), so these assert the post-condition the lock guarantees:
+  // confirmed `going` seats NEVER exceed capacity, and cancel+promote is
+  // observed as a single all-or-nothing state transition.
+
+  it("ATOMICITY: going seats never exceed capacity across many concurrent RSVPs", async () => {
+    // Capacity 2, but fire FIVE RSVPs at once (Promise.all). Whatever the
+    // interleaving, the locked recount must keep `going` ≤ capacity — the
+    // remainder land on the waitlist. Before the fix a read-then-insert race
+    // could let two last-seat RSVPs both go `going` (3 going on a cap-2 sit).
+    const id = await seedCappedSession(2);
+
+    // Five distinct members. seed/w1/w2/w3 exist; add a fifth account here.
+    const [fifth] = await db
+      .insert(customerAccounts)
+      .values({ email: "w4@waitlist.test" })
+      .returning();
+    await db.insert(universityMembers).values({
+      accountId: fifth.id,
+      email: "w4@waitlist.test",
+      displayName: "W4",
+      status: "active",
+      joinedAt: new Date(),
+    });
+
+    const ids = [acct.seat, acct.w1, acct.w2, acct.w3, fifth.id];
+    const results = await Promise.all(ids.map((a) => svc.rsvp(a, id)));
+
+    // Every RSVP succeeded.
+    expect(results.every((r) => r.ok)).toBe(true);
+
+    // The hard invariant: confirmed seats never exceed capacity.
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    const going = rows.filter((r) => r.status === "going");
+    const waiting = rows.filter((r) => r.status === "waitlist");
+    expect(going.length).toBe(2); // exactly capacity, never 3+
+    expect(waiting.length).toBe(3); // the overflow parked, none lost
+    expect(going.length + waiting.length).toBe(5);
+
+    // And the service view agrees: spotsLeft floored at 0, goingCount == cap.
+    const view = await svc.getSessionView(acct.seat, id);
+    expect(view?.goingCount).toBe(2);
+    expect(view?.spotsLeft).toBe(0);
+    expect(view?.waitlistCount).toBe(3);
+
+    // Cleanup the extra account so other tests' counts are unaffected.
+    await db
+      .delete(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+  });
+
+  it("ATOMICITY: cancel+promote is all-or-nothing (no freed-seat-without-promote)", async () => {
+    // Capacity 1: seat holds the seat, w1 waits. A cancel of the seat must, in
+    // ONE committed transaction, both free the seat (seat→canceled) AND promote
+    // w1 (waitlist→going). After it, the seat count is conserved: still exactly
+    // one going, zero waitlist — never a window where the seat is free and
+    // nobody was promoted (that would show 0 going + 1 waitlist).
+    const id = await seedCappedSession(1);
+    await svc.rsvp(acct.seat, id);
+    await svc.rsvp(acct.w1, id);
+    await setRsvpCreatedAt(id, "w1@waitlist.test", T0);
+
+    const result = await svc.cancelRsvp(acct.seat, id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.promoted?.email).toBe("w1@waitlist.test");
+
+    const rows = await db
+      .select()
+      .from(universitySessionRsvps)
+      .where(eq(universitySessionRsvps.sessionId, id));
+    const going = rows.filter((r) => r.status === "going").map((r) => r.email);
+    const waiting = rows.filter((r) => r.status === "waitlist");
+    const canceled = rows.filter((r) => r.status === "canceled");
+    // The freed seat was filled in the SAME commit: exactly one going (w1),
+    // none left waiting, the original holder canceled. No intermediate
+    // free-seat-without-promote state is ever observable post-commit.
+    expect(going).toEqual(["w1@waitlist.test"]);
+    expect(waiting).toHaveLength(0);
+    expect(canceled).toHaveLength(1);
+    expect(canceled[0].email).toBe("seat@waitlist.test");
   });
 });

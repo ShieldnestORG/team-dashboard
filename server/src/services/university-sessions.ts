@@ -488,41 +488,65 @@ export function universitySessionsService(db: Db) {
     if (now.getTime() >= endedAt) return { ok: false, code: "ended" };
 
     const existing = await myRsvpStatus(identity, sessionId);
-    // Decide the target status. A member already `going` keeps their seat
-    // regardless of count. Otherwise a finite-capacity session that is already
-    // at/over capacity in `going` seats sends the member to the waitlist; an
-    // unlimited or under-capacity session confirms a `going` seat.
-    let target: "going" | "waitlist" = "going";
-    if (row.capacity !== null && existing !== "going") {
-      const count = await goingCount(sessionId);
-      if (count >= row.capacity) target = "waitlist";
-    }
+    // Decide the target status and write the RSVP under a row lock so the
+    // seat-claim is atomic: two simultaneous RSVPs on the last seat can never
+    // both land `going` (over-capacity by 1). We SELECT … FOR UPDATE the
+    // session row to serialize concurrent RSVPs for THIS session, then recount
+    // `going` seats UNDER the lock and decide going-vs-waitlist on that locked
+    // count. A member already `going` keeps their seat regardless of count; an
+    // unlimited or under-capacity session confirms a `going` seat; a finite
+    // session at/over capacity parks the member on the waitlist.
+    const target = await db.transaction(async (tx) => {
+      // Serialization point: every concurrent RSVP for this session blocks here
+      // until the holder commits, so the recount below sees a consistent count.
+      await tx.execute(
+        sql`select id from university_sessions where id = ${sessionId} for update`,
+      );
 
-    await db
-      .insert(universitySessionRsvps)
-      .values({
-        sessionId,
-        accountId: identity.accountId,
-        email: identity.email,
-        status: target,
-      })
-      .onConflictDoUpdate({
-        target: [
-          universitySessionRsvps.sessionId,
-          universitySessionRsvps.email,
-        ],
-        set: {
-          // Backfill the account link if it resolved after the first RSVP.
+      let t: "going" | "waitlist" = "going";
+      if (row.capacity !== null && existing !== "going") {
+        const counted = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(universitySessionRsvps)
+          .where(
+            and(
+              eq(universitySessionRsvps.sessionId, sessionId),
+              eq(universitySessionRsvps.status, "going"),
+            ),
+          );
+        const count = counted[0]?.n ?? 0;
+        if (count >= row.capacity) t = "waitlist";
+      }
+
+      await tx
+        .insert(universitySessionRsvps)
+        .values({
+          sessionId,
           accountId: identity.accountId,
-          // Re-RSVPing flips a prior `canceled` back to the target status
-          // (going, or waitlist if still full). A member already on the
-          // waitlist re-RSVPing a still-full session resolves to waitlist
-          // again — the same row, NOT a duplicate (UNIQUE(session_id, email)),
-          // and created_at is preserved so their queue position is unchanged.
-          status: target,
-          updatedAt: now,
-        },
-      });
+          email: identity.email,
+          status: t,
+        })
+        .onConflictDoUpdate({
+          target: [
+            universitySessionRsvps.sessionId,
+            universitySessionRsvps.email,
+          ],
+          set: {
+            // Backfill the account link if it resolved after the first RSVP.
+            accountId: identity.accountId,
+            // Re-RSVPing flips a prior `canceled` back to the target status
+            // (going, or waitlist if still full). A member already on the
+            // waitlist re-RSVPing a still-full session resolves to waitlist
+            // again — the same row, NOT a duplicate (UNIQUE(session_id,
+            // email)), and created_at is preserved so their queue position is
+            // unchanged.
+            status: t,
+            updatedAt: now,
+          },
+        });
+
+      return t;
+    });
 
     const session = await getSessionView(accountId, sessionId, now);
     // session is non-null here (row exists), but guard for the type.
@@ -563,56 +587,78 @@ export function universitySessionsService(db: Db) {
     // promotion — canceling a waitlist row (or a no-op on no row) frees nothing.
     const priorStatus = await myRsvpStatus(identity, sessionId);
 
-    await db
-      .update(universitySessionRsvps)
-      .set({ status: "canceled", updatedAt: now })
-      .where(
-        and(
-          eq(universitySessionRsvps.sessionId, sessionId),
-          or(
-            sql`LOWER(${universitySessionRsvps.email}) = ${identity.email}`,
-            eq(universitySessionRsvps.accountId, identity.accountId),
-          ),
-        ),
+    // The member-cancel UPDATE and the oldest-waitlist promote UPDATE run inside
+    // ONE transaction so they commit together — a crash between them can never
+    // free a seat without promoting (the cancel rolls back with the missing
+    // promote). The session row is locked FOR UPDATE up front so the recount
+    // below is consistent and so this serializes against the rsvp() seat-claim.
+    const promotedEmail = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select id from university_sessions where id = ${sessionId} for update`,
       );
 
-    // Promote the oldest waitlister into the freed seat — ONLY when an actual
-    // `going` seat was given up, the session is scheduled with a finite
-    // capacity, and there's now room (cancel could have dropped going below
-    // capacity). The promotion is a SINGLE atomic UPDATE whose target row is
-    // chosen by a correlated subselect (oldest non-canceled waitlist row,
-    // FOR UPDATE SKIP LOCKED) so two near-simultaneous cancels can never promote
-    // the same waitlist row twice — the second cancel's subselect skips the
-    // row the first already locked/updated and picks the next one (or none).
-    if (
-      priorStatus !== "going" ||
-      row.status !== "scheduled" ||
-      row.capacity === null
-    ) {
-      return { ok: true, promoted: null };
-    }
+      await tx
+        .update(universitySessionRsvps)
+        .set({ status: "canceled", updatedAt: now })
+        .where(
+          and(
+            eq(universitySessionRsvps.sessionId, sessionId),
+            or(
+              sql`LOWER(${universitySessionRsvps.email}) = ${identity.email}`,
+              eq(universitySessionRsvps.accountId, identity.accountId),
+            ),
+          ),
+        );
 
-    const goingNow = await goingCount(sessionId);
-    if (goingNow >= row.capacity) {
-      // Cancel didn't actually open a seat (still at/over cap somehow).
-      return { ok: true, promoted: null };
-    }
+      // Promote the oldest waitlister into the freed seat — ONLY when an actual
+      // `going` seat was given up, the session is scheduled with a finite
+      // capacity, and there's now room (cancel could have dropped going below
+      // capacity). The promotion is a SINGLE atomic UPDATE whose target row is
+      // chosen by a correlated subselect (oldest non-canceled waitlist row,
+      // FOR UPDATE SKIP LOCKED) so two near-simultaneous cancels can never
+      // promote the same waitlist row twice — the second cancel's subselect
+      // skips the row the first already locked/updated and picks the next one
+      // (or none).
+      if (
+        priorStatus !== "going" ||
+        row.status !== "scheduled" ||
+        row.capacity === null
+      ) {
+        return null;
+      }
 
-    const promotedRows = (await db.execute(sql`
-      UPDATE university_session_rsvps
-         SET status = 'going', updated_at = ${now.toISOString()}::timestamptz
-       WHERE id = (
-         SELECT id FROM university_session_rsvps
-          WHERE session_id = ${sessionId}
-            AND status = 'waitlist'
-          ORDER BY created_at ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-       )
-      RETURNING email
-    `)) as unknown as Array<{ email: string }>;
+      const goingCounted = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(universitySessionRsvps)
+        .where(
+          and(
+            eq(universitySessionRsvps.sessionId, sessionId),
+            eq(universitySessionRsvps.status, "going"),
+          ),
+        );
+      const goingNow = goingCounted[0]?.n ?? 0;
+      if (goingNow >= row.capacity) {
+        // Cancel didn't actually open a seat (still at/over cap somehow).
+        return null;
+      }
 
-    const promotedEmail = promotedRows[0]?.email ?? null;
+      const promotedRows = (await tx.execute(sql`
+        UPDATE university_session_rsvps
+           SET status = 'going', updated_at = ${now.toISOString()}::timestamptz
+         WHERE id = (
+           SELECT id FROM university_session_rsvps
+            WHERE session_id = ${sessionId}
+              AND status = 'waitlist'
+            ORDER BY created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+         )
+        RETURNING email
+      `)) as unknown as Array<{ email: string }>;
+
+      return promotedRows[0]?.email ?? null;
+    });
+
     if (!promotedEmail) return { ok: true, promoted: null };
 
     return {
