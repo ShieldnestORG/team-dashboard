@@ -42,7 +42,10 @@ import {
 import { startNoPgvectorTestDatabase } from "../../__tests__/helpers/embedded-postgres-no-pgvector.js";
 import { AgentEngine, type CommunityWriter } from "./engine.js";
 import { agentEmail } from "./personas.js";
-import { __resetCommentWatermarkForTest } from "./comment-watermark.js";
+import {
+  __resetCommentWatermarkForTest,
+  getCommentWatermark,
+} from "./comment-watermark.js";
 
 const AGENT_KEY = "wendell"; // moderator persona; also the agent post's author
 const AGENT_EMAIL = agentEmail(AGENT_KEY); // agent+wendell@coherencedaddy.com
@@ -309,5 +312,60 @@ describeDb("agent runner commentTick (integration)", () => {
 
     // At most two agent replies on the post, even though three members commented.
     expect(await agentReplyCount(postId)).toBe(2);
+  });
+
+  it("does NOT reply to — or advance the durable cursor past — a fresh member comment when the LLM/daily budget is unavailable this tick", async () => {
+    // Regression guard for the durable-cursor drop bug: a fresh member comment
+    // that cannot be replied to this tick because of a TRANSIENT GLOBAL block
+    // (here: the daily LLM budget is unavailable, so llmAllowed()/llmOk is false)
+    // must be LEFT for a later tick, NOT permanently skipped. The commentTick
+    // cursor is durable, so advancing past an un-repliable comment would drop it
+    // forever — the new `if (!llmOk) break;` guard stops before the watermark
+    // advance so the backlog is retried once budget recovers.
+    //
+    // LEVER: rebuild the engine with dailyBudgetUsd:0. budgetExhausted() treats a
+    // non-positive budget as "exhausted" unconditionally, so llmAllowed() returns
+    // false deterministically with no spend-seeding — the cleanest, race-free way
+    // to force llmOk:false in the harness. Release the current engine's advisory
+    // lock first so the budget-0 engine can acquire it; afterEach rebuilds a
+    // normal budget-100 engine, so this reassignment stays local to this test.
+    await engine.releaseAdvisoryLock();
+    engine = new AgentEngine({
+      db,
+      community,
+      apiKey: "test-key",
+      dailyBudgetUsd: 0, // forces llmAllowed(now) === false
+    });
+
+    const postId = await seedAgentPost();
+    const memberAcct = await seedRealMember("member-c@test.local");
+    await insertComment(
+      postId,
+      memberAcct,
+      "member-c@test.local",
+      "brand new here and a little lost, where do i even start?",
+    );
+
+    // Cursor is at the epoch (beforeEach reset), so the comment is a candidate.
+    const before = await getCommentWatermark(db);
+
+    await engine.commentTick();
+
+    // No agent reply was generated (budget blocked the LLM path)...
+    expect(await agentReplyCount(postId)).toBe(0);
+    // ...AND the durable cursor did NOT advance past the un-repliable comment, so
+    // the next poll still sees it (it is retried once budget recovers).
+    const after = await getCommentWatermark(db);
+    expect(after.getTime()).toBe(before.getTime());
+    const [cmt] = await db
+      .select({ createdAt: universityCommunityComments.createdAt })
+      .from(universityCommunityComments)
+      .where(
+        and(
+          eq(universityCommunityComments.postId, postId),
+          eq(universityCommunityComments.authorEmail, "member-c@test.local"),
+        ),
+      );
+    expect(cmt!.createdAt.getTime()).toBeGreaterThan(after.getTime());
   });
 });

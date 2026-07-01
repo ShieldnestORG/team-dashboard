@@ -72,3 +72,15 @@ CREATE TABLE IF NOT EXISTS university_agent_watermark (
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (agent_persona_key, kind)
 );
+
+-- Supports the Tier 3 comment-poller's GLOBAL new-comment scan in
+-- agent-runner/engine.ts commentTick:
+--   WHERE status = 'visible' AND created_at > <watermark> ORDER BY created_at ASC
+-- The existing comments indexes lead with post_id (thread render) or
+-- author_email/account_id, none of which serve this global range+sort — without
+-- this index the poller sequential-scans university_community_comments every 30s,
+-- a cost that grows with the table. This turns it into an index range scan over
+-- the newest-visible rows. Additive + idempotent; the leading status column also
+-- keeps 'hidden'/'removed' rows out of the hot path.
+CREATE INDEX IF NOT EXISTS university_community_comments_status_created_idx
+  ON university_community_comments (status, created_at);

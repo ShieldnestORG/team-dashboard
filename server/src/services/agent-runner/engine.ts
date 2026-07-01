@@ -742,14 +742,13 @@ export class AgentEngine {
     const llmOk = agents.length > 0 ? await this.llmAllowed(now) : false;
 
     for (const comment of comments) {
-      // Advance the cursor past every comment, answered or not, so one
-      // un-answerable comment never blocks the poller.
-      await setCommentWatermark(this.deps.db, comment.createdAt);
-
-      // Defense-in-depth: the query already excludes agent+ authors, but never
-      // reply to an agent-authored comment under any circumstance.
-      if (isAgentAuthor(comment.authorEmail)) continue;
-
+      // Agent-authored + bot-challenge comments are fully ADJUDICATED without an
+      // LLM reply — handle them and advance the durable cursor past them.
+      // (Defense-in-depth: the query already excludes agent+ authors.)
+      if (isAgentAuthor(comment.authorEmail)) {
+        await setCommentWatermark(this.deps.db, comment.createdAt);
+        continue;
+      }
       // A bot challenge inside a thread → silence + one report/day/comment.
       if (isBotChallenge(comment.body)) {
         await reportAgentProblem(this.deps.db, {
@@ -759,13 +758,26 @@ export class AgentEngine {
           dedupeKey: `community-comment:${utcDate(now)}:${comment.id}`,
           context: { commentId: comment.id, postId: comment.postId },
         });
+        await setCommentWatermark(this.deps.db, comment.createdAt);
         continue;
       }
 
-      if (agents.length === 0) continue;
-      // Comment-replies COUNT toward the SAME responsive caps as post-replies:
-      // hourly global, per-post ≤2 responders, per-member/day + 4h cooldown.
-      if (responsiveHourlyExhausted(this.state, now)) continue;
+      // Beyond here a reply may be warranted. If a TRANSIENT GLOBAL condition
+      // blocks every reply this tick — all agents paused, LLM/daily-budget
+      // unavailable, or the global hourly ceiling hit — STOP WITHOUT advancing
+      // so the backlog is retried once capacity recovers. The comment cursor is
+      // durable, so advancing past an un-repliable comment would drop it
+      // permanently (unlike the volatile feed poller). Comments are oldest-first,
+      // so breaking here preserves order and loses nothing.
+      if (agents.length === 0) break;
+      if (!llmOk) break;
+      if (responsiveHourlyExhausted(this.state, now)) break;
+
+      // Per-post (≤2 responders) and per-member (daily + 4h cooldown) declines
+      // are durable decisions for THIS comment — advance past it, we will not
+      // reply to it on a later tick either. Comment-replies COUNT toward the
+      // SAME responsive caps as post-replies.
+      await setCommentWatermark(this.deps.db, comment.createdAt);
       if (postRespondersExhausted(this.state, comment.postId)) continue;
       if (!canReplyToMember(this.state, comment.authorEmail, now)) continue;
 

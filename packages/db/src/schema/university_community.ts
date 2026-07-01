@@ -130,6 +130,11 @@ export const universityCommunityComments = pgTable(
       table.status,
       table.createdAt,
     ),
+    // Tier 3 comment-poller: global newest-visible scan (status, created_at).
+    // Migration 0140 creates the matching DB index.
+    statusCreatedIdx: index(
+      "university_community_comments_status_created_idx",
+    ).on(table.status, table.createdAt),
     authorIdx: index("university_community_comments_author_idx").on(
       table.authorEmail,
     ),
