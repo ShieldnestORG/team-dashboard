@@ -35,6 +35,10 @@ import {
   handleUniversityCheckout,
   handleUniversitySubscriptionUpdated,
   handleUniversitySubscriptionDeleted,
+  handleVoiceAddonCheckout,
+  handleVoiceAddonSubscriptionUpdated,
+  handleVoiceAddonSubscriptionDeleted,
+  VOICE_ADDON_PRODUCT,
 } from "../services/university-stripe-handler.js";
 import {
   handleReferralAttribution,
@@ -362,6 +366,12 @@ export async function dispatchUniversityEvent(
       subscription?: string | null;
       client_reference_id?: string | null;
     };
+    // Paid Rex voice add-on checkout (Phase 2) — a distinct product on the same
+    // Starwise account. Routed before the membership guard by metadata.product.
+    if (session.metadata?.product === VOICE_ADDON_PRODUCT) {
+      await handleVoiceAddonCheckout(db, session);
+      return;
+    }
     if (session.metadata?.product !== "university") return;
     // Referral attribution runs BEFORE the member/subscription upsert so the
     // "can't refer an existing member" check sees the pre-checkout state (the
@@ -410,13 +420,27 @@ export async function dispatchUniversityEvent(
   }
 
   if (event.type === "customer.subscription.updated") {
-    const sub = event.data.object as { id: string; status: string };
+    const sub = event.data.object as {
+      id: string;
+      status: string;
+      current_period_end?: number | null;
+    };
+    // Try the add-on row first; if it matched, this is a voice-add-on sub and
+    // the membership handler would only log a spurious "no matching row".
+    const addon = await handleVoiceAddonSubscriptionUpdated(db, sub);
+    if (addon.matched > 0) return;
     await handleUniversitySubscriptionUpdated(db, sub);
     return;
   }
 
   if (event.type === "customer.subscription.deleted") {
-    const sub = event.data.object as { id: string; status: string };
+    const sub = event.data.object as {
+      id: string;
+      status: string;
+      current_period_end?: number | null;
+    };
+    const addon = await handleVoiceAddonSubscriptionDeleted(db, sub);
+    if (addon.matched > 0) return;
     await handleUniversitySubscriptionDeleted(db, sub);
     return;
   }

@@ -31,6 +31,7 @@ import type { Db } from "@paperclipai/db";
 import {
   customerAccounts,
   universityMembers,
+  universityVoiceAddons,
   universityVoiceMeter,
   universityVoiceReservations,
 } from "@paperclipai/db";
@@ -38,6 +39,16 @@ import { logger } from "../middleware/logger.js";
 
 // Phase 1 free-tier cap. Phase 2 adds addonSeconds(member) on top.
 export const VOICE_FREE_SECONDS = 3600;
+
+// Paid add-on tiers → seconds granted ON TOP of the free cap. NON-additive: a
+// member holds at most one active tier; addonSeconds() takes the MAX over
+// active rows defensively (see university_voice_addons). Single source of truth
+// for tier→seconds; the checkout endpoint + webhook map tier↔price separately
+// (services/university-stripe-handler.ts VOICE_ADDON_TIERS).
+export const VOICE_ADDON_TIER_SECONDS: Record<string, number> = {
+  "1hr": 3600,
+  "2p5hr": 9000,
+};
 
 export interface VoiceBudget {
   periodStart: string;
@@ -80,11 +91,44 @@ function clampInt(value: unknown, min: number, max: number): number {
 }
 
 export function voiceBudgetService(db: Db) {
-  // Phase 1: a flat constant. `member` is accepted (and ignored) so the Phase 2
-  // add-on path — voiceLimitSeconds = VOICE_FREE_SECONDS + addonSeconds(member)
-  // — is a one-line change with no call-site churn.
-  function voiceLimitSeconds(_member?: unknown): number {
-    return VOICE_FREE_SECONDS;
+  // Seconds granted by the member's ACTIVE paid add-on(s), ON TOP of the free
+  // cap. NON-additive: a member is meant to hold one active tier, but we take
+  // the MAX over active rows defensively so a stray overlapping row (e.g. a
+  // brief window during an upgrade before the old sub cancels) never stacks or
+  // under-grants. No active add-on → 0. One cheap indexed lookup on
+  // (member_id, status='active'), consistent with getVoiceBudget's meter read.
+  async function addonSeconds(memberId: string): Promise<number> {
+    const rows = await db
+      .select({ tier: universityVoiceAddons.tier })
+      .from(universityVoiceAddons)
+      .where(
+        and(
+          eq(universityVoiceAddons.memberId, memberId),
+          eq(universityVoiceAddons.status, "active"),
+        ),
+      );
+    let max = 0;
+    for (const row of rows) {
+      const seconds = VOICE_ADDON_TIER_SECONDS[row.tier] ?? 0;
+      if (seconds > max) max = seconds;
+    }
+    return max;
+  }
+
+  // The member's monthly voice cap: the free tier plus their active add-on.
+  async function voiceLimitSeconds(memberId: string): Promise<number> {
+    return VOICE_FREE_SECONDS + (await addonSeconds(memberId));
+  }
+
+  // The member's login/receipt email — used by the add-on checkout route to set
+  // Stripe's customer_email. Route stays validation+shape only (DB logic here).
+  async function getMemberEmail(memberId: string): Promise<string | null> {
+    const rows = await db
+      .select({ email: universityMembers.email })
+      .from(universityMembers)
+      .where(eq(universityMembers.id, memberId))
+      .limit(1);
+    return rows.length ? rows[0].email : null;
   }
 
   // Resolve the University member row for a portal account the same way the
@@ -135,7 +179,7 @@ export function voiceBudgetService(db: Db) {
       )
       .limit(1);
     const usedSeconds = rows.length ? Number(rows[0].used) : 0;
-    const limitSeconds = voiceLimitSeconds();
+    const limitSeconds = await voiceLimitSeconds(memberId);
     const remainingSeconds = Math.max(0, limitSeconds - usedSeconds);
     return { periodStart, usedSeconds, limitSeconds, remainingSeconds };
   }
@@ -161,7 +205,7 @@ export function voiceBudgetService(db: Db) {
       RETURNING seconds_used
     `);
     const newUsed = Number(firstRow<{ seconds_used: number }>(upserted)?.seconds_used ?? granted);
-    const remainingSeconds = Math.max(0, voiceLimitSeconds() - newUsed);
+    const remainingSeconds = Math.max(0, (await voiceLimitSeconds(memberId)) - newUsed);
 
     const inserted = await db
       .insert(universityVoiceReservations)
@@ -255,6 +299,8 @@ export function voiceBudgetService(db: Db) {
 
   return {
     voiceLimitSeconds,
+    addonSeconds,
+    getMemberEmail,
     resolveVoiceMemberId,
     getVoiceBudget,
     reserveVoiceSeconds,

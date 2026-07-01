@@ -730,6 +730,65 @@ export const universityEmailEvents = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University VOICE ADD-ONS — paid Rex voice minute upgrades (Phase 2).
+//
+// A member's monthly Rex voice cap is the free 3600 s/mo (universityVoiceMeter)
+// PLUS the seconds granted by an ACTIVE add-on subscription. Add-ons are
+// NON-additive: a member holds at most one active tier at a time, and the cap
+// takes the MAX over active rows (services/voice-budget.ts addonSeconds):
+//   '1hr'   → +3600 s   '2p5hr' → +9000 s
+//
+// One row per Stripe subscription. The idempotency key is
+// `stripe_subscription_id` (UNIQUE) — the checkout webhook upserts on it, and
+// customer.subscription.updated / .deleted mirror status + current_period_end
+// onto it (services/university-stripe-handler.ts). Billed on the Starwise
+// account like the $50 membership. `member_id` matches universityVoiceMeter —
+// no FK, resolved via services/voice-budget.ts resolveVoiceMemberId.
+// ---------------------------------------------------------------------------
+
+export const universityVoiceAddons = pgTable(
+  "university_voice_addons",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: uuid("member_id").notNull(),
+    // Idempotency key — UNIQUE. A replayed checkout / status event updates this
+    // row in place.
+    stripeSubscriptionId: text("stripe_subscription_id").notNull(),
+    stripePriceId: text("stripe_price_id"),
+    // '1hr' (+3600 s) | '2p5hr' (+9000 s). Set from the checkout tier.
+    tier: text("tier").notNull(),
+    // active | canceled. Only `active` rows count toward the voice cap.
+    status: text("status").notNull().default("active"),
+    // Mirrored from the Stripe subscription on customer.subscription.updated.
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    stripeSubUq: uniqueIndex("university_voice_addons_stripe_sub_uq").on(
+      table.stripeSubscriptionId,
+    ),
+    // addonSeconds filters (member_id, status='active') — the cheap cap lookup.
+    memberStatusIdx: index("university_voice_addons_member_status_idx").on(
+      table.memberId,
+      table.status,
+    ),
+    tierCk: check(
+      "university_voice_addons_tier_ck",
+      sql`${table.tier} IN ('1hr', '2p5hr')`,
+    ),
+    statusCk: check(
+      "university_voice_addons_status_ck",
+      sql`${table.status} IN ('active', 'canceled')`,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -773,3 +832,6 @@ export type UniversityEmailLog = typeof universityEmailLog.$inferSelect;
 export type NewUniversityEmailLog = typeof universityEmailLog.$inferInsert;
 export type UniversityEmailEvent = typeof universityEmailEvents.$inferSelect;
 export type NewUniversityEmailEvent = typeof universityEmailEvents.$inferInsert;
+export type UniversityVoiceAddon = typeof universityVoiceAddons.$inferSelect;
+export type NewUniversityVoiceAddon =
+  typeof universityVoiceAddons.$inferInsert;

@@ -43,7 +43,11 @@
 
 import { eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { universityMembers, universitySubscriptions } from "@paperclipai/db";
+import {
+  universityMembers,
+  universitySubscriptions,
+  universityVoiceAddons,
+} from "@paperclipai/db";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 import { logActivity } from "./activity-log.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
@@ -574,4 +578,199 @@ export async function handleUniversitySubscriptionDeleted(
     }
   }
   return { matched: updatedSubs.length };
+}
+
+// ---------------------------------------------------------------------------
+// Rex VOICE ADD-ONS (Phase 2) — paid monthly voice-minute upgrades.
+//
+// A separate Stripe subscription (Starwise account) layered on top of the $50
+// membership. One row per subscription in `university_voice_addons`, keyed by
+// `stripe_subscription_id` (UNIQUE). The member's monthly voice cap is the free
+// 3600 s plus the active add-on's seconds (services/voice-budget.ts addonSeconds).
+//
+//   handleVoiceAddonCheckout           — checkout.session.completed w/ metadata
+//                                        product='university_voice_addon'.
+//                                        INSERT ... ON CONFLICT idempotent upsert
+//                                        (member_id + tier from metadata; the
+//                                        subscription is the idempotency key).
+//   handleVoiceAddonSubscriptionUpdated — customer.subscription.updated: mirror
+//                                        status + current_period_end onto the row.
+//                                        UPDATE-only (keyed by sub id); a sub with
+//                                        no add-on row is not ours → no-op.
+//   handleVoiceAddonSubscriptionDeleted — customer.subscription.deleted: flip the
+//                                        row to canceled. UPDATE-only, no-op if
+//                                        no row.
+//
+// All idempotent. Tier→price mapping (checkout) and price→tier (webhook) share
+// VOICE_ADDON_TIERS below — one source of truth. The tier→seconds duplicate
+// (services/voice-budget.ts VOICE_ADDON_TIER_SECONDS) is the cap authority; kept
+// separate so the meter never imports Stripe price ids.
+// ---------------------------------------------------------------------------
+
+export type VoiceAddonTier = "1hr" | "2p5hr";
+
+// The metadata.product marker that routes a checkout to the add-on handler.
+export const VOICE_ADDON_PRODUCT = "university_voice_addon";
+
+// tier → { Stripe price (Starwise), seconds granted }. Price ids are the two
+// live add-on prices; seconds mirror VOICE_ADDON_TIER_SECONDS.
+export const VOICE_ADDON_TIERS: Record<
+  VoiceAddonTier,
+  { priceId: string; seconds: number }
+> = {
+  "1hr": { priceId: "price_1ToG6HAf8PjDIzDYmjHp5WqU", seconds: 3600 },
+  "2p5hr": { priceId: "price_1ToG6HAf8PjDIzDYVQR6KsV6", seconds: 9000 },
+};
+
+// Reverse lookup: Stripe price id → tier, or null when it isn't an add-on price.
+export function voiceAddonTierByPriceId(
+  priceId: string,
+): VoiceAddonTier | null {
+  for (const tier of Object.keys(VOICE_ADDON_TIERS) as VoiceAddonTier[]) {
+    if (VOICE_ADDON_TIERS[tier].priceId === priceId) return tier;
+  }
+  return null;
+}
+
+// Collapse Stripe's subscription status to the add-on's two-state column. Only
+// `active` rows count toward the voice cap, so anything non-live → canceled.
+function mapAddonStatus(stripeStatus: string): "active" | "canceled" {
+  return stripeStatus === "active" || stripeStatus === "trialing"
+    ? "active"
+    : "canceled";
+}
+
+export interface VoiceAddonCheckoutSession {
+  id: string;
+  subscription?: string | null;
+  metadata?: Record<string, string> | null;
+  client_reference_id?: string | null;
+}
+
+export interface VoiceAddonSubscription {
+  id: string;
+  status: string;
+  current_period_end?: number | null;
+}
+
+function fromUnixSeconds(secs: number | null | undefined): Date | null {
+  return typeof secs === "number" && Number.isFinite(secs)
+    ? new Date(secs * 1000)
+    : null;
+}
+
+// checkout.session.completed → upsert the add-on row. Idempotent on
+// stripe_subscription_id: a Stripe webhook retry updates the existing row.
+export async function handleVoiceAddonCheckout(
+  db: Db,
+  session: VoiceAddonCheckoutSession,
+): Promise<{ addonId: string; memberId: string; tier: VoiceAddonTier } | null> {
+  const metadata = session.metadata ?? {};
+  if (metadata.product !== VOICE_ADDON_PRODUCT) return null;
+
+  const memberId = metadata.memberId || session.client_reference_id || null;
+  const tier =
+    metadata.tier === "1hr" || metadata.tier === "2p5hr"
+      ? (metadata.tier as VoiceAddonTier)
+      : null;
+  const stripeSubscriptionId =
+    typeof session.subscription === "string" ? session.subscription : null;
+
+  if (!memberId || !tier || !stripeSubscriptionId) {
+    logger.warn(
+      { sessionId: session.id, memberId, tier, stripeSubscriptionId },
+      "voice-addon: checkout missing memberId/tier/subscription — skipping upsert",
+    );
+    return null;
+  }
+
+  const priceId = VOICE_ADDON_TIERS[tier].priceId;
+  const now = new Date();
+  const upserted = await db
+    .insert(universityVoiceAddons)
+    .values({
+      memberId,
+      stripeSubscriptionId,
+      stripePriceId: priceId,
+      tier,
+      status: "active",
+    })
+    .onConflictDoUpdate({
+      target: universityVoiceAddons.stripeSubscriptionId,
+      set: {
+        memberId,
+        stripePriceId: priceId,
+        tier,
+        status: "active",
+        updatedAt: now,
+      },
+    })
+    .returning({ id: universityVoiceAddons.id });
+  const addonId = upserted[0]?.id ?? "";
+
+  logger.info(
+    { sessionId: session.id, addonId, memberId, tier, stripeSubscriptionId },
+    "voice-addon: checkout processed",
+  );
+  await logUniversityActivity(db, "university.voice_addon.activated", addonId, {
+    stripeSessionId: session.id,
+    stripeSubscriptionId,
+    memberId,
+    tier,
+  });
+  return { addonId, memberId, tier };
+}
+
+// customer.subscription.updated → mirror status + period end onto the add-on
+// row. UPDATE-only: a subscription with no add-on row is a membership (or
+// unrelated) sub, so matched=0 tells the dispatcher to fall through.
+export async function handleVoiceAddonSubscriptionUpdated(
+  db: Db,
+  sub: VoiceAddonSubscription,
+): Promise<{ matched: number }> {
+  const status = mapAddonStatus(sub.status);
+  const currentPeriodEnd = fromUnixSeconds(sub.current_period_end);
+  const updated = await db
+    .update(universityVoiceAddons)
+    .set({ status, currentPeriodEnd, updatedAt: new Date() })
+    .where(eq(universityVoiceAddons.stripeSubscriptionId, sub.id))
+    .returning({ id: universityVoiceAddons.id });
+
+  if (updated.length > 0) {
+    logger.info(
+      { stripeSubscriptionId: sub.id, status, matched: updated.length },
+      "voice-addon: subscription.updated → status mirrored",
+    );
+  }
+  return { matched: updated.length };
+}
+
+// customer.subscription.deleted → flip the add-on row to canceled. UPDATE-only;
+// matched=0 means it wasn't an add-on sub (dispatcher falls through).
+export async function handleVoiceAddonSubscriptionDeleted(
+  db: Db,
+  sub: VoiceAddonSubscription,
+): Promise<{ matched: number }> {
+  const currentPeriodEnd = fromUnixSeconds(sub.current_period_end);
+  const updated = await db
+    .update(universityVoiceAddons)
+    .set({ status: "canceled", currentPeriodEnd, updatedAt: new Date() })
+    .where(eq(universityVoiceAddons.stripeSubscriptionId, sub.id))
+    .returning({ id: universityVoiceAddons.id });
+
+  if (updated.length > 0) {
+    logger.info(
+      { stripeSubscriptionId: sub.id, matched: updated.length },
+      "voice-addon: subscription.deleted → status=canceled",
+    );
+    for (const row of updated) {
+      await logUniversityActivity(
+        db,
+        "university.voice_addon.canceled",
+        row.id,
+        { stripeSubscriptionId: sub.id },
+      );
+    }
+  }
+  return { matched: updated.length };
 }
