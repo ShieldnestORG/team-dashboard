@@ -22,7 +22,8 @@ import { logger } from "../../middleware/logger.js";
 import { AgentEngine, type CommunityWriter } from "./engine.js";
 
 const AMBIENT_INTERVAL_MS = 30_000; // ~30s ambient small-talk tick
-const FEED_INTERVAL_MS = 30_000; // ~30s responsive feed poll
+const FEED_INTERVAL_MS = 30_000; // ~30s responsive feed poll (top-level posts)
+const COMMENT_INTERVAL_MS = 30_000; // ~30s threaded-reply poll (reuses feed cadence)
 const MAX_STARTUP_JITTER_MS = 60_000; // spread first activity after boot
 
 export interface AgentRunnerDeps {
@@ -73,6 +74,7 @@ export function startAgentRunner(deps: AgentRunnerDeps): AgentRunnerHandle | nul
 
   let ambientTimer: ReturnType<typeof setInterval> | null = null;
   let feedTimer: ReturnType<typeof setInterval> | null = null;
+  let commentTimer: ReturnType<typeof setInterval> | null = null;
 
   const jitter = Math.floor(Math.random() * MAX_STARTUP_JITTER_MS);
 
@@ -82,6 +84,11 @@ export function startAgentRunner(deps: AgentRunnerDeps): AgentRunnerHandle | nul
         await engine.initWatermark();
       } catch (err) {
         logger.error({ err }, "agent-runner: initWatermark threw (continuing)");
+      }
+      try {
+        await engine.initCommentWatermark();
+      } catch (err) {
+        logger.error({ err }, "agent-runner: initCommentWatermark threw (continuing)");
       }
 
       ambientTimer = setInterval(() => {
@@ -96,8 +103,19 @@ export function startAgentRunner(deps: AgentRunnerDeps): AgentRunnerHandle | nul
         );
       }, FEED_INTERVAL_MS);
 
+      commentTimer = setInterval(() => {
+        engine.commentTick().catch((err) =>
+          logger.error({ err }, "agent-runner: commentTick failed (non-fatal)"),
+        );
+      }, COMMENT_INTERVAL_MS);
+
       logger.info(
-        { ambientMs: AMBIENT_INTERVAL_MS, feedMs: FEED_INTERVAL_MS, dailyBudgetUsd: dailyBudgetUsd() },
+        {
+          ambientMs: AMBIENT_INTERVAL_MS,
+          feedMs: FEED_INTERVAL_MS,
+          commentMs: COMMENT_INTERVAL_MS,
+          dailyBudgetUsd: dailyBudgetUsd(),
+        },
         "agent-runner: started",
       );
     })();
@@ -110,6 +128,7 @@ export function startAgentRunner(deps: AgentRunnerDeps): AgentRunnerHandle | nul
       clearTimeout(startTimer);
       if (ambientTimer) clearInterval(ambientTimer);
       if (feedTimer) clearInterval(feedTimer);
+      if (commentTimer) clearInterval(commentTimer);
       // Release the single-runner advisory lock + its reserved connection so a
       // clean stop hands off to another replica immediately. Fire-and-forget;
       // never throws (engine swallows + logs internally).

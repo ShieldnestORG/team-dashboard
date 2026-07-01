@@ -23,11 +23,12 @@
 // import time.
 // ---------------------------------------------------------------------------
 
-import { and, desc, eq, gt, isNull, like, not } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, like, not } from "drizzle-orm";
 import {
   universityMembers,
   universityAgentConfig,
   universityCommunityPosts,
+  universityCommunityComments,
   type Db,
 } from "@paperclipai/db";
 
@@ -47,6 +48,7 @@ import { contentSafe, hasEmoji, isBotChallenge } from "./safety.js";
 import { classifyIntent, selectResponders } from "./responder.js";
 import { logAgentUsage, reportAgentProblem, spentTodayUsd } from "./reporting.js";
 import { AgentRunnerState } from "./state.js";
+import { getCommentWatermark, setCommentWatermark } from "./comment-watermark.js";
 import {
   budgetExhausted,
   canAmbientComment,
@@ -95,13 +97,38 @@ interface ActiveAgent {
   voiceNote: string | null;
 }
 
+// A compact, in-order thread snapshot for the comment-reply prompt: the root
+// post plus its visible comments (chronological). Used only to build context;
+// nothing member-specific is persisted.
+interface ThreadContext {
+  postId: string;
+  postAuthorEmail: string;
+  postBody: string;
+  comments: Array<{ id: string; authorEmail: string; body: string; createdAt: Date }>;
+}
+
 const AGENT_EMAIL_LIKE = "agent+%@coherencedaddy.com";
 // A stable 64-bit-ish constant for the single-runner advisory lock. Arbitrary
 // but fixed so every replica contends for the same lock.
 const ADVISORY_LOCK_KEY = 770_513_021;
 const FEED_POLL_LIMIT = 25;
+// Compact thread transcript sent to Claude: cap the prior comments we render so
+// the context stays small (and the prompt cheap). Newest N in the thread.
+const THREAD_CONTEXT_LIMIT = 12;
+// Self-memory only: the responding agent's OWN recent posts, for voice
+// consistency. We store NOTHING about the member (Tier 4 is hard-gated).
+const SELF_MEMORY_LIMIT = 3;
 
 const PERSONA_BY_KEY = new Map(AGENT_PERSONAS.map((p) => [p.key, p]));
+
+/** Durable-key test for an agent-authored row (matches AGENT_EMAIL_LIKE). */
+function isAgentAuthor(email: string): boolean {
+  return email.toLowerCase().startsWith("agent+");
+}
+
+function sameEmail(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
 
 /** Real local hour for an IANA timezone (DST-safe via Intl, not a fixed offset). */
 function localHour(timezone: string, now: Date): number {
@@ -174,6 +201,27 @@ export class AgentEngine {
       // entire backlog; we simply begin answering from this moment forward.
       logger.error({ err }, "agent-runner: initWatermark failed; starting from now");
       this.state.setWatermark(new Date());
+    }
+  }
+
+  /**
+   * Re-derive the COMMENT poller cursor from the DB so a restart never re-replies
+   * to threaded comments it already answered. Cursor = newest existing comment
+   * time (we only answer comments strictly newer than this). Mirrors
+   * initWatermark for the comment seam (comment-watermark.ts). On any failure we
+   * seed "now" so we never flood-reply the entire comment backlog.
+   */
+  async initCommentWatermark(): Promise<void> {
+    try {
+      const rows = await this.deps.db
+        .select({ createdAt: universityCommunityComments.createdAt })
+        .from(universityCommunityComments)
+        .orderBy(desc(universityCommunityComments.createdAt))
+        .limit(1);
+      await setCommentWatermark(this.deps.db, rows[0]?.createdAt ?? new Date());
+    } catch (err) {
+      logger.error({ err }, "agent-runner: initCommentWatermark failed; starting from now");
+      await setCommentWatermark(this.deps.db, new Date());
     }
   }
 
@@ -580,6 +628,298 @@ export class AgentEngine {
     } catch (err) {
       await this.reportActionError(agent, "responsive_reply", err, now);
     }
+  }
+
+  /**
+   * COMMENT POLLER — answer new threaded REPLIES by real members. The feed
+   * poller (feedTick) only sees top-level posts; a member's comment/reply on a
+   * post is invisible to it. This tick polls university_community_comments past a
+   * durable comment cursor (comment-watermark.ts seam) oldest-first, builds a
+   * thread-context prompt, and generates an in-character reply — preferring an
+   * agent already present in the thread. All the same responsive caps apply.
+   */
+  async commentTick(): Promise<void> {
+    if (!(await this.holdsAdvisoryLock())) return;
+    const now = new Date();
+
+    let agents: ActiveAgent[];
+    try {
+      agents = await this.loadActiveAgents();
+    } catch (err) {
+      logger.error({ err }, "agent-runner: loadActiveAgents (comment) failed");
+      return;
+    }
+
+    const watermark = await getCommentWatermark(this.deps.db);
+
+    let comments: Array<{
+      id: string;
+      postId: string;
+      authorEmail: string;
+      body: string;
+      createdAt: Date;
+    }> = [];
+    try {
+      comments = await this.deps.db
+        .select({
+          id: universityCommunityComments.id,
+          postId: universityCommunityComments.postId,
+          authorEmail: universityCommunityComments.authorEmail,
+          body: universityCommunityComments.body,
+          createdAt: universityCommunityComments.createdAt,
+        })
+        .from(universityCommunityComments)
+        .where(
+          and(
+            eq(universityCommunityComments.status, "visible"),
+            gt(universityCommunityComments.createdAt, watermark),
+            // Never poll agent-authored comments — no agent-to-agent loops.
+            not(like(universityCommunityComments.authorEmail, AGENT_EMAIL_LIKE)),
+          ),
+        )
+        .orderBy(asc(universityCommunityComments.createdAt)) // oldest-first: advance the cursor monotonically
+        .limit(FEED_POLL_LIMIT);
+    } catch (err) {
+      logger.error({ err }, "agent-runner: comment poll query failed");
+      return;
+    }
+
+    const llmOk = agents.length > 0 ? await this.llmAllowed(now) : false;
+
+    for (const comment of comments) {
+      // Advance the cursor past every comment, answered or not, so one
+      // un-answerable comment never blocks the poller.
+      await setCommentWatermark(this.deps.db, comment.createdAt);
+
+      // Defense-in-depth: the query already excludes agent+ authors, but never
+      // reply to an agent-authored comment under any circumstance.
+      if (isAgentAuthor(comment.authorEmail)) continue;
+
+      // A bot challenge inside a thread → silence + one report/day/comment.
+      if (isBotChallenge(comment.body)) {
+        await reportAgentProblem(this.deps.db, {
+          kind: "bot_challenge",
+          severity: "warning",
+          message: "A member comment reads as a bot challenge; agents stayed silent on this thread.",
+          dedupeKey: `community-comment:${utcDate(now)}:${comment.id}`,
+          context: { commentId: comment.id, postId: comment.postId },
+        });
+        continue;
+      }
+
+      if (agents.length === 0) continue;
+      // Comment-replies COUNT toward the SAME responsive caps as post-replies:
+      // hourly global, per-post ≤2 responders, per-member/day + 4h cooldown.
+      if (responsiveHourlyExhausted(this.state, now)) continue;
+      if (postRespondersExhausted(this.state, comment.postId)) continue;
+      if (!canReplyToMember(this.state, comment.authorEmail, now)) continue;
+
+      let thread: ThreadContext | null;
+      try {
+        thread = await this.loadThread(comment.postId);
+      } catch (err) {
+        logger.error({ err, postId: comment.postId }, "agent-runner: loadThread failed");
+        continue;
+      }
+      if (!thread) continue;
+
+      const responder = this.pickThreadResponder(agents, thread, comment, now);
+      if (!responder) continue;
+
+      await this.doThreadReply(responder, thread, comment, llmOk, now);
+    }
+  }
+
+  /** Load the root post + its visible comments (chronological) for the prompt. */
+  private async loadThread(postId: string): Promise<ThreadContext | null> {
+    const [post] = await this.deps.db
+      .select({
+        id: universityCommunityPosts.id,
+        authorEmail: universityCommunityPosts.authorEmail,
+        body: universityCommunityPosts.body,
+      })
+      .from(universityCommunityPosts)
+      .where(
+        and(
+          eq(universityCommunityPosts.id, postId),
+          eq(universityCommunityPosts.status, "visible"),
+        ),
+      )
+      .limit(1);
+    if (!post) return null;
+
+    // Newest THREAD_CONTEXT_LIMIT comments (so the target is always in-window on
+    // long threads), then reversed to chronological order for the transcript.
+    const rows = await this.deps.db
+      .select({
+        id: universityCommunityComments.id,
+        authorEmail: universityCommunityComments.authorEmail,
+        body: universityCommunityComments.body,
+        createdAt: universityCommunityComments.createdAt,
+      })
+      .from(universityCommunityComments)
+      .where(
+        and(
+          eq(universityCommunityComments.postId, postId),
+          eq(universityCommunityComments.status, "visible"),
+        ),
+      )
+      .orderBy(desc(universityCommunityComments.createdAt))
+      .limit(THREAD_CONTEXT_LIMIT);
+
+    return {
+      postId: post.id,
+      postAuthorEmail: post.authorEmail,
+      postBody: post.body,
+      comments: rows.reverse(),
+    };
+  }
+
+  /**
+   * Choose the agent to answer a threaded comment. GUARD: prefer an agent ALREADY
+   * present in the thread (the post's author, or an agent that replied earlier)
+   * so one voice carries the conversation; otherwise fall back to the intent-based
+   * selectResponders/Wendell logic. Returns null when no eligible agent exists.
+   */
+  private pickThreadResponder(
+    agents: ActiveAgent[],
+    thread: ThreadContext,
+    comment: { body: string },
+    now: Date,
+  ): ActiveAgent | null {
+    const eligible = agents.filter((a) => this.isInHours(a, now));
+    if (eligible.length === 0) return null;
+
+    const present = new Set<string>();
+    if (isAgentAuthor(thread.postAuthorEmail)) {
+      present.add(thread.postAuthorEmail.toLowerCase());
+    }
+    for (const c of thread.comments) {
+      if (isAgentAuthor(c.authorEmail)) present.add(c.authorEmail.toLowerCase());
+    }
+    const inThread = eligible.filter((a) => present.has(a.email.toLowerCase()));
+    if (inThread.length > 0) {
+      // Prefer the post's own author if eligible; else any present agent.
+      const author = inThread.find((a) => sameEmail(a.email, thread.postAuthorEmail));
+      return author ?? inThread[0]!;
+    }
+
+    // No agent in-thread yet: pick one intent-appropriate responder.
+    const intent = classifyIntent(comment.body);
+    const [persona] = selectResponders(eligible.map((a) => a.persona), intent, 1);
+    if (!persona) return null;
+    return eligible.find((a) => a.persona.key === persona.key) ?? null;
+  }
+
+  private async doThreadReply(
+    agent: ActiveAgent,
+    thread: ThreadContext,
+    comment: { id: string; authorEmail: string; body: string },
+    llmOk: boolean,
+    now: Date,
+  ): Promise<void> {
+    // No LLM (budget blown / disabled): stay SILENT. A scripted persona line is a
+    // non-sequitur as a threaded reply (same reasoning as doResponsiveReply).
+    if (!llmOk) return;
+
+    const memberHadEmoji = hasEmoji(comment.body);
+
+    // Self-memory ONLY: the agent's own recent posts, for voice consistency. We
+    // read/store NOTHING about the member (Tier 4 member-fact memory is gated).
+    let selfPosts: string[] = [];
+    try {
+      const rows = await this.deps.db
+        .select({ body: universityCommunityPosts.body })
+        .from(universityCommunityPosts)
+        .where(
+          and(
+            eq(universityCommunityPosts.status, "visible"),
+            eq(universityCommunityPosts.authorEmail, agent.email),
+          ),
+        )
+        .orderBy(desc(universityCommunityPosts.createdAt))
+        .limit(SELF_MEMORY_LIMIT);
+      selfPosts = rows.map((r) => r.body);
+    } catch (err) {
+      logger.error(
+        { err, persona: agent.persona.key },
+        "agent-runner: self-memory load failed (continuing without it)",
+      );
+    }
+
+    const voice = agent.voiceNote ? ` ${agent.voiceNote}` : "";
+    const system = this.threadSystemPrompt(
+      agent,
+      `You are replying inside an ongoing thread. Answer the most recent comment briefly and warmly, specific to what they said and consistent with the conversation so far.${voice}`,
+      selfPosts,
+    );
+    const userText = this.buildThreadUserText(agent, thread, comment);
+
+    const result = await callClaude(this.deps.apiKey, agent.model, system, userText);
+    let body: string | null = null;
+    let source: "llm" | "fallback" = "fallback";
+    if (result) {
+      const gate = contentSafe(result.text, memberHadEmoji);
+      if (gate.ok) {
+        body = result.text;
+        source = "llm";
+      } else {
+        await this.reportSafetyBlock(agent, gate.reason ?? "blocked", now);
+      }
+      await logAgentUsage(this.deps.db, {
+        memberId: agent.memberId,
+        personaKey: agent.persona.key,
+        model: agent.model,
+        purpose: "responsive_help",
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        source,
+      });
+    }
+
+    if (!body) return;
+
+    try {
+      await this.deps.community.createCommunityComment(agent.accountId, thread.postId, body);
+      // Counts toward the SAME responsive caps as a post-reply (per-post ≤2
+      // responders, per-member/day, hourly). Keyed to the commenting member.
+      this.state.recordResponsiveReply(comment.authorEmail, thread.postId, now);
+    } catch (err) {
+      await this.reportActionError(agent, "thread_reply", err, now);
+    }
+  }
+
+  /** Compact chronological transcript + the message to answer (as user text). */
+  private buildThreadUserText(
+    agent: ActiveAgent,
+    thread: ThreadContext,
+    target: { id: string; body: string },
+  ): string {
+    const lines: string[] = ["Here is a community thread:"];
+    lines.push(`Original post: ${thread.postBody}`);
+    for (const c of thread.comments) {
+      if (c.id === target.id) continue; // the message to answer is shown separately below
+      const who = sameEmail(c.authorEmail, agent.email) ? "You earlier" : "A member";
+      lines.push(`${who}: ${c.body}`);
+    }
+    lines.push("");
+    lines.push(`Now reply to this most recent comment: "${target.body}"`);
+    return lines.join("\n");
+  }
+
+  /** systemPrompt + the agent's own recent posts (self-memory) for consistency. */
+  private threadSystemPrompt(
+    agent: ActiveAgent,
+    task: string,
+    selfPosts: string[],
+  ): string {
+    const base = this.systemPrompt(agent, task);
+    if (selfPosts.length === 0) return base;
+    const memory = [
+      "For voice consistency, here are a few of YOUR OWN recent posts (don't repeat them, just stay in character):",
+      ...selfPosts.map((p) => `- ${p}`),
+    ].join(" ");
+    return `${base} ${memory}`;
   }
 
   // --- prompt + report helpers --------------------------------------------
