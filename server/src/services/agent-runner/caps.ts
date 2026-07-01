@@ -5,7 +5,7 @@
 // The engine consults these before any post/comment/reply so the synthetic
 // activity stays under the human-plausible ceilings the BUILD-SPEC Phase 3
 // defines:
-//   ambient    ≤ 5 posts/day global, ≤ 10 comments/day global,
+//   ambient    ≤ 22 posts/day global, ≤ 30 comments/day global,
 //              ≤ 2 consecutive posts/agent/24h
 //   responsive ≤ 3 replies/real-member/day, ≤ 2 agents/post, ≤ 5/hour global,
 //              no 2nd reply to the same member within 4h
@@ -17,8 +17,8 @@ import type { AgentRunnerState } from "./state.js";
 
 // Hard caps (BUILD-SPEC Phase 3). Centralized so they are auditable in one place.
 export const CAPS = {
-  ambientPostsPerDay: 5,
-  ambientCommentsPerDay: 10,
+  ambientPostsPerDay: 22,
+  ambientCommentsPerDay: 30,
   consecutivePostsPerAgent: 2,
   responsivePerMemberPerDay: 3,
   respondersPerPost: 2,

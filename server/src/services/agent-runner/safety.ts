@@ -68,6 +68,12 @@ const BOT_CHALLENGE_PATTERNS: RegExp[] = [
   /\bis this automated\b/i,
   /\bare you a (real )?person\b/i,
   /\bthis is (a )?bot\b/i,
+  /\bwho actually writes these\b/i,
+  /\byou sound like (chatgpt|ai|a bot)\b/i,
+  /\bis anyone (real|human) (here|in here)\b/i,
+  /\byou don'?t (feel|seem|sound) (real|human|like a real person)\b/i,
+  /\bthis (feels|seems|is) (automated|scripted|fake)\b/i,
+  /\bare (these|the|your) (accounts|people|members) real\b/i,
 ];
 
 export function isBotChallenge(text: string): boolean {

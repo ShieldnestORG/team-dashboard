@@ -566,16 +566,13 @@ export class AgentEngine {
       }
     }
 
-    // Fallback: a scripted persona line that passes the safety gate (avoids
-    // introducing emoji into a plain thread). If none qualifies, stay silent.
-    if (!body) {
-      const candidate = agent.persona.postLines.find(
-        (l) => contentSafe(l, memberHadEmoji).ok,
-      );
-      if (!candidate) return;
-      body = candidate;
-      source = "fallback";
-    }
+    // No valid LLM reply (safety-gated, or budget-exhausted / LLM didn't run):
+    // stay SILENT. A scripted persona line is a non-sequitur as a *reply* — it
+    // answers a real member's specific post with an unrelated ambient line (e.g.
+    // "where are you from?" -> "Day 30!! 🎉"), which reads worse than no reply.
+    // Ambient standalone posts still use scripted lines (doAmbientPost); only
+    // responsive replies require a genuine, on-topic LLM answer.
+    if (!body) return;
 
     try {
       await this.deps.community.createCommunityComment(agent.accountId, post.id, body);
@@ -591,10 +588,13 @@ export class AgentEngine {
     return [
       `You are ${agent.persona.name} (${agent.persona.handle}), a member of a small`,
       `self-help community (the Coherent Ones). Archetype: ${agent.persona.archetype}.`,
+      `Your background: ${agent.persona.bio}`,
       task,
       "Rules: at most two short sentences; plain, human, lowercase-ok; no emoji unless the",
       "person you reply to used one; never give financial, medical, or legal advice; never",
-      "mention being an AI, a bot, or a model. Just write the message text, nothing else.",
+      "mention being an AI, a bot, or a model.",
+      "If asked something about yourself that your background above doesn't cover, stay vague and deflect naturally — never invent specific facts.",
+      "Just write the message text, nothing else.",
     ].join(" ");
   }
 
