@@ -38,6 +38,7 @@ import {
   handleVoiceAddonCheckout,
   handleVoiceAddonSubscriptionUpdated,
   handleVoiceAddonSubscriptionDeleted,
+  isVoiceAddonSubscription,
   VOICE_ADDON_PRODUCT,
 } from "../services/university-stripe-handler.js";
 import {
@@ -403,6 +404,20 @@ export async function dispatchUniversityEvent(
       customer?: string | null;
       customer_email?: string | null;
     };
+    // Add-on-first fall-through (mirrors subscription.updated/.deleted): a paid
+    // voice add-on invoice ($10/$20) must NOT flow to the referral engine, which
+    // keys off the payer and assumes a flat $50/mo membership bill — it would
+    // drain the member's standing referral credit against the wrong headroom.
+    // Only membership invoices reach handleReferralInvoicePaid, exactly as before.
+    const invoiceSubId =
+      typeof invoice.subscription === "string" ? invoice.subscription : null;
+    if (invoiceSubId && (await isVoiceAddonSubscription(db, invoiceSubId))) {
+      logger.debug(
+        { invoiceId: invoice.id, stripeSubscriptionId: invoiceSubId },
+        "university-webhook: invoice.paid for voice add-on — skipping referral engine",
+      );
+      return;
+    }
     await handleReferralInvoicePaid(db, invoice);
     return;
   }

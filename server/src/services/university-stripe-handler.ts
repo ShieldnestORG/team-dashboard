@@ -632,12 +632,33 @@ export function voiceAddonTierByPriceId(
   return null;
 }
 
-// Collapse Stripe's subscription status to the add-on's two-state column. Only
-// `active` rows count toward the voice cap, so anything non-live → canceled.
-function mapAddonStatus(stripeStatus: string): "active" | "canceled" {
-  return stripeStatus === "active" || stripeStatus === "trialing"
-    ? "active"
-    : "canceled";
+// Map Stripe's subscription status to the add-on's two-state column, with a
+// THREE-way outcome that mirrors the membership mapStripeStatus above:
+//   active | trialing              → 'active'
+//   canceled | incomplete_expired  → 'canceled'
+//   incomplete | past_due | unpaid → null  (leave the row untouched — no-op)
+//   (anything else, incl. paused)  → null
+// Returning null NO-OPS the row so an out-of-order pre-payment 'incomplete'
+// (or a transient dunning past_due) can't flip a just-activated paying member's
+// add-on to 'canceled' and zero their paid cap. This matches the membership
+// convention (Rule 9): mapStripeStatus never cancels on past_due/unpaid — it
+// keeps the member in a still-entitled retained state (voice-budget's member
+// lookup counts past_due as valid). The add-on column has no 'past_due' value,
+// so the faithful analog is to leave the row as-is rather than cancel it. Only
+// 'active' rows count toward the voice cap.
+function mapAddonStatus(stripeStatus: string): "active" | "canceled" | null {
+  switch (stripeStatus) {
+    case "active":
+    case "trialing":
+      return "active";
+    case "canceled":
+    case "incomplete_expired":
+      return "canceled";
+    default:
+      // incomplete (pre-payment), past_due, unpaid, paused, and anything
+      // unmapped — leave the row untouched.
+      return null;
+  }
 }
 
 export interface VoiceAddonCheckoutSession {
@@ -657,6 +678,24 @@ function fromUnixSeconds(secs: number | null | undefined): Date | null {
   return typeof secs === "number" && Number.isFinite(secs)
     ? new Date(secs * 1000)
     : null;
+}
+
+// True when this Stripe subscription id belongs to a voice add-on row. The
+// invoice.paid dispatch uses this to SKIP the membership referral engine for
+// add-on invoices: applyCreditForPayer keys off the payer and assumes a flat
+// $50/mo membership bill, so a $10/$20 add-on invoice would drain the member's
+// standing referral credit against the wrong headroom. Mirrors the addon-first
+// fall-through already used for subscription.updated/.deleted.
+export async function isVoiceAddonSubscription(
+  db: Db,
+  stripeSubscriptionId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: universityVoiceAddons.id })
+    .from(universityVoiceAddons)
+    .where(eq(universityVoiceAddons.stripeSubscriptionId, stripeSubscriptionId))
+    .limit(1);
+  return rows.length > 0;
 }
 
 // checkout.session.completed → upsert the add-on row. Idempotent on
@@ -729,6 +768,27 @@ export async function handleVoiceAddonSubscriptionUpdated(
   sub: VoiceAddonSubscription,
 ): Promise<{ matched: number }> {
   const status = mapAddonStatus(sub.status);
+
+  // No-op status (incomplete / past_due / unpaid / paused): leave the row
+  // untouched so an out-of-order event can't zero a just-activated paid cap. We
+  // still probe whether this sub is an add-on so the dispatcher's addon-first
+  // fall-through works: matched>0 means "this is ours, don't fall through to the
+  // membership handler" even though we wrote nothing.
+  if (!status) {
+    const existing = await db
+      .select({ id: universityVoiceAddons.id })
+      .from(universityVoiceAddons)
+      .where(eq(universityVoiceAddons.stripeSubscriptionId, sub.id))
+      .limit(1);
+    if (existing.length > 0) {
+      logger.info(
+        { stripeSubscriptionId: sub.id, stripeStatus: sub.status },
+        "voice-addon: subscription.updated → unmapped status, row left untouched (no-op)",
+      );
+    }
+    return { matched: existing.length };
+  }
+
   const currentPeriodEnd = fromUnixSeconds(sub.current_period_end);
   const updated = await db
     .update(universityVoiceAddons)
