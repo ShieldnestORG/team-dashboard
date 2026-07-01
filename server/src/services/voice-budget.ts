@@ -151,6 +151,17 @@ export function voiceBudgetService(db: Db) {
     const budget = await getVoiceBudget(memberId);
     const granted = clampInt(requestedSeconds, 0, budget.remainingSeconds);
 
+    // Out of minutes: don't touch the meter or create an orphan 0-second
+    // reservation that would never settle. The route treats grantedSeconds <= 0
+    // as out_of_minutes (402) and never uses the (empty) reservationId.
+    if (granted <= 0) {
+      return {
+        reservationId: "",
+        grantedSeconds: 0,
+        remainingSeconds: budget.remainingSeconds,
+      };
+    }
+
     // Atomic debit — mirrors intel_usage_meter's ON CONFLICT UPSERT.
     const upserted = await db.execute<{ seconds_used: number }>(sql`
       INSERT INTO university_voice_meter (member_id, period_start, seconds_used)
