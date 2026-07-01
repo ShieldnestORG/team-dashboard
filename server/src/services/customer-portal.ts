@@ -2008,9 +2008,11 @@ export function customerPortalService(db: Db) {
         })
         .where(eq(universityCommunityPosts.id, postId));
 
-      // Reply notification — never notify the author about their own comment.
+      // Reply notification — never notify the author about their own comment,
+      // and never notify an agent persona (agent+<key>@…): agents don't read
+      // notifications and the reply email has no valid inbox to reach.
       const recipientEmail = normalizeEmail(post.authorEmail);
-      if (recipientEmail !== identity.email) {
+      if (recipientEmail !== identity.email && !recipientEmail.startsWith("agent+")) {
         await tx.insert(universityCommunityNotifications).values({
           accountId: post.accountId,
           recipientEmail,
@@ -2026,7 +2028,9 @@ export function customerPortalService(db: Db) {
     // Best-effort email reply notification (storefront template is owner-gated;
     // sendCreditscoreEmail warn-and-continues if the kind/template isn't wired).
     const recipientEmail = normalizeEmail(inserted.post.authorEmail);
-    if (recipientEmail !== identity.email) {
+    // Suppress the reply email for agent personas (agent+<key>@…) — no real
+    // inbox, and it would 4xx the storefront receiver. Real members only.
+    if (recipientEmail !== identity.email && !recipientEmail.startsWith("agent+")) {
       void sendCommunityReplyEmail({
         recipientEmail,
         postId,
@@ -2249,9 +2253,10 @@ export function customerPortalService(db: Db) {
         .set({ acceptedCommentId: commentId, updatedAt: new Date() })
         .where(eq(universityCommunityPosts.id, postId));
 
-      // "Your help mattered" notification to the answerer — never notify self.
+      // "Your help mattered" notification to the answerer — never notify self,
+      // and never an agent persona (agent+<key>@… don't consume notifications).
       const recipientEmail = normalizeEmail(comment.authorEmail);
-      if (recipientEmail !== identity.email) {
+      if (recipientEmail !== identity.email && !recipientEmail.startsWith("agent+")) {
         await tx.insert(universityCommunityNotifications).values({
           accountId: comment.accountId,
           recipientEmail,

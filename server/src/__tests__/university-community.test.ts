@@ -65,6 +65,7 @@ import {
   issueImpersonationCookie,
   ADMIN_IMPERSONATION_COOKIE,
 } from "../services/admin-impersonation.js";
+import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
 import { eq } from "drizzle-orm";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
@@ -353,6 +354,46 @@ describeDb("university community endpoints (integration)", () => {
       .send({ body: "replying to my own post" });
     const notes = await db.select().from(universityCommunityNotifications);
     expect(notes).toHaveLength(0);
+  });
+
+  it("does NOT notify or email an AGENT-authored post's author (agent+ recipient)", async () => {
+    // A post authored by an agent persona (author_email like 'agent+…') that a
+    // real member then comments on. Agents don't consume notifications and have
+    // no real inbox, so the reply notification AND the reply email must both be
+    // suppressed — while the comment itself still lands (comment_count bumps).
+    const AGENT_EMAIL = "agent+atlas@community.test";
+    const [agentPost] = await db
+      .insert(universityCommunityPosts)
+      .values({
+        accountId: memberAccountId,
+        authorEmail: AGENT_EMAIL,
+        body: "seed from an agent persona",
+        postType: "statement",
+        topic: null,
+      })
+      .returning({ id: universityCommunityPosts.id });
+
+    const comment = await request(app)
+      .post(`/api/portal/university/community/posts/${agentPost.id}/comments`)
+      .set("Cookie", member2Cookie())
+      .send({ body: "a real member replies to the agent" });
+    expect(comment.status).toBe(201);
+
+    // Community behavior preserved: the comment lands and the count bumps.
+    const [postRow] = await db
+      .select()
+      .from(universityCommunityPosts)
+      .where(eq(universityCommunityPosts.id, agentPost.id));
+    expect(postRow.commentCount).toBe(1);
+
+    // No reply notification was written for the agent recipient.
+    const notes = await db.select().from(universityCommunityNotifications);
+    expect(notes).toHaveLength(0);
+
+    // And no reply email was dispatched to the agent+ address.
+    expect(vi.mocked(sendCreditscoreEmail)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ to: AGENT_EMAIL }),
+    );
   });
 
   it("reaction is idempotent and maintains reaction_count; un-react decrements", async () => {
