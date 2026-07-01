@@ -32,6 +32,7 @@ import {
   type LocalEncryptedMaterial,
 } from "../secrets/local-encrypted-provider.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import { voiceBudgetService } from "./voice-budget.js";
 import leoProfanity from "leo-profanity";
 import { logger } from "../middleware/logger.js";
 
@@ -409,6 +410,12 @@ export interface CustomerEntitlements {
     plan: string;
     // Lifetime price-lock flag — true for the first N members (founding cohort).
     founding: boolean;
+    // Rex realtime-voice monthly budget for this member (Phase 1: free 3600 s).
+    voiceMinutes: {
+      remainingSeconds: number;
+      limitSeconds: number;
+      periodStart: string;
+    };
   } | null;
 }
 
@@ -696,6 +703,7 @@ export function customerPortalService(db: Db) {
     let university: CustomerEntitlements["university"] = null;
     const uniRows = await db
       .select({
+        id: universityMembers.id,
         status: universityMembers.status,
         plan: universityMembers.plan,
         founding: universityMembers.founding,
@@ -719,11 +727,18 @@ export function customerPortalService(db: Db) {
       .limit(1);
     if (uniRows.length) {
       const row = uniRows[0];
+      // Rex voice budget for the resolved member (Phase 1: free 3600 s/mo).
+      const budget = await voiceBudgetService(db).getVoiceBudget(row.id);
       university = {
         status: row.status,
         memberSince: (row.joinedAt ?? row.createdAt)?.toISOString() ?? null,
         plan: row.plan,
         founding: row.founding,
+        voiceMinutes: {
+          remainingSeconds: budget.remainingSeconds,
+          limitSeconds: budget.limitSeconds,
+          periodStart: budget.periodStart,
+        },
       };
     }
 
