@@ -27,35 +27,43 @@ export const CAPS = {
   lineAntiRepeatMs: 72 * 60 * 60 * 1000, // 72h
 } as const;
 
-/** May any agent make another ambient POST right now (global + per-agent)? */
-export function canAmbientPost(
+/** May any agent make another ambient POST right now (global + per-agent)?
+ *  Async: the counts it reads are now durable (Postgres-backed) state. */
+export async function canAmbientPost(
   state: AgentRunnerState,
   personaKey: string,
   now = new Date(),
-): boolean {
-  if (state.globalAmbientPostCount(now) >= CAPS.ambientPostsPerDay) return false;
-  if (state.agentConsecutivePosts(personaKey, now) >= CAPS.consecutivePostsPerAgent) {
+): Promise<boolean> {
+  if ((await state.globalAmbientPostCount(now)) >= CAPS.ambientPostsPerDay) {
+    return false;
+  }
+  if (
+    (await state.agentConsecutivePosts(personaKey, now)) >=
+    CAPS.consecutivePostsPerAgent
+  ) {
     return false;
   }
   return true;
 }
 
 /** May any agent make another ambient COMMENT right now (global only)? */
-export function canAmbientComment(
+export async function canAmbientComment(
   state: AgentRunnerState,
   now = new Date(),
-): boolean {
-  return state.globalAmbientCommentCount(now) < CAPS.ambientCommentsPerDay;
+): Promise<boolean> {
+  return (await state.globalAmbientCommentCount(now)) < CAPS.ambientCommentsPerDay;
 }
 
 /** Is the scripted post_line cool enough to reuse for this agent (72h)? */
-export function canUseLine(
+export async function canUseLine(
   state: AgentRunnerState,
   personaKey: string,
   line: string,
   now = new Date(),
-): boolean {
-  return state.msSinceLineUsed(personaKey, line, now) >= CAPS.lineAntiRepeatMs;
+): Promise<boolean> {
+  return (
+    (await state.msSinceLineUsed(personaKey, line, now)) >= CAPS.lineAntiRepeatMs
+  );
 }
 
 /** Global hourly responsive ceiling reached? */

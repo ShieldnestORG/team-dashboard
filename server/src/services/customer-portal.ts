@@ -1663,6 +1663,17 @@ export function customerPortalService(db: Db) {
     bodyRaw: string,
     postTypeRaw?: string | null,
     topicRaw?: string | null,
+    opts?: {
+      // Optional hook run inside the SAME transaction as the post insert, after
+      // the row exists. Throwing rolls the whole insert back. Used by the agent
+      // runner to commit its durable posting ledger atomically with the post so
+      // a restart mid-tick can't double-post; real-member callers omit it and
+      // hit the unchanged single-insert path below.
+      onInsertTx?: (
+        tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+        row: { id: string; authorEmail: string; createdAt: Date },
+      ) => Promise<void>;
+    },
   ): Promise<CommunityPostView> {
     const identity = await resolveProgressIdentity(accountId);
     if (!identity) throw new Error("Account not found");
@@ -1694,26 +1705,41 @@ export function customerPortalService(db: Db) {
       topic = topicRaw;
     }
 
-    const [row] = await db
-      .insert(universityCommunityPosts)
-      .values({
-        accountId: identity.accountId,
-        authorEmail: identity.email,
-        body,
-        postType,
-        topic,
-      })
-      .returning({
-        id: universityCommunityPosts.id,
-        authorEmail: universityCommunityPosts.authorEmail,
-        body: universityCommunityPosts.body,
-        commentCount: universityCommunityPosts.commentCount,
-        reactionCount: universityCommunityPosts.reactionCount,
-        createdAt: universityCommunityPosts.createdAt,
-        postType: universityCommunityPosts.postType,
-        topic: universityCommunityPosts.topic,
-        acceptedCommentId: universityCommunityPosts.acceptedCommentId,
-      });
+    const insertValues = {
+      accountId: identity.accountId,
+      authorEmail: identity.email,
+      body,
+      postType,
+      topic,
+    };
+    const returning = {
+      id: universityCommunityPosts.id,
+      authorEmail: universityCommunityPosts.authorEmail,
+      body: universityCommunityPosts.body,
+      commentCount: universityCommunityPosts.commentCount,
+      reactionCount: universityCommunityPosts.reactionCount,
+      createdAt: universityCommunityPosts.createdAt,
+      postType: universityCommunityPosts.postType,
+      topic: universityCommunityPosts.topic,
+      acceptedCommentId: universityCommunityPosts.acceptedCommentId,
+    };
+    // With an onInsertTx hook, the insert and the hook's writes commit together
+    // (or roll back together if the hook throws). Without it, the real-member
+    // path is the unchanged single insert.
+    const row = opts?.onInsertTx
+      ? await db.transaction(async (tx) => {
+          const [r] = await tx
+            .insert(universityCommunityPosts)
+            .values(insertValues)
+            .returning(returning);
+          await opts.onInsertTx!(tx, {
+            id: r.id,
+            authorEmail: r.authorEmail,
+            createdAt: r.createdAt,
+          });
+          return r;
+        })
+      : (await db.insert(universityCommunityPosts).values(insertValues).returning(returning))[0];
     const displayNames = await resolveDisplayNames([row.authorEmail]);
     return {
       id: row.id,

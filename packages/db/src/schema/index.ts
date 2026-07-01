@@ -258,5 +258,18 @@ export type {
   UniversityAgentConfig,
   NewUniversityAgentConfig,
 } from "./university_agent.js";
+export {
+  universityAgentDailyBudget,
+  universityAgentLineUsage,
+  universityAgentWatermark,
+} from "./university_agent_state.js";
+export type {
+  UniversityAgentDailyBudget,
+  NewUniversityAgentDailyBudget,
+  UniversityAgentLineUsage,
+  NewUniversityAgentLineUsage,
+  UniversityAgentWatermark,
+  NewUniversityAgentWatermark,
+} from "./university_agent_state.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";

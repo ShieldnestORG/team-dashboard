@@ -46,13 +46,18 @@ import { callClaude } from "./claude.js";
 import { contentSafe, hasEmoji, isBotChallenge } from "./safety.js";
 import { classifyIntent, selectResponders } from "./responder.js";
 import { logAgentUsage, reportAgentProblem, spentTodayUsd } from "./reporting.js";
-import { AgentRunnerState } from "./state.js";
+import {
+  AgentRunnerState,
+  AmbientPostRejected,
+  type AgentRunnerTx,
+} from "./state.js";
 import {
   budgetExhausted,
   canAmbientComment,
   canAmbientPost,
   canReplyToMember,
   canUseLine,
+  CAPS,
   postRespondersExhausted,
   responsiveHourlyExhausted,
 } from "./caps.js";
@@ -66,6 +71,16 @@ export interface CommunityWriter {
     bodyRaw: string,
     postTypeRaw?: string | null,
     topicRaw?: string | null,
+    opts?: {
+      // Runs inside the SAME transaction as the post insert, after the row
+      // exists. Throwing rolls the whole insert back (no post, no ledger write)
+      // — the agent runner uses this to commit its durable posting ledger
+      // atomically with the post so a restart mid-tick can't double-post.
+      onInsertTx?: (
+        tx: AgentRunnerTx,
+        row: { id: string; authorEmail: string; createdAt: Date },
+      ) => Promise<void>;
+    },
   ) => Promise<{ id: string }>;
   createCommunityComment: (
     accountId: string,
@@ -138,7 +153,7 @@ function sample<T>(arr: readonly T[]): T | undefined {
 
 export class AgentEngine {
   private readonly deps: EngineDeps;
-  private readonly state = new AgentRunnerState();
+  private readonly state: AgentRunnerState;
   // Did we already file today's budget_exceeded report? Keyed by UTC date.
   private budgetReportDate: string | null = null;
   // Dedicated connection that holds the single-runner advisory lock for the
@@ -152,6 +167,7 @@ export class AgentEngine {
 
   constructor(deps: EngineDeps) {
     this.deps = deps;
+    this.state = new AgentRunnerState(deps.db);
   }
 
   /**
@@ -375,12 +391,18 @@ export class AgentEngine {
       if (!this.isInHours(agent, now)) continue;
 
       // --- ambient POST ---
-      if (Math.random() < agent.postProbability && canAmbientPost(this.state, agent.persona.key, now)) {
+      if (
+        Math.random() < agent.postProbability &&
+        (await canAmbientPost(this.state, agent.persona.key, now))
+      ) {
         await this.doAmbientPost(agent, llmOk, now);
       }
 
       // --- ambient COMMENT on another agent's post ---
-      if (Math.random() < agent.commentProbability && canAmbientComment(this.state, now)) {
+      if (
+        Math.random() < agent.commentProbability &&
+        (await canAmbientComment(this.state, now))
+      ) {
         const target = sample(
           recentAgentPosts.filter((p) => p.authorEmail !== agent.email),
         );
@@ -392,9 +414,10 @@ export class AgentEngine {
   private async doAmbientPost(agent: ActiveAgent, llmOk: boolean, now: Date): Promise<void> {
     // 90% scripted (zero LLM cost), 10% Claude variation — and only LLM if the
     // budget allows. Anti-repeat picks a line not used by this agent in 72h.
-    const fresh = agent.persona.postLines.filter((l) =>
-      canUseLine(this.state, agent.persona.key, l, now),
-    );
+    const fresh: string[] = [];
+    for (const l of agent.persona.postLines) {
+      if (await canUseLine(this.state, agent.persona.key, l, now)) fresh.push(l);
+    }
     const scriptedLine = sample(fresh.length > 0 ? fresh : agent.persona.postLines);
     if (!scriptedLine) return;
 
@@ -425,11 +448,34 @@ export class AgentEngine {
       }
     }
 
+    // The scripted line to record for 72h anti-repeat (null for an LLM post, so
+    // no line is burned). The budget increment + line write happen ATOMICALLY
+    // with the post insert inside createCommunityPost's transaction, under a
+    // row lock — an authoritative re-check of the caps that a restart mid-tick
+    // (or a stale in-memory count) can't slip past.
+    const lineToRecord = source === "fallback" ? scriptedLine : null;
     try {
-      await this.deps.community.createCommunityPost(agent.accountId, body, "statement", null);
-      this.state.recordAmbientPost(agent.persona.key, now);
-      if (source === "fallback") this.state.recordLineUsed(agent.persona.key, scriptedLine, now);
+      await this.deps.community.createCommunityPost(
+        agent.accountId,
+        body,
+        "statement",
+        null,
+        {
+          onInsertTx: (tx: AgentRunnerTx) =>
+            this.state.recordAmbientPostTx(tx, agent.persona.key, lineToRecord, now, {
+              postsPerDay: CAPS.ambientPostsPerDay,
+              consecutivePerAgent: CAPS.consecutivePostsPerAgent,
+              lineAntiRepeatMs: CAPS.lineAntiRepeatMs,
+            }),
+        },
+      );
+      // The tx wrote the ledger; drop the write-through cache so the next read
+      // re-hydrates the incremented counts from the DB.
+      this.state.invalidateDaily(agent.persona.key, now);
     } catch (err) {
+      // A cap/dedup hit under the lock rolls the post back — an EXPECTED skip
+      // (the durable state did its job), not a write failure to report.
+      if (err instanceof AmbientPostRejected) return;
       await this.reportActionError(agent, "ambient_post", err, now);
     }
   }
@@ -439,7 +485,7 @@ export class AgentEngine {
     if (!line) return;
     try {
       await this.deps.community.createCommunityComment(agent.accountId, postId, line);
-      this.state.recordAmbientComment(agent.persona.key, now);
+      await this.state.recordAmbientComment(agent.persona.key, now);
     } catch (err) {
       await this.reportActionError(agent, "ambient_comment", err, now);
     }
