@@ -104,6 +104,8 @@ function getServiceChecks(): ServiceCheck[] {
   const port = process.env.PORT || "3100";
   const ollamaUrl = SHARED_OLLAMA_URL;
   const embedUrl = process.env.EMBED_URL || "http://100.67.128.51:8080";
+  const embedKey = process.env.EMBED_API_KEY || "";
+  const embedHeaders = embedKey ? { Authorization: `Bearer ${embedKey}` } : undefined;
 
   return [
     { name: "Backend API", url: `http://127.0.0.1:${port}/api/health/readiness` },
@@ -111,7 +113,7 @@ function getServiceChecks(): ServiceCheck[] {
     // Timeout is 15s — cloud endpoints can be slow on first hit.
     { name: "Ollama LLM", url: `${ollamaUrl}/api/version`, headers: ollamaHeaders(), timeoutMs: 15_000 },
     { name: "Firecrawl", url: "https://firecrawl.coherencedaddy.com/", timeoutMs: 10_000 },
-    { name: "Embedding Service", url: `${embedUrl}/health`, timeoutMs: 10_000 },
+    { name: "Embedding Service", url: `${embedUrl}/health`, headers: embedHeaders, timeoutMs: 10_000 },
   ];
 }
 

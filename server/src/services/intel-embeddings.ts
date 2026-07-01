@@ -44,7 +44,7 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(EMBED_API_KEY ? { "X-API-Key": EMBED_API_KEY } : {}),
+          ...(EMBED_API_KEY ? { Authorization: `Bearer ${EMBED_API_KEY}` } : {}),
         },
         // BGE-M3 via HuggingFace TEI expects `inputs` (string | string[]); see
         // docs/api/intel.md "Vector Search Architecture". Sending `texts`
