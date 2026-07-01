@@ -31,6 +31,7 @@ import {
   type BridgeStatus,
 } from "../services/optimize-me-bridge.js";
 import { universitySessionsService } from "../services/university-sessions.js";
+import { voiceBudgetService } from "../services/voice-budget.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
 import { UNIVERSITY_SESSIONS_URL } from "../services/university-email.js";
 
@@ -529,6 +530,7 @@ export function portalRoutes(db: Db): Router {
   const router = Router();
   const svc = customerPortalService(db);
   const sessionsSvc = universitySessionsService(db);
+  const voiceSvc = voiceBudgetService(db);
 
   function requireSession(req: Request, res: Response): string | null {
     // Impersonation cookie wins when present (admin "View as customer").
@@ -910,6 +912,148 @@ export function portalRoutes(db: Db): Router {
       res.status(500).json({ error: "Failed to delete note" });
     }
   });
+
+  // -- University voice budget (Rex realtime-minutes cap) ---------------------
+  //
+  // Meters Rex realtime-voice usage against a monthly per-member seconds cap
+  // (Phase 1: free 3600 s/mo). Same member gate as the rep-log/notes; the two
+  // mutations are blocked under impersonation (read-only), exactly like
+  // POST /university/progress. See services/voice-budget.ts for the reserve-
+  // then-reconcile design.
+  //
+  // GET  /university/voice/budget  → { periodStart, usedSeconds, limitSeconds,
+  //        remainingSeconds }
+  // POST /university/voice/reserve { requestedSeconds } → debit up front;
+  //        returns { reservationId, grantedSeconds, remainingSeconds }
+  // POST /university/voice/usage   { reservationId, actualSeconds } → settle;
+  //        returns { ok, usedSeconds, remainingSeconds }
+  //
+  // The member row is resolved from the account (active/past_due). A membership
+  // that passes the status-agnostic gate but has no active row → 403.
+
+  async function requireVoiceMember(
+    req: Request,
+    res: Response,
+  ): Promise<string | null> {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return null;
+    let memberId: string | null;
+    try {
+      memberId = await voiceSvc.resolveVoiceMemberId(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/voice: member resolve failed",
+      );
+      res.status(500).json({ error: "Failed to resolve member" });
+      return null;
+    }
+    if (!memberId) {
+      res.status(403).json({ error: "University membership required" });
+      return null;
+    }
+    return memberId;
+  }
+
+  router.get(
+    "/university/voice/budget",
+    async (req: Request, res: Response) => {
+      const memberId = await requireVoiceMember(req, res);
+      if (!memberId) return;
+      try {
+        const budget = await voiceSvc.getVoiceBudget(memberId);
+        res.json({
+          periodStart: budget.periodStart,
+          usedSeconds: budget.usedSeconds,
+          limitSeconds: budget.limitSeconds,
+          remainingSeconds: budget.remainingSeconds,
+        });
+      } catch (err) {
+        logger.error(
+          { err, memberId },
+          "portal/university/voice/budget: failed",
+        );
+        res.status(500).json({ error: "Failed to load voice budget" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/voice/reserve",
+    async (req: Request, res: Response) => {
+      // Reserving debits the meter — block under impersonation (read-only).
+      if (!requireNonImpersonating(req, res)) return;
+      const memberId = await requireVoiceMember(req, res);
+      if (!memberId) return;
+
+      const body = (req.body ?? {}) as { requestedSeconds?: unknown };
+      const requested = Number(body.requestedSeconds);
+      if (!Number.isFinite(requested) || requested < 0) {
+        res.status(400).json({ error: "requestedSeconds must be a non-negative number" });
+        return;
+      }
+
+      try {
+        const result = await voiceSvc.reserveVoiceSeconds(memberId, requested);
+        res.status(200).json({
+          reservationId: result.reservationId,
+          grantedSeconds: result.grantedSeconds,
+          remainingSeconds: result.remainingSeconds,
+        });
+      } catch (err) {
+        logger.error(
+          { err, memberId },
+          "portal/university/voice/reserve: failed",
+        );
+        res.status(500).json({ error: "Failed to reserve voice seconds" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/voice/usage",
+    async (req: Request, res: Response) => {
+      // Settling mutates the meter — block under impersonation (read-only).
+      if (!requireNonImpersonating(req, res)) return;
+      const memberId = await requireVoiceMember(req, res);
+      if (!memberId) return;
+
+      const body = (req.body ?? {}) as {
+        reservationId?: unknown;
+        actualSeconds?: unknown;
+      };
+      const reservationId =
+        typeof body.reservationId === "string" ? body.reservationId.trim() : "";
+      if (!reservationId) {
+        res.status(400).json({ error: "reservationId required" });
+        return;
+      }
+      const actualSeconds = Number(body.actualSeconds);
+      if (!Number.isFinite(actualSeconds) || actualSeconds < 0) {
+        res.status(400).json({ error: "actualSeconds must be a non-negative number" });
+        return;
+      }
+
+      try {
+        const result = await voiceSvc.settleVoiceSeconds(
+          reservationId,
+          memberId,
+          actualSeconds,
+        );
+        res.status(200).json({
+          ok: result.ok,
+          usedSeconds: result.usedSeconds,
+          remainingSeconds: result.remainingSeconds,
+        });
+      } catch (err) {
+        logger.error(
+          { err, memberId, reservationId },
+          "portal/university/voice/usage: failed",
+        );
+        res.status(500).json({ error: "Failed to record voice usage" });
+      }
+    },
+  );
 
   // -- University community (the native members feed) -------------------------
   //

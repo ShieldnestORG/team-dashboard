@@ -4,11 +4,14 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
   boolean,
   date,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { customerAccounts } from "./customer_portal.js";
 
 // ---------------------------------------------------------------------------
@@ -517,6 +520,84 @@ export const universityCreditLedger = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University VOICE BUDGET — Rex realtime-voice monthly seconds cap.
+//
+// Meters Rex realtime voice usage against a per-member monthly seconds budget
+// (Phase 1: free 3600 s/mo, calendar-month reset). Deliberately mirrors the
+// intel usage meter (schema/intel_billing.ts intel_usage_meter): a per-period
+// counter keyed UNIQUE(member_id, period_start) where period_start is the
+// first-of-month DATE (UTC 'YYYY-MM-01'), incremented via an atomic ON CONFLICT
+// UPSERT in the service (services/voice-budget.ts).
+//
+// Reserve-then-reconcile (anti-freeride): each session mints a reservation that
+// DEBITS the meter up front (seconds_used += granted); on session close the
+// unused portion is CREDITED back (seconds_used -= refund, never < 0) and the
+// reservation is marked settled. A client that lies or never reports still eats
+// the full grant. The `status` CHECK keeps the two-state lifecycle honest.
+//
+// The member is identified via the shared customer_accounts login the same way
+// the rest of University is — see services/voice-budget.ts resolveVoiceMemberId
+// (LOWER(email)=… OR account_id=…, newest active row).
+// ---------------------------------------------------------------------------
+
+export const universityVoiceMeter = pgTable(
+  "university_voice_meter",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: uuid("member_id").notNull(),
+    // First-of-month (UTC) bucket. 'YYYY-MM-01'. Mirrors intel_usage_meter.
+    periodStart: date("period_start").notNull(),
+    // Whole-session wall-clock seconds debited this period. bigint for headroom.
+    secondsUsed: bigint("seconds_used", { mode: "number" })
+      .notNull()
+      .default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One meter row per member+period. The atomic UPSERT conflict target.
+    memberPeriodUq: uniqueIndex("university_voice_meter_member_period_uq").on(
+      table.memberId,
+      table.periodStart,
+    ),
+  }),
+);
+
+export const universityVoiceReservations = pgTable(
+  "university_voice_reservations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: uuid("member_id").notNull(),
+    // The period this reservation debited — refunds credit back to THIS period
+    // even if settle happens after a month rollover.
+    periodStart: date("period_start").notNull(),
+    // Seconds granted (debited) at reserve time. Immutable once set.
+    grantedSeconds: integer("granted_seconds").notNull(),
+    // Clamped actual seconds reported at settle. NULL while open.
+    actualSeconds: integer("actual_seconds"),
+    // open | settled. Guards idempotent settle (only an `open` row refunds).
+    status: text("status").notNull().default("open"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (table) => ({
+    memberPeriodIdx: index(
+      "university_voice_reservations_member_period_idx",
+    ).on(table.memberId, table.periodStart),
+    statusCk: check(
+      "university_voice_reservations_status_ck",
+      sql`${table.status} IN ('open', 'settled')`,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -546,3 +627,9 @@ export type UniversityCreditLedgerRow =
   typeof universityCreditLedger.$inferSelect;
 export type NewUniversityCreditLedgerRow =
   typeof universityCreditLedger.$inferInsert;
+export type UniversityVoiceMeter = typeof universityVoiceMeter.$inferSelect;
+export type NewUniversityVoiceMeter = typeof universityVoiceMeter.$inferInsert;
+export type UniversityVoiceReservation =
+  typeof universityVoiceReservations.$inferSelect;
+export type NewUniversityVoiceReservation =
+  typeof universityVoiceReservations.$inferInsert;
