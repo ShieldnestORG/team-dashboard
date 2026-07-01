@@ -200,6 +200,8 @@ export {
   universityReferralCodes,
   universityReferrals,
   universityCreditLedger,
+  universityVoiceMeter,
+  universityVoiceReservations,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -222,6 +224,10 @@ export type {
   NewUniversityReferral,
   UniversityCreditLedgerRow,
   NewUniversityCreditLedgerRow,
+  UniversityVoiceMeter,
+  NewUniversityVoiceMeter,
+  UniversityVoiceReservation,
+  NewUniversityVoiceReservation,
 } from "./university.js";
 export {
   universityCommunityPosts,
