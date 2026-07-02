@@ -73,6 +73,12 @@ enabled, last_run_at, next_run_at, notes
 - `server/src/services/socials/calendar.ts` — merges `content_items` + cron projections
 - `server/src/routes/socials.ts` — `/api/socials/*`
 - Mounted in `server/src/app.ts` at `api.use("/socials", socialsRoutes(db))`
+- `packages/db/src/schema/zernio_engagement.ts` + `packages/db/src/migrations/0122_zernio_engagement.sql` — Zernio engagement tables (own-sequence numbering; see the migration header)
+- `server/src/services/platform-publishers/zernio.ts` — publisher **plus** the Zernio engagement API client (automations, webhooks, contacts, analytics)
+- `server/src/routes/zernio-webhook.ts` — raw-body webhook receiver, mounted pre-JSON-parser
+- `server/src/services/socials/zernio-lead-capture.ts` — event → lead extraction + upserts
+- `server/src/services/socials/zernio-sync.ts` — automation mirror + tagged-contact poll
+- `server/src/services/socials/zernio-analytics.ts` — analytics ingest + summary/recommendations read models
 
 ### Frontend
 - `ui/src/api/socials.ts`
@@ -99,6 +105,18 @@ enabled, last_run_at, next_run_at, notes
 | GET | `/api/socials/automations?accountId=` | List automations |
 | POST | `/api/socials/automations/sync` | Re-run cron-introspect |
 | GET | `/api/socials/calendar?from=&to=&brand=&platform=` | Unified events feed |
+| GET/POST/DELETE | `/api/socials/zernio/automations[/:id]` | Comment-automation CRUD against Zernio (keyword funnels) |
+| GET | `/api/socials/zernio/automations/:id/logs?zernioAccountId=` | Per-automation DM delivery logs |
+| POST | `/api/socials/zernio/webhooks/register` | Idempotently register the webhook on every `ZERNIO_KEY_*` |
+| GET | `/api/socials/zernio/events?type=&limit=` | Stored webhook events (cockpit stream) |
+| GET | `/api/socials/leads?captureKind=&synced=` | Captured leads + Brevo sync state |
+| POST | `/api/socials/leads/relay-now` | Force a Brevo sync tick |
+| POST | `/api/socials/zernio/sync-now` | Force automation-mirror + contacts sync |
+| GET | `/api/socials/zernio/analytics/{summary,posts,recommendations}` | Stored Zernio analytics (never blended with X-engine numbers) |
+| GET | `/api/socials/zernio/analytics/accounts/:zid` | Per-account drill-down |
+| GET | `/api/socials/zernio/analytics/live/:metric?zernioAccountId=` | Live passthrough to any allowlisted analytics path |
+| POST | `/api/socials/zernio/analytics/ingest-now` | Force an analytics ingest tick |
+| POST | `/api/zernio/webhook` | **Unauthenticated raw-body webhook receiver** (HMAC-verified; not under `/api/socials`) |
 
 ## Operations
 
@@ -174,6 +192,46 @@ tweet/blog paths still use the deterministic `getAeoCta(brand)`.
 
 If a queue of overflow drafts ever needs cleanup, see
 `server/scripts/tighten-overflow-content.ts` (`--dry-run`, `--regenerate`).
+
+## Zernio Engagement Layer (2026-07-01)
+
+The comment→DM→captured-lead loop from
+`marketing/plans/plan-zernio-leverage.md` §2 (levers L1/L4/L6). Zernio is the
+capture rail; **Brevo stays the nurture CRM** — a lead row only syncs to Brevo
+once it carries an email.
+
+**Flow.** A keyword comment (ROOM / COHERENT / …) fires a Zernio
+comment-automation → Zernio delivers `comment.received` / `message.received` /
+`lead.received` webhooks to `POST /api/zernio/webhook` (HMAC-SHA256 on
+`X-Zernio-Signature`, deduped on the payload's stable event id —
+delivery is at-least-once) → deterministic extraction upserts `social_leads`
+(keyword + clickTag attributed against the local automation mirror) → the
+`socials:lead-sync` cron pushes email-bearing leads to the Brevo founding list
+(`SOURCE` = clickTag, e.g. `ig-room`). `account.disconnected` auto-pauses the
+matching `social_accounts` row.
+
+**Crons.** `socials:lead-sync` (every 5 min), `socials:zernio-sync` (hourly —
+automation mirror + tagged-contact poll), `socials:zernio-analytics` (daily
+06:40 — snapshots + per-post analytics with External-Post-ID correlation back
+to `social_posts`). All three no-op quietly when no `ZERNIO_KEY_*` is set.
+
+**Env.** `ZERNIO_KEY_<accountId>` (per-account Bearer keys — each key only
+sees its own account), `ZERNIO_WEBHOOK_SECRET`, `BREVO_API_KEY`,
+`BREVO_FOUNDING_LIST_ID`, optional `ZERNIO_API_BASE` / `BREVO_ENDPOINT`.
+
+**Hard lines (owner-settled — do not "fix"):**
+- **No Zernio Conversions API.** The in-house Meta CAPI/TikTok Events build off
+  the Stripe webhook is canonical; double-firing double-counts Purchases.
+- **No multi-day DM drips, no comment-list broadcasts.** ToS won't-build list
+  in `Ig_Auditor/DM-FUNNEL-PLAYBOOK.md`; automation creation validates
+  keyword-gating, `dmMessage` ≤640 chars, ≤3 buttons.
+- **Zernio analytics ≠ X-engine analytics.** `x_engagement_log` numbers are a
+  different dataset; every Zernio response is tagged `source: "zernio"` and the
+  two must never be blended in one panel.
+
+**Still unbuilt:** the Socials Hub UI analytics tab (Goal B lane 3B remainder)
+and the ROOM funnel content itself (create via
+`POST /api/socials/zernio/automations` once the LP destination is settled).
 
 ### Adding a new text publisher
 

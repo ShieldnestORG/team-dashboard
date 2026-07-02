@@ -15,6 +15,12 @@ The system relies on a vast array of scheduled jobs to power the intel engine, c
 ## Socials Hub
 All content cron jobs below are mirrored into `social_automations` (linked to `social_accounts` by `brand` + `platform`). View them in the UI at `/socials → Automation`. The mirror is upserted by `POST /api/socials/automations/sync` — see [docs/products/socials-hub.md](../products/socials-hub.md).
 
+### Socials Hub Crons (`server/src/services/social-crons.ts`, owner `system`)
+- **Queue Relayer (1 job)**: `socials:relay` — every minute, drains due `social_posts` rows to the platform publishers (`FOR UPDATE SKIP LOCKED`, batch 5).
+- **Lead Sync (1 job)**: `socials:lead-sync` — every 5 min, pushes email-bearing `social_leads` rows to the Brevo founding list (`SOURCE` = clickTag). Warns once and no-ops when `BREVO_API_KEY`/`BREVO_FOUNDING_LIST_ID` unset.
+- **Zernio Sync (1 job)**: `socials:zernio-sync` — hourly at :20, refreshes the `zernio_comment_automations` mirror and polls tagged Zernio contacts (clickTag audience) into `social_leads`. No-ops without `ZERNIO_KEY_*`.
+- **Zernio Analytics (1 job)**: `socials:zernio-analytics` — daily 06:40, snapshots daily-metrics / best-time / content-decay / posting-frequency / follower-stats / health / inbox-volume per connected account into `zernio_analytics_snapshots` (the 402/403 add-on gate is recorded, not thrown) and upserts per-post rows into `zernio_post_analytics` with External-Post-ID correlation back to `social_posts`. Zernio numbers only — never blended with `x_engagement_log`.
+
 ## Content Engine Crons
 - **SEO Engine (1 job)**: Daily blog generation from trends at 7:03 AM (`content:seo-engine`).
 - **Retweet Cycle (1 job)**: Automated content sharing.

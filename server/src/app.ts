@@ -102,6 +102,7 @@ import {
   universityEmailEventsRouter,
   universityEmailStatsAdminRoutes,
 } from "./routes/university-email-events.js";
+import { zernioWebhookRouter } from "./routes/zernio-webhook.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -227,6 +228,9 @@ export async function createApp(
   // Brevo engagement events forwarded by the storefront — HMAC over the raw
   // body, so this router (express.raw) also mounts before the JSON parser.
   app.use("/api/university", universityEmailEventsRouter(db));
+  // Zernio engagement webhooks (comment/message/lead/post/account events) —
+  // HMAC-SHA256 over the raw body, so it also mounts before the JSON parser.
+  app.use("/api/zernio", zernioWebhookRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",

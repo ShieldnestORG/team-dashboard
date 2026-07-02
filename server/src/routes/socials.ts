@@ -2,10 +2,39 @@ import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { socialAccounts, socialAutomations, socialPosts, platformCaps, authUsers } from "@paperclipai/db";
+import {
+  socialAccounts,
+  socialAutomations,
+  socialPosts,
+  platformCaps,
+  authUsers,
+  socialLeads,
+  zernioWebhookEvents,
+  zernioCommentAutomations,
+  zernioPostAnalytics,
+} from "@paperclipai/db";
 import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
-import { runSocialRelayerTick } from "../services/social-relayer.js";
+import { runSocialRelayerTick, runLeadRelayerTick } from "../services/social-relayer.js";
+import {
+  createZernioCommentAutomation,
+  deleteZernioCommentAutomation,
+  getZernioCommentAutomationLogs,
+  listZernioCommentAutomations,
+  registerZernioWebhookForAllKeys,
+  fetchZernioAnalytics,
+  validateZernioAutomationInput,
+  ZernioAddonMissingError,
+  ZernioApiError,
+  ZERNIO_ANALYTICS_PATHS,
+  type ZernioAutomationInput,
+} from "../services/platform-publishers/zernio.js";
+import { runZernioEngagementSyncTick, syncZernioAutomationsMirror } from "../services/socials/zernio-sync.js";
+import {
+  buildZernioRecommendations,
+  latestZernioSnapshots,
+  runZernioAnalyticsIngestTick,
+} from "../services/socials/zernio-analytics.js";
 import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
 import { invalidatePlatformCapCache, listCounters } from "../services/socials/platform-caps.js";
 import { logger } from "../middleware/logger.js";
@@ -378,6 +407,278 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     } catch (err) {
       logger.error({ err }, "platform-counters failed");
       res.status(500).json({ error: "counters failed" });
+    }
+  });
+
+  // ===========================================================================
+  // Zernio engagement layer (plan-zernio-leverage §2; CONTROLLER-AUDIT Goal B).
+  // The inbound webhook itself is NOT here — it lives in routes/zernio-webhook.ts
+  // (raw-body + HMAC, mounted before the JSON parser), because this router is
+  // board-actor-gated. Everything below is the authenticated cockpit surface.
+  // NOTE: Zernio analytics ≠ X-engine analytics (/api/x/analytics,
+  // x_engagement_log). They measure different things — never blend them.
+  // ===========================================================================
+
+  const zernioErr = (res: Response, err: unknown): void => {
+    if (err instanceof ZernioAddonMissingError) {
+      res.status(402).json({ error: "zernio analytics add-on gate", detail: err.message });
+      return;
+    }
+    if (err instanceof ZernioApiError) {
+      res.status(502).json({ error: "zernio api error", detail: err.message });
+      return;
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  };
+
+  // ----- comment-automation CRUD (keyword funnels: ROOM / COHERENT / ...) -----
+
+  // Live list from Zernio, refreshing the local mirror as a side effect.
+  router.get("/zernio/automations", async (req, res) => {
+    try {
+      const zid = req.query.zernioAccountId as string | undefined;
+      const { automations, errors } = await listZernioCommentAutomations(zid);
+      // Refresh the mirror opportunistically so the webhook keyword-attribution
+      // set stays warm even between hourly sync ticks.
+      syncZernioAutomationsMirror(db).catch((err) =>
+        logger.warn({ err }, "zernio automations mirror refresh failed"),
+      );
+      res.json({ automations, errors });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  // Mirror-only list (no Zernio round-trip) for fast cockpit rendering.
+  router.get("/zernio/automations/mirror", async (_req, res) => {
+    const rows = await db
+      .select()
+      .from(zernioCommentAutomations)
+      .orderBy(desc(zernioCommentAutomations.updatedAt));
+    res.json({ automations: rows });
+  });
+
+  router.post("/zernio/automations", requireAdmin, async (req, res) => {
+    const body = (req.body ?? {}) as Partial<ZernioAutomationInput>;
+    const input: ZernioAutomationInput = {
+      zernioAccountId: String(body.zernioAccountId ?? ""),
+      name: String(body.name ?? ""),
+      trigger: body.trigger,
+      keywords: Array.isArray(body.keywords) ? body.keywords.map(String) : [],
+      matchMode: body.matchMode,
+      dmMessage: String(body.dmMessage ?? ""),
+      buttons: body.buttons,
+      commentReply: body.commentReply ? String(body.commentReply) : undefined,
+      linkTracking: body.linkTracking,
+      clickTag: body.clickTag ? String(body.clickTag) : undefined,
+      platformPostId: body.platformPostId ? String(body.platformPostId) : undefined,
+      postId: body.postId ? String(body.postId) : undefined,
+      postTitle: body.postTitle ? String(body.postTitle) : undefined,
+    };
+    const problems = validateZernioAutomationInput(input);
+    if (problems.length > 0) {
+      return res.status(400).json({ error: "invalid automation", problems });
+    }
+    try {
+      const automation = await createZernioCommentAutomation(input);
+      // Mirror immediately so keyword attribution works from the first comment.
+      await syncZernioAutomationsMirror(db).catch((err) =>
+        logger.warn({ err }, "zernio automations mirror refresh failed"),
+      );
+      res.status(201).json({ automation });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  router.delete("/zernio/automations/:automationId", requireAdmin, async (req, res) => {
+    const automationId = req.params.automationId as string;
+    const zid = String(req.query.zernioAccountId ?? req.body?.zernioAccountId ?? "");
+    if (!zid) return res.status(400).json({ error: "zernioAccountId required" });
+    try {
+      await deleteZernioCommentAutomation(zid, automationId);
+      await db
+        .update(zernioCommentAutomations)
+        .set({ isActive: false, updatedAt: sql`now()` })
+        .where(eq(zernioCommentAutomations.zernioAutomationId, automationId));
+      res.json({ ok: true });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  router.get("/zernio/automations/:automationId/logs", async (req, res) => {
+    const automationId = req.params.automationId as string;
+    const zid = String(req.query.zernioAccountId ?? "");
+    if (!zid) return res.status(400).json({ error: "zernioAccountId required" });
+    try {
+      const logs = await getZernioCommentAutomationLogs(zid, automationId, {
+        status: req.query.status as "sent" | "failed" | "skipped" | undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+        skip: req.query.skip ? Number(req.query.skip) : undefined,
+      });
+      res.json(logs);
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  // ----- webhook admin + event stream -----
+
+  // Register the receiver on every configured Zernio key (idempotent).
+  router.post("/zernio/webhooks/register", requireAdmin, async (req, res) => {
+    const secret = process.env.ZERNIO_WEBHOOK_SECRET;
+    if (!secret) {
+      return res.status(503).json({ error: "ZERNIO_WEBHOOK_SECRET not configured" });
+    }
+    const base = process.env.PAPERCLIP_PUBLIC_URL;
+    const url = req.body?.url ? String(req.body.url) : base ? `${base}/api/zernio/webhook` : null;
+    if (!url) {
+      return res.status(400).json({ error: "url required (PAPERCLIP_PUBLIC_URL unset)" });
+    }
+    try {
+      const results = await registerZernioWebhookForAllKeys({ url, secret });
+      res.json({ url, results });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  router.get("/zernio/events", async (req, res) => {
+    const type = req.query.type as string | undefined;
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const where = type ? [eq(zernioWebhookEvents.eventType, type)] : [];
+    const rows = await db
+      .select()
+      .from(zernioWebhookEvents)
+      .where(where.length ? and(...where) : undefined)
+      .orderBy(desc(zernioWebhookEvents.receivedAt))
+      .limit(limit);
+    res.json({ events: rows });
+  });
+
+  // ----- captured leads -----
+
+  router.get("/leads", async (req, res) => {
+    const where = [];
+    if (req.query.captureKind) where.push(eq(socialLeads.captureKind, String(req.query.captureKind)));
+    if (req.query.zernioAccountId) where.push(eq(socialLeads.zernioAccountId, String(req.query.zernioAccountId)));
+    if (req.query.synced === "true") where.push(sql`${socialLeads.brevoSyncedAt} IS NOT NULL`);
+    if (req.query.synced === "false") where.push(sql`${socialLeads.brevoSyncedAt} IS NULL`);
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const rows = await db
+      .select()
+      .from(socialLeads)
+      .where(where.length ? and(...where) : undefined)
+      .orderBy(desc(socialLeads.lastEventAt))
+      .limit(limit);
+    res.json({
+      leads: rows,
+      brevoConfigured: Boolean(process.env.BREVO_API_KEY && process.env.BREVO_FOUNDING_LIST_ID),
+    });
+  });
+
+  // Force a Brevo sync pass now (same tick the socials:lead-sync cron runs).
+  router.post("/leads/relay-now", requireAdmin, async (_req, res) => {
+    try {
+      const result = await runLeadRelayerTick(db);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "leads relay-now failed");
+      res.status(500).json({ error: "lead relay failed" });
+    }
+  });
+
+  // Force the automation-mirror + tagged-contacts sync now.
+  router.post("/zernio/sync-now", requireAdmin, async (_req, res) => {
+    try {
+      const result = await runZernioEngagementSyncTick(db);
+      res.json(result);
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  // ----- analytics (L6 / Goal B) — Zernio numbers ONLY, never x_engagement_log -----
+
+  // Latest stored snapshots: totals view + per-account drill-down source.
+  router.get("/zernio/analytics/summary", async (_req, res) => {
+    try {
+      const snapshots = await latestZernioSnapshots(db);
+      res.json({ snapshots, source: "zernio" });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  router.get("/zernio/analytics/accounts/:zid", async (req, res) => {
+    const zid = req.params.zid as string;
+    try {
+      const snapshots = await latestZernioSnapshots(db, { zernioAccountId: zid });
+      const posts = await db
+        .select()
+        .from(zernioPostAnalytics)
+        .where(eq(zernioPostAnalytics.zernioAccountId, zid))
+        .orderBy(desc(zernioPostAnalytics.publishedAt))
+        .limit(100);
+      res.json({ zernioAccountId: zid, snapshots, posts, source: "zernio" });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  router.get("/zernio/analytics/posts", async (req, res) => {
+    const where = [];
+    if (req.query.zernioAccountId) {
+      where.push(eq(zernioPostAnalytics.zernioAccountId, String(req.query.zernioAccountId)));
+    }
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const rows = await db
+      .select()
+      .from(zernioPostAnalytics)
+      .where(where.length ? and(...where) : undefined)
+      .orderBy(desc(zernioPostAnalytics.publishedAt))
+      .limit(limit);
+    res.json({ posts: rows, source: "zernio" });
+  });
+
+  router.get("/zernio/analytics/recommendations", async (_req, res) => {
+    try {
+      const recommendations = await buildZernioRecommendations(db);
+      res.json({ recommendations, source: "zernio" });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  // Live passthrough to any allowlisted analytics path (the 26 /v1/analytics
+  // surfaces + follower/health/usage) for drill-downs we don't snapshot.
+  router.get("/zernio/analytics/live/:metric", async (req, res) => {
+    const metric = req.params.metric as string;
+    if (!(metric in ZERNIO_ANALYTICS_PATHS)) {
+      return res.status(400).json({ error: `unknown metric '${metric}'`, metrics: Object.keys(ZERNIO_ANALYTICS_PATHS) });
+    }
+    const zid = String(req.query.zernioAccountId ?? "");
+    if (!zid) return res.status(400).json({ error: "zernioAccountId required" });
+    const query: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.query)) {
+      if (k !== "zernioAccountId" && typeof v === "string") query[k] = v;
+    }
+    try {
+      const data = await fetchZernioAnalytics(zid, metric, query);
+      res.json({ metric, zernioAccountId: zid, data, source: "zernio" });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  // Force an analytics ingest pass now (same tick as socials:zernio-analytics).
+  router.post("/zernio/analytics/ingest-now", requireAdmin, async (_req, res) => {
+    try {
+      const result = await runZernioAnalyticsIngestTick(db);
+      res.json(result);
+    } catch (err) {
+      zernioErr(res, err);
     }
   });
 

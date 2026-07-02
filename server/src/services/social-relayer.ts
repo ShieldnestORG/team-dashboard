@@ -342,3 +342,145 @@ async function markFailed(
      WHERE id = ${id}
   `);
 }
+
+// ============================================================================
+// Lead relayer — drains captured social_leads toward Brevo.
+// (plan-zernio-leverage §2 step 6: capture → Brevo (src-tagged) → N1-N3.)
+//
+// Brevo stays the nurture CRM; Zernio Contacts is capture-layer only (L3
+// decision). Only rows that actually carry an email are syncable — an IGSID
+// alone cannot be nurtured by email, so email-less rows simply stay in the
+// capture layer untouched.
+// ============================================================================
+
+const LEAD_BATCH_SIZE = 20;
+const LEAD_MAX_ATTEMPTS = 5;
+
+// Same contract as the storefront's addToBrevoList (coherencedaddy-landing
+// app/api/subscribe/route.ts): POST /v3/contacts, updateEnabled so re-submits
+// don't 409, SOURCE attribute for segmentation.
+async function upsertBrevoContact(opts: {
+  email: string;
+  source: string;
+  firstName: string | null;
+}): Promise<void> {
+  const apiKey = process.env.BREVO_API_KEY;
+  const listId = Number(process.env.BREVO_FOUNDING_LIST_ID);
+  if (!apiKey || !listId) throw new Error("Brevo not configured");
+  const endpoint = process.env.BREVO_ENDPOINT || "https://api.brevo.com/v3";
+  const attributes: Record<string, string> = { SOURCE: opts.source };
+  if (opts.firstName) attributes.FIRSTNAME = opts.firstName;
+  const res = await fetch(`${endpoint}/contacts`, {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      email: opts.email,
+      updateEnabled: true,
+      listIds: [listId],
+      attributes,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Brevo ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  }
+}
+
+interface DueLeadRow {
+  id: string;
+  email: string;
+  displayName: string | null;
+  keyword: string | null;
+  clickTag: string | null;
+  captureKind: string;
+  attempts: number;
+}
+
+export interface LeadRelayerResult {
+  picked: number;
+  synced: number;
+  failed: number;
+  brevoConfigured: boolean;
+}
+
+let warnedBrevoUnconfigured = false;
+
+export async function runLeadRelayerTick(db: Db): Promise<LeadRelayerResult> {
+  const result: LeadRelayerResult = { picked: 0, synced: 0, failed: 0, brevoConfigured: true };
+
+  if (!process.env.BREVO_API_KEY || !process.env.BREVO_FOUNDING_LIST_ID) {
+    // Don't error the cron every 5 minutes over a known-unset env (that noise
+    // pattern is exactly the 2026-06 cron_stale alert story) — warn once per
+    // process, surface configured=false through the /leads route.
+    result.brevoConfigured = false;
+    if (!warnedBrevoUnconfigured) {
+      warnedBrevoUnconfigured = true;
+      logger.warn({}, "lead-relayer: BREVO_API_KEY / BREVO_FOUNDING_LIST_ID not set — leads accumulate unsynced");
+    }
+    return result;
+  }
+
+  const due = await db.execute(sql`
+    SELECT
+      id,
+      email,
+      display_name AS "displayName",
+      keyword,
+      click_tag    AS "clickTag",
+      capture_kind AS "captureKind",
+      brevo_attempts AS "attempts"
+    FROM social_leads
+    WHERE brevo_synced_at IS NULL
+      AND email IS NOT NULL
+      AND brevo_attempts < ${LEAD_MAX_ATTEMPTS}
+    ORDER BY created_at ASC
+    LIMIT ${LEAD_BATCH_SIZE}
+    FOR UPDATE SKIP LOCKED
+  `);
+  const rows = due as unknown as DueLeadRow[];
+  result.picked = rows.length;
+
+  for (const row of rows) {
+    // src tag priority: the funnel's clickTag (ig-room / ig-coherent / ...),
+    // else a keyword-derived tag, else the capture rail.
+    const source =
+      row.clickTag ??
+      (row.keyword ? `ig-${row.keyword.toLowerCase()}` : `zernio-${row.captureKind}`);
+    try {
+      await upsertBrevoContact({
+        email: row.email,
+        source,
+        firstName: row.displayName ? row.displayName.split(/\s+/)[0] : null,
+      });
+      await db.execute(sql`
+        UPDATE social_leads
+           SET brevo_synced_at = now(),
+               brevo_attempts = ${row.attempts + 1},
+               brevo_error = NULL,
+               updated_at = now()
+         WHERE id = ${row.id}
+      `);
+      result.synced += 1;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await db.execute(sql`
+        UPDATE social_leads
+           SET brevo_attempts = ${row.attempts + 1},
+               brevo_error = ${msg.slice(0, 500)},
+               updated_at = now()
+         WHERE id = ${row.id}
+      `);
+      result.failed += 1;
+      logger.warn({ id: row.id, err }, "lead-relayer: Brevo sync failed, will retry");
+    }
+  }
+
+  if (result.picked > 0) {
+    logger.info(result, "lead-relayer tick");
+  }
+  return result;
+}
