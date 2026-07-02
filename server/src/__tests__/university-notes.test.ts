@@ -56,6 +56,10 @@ import { errorHandler } from "../middleware/index.js";
 import { issueSession, PORTAL_SESSION_COOKIE } from "../services/customer-portal.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
+// Browsers send an Origin header on every unsafe (non-GET) request; the portal
+// CSRF guard (middleware/portal-csrf.ts) fail-closes without a trusted one.
+// Must match the PORTAL_BASE_URL this suite sets in beforeAll.
+const TRUSTED_ORIGIN = "https://app.test.local";
 const MEMBER_EMAIL = "member@notes.test";
 const NONMEMBER_EMAIL = "nonmember@notes.test";
 
@@ -94,7 +98,7 @@ describeDb("university notes endpoints (integration)", () => {
 
   beforeAll(async () => {
     process.env.PORTAL_SESSION_SECRET = PORTAL_SECRET;
-    process.env.PORTAL_BASE_URL = "https://app.test.local";
+    process.env.PORTAL_BASE_URL = TRUSTED_ORIGIN;
     process.env.NODE_ENV = "development"; // skip Secure cookie attribute
     process.env.PORTAL_COOKIE_DOMAIN = "";
 
@@ -164,12 +168,14 @@ describeDb("university notes endpoints (integration)", () => {
 
     const post = await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "x" });
     expect(post.status).toBe(403);
 
     const del = await request(app)
       .delete("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway" });
     expect(del.status).toBe(403);
@@ -182,12 +188,14 @@ describeDb("university notes endpoints (integration)", () => {
   it("400 on missing lessonSlug or noteKey", async () => {
     const noLesson = await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ noteKey: "takeaway", body: "x" });
     expect(noLesson.status).toBe(400);
 
     const noKey = await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", body: "x" });
     expect(noKey.status).toBe(400);
@@ -196,6 +204,7 @@ describeDb("university notes endpoints (integration)", () => {
   it("POST saves a note and returns it", async () => {
     const res = await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({
         lessonSlug: "coherence-101",
@@ -218,6 +227,7 @@ describeDb("university notes endpoints (integration)", () => {
   it("SAME (lesson, noteKey) re-POST is idempotent: no duplicate row, body updated", async () => {
     const first = await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "first" });
     expect(first.status).toBe(200);
@@ -225,6 +235,7 @@ describeDb("university notes endpoints (integration)", () => {
 
     const second = await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "second" });
     expect(second.status).toBe(200);
@@ -242,14 +253,17 @@ describeDb("university notes endpoints (integration)", () => {
   it("GET returns the member's notes, newest first, and filters by lesson", async () => {
     await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "a" });
     await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "question", body: "b" });
     await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-102", noteKey: "takeaway", body: "c" });
 
@@ -280,11 +294,13 @@ describeDb("university notes endpoints (integration)", () => {
   it("DELETE removes a note", async () => {
     await request(app)
       .post("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "a" });
 
     const del = await request(app)
       .delete("/api/portal/university/notes")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway" });
     expect(del.status).toBe(200);
