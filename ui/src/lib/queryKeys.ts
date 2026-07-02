@@ -156,6 +156,10 @@ export const queryKeys = {
     leads: (filters: Record<string, unknown>) =>
       ["creditscore-review", "leads", filters] as const,
   },
+  universityEmails: {
+    stats: (filters: Record<string, unknown>) =>
+      ["university-emails", "stats", filters] as const,
+  },
   apiRoutes: ["api-routes"] as const,
   plugins: {
     all: ["plugins"] as const,
