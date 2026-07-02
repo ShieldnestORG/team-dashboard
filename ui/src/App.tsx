@@ -58,6 +58,7 @@ import { IntelPricing } from "./pages/IntelPricing";
 import { IntelBillingSuccess } from "./pages/IntelBillingSuccess";
 import { IntelBilling } from "./pages/IntelBilling";
 import { WatchtowerAdmin } from "./pages/WatchtowerAdmin";
+import { UniversityAdmin } from "./pages/UniversityAdmin";
 import { UniversityAgentsAdmin } from "./pages/UniversityAgentsAdmin";
 import { SessionsAdmin } from "./pages/SessionsAdmin";
 import { DirectoryPricing } from "./pages/DirectoryPricing";
@@ -290,6 +291,7 @@ function boardRoutes() {
       <Route path="intel/:tab" element={<Intel />} />
       <Route path="intel-billing" element={<IntelBilling />} />
       <Route path="watchtower" element={<WatchtowerAdmin />} />
+      <Route path="university" element={<UniversityAdmin />} />
       <Route path="community-agents" element={<UniversityAgentsAdmin />} />
       <Route path="sessions" element={<SessionsAdmin />} />
       <Route path="knowledge-graph" element={<KnowledgeGraph />} />
