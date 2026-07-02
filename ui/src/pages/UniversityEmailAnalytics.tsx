@@ -70,11 +70,17 @@ function fmtRate(rate: number, delivered: number): string {
   return `${(rate * 100).toFixed(1)}%`;
 }
 
-function hasEngagement(k: UniversityEmailKindStats): boolean {
-  return (
-    k.delivered > 0 || k.opened > 0 || k.clicked > 0 || k.bounced > 0 || k.unsubscribed > 0
-  );
-}
+// The only kinds that write to university_email_log (logUniversityEmail in
+// server/src/services/university-crons.ts). Every other kind never logs sends,
+// so its Sent cell renders — instead of a misleading 0. Counting on engagement
+// events instead would misfire: window-filtered sends can be 0 while events
+// land in-window, and spam/blocked-only rows have zero surfaced counters.
+const SEND_LOGGING_KINDS = new Set<string>([
+  "university_reengage_d7",
+  "university_reengage_d14",
+  "university_reengage_d30",
+  "university_streak_nudge",
+]);
 
 // ---------------------------------------------------------------------------
 // Summary tiles
@@ -217,10 +223,10 @@ function CampaignTable({ kinds }: { kinds: UniversityEmailKindStats[] }) {
                         </div>
                       </td>
                       <td className="px-2 py-2 text-right tabular-nums hidden md:table-cell">
-                        {k.sent === 0 && hasEngagement(k) ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : (
+                        {SEND_LOGGING_KINDS.has(k.kind) ? (
                           k.sent.toLocaleString()
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-2 py-2 text-right tabular-nums">
@@ -347,7 +353,11 @@ export function UniversityEmailAnalytics() {
           <CardContent>
             <EmptyState
               icon={Mail}
-              message="No email events yet — data accumulates as campaigns send."
+              message={
+                dateRange === "all"
+                  ? "No email events yet — data accumulates as campaigns send."
+                  : "No email events in this range — try a wider range or All time."
+              }
             />
           </CardContent>
         </Card>
