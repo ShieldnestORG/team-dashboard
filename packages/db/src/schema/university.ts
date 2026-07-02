@@ -615,6 +615,29 @@ export const universityVoiceReservations = pgTable(
   }),
 );
 
+export const universityEmailLog = pgTable(
+  "university_email_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Lowercased recipient — the durable join key, matching the rest of University.
+    email: text("email").notNull(),
+    // The CreditscoreEmailKind that was sent (e.g. 'university_streak_nudge').
+    kind: text("kind").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // Frequency-cap / dedup lookups: "was (email, kind) sent since <cutoff>?".
+    // sent_at DESC so the most-recent send is the leading row per (email, kind).
+    emailKindSentIdx: index("university_email_log_email_kind_sent_idx").on(
+      table.email,
+      table.kind,
+      table.sentAt.desc(),
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -650,3 +673,5 @@ export type UniversityVoiceReservation =
   typeof universityVoiceReservations.$inferSelect;
 export type NewUniversityVoiceReservation =
   typeof universityVoiceReservations.$inferInsert;
+export type UniversityEmailLog = typeof universityEmailLog.$inferSelect;
+export type NewUniversityEmailLog = typeof universityEmailLog.$inferInsert;

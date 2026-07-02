@@ -37,6 +37,14 @@ export type CreditscoreEmailKind =
   | "university_onboarding_d1"
   | "university_onboarding_d3"
   | "university_winback"
+  // Re-engagement check-in series for ACTIVE members gone quiet. Fired by the
+  // university:reengage cron when a member's last activity (max rep-day, or join
+  // date if they never repped) is EXACTLY 7 / 14 / 30 UTC-days ago. payload data
+  // { firstName?, daysAway }. Commercial-classed storefront-side (suppression +
+  // unsubscribe). Templates live storefront-side (owner-gated).
+  | "university_reengage_d7"
+  | "university_reengage_d14"
+  | "university_reengage_d30"
   // Streak nudge ("you're about to break your streak"). Fired by the
   // university:streak-nudge cron to active members who repped yesterday but not
   // yet today. Commercial-classed storefront-side (suppression + unsubscribe).
