@@ -18,6 +18,7 @@ import { generateContentStrategy } from "../services/youtube/content-strategy.js
 import { getTTSProviderStatus } from "../services/youtube/tts.js";
 import { getBackendSummary } from "../services/visual-backends/index.js";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 const VIDEO_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "videos");
 const ASSETS_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "assets");
@@ -26,6 +27,17 @@ const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
 export function youtubeRoutes(db: Db): Router {
   const router = Router();
+
+  // Admin-only: board-session operators only. Fail-closed — an anonymous
+  // (actor.type='none') request is rejected with 401 before any handler runs.
+  router.use(logAdminAccess(db));
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
 
   // ── Pipeline ─────────────────────────────────────────────────
 

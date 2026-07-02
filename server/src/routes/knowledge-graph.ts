@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { knowledgeTags } from "@paperclipai/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { graphQueryService } from "../services/graph-query.js";
 import { relationshipExtractorService } from "../services/relationship-extractor.js";
 
@@ -199,14 +199,23 @@ export function knowledgeGraphRoutes(db: Db) {
       const id = Number(req.params.id as string);
       const { confidence, verified } = req.body as { confidence?: number; verified?: boolean };
 
-      const sets: string[] = [];
-      if (confidence != null) sets.push(`confidence = ${confidence}`);
-      if (verified != null) sets.push(`verified = ${verified}`);
+      // SECURITY: bind values as parameters — never interpolate request input into
+      // raw SQL. confidence/verified are coerced + validated so the tagged-template
+      // driver parameterizes them (no sql.raw of user data).
+      const sets: SQL[] = [];
+      if (confidence != null) {
+        const c = Number(confidence);
+        if (!Number.isFinite(c)) { res.status(400).json({ error: "confidence must be a number" }); return; }
+        sets.push(sql`confidence = ${c}`);
+      }
+      if (verified != null) {
+        sets.push(sql`verified = ${Boolean(verified)}`);
+      }
       if (sets.length === 0) { res.status(400).json({ error: "Nothing to update" }); return; }
 
       await db.execute(sql`
         UPDATE company_relationships
-        SET ${sql.raw(sets.join(", "))}, updated_at = NOW()
+        SET ${sql.join(sets, sql`, `)}, updated_at = NOW()
         WHERE id = ${id}
       `);
       res.json({ ok: true });

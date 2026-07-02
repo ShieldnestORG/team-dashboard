@@ -164,6 +164,7 @@ import { portalRoutes } from "./routes/portal.js";
 import { portalAgentsRoutes } from "./routes/portal-agents.js";
 import { portalUpsellRoutes } from "./routes/portal-upsell.js";
 import { universityReferralRoutes } from "./routes/university-referrals.js";
+import { portalCsrfGuard } from "./middleware/portal-csrf.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
@@ -448,6 +449,11 @@ export async function createApp(
   // Mounted at the app level (not behind /api/{boardMutationGuard}) so the
   // public storefront can hit /api/portal/auth and /api/portal/login without
   // tripping the board-CSRF origin check.
+  // Anti-CSRF Origin/Referer guard for ALL cookie-authed /api/portal* routers
+  // (portal, portal/agents, portal-upsell, university-referrals). Mounted on the
+  // shared prefix so every state-changing portal endpoint is covered in one place;
+  // skips safe methods so the public storefront's GET /api/portal/auth still works.
+  app.use("/api/portal", portalCsrfGuard());
   app.use("/api/portal", portalRoutes(db));
   // 100 Agents customer feed + approval queue — mounted under /api/portal/agents.
   app.use("/api/portal/agents", portalAgentsRoutes(db));

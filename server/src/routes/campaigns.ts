@@ -1,5 +1,7 @@
 // ---------------------------------------------------------------------------
-// Campaigns API Routes (authenticated)
+// Campaigns API Routes
+// Fail-closed authorization: every handler requires board access
+// (assertBoard) and scopes companyId to the actor (assertCompanyAccess).
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
@@ -8,6 +10,8 @@ import { randomUUID } from "crypto";
 import type { Db } from "@paperclipai/db";
 import { campaigns, contentItems } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { assertBoard, assertCompanyAccess } from "./authz.js";
+import { HttpError } from "../errors.js";
 
 const COMPANY_ID =
   process.env.TEAM_DASHBOARD_COMPANY_ID ||
@@ -19,9 +23,11 @@ export function campaignRoutes(db: Db): Router {
   // ── GET / — List campaigns ──────────────────────────────────────
   router.get("/", async (req, res) => {
     try {
+      assertBoard(req);
       const brand = req.query.brand as string | undefined;
       const status = req.query.status as string | undefined;
       const companyId = (req.query.companyId as string | undefined) || COMPANY_ID;
+      assertCompanyAccess(req, companyId);
 
       const conditions = [eq(campaigns.companyId, companyId)];
       if (brand) conditions.push(eq(campaigns.brand, brand));
@@ -66,6 +72,7 @@ export function campaignRoutes(db: Db): Router {
 
       res.json({ campaigns: result });
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       logger.error({ err }, "Failed to list campaigns");
       res.status(500).json({ error: "Failed to list campaigns" });
     }
@@ -74,6 +81,7 @@ export function campaignRoutes(db: Db): Router {
   // ── POST / — Create campaign ────────────────────────────────────
   router.post("/", async (req, res) => {
     try {
+      assertBoard(req);
       const body = req.body as {
         name: string;
         brand?: string;
@@ -92,6 +100,7 @@ export function campaignRoutes(db: Db): Router {
       }
 
       const companyId = body.companyId || COMPANY_ID;
+      assertCompanyAccess(req, companyId);
 
       const [campaign] = await db
         .insert(campaigns)
@@ -111,6 +120,7 @@ export function campaignRoutes(db: Db): Router {
 
       res.status(201).json({ campaign });
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       logger.error({ err }, "Failed to create campaign");
       res.status(500).json({ error: "Failed to create campaign" });
     }
@@ -119,6 +129,7 @@ export function campaignRoutes(db: Db): Router {
   // ── GET /:id — Get single campaign ─────────────────────────────
   router.get("/:id", async (req, res) => {
     try {
+      assertBoard(req);
       const id = req.params.id as string;
 
       const [campaign] = await db
@@ -131,9 +142,11 @@ export function campaignRoutes(db: Db): Router {
         res.status(404).json({ error: "Campaign not found" });
         return;
       }
+      assertCompanyAccess(req, campaign.companyId);
 
       res.json({ campaign });
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       logger.error({ err }, "Failed to get campaign");
       res.status(500).json({ error: "Failed to get campaign" });
     }
@@ -142,7 +155,21 @@ export function campaignRoutes(db: Db): Router {
   // ── PATCH /:id — Update campaign ───────────────────────────────
   router.patch("/:id", async (req, res) => {
     try {
+      assertBoard(req);
       const id = req.params.id as string;
+
+      const [existing] = await db
+        .select({ companyId: campaigns.companyId })
+        .from(campaigns)
+        .where(eq(campaigns.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Campaign not found" });
+        return;
+      }
+      assertCompanyAccess(req, existing.companyId);
+
       const body = req.body as Partial<{
         name: string;
         brand: string;
@@ -179,6 +206,7 @@ export function campaignRoutes(db: Db): Router {
 
       res.json({ campaign });
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       logger.error({ err }, "Failed to update campaign");
       res.status(500).json({ error: "Failed to update campaign" });
     }
@@ -187,7 +215,20 @@ export function campaignRoutes(db: Db): Router {
   // ── DELETE /:id — Delete campaign ──────────────────────────────
   router.delete("/:id", async (req, res) => {
     try {
+      assertBoard(req);
       const id = req.params.id as string;
+
+      const [existing] = await db
+        .select({ companyId: campaigns.companyId })
+        .from(campaigns)
+        .where(eq(campaigns.id, id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Campaign not found" });
+        return;
+      }
+      assertCompanyAccess(req, existing.companyId);
 
       const [deleted] = await db
         .delete(campaigns)
@@ -201,6 +242,7 @@ export function campaignRoutes(db: Db): Router {
 
       res.status(204).end();
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       logger.error({ err }, "Failed to delete campaign");
       res.status(500).json({ error: "Failed to delete campaign" });
     }
@@ -209,11 +251,12 @@ export function campaignRoutes(db: Db): Router {
   // ── GET /:id/content — Content items for a campaign ─────────────
   router.get("/:id/content", async (req, res) => {
     try {
+      assertBoard(req);
       const id = req.params.id as string;
 
       // Verify campaign exists
       const [campaign] = await db
-        .select({ id: campaigns.id })
+        .select({ id: campaigns.id, companyId: campaigns.companyId })
         .from(campaigns)
         .where(eq(campaigns.id, id))
         .limit(1);
@@ -222,6 +265,7 @@ export function campaignRoutes(db: Db): Router {
         res.status(404).json({ error: "Campaign not found" });
         return;
       }
+      assertCompanyAccess(req, campaign.companyId);
 
       const items = await db
         .select({
@@ -243,6 +287,7 @@ export function campaignRoutes(db: Db): Router {
 
       res.json({ items });
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       logger.error({ err }, "Failed to get campaign content");
       res.status(500).json({ error: "Failed to get campaign content" });
     }

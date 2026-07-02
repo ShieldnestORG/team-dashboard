@@ -20,6 +20,7 @@ import {
   assertInputDirSafe,
 } from "../services/video-edit/index.js";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
@@ -34,6 +35,17 @@ function freeSpaceBytes(path: string): number | null {
 
 export function videoEditRoutes(db: Db): Router {
   const router = Router();
+
+  // Admin-only: board-session operators only. Fail-closed — an anonymous
+  // (actor.type='none') request is rejected with 401 before any handler runs.
+  router.use(logAdminAccess(db));
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
 
   // Rich status — what the UI / monitoring needs to see at a glance
   router.get("/config", async (_req, res) => {

@@ -10,11 +10,23 @@ import { getAutoReplyService, type AutoReplyGlobalSettings } from "../services/a
 import { XApiClient } from "../services/x-api/client.js";
 import { getDailyBudget } from "../services/x-api/rate-limiter.js";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 export function autoReplyRoutes(db: Db) {
   const router = Router();
+
+  // Admin-only: board-session operators only. Fail-closed — an anonymous
+  // (actor.type='none') request is rejected with 401 before any handler runs.
+  router.use(logAdminAccess(db));
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
 
   // ── Settings ─────────────────────────────────────────────────────
 

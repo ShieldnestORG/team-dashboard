@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { getCronStatus, triggerCronJob } from "../services/cron-registry.js";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 interface RecentScrapeRow extends Record<string, unknown> {
   id: number;
@@ -31,6 +32,17 @@ interface CountRow extends Record<string, unknown> {
 export function firecrawlAdminRoutes(_db: Db) {
   const db = _db;
   const router = Router();
+
+  // Admin-only: board-session operators only. Fail-closed — an anonymous
+  // (actor.type='none') request is rejected with 401 before any handler runs.
+  router.use(logAdminAccess(db));
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
 
   // -------------------------------------------------------------------------
   // GET /overview — aggregated snapshot for the Activity tab

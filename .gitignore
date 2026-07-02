@@ -2,6 +2,10 @@ node_modules/
 dist/
 .env
 .env.production
+# Never commit real env files or their backups (secrets). Only .env.example is tracked.
+.env.*
+.env.bak*
+!.env.example
 *.tsbuildinfo
 drizzle/meta/
 .vite/

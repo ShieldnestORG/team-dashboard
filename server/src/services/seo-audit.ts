@@ -15,6 +15,7 @@ import {
   type SeoChecklist,
 } from "./partner-seo-checklist.js";
 import { logger } from "../middleware/logger.js";
+import { safeFetch, SsrfError } from "../lib/ssrf-guard.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,10 +113,13 @@ async function head(url: string, timeoutMs = 6000): Promise<number | null> {
   try {
     const ac = new AbortController();
     const to = setTimeout(() => ac.abort(), timeoutMs);
-    const res = await fetch(url, { method: "HEAD", signal: ac.signal, redirect: "follow" });
+    // safeFetch validates the URL + every redirect hop against the SSRF guard.
+    const res = await safeFetch(url, { method: "HEAD", signal: ac.signal });
     clearTimeout(to);
     return res.status;
   } catch {
+    // SsrfError (private/reserved target) and network/timeout errors both land
+    // here — a blocked or unreachable HEAD is treated the same: unresolved.
     return null;
   }
 }
@@ -160,7 +164,8 @@ export async function auditUrl(url: string): Promise<SeoAuditResult> {
 
   let html = "";
   try {
-    const res = await fetch(url, { redirect: "follow" });
+    // safeFetch validates the URL + every redirect hop against the SSRF guard.
+    const res = await safeFetch(url, {});
     baseResult.httpStatus = res.status;
     if (!res.ok) {
       baseResult.error = `HTTP ${res.status}`;
@@ -168,6 +173,10 @@ export async function auditUrl(url: string): Promise<SeoAuditResult> {
     }
     html = await res.text();
   } catch (err) {
+    if (err instanceof SsrfError) {
+      baseResult.error = "Blocked: URL is not a public http(s) address";
+      return baseResult;
+    }
     baseResult.error = err instanceof Error ? err.message : String(err);
     return baseResult;
   }

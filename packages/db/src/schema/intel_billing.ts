@@ -55,6 +55,11 @@ export const intelApiKeys = pgTable(
     keyPrefix: text("key_prefix").notNull(),
     keyHash: text("key_hash").notNull().unique(),
     name: text("name").notNull().default("default"),
+    // The Stripe checkout session that minted this key. UNIQUE (NULLs ignored)
+    // so a re-delivered `checkout.session.completed` cannot mint a second key
+    // for the same purchase — see provisionFromCheckout's existing-provision
+    // check. Nullable: keys minted before migration 0144 have no session id.
+    stripeCheckoutSessionId: text("stripe_checkout_session_id").unique(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

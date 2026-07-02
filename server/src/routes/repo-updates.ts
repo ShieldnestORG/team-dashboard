@@ -11,15 +11,34 @@ import { desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { repoUpdateSuggestions } from "@paperclipai/db";
 import { auditUrl } from "../services/seo-audit.js";
+import { assertPublicHttpUrl, SsrfError } from "../lib/ssrf-guard.js";
 import { persistAuditFailures } from "../services/repo-update-advisor.js";
 import {
   draftPrForSuggestion,
   parsePrFromAdminResponse,
 } from "../services/repo-update-pr-worker.js";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 export function repoUpdateRoutes(db: Db) {
   const router = Router();
+
+  // Admin-access audit log. Mounted FIRST so unauth probes are recorded too —
+  // the board-only guard below short-circuits with 401, but the
+  // res.on('finish') hook still fires and records actor_type='none'.
+  router.use(logAdminAccess(db));
+
+  // Board-only. This route group is an admin/board operator surface (the UI
+  // mounts it in the board sidebar); it lists repo suggestions and can trigger
+  // an ad-hoc audit fetch. Prod auth fails OPEN (anon → actor.type='none'
+  // proceeds), so gate explicitly here — mirror system-crons.ts.
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
 
   // GET /repo-updates — list suggestions, newest first; optional ?status=pending
   router.get("/", async (req, res) => {
@@ -155,6 +174,19 @@ export function repoUpdateRoutes(db: Db) {
       if (!url) {
         res.status(400).json({ error: "url is required" });
         return;
+      }
+      // SSRF guard: reject non-http(s) schemes and hosts that resolve to
+      // private/reserved ranges before any fetch happens. auditUrl's internal
+      // fetches are also guarded (seo-audit.ts uses safeFetch), but validating
+      // here gives the operator a clean 400 instead of a soft error result.
+      try {
+        await assertPublicHttpUrl(url);
+      } catch (guardErr) {
+        if (guardErr instanceof SsrfError) {
+          res.status(400).json({ error: "URL is not a public http(s) address" });
+          return;
+        }
+        throw guardErr;
       }
       const audit = await auditUrl(url);
       const runId = `adhoc-${Date.now()}`;

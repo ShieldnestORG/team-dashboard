@@ -8,6 +8,7 @@ import { randomUUID } from "crypto";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerClicks, affiliates } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { assertBoard } from "./authz.js";
 import { runPartnerOnboarding, prefillPartnerFromWebsite } from "../services/partner-onboarding.js";
 import { createCheckoutSession } from "../services/stripe-checkout.js";
 import { stripeConfigured } from "../services/stripe-client.js";
@@ -22,6 +23,20 @@ function slugify(name: string): string {
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
+}
+
+// Reject non-http(s) URL schemes (e.g. javascript:, data:) on publicly-served
+// fields like logoUrl/website. Returns true when the value is absent (nothing
+// to validate) or a valid http/https URL; false otherwise.
+function isSafeHttpUrl(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return true;
+  if (typeof value !== "string") return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export function partnerRoutes(db: Db): Router {
@@ -297,6 +312,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── POST / — Create partner ─────────────────────────────────────
   router.post("/", async (req, res) => {
+    assertBoard(req);
     try {
       const body = req.body as {
         name: string;
@@ -324,6 +340,14 @@ export function partnerRoutes(db: Db): Router {
 
       if (!body.name || !body.industry) {
         res.status(400).json({ error: "name and industry are required" });
+        return;
+      }
+      if (!isSafeHttpUrl(body.website)) {
+        res.status(400).json({ error: "website must be a valid http(s) URL" });
+        return;
+      }
+      if (!isSafeHttpUrl(body.logoUrl)) {
+        res.status(400).json({ error: "logoUrl must be a valid http(s) URL" });
         return;
       }
 
@@ -374,9 +398,19 @@ export function partnerRoutes(db: Db): Router {
 
   // ── PUT /:slug — Update partner ─────────────────────────────────
   router.put("/:slug", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
       const body = req.body as Record<string, unknown>;
+
+      if ("website" in body && !isSafeHttpUrl(body.website)) {
+        res.status(400).json({ error: "website must be a valid http(s) URL" });
+        return;
+      }
+      if ("logoUrl" in body && !isSafeHttpUrl(body.logoUrl)) {
+        res.status(400).json({ error: "logoUrl must be a valid http(s) URL" });
+        return;
+      }
 
       // Fetch current partner to detect website changes
       const [current] = await db
@@ -426,6 +460,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── POST /:slug/send-welcome — Email partner their dashboard link ─
   router.post("/:slug/send-welcome", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
       const [partner] = await db
@@ -462,6 +497,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── POST /:slug/onboard — Manually trigger onboarding ──────────
   router.post("/:slug/onboard", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
 
@@ -500,6 +536,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── POST /:slug/checkout — Create Stripe Checkout for partner billing ───────
   router.post("/:slug/checkout", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
 
@@ -584,6 +621,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── DELETE /:slug — Delete partner ──────────────────────────────
   router.delete("/:slug", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
       const result = await db

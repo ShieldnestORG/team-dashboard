@@ -6,6 +6,7 @@ import { creditscoreAuditRuns } from "@paperclipai/db";
 
 import { logger } from "../middleware/logger.js";
 import { crawleeFallbackEnabled, crawleeScrape } from "../services/crawlee-fallback.js";
+import { assertPublicHttpUrl, safeFetch, SsrfError } from "../lib/ssrf-guard.js";
 
 const FIRECRAWL_URL =
   process.env.FIRECRAWL_URL || "https://firecrawl.coherencedaddy.com";
@@ -128,10 +129,9 @@ export type AuditResult = {
 
 // ── URL validation ────────────────────────────────────────────────────────────
 
-const PRIVATE_IP_RE =
-  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1|fd[0-9a-f]{2}:)/i;
-
-function validateAuditUrl(raw: string): { ok: true; url: string } | { ok: false; error: string } {
+async function validateAuditUrl(
+  raw: string,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   let parsed: URL;
   try {
     parsed = new URL(raw.trim());
@@ -141,8 +141,17 @@ function validateAuditUrl(raw: string): { ok: true; url: string } | { ok: false;
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return { ok: false, error: "URL must start with http:// or https://" };
   }
-  if (PRIVATE_IP_RE.test(parsed.hostname)) {
-    return { ok: false, error: "Private/localhost URLs are not allowed" };
+  // Authoritative SSRF check: resolves the hostname via DNS and rejects if any
+  // resolved IP is loopback/private/link-local/CGNAT/unique-local/etc. Defeats
+  // DNS-rebinding at check time and catches ranges the regex above misses
+  // (IPv4-mapped IPv6, 0.0.0.0, 169.254/16, 100.64/10).
+  try {
+    await assertPublicHttpUrl(parsed.toString());
+  } catch (err) {
+    if (err instanceof SsrfError) {
+      return { ok: false, error: "Private/localhost URLs are not allowed" };
+    }
+    throw err;
   }
   return { ok: true, url: parsed.toString() };
 }
@@ -292,6 +301,13 @@ async function scrapeFallbackOrThrow(
   primaryError: FirecrawlError,
 ): Promise<{ markdown: string; links: string[]; metadata: Record<string, unknown> }> {
   if (!crawleeFallbackEnabled()) throw primaryError;
+  // Route the URL through the SSRF guard before handing it to the headless
+  // browser — this URL may be a mapped/derived link, not the vetted job URL.
+  try {
+    await assertPublicHttpUrl(url);
+  } catch {
+    throw primaryError;
+  }
   const fallback = await crawleeScrape(url);
   if (!fallback) throw primaryError;
   logger.info({ url, via: "crawlee" }, "audit: Crawlee fallback succeeded after Firecrawl failure");
@@ -368,8 +384,9 @@ async function fcSearch(
 // surfaces that contradiction.
 //
 // Design constraints (see contract risks):
-//  - SSRF-safe: re-validate the hostname against PRIVATE_IP_RE before fetching,
-//    even though the job URL was already vetted by validateAuditUrl upstream.
+//  - SSRF-safe: re-validate the URL via assertPublicHttpUrl (DNS-resolving)
+//    before fetching, even though the job URL was already vetted by
+//    validateAuditUrl upstream. Probes use redirect:"manual" and never follow.
 //  - Bounded latency: all probes run in parallel via Promise.allSettled with a
 //    short per-fetch AbortSignal timeout, so a hung site adds at most one
 //    timeout window to the audit (not 4×).
@@ -505,11 +522,10 @@ async function runLiveCrawlerCheck(
   robotsBlockedFor: (name: LiveBotAccess["name"]) => boolean,
 ): Promise<LiveAccessResult | null> {
   // Defense-in-depth: the job URL was vetted by validateAuditUrl, but re-check
-  // here so this helper is safe in isolation.
+  // here (with the DNS-resolving guard) so this helper is safe in isolation and
+  // resistant to DNS-rebinding between the initial validation and this probe.
   try {
-    const parsed = new URL(url);
-    if (PRIVATE_IP_RE.test(parsed.hostname)) return null;
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    await assertPublicHttpUrl(url);
   } catch {
     return null;
   }
@@ -555,7 +571,9 @@ export async function runAudit(
   emit({ type: "step", label: `Connecting to ${domain}...` });
   let robotsText = "";
   try {
-    const robotsRes = await fetch(`${parsed.protocol}//${domain}/robots.txt`, {
+    // safeFetch validates the target + any redirect hop against the SSRF guard;
+    // robots.txt is a derived origin path and redirects could point inward.
+    const robotsRes = await safeFetch(`${parsed.protocol}//${domain}/robots.txt`, {
       signal: AbortSignal.timeout(10_000),
     });
     if (robotsRes.ok) {
@@ -1206,11 +1224,11 @@ export function auditRoutes(db?: Db): Router {
     }
   });
 
-  router.post("/audit", (req, res) => {
-    const clientIp =
-      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ??
-      req.socket.remoteAddress ??
-      "unknown";
+  router.post("/audit", async (req, res) => {
+    // req.ip honors the configured trust-proxy setting; the raw
+    // x-forwarded-for header is attacker-controlled and must not key the
+    // rate limiter. Mirrors the clientIp fix applied elsewhere.
+    const clientIp = req.ip ?? req.socket.remoteAddress ?? "unknown";
 
     if (!checkAuditRateLimit(clientIp)) {
       res.status(429).json({ error: "Rate limit exceeded. Maximum 3 audits per IP per 24 hours." });
@@ -1223,7 +1241,7 @@ export function auditRoutes(db?: Db): Router {
       return;
     }
 
-    const validation = validateAuditUrl(url);
+    const validation = await validateAuditUrl(url);
     if (!validation.ok) {
       res.status(400).json({ error: validation.error });
       return;
@@ -1273,10 +1291,8 @@ export function auditRoutes(db?: Db): Router {
     // Falling back gracefully if `db` wasn't injected keeps the route
     // testable in isolation.
     const startedAt = Date.now();
-    const clientIp =
-      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ??
-      req.socket.remoteAddress ??
-      null;
+    // req.ip honors trust-proxy; the raw x-forwarded-for header is spoofable.
+    const clientIp = req.ip ?? req.socket.remoteAddress ?? null;
     let auditRunId: string | null = null;
     let pagesMapped: number | null = null;
     let lastEventWritten: "complete" | "error" | null = null;

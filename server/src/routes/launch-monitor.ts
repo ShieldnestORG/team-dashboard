@@ -9,6 +9,7 @@ import { Router } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { commentReplies, launchTrackedItems } from "@paperclipai/db";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
@@ -16,6 +17,18 @@ const ALLOWED_PLATFORMS = new Set(["hn", "reddit", "devto"]);
 
 export function launchMonitorRoutes(db: Db) {
   const router = Router();
+
+  // Admin-only: board-session operators only. Fail-closed — an anonymous
+  // (actor.type='none') request is rejected with 401 before any handler runs.
+  // Header already documents "No public access" — this enforces it.
+  router.use(logAdminAccess(db));
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
 
   // ----- Comments queue -----
   router.get("/comments", async (req, res) => {

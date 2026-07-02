@@ -19,6 +19,7 @@ import {
   universityStripeKey,
 } from "../services/stripe-client.js";
 import { logger } from "../middleware/logger.js";
+import { portalCsrfGuard } from "../middleware/portal-csrf.js";
 import {
   adminImpersonationService,
   ADMIN_IMPERSONATION_COOKIE,
@@ -579,6 +580,14 @@ function serializeAdminSession(row: {
 
 export function portalRoutes(db: Db): Router {
   const router = Router();
+
+  // Anti-CSRF: portal auth is cookie-based (SameSite=Lax + wildcard
+  // .coherencedaddy.com Domain), which gives no protection against a same-site
+  // foothold on any *.coherencedaddy.com subdomain. Enforce an Origin/Referer
+  // allowlist on all unsafe methods (skips GET/HEAD/OPTIONS). Covers login,
+  // /auth session issuance, and every state-changing portal endpoint.
+  router.use(portalCsrfGuard());
+
   const svc = customerPortalService(db);
   const sessionsSvc = universitySessionsService(db);
   const voiceSvc = voiceBudgetService(db);

@@ -71,7 +71,7 @@ export function portalBaseUrl(): string {
   return process.env.PORTAL_BASE_URL?.trim() || "https://app.coherencedaddy.com";
 }
 
-function portalApiBaseUrl(): string {
+export function portalApiBaseUrl(): string {
   return (
     process.env.PAPERCLIP_PUBLIC_URL?.trim() || "https://api.coherencedaddy.com"
   );

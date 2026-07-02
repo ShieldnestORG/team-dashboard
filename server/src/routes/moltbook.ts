@@ -6,9 +6,21 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { sql } from "drizzle-orm";
 import { getStats, ingestFeed, generatePost, engageFeed, trackPerformance } from "../services/moltbook-engine.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 
 export function moltbookRoutes(db: Db): Router {
   const router = Router();
+
+  // Admin-only: board-session operators only. Fail-closed — an anonymous
+  // (actor.type='none') request is rejected with 401 before any handler runs.
+  router.use(logAdminAccess(db));
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "Admin only" });
+      return;
+    }
+    next();
+  });
 
   // GET /api/moltbook/stats — current stats and status
   router.get("/stats", async (_req, res) => {

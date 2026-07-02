@@ -200,7 +200,7 @@ export function intelBillingService(db: Db) {
     customer_email?: string;
     subscription?: string;
     metadata?: Record<string, string>;
-  }): Promise<{ apiKeyId: string; rawKey: string } | null> {
+  }): Promise<{ apiKeyId: string; rawKey: string | null } | null> {
     const email = session.customer_email || session.metadata?.email;
     const planSlug = session.metadata?.plan_slug;
     if (!email || !planSlug) {
@@ -275,12 +275,61 @@ export function intelBillingService(db: Db) {
       customerId = inserted[0].id;
     }
 
+    // Idempotency: one API key (and one welcome email) per checkout session.
+    // Stripe re-delivers webhooks, and a replayed valid signed event passes the
+    // signature check, so without this guard every delivery would mint a new
+    // live key and email its raw value. Keyed on the Stripe checkout session id
+    // (UNIQUE on intel_api_keys.stripe_checkout_session_id — migration 0142).
+    // Select-existing-first mirrors university-referrals' applyCreditForPayer
+    // style; the UNIQUE index is the concurrent-replay backstop.
+    const alreadyProvisioned = await db
+      .select({ id: intelApiKeys.id })
+      .from(intelApiKeys)
+      .where(eq(intelApiKeys.stripeCheckoutSessionId, session.id))
+      .limit(1);
+    if (alreadyProvisioned[0]) {
+      logger.info(
+        { sessionId: session.id },
+        "intel-billing: checkout already provisioned — skipping key mint + email (replay)",
+      );
+      // We never persist the raw key, so a replay cannot re-surface it. Return
+      // the existing key id with no raw key; the customer upsert above stays
+      // correct (idempotent on the unique email).
+      return { apiKeyId: alreadyProvisioned[0].id, rawKey: null };
+    }
+
     // Generate and store an API key.
     const { raw, prefix, hash } = generateApiKey();
-    const inserted = await db
-      .insert(intelApiKeys)
-      .values({ customerId, keyPrefix: prefix, keyHash: hash, name: "default" })
-      .returning({ id: intelApiKeys.id });
+    let inserted: Array<{ id: string }>;
+    try {
+      inserted = await db
+        .insert(intelApiKeys)
+        .values({
+          customerId,
+          keyPrefix: prefix,
+          keyHash: hash,
+          name: "default",
+          stripeCheckoutSessionId: session.id,
+        })
+        .returning({ id: intelApiKeys.id });
+    } catch (err) {
+      // Lost the race with a concurrent delivery of the same session: the
+      // UNIQUE(stripe_checkout_session_id) rejected this insert. The other
+      // delivery already minted + emailed, so bail without a duplicate email.
+      const existing = await db
+        .select({ id: intelApiKeys.id })
+        .from(intelApiKeys)
+        .where(eq(intelApiKeys.stripeCheckoutSessionId, session.id))
+        .limit(1);
+      if (existing[0]) {
+        logger.info(
+          { sessionId: session.id },
+          "intel-billing: concurrent checkout provision — key already minted, skipping email",
+        );
+        return { apiKeyId: existing[0].id, rawKey: null };
+      }
+      throw err;
+    }
 
     await sendWelcomeEmail(email, raw, plan.name);
 
