@@ -202,6 +202,7 @@ export {
   universityCreditLedger,
   universityVoiceMeter,
   universityVoiceReservations,
+  universityEmailLog,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -228,6 +229,8 @@ export type {
   NewUniversityVoiceMeter,
   UniversityVoiceReservation,
   NewUniversityVoiceReservation,
+  UniversityEmailLog,
+  NewUniversityEmailLog,
 } from "./university.js";
 export {
   universityCommunityPosts,

@@ -6,7 +6,10 @@
 //   - university:onboarding-d3  — active members ~3 days post-join
 //   - university:winback        — cancelled members ~14 days after cancelling
 //   - university:streak-nudge   — active members whose live streak is at risk
-//                                 today (repped yesterday, not yet today)
+//                                 today (repped yesterday, not yet today).
+//                                 Capped to once per 7 days per member.
+//   - university:reengage       — active members gone quiet: last activity was
+//                                 EXACTLY 7 / 14 / 30 UTC-days ago
 //
 // Most jobs select on joined_at/status (and, for winback, the updated_at
 // timestamp the cancel handlers stamp) using a 1-DAY WINDOW so a daily cron hits
@@ -23,13 +26,14 @@
 // cron-registry (cron-registry.ts); started from app.ts:startUniversityCrons.
 // ---------------------------------------------------------------------------
 
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   universityMembers,
   universityProgress,
   universitySessions,
   universitySessionRsvps,
+  universityEmailLog,
 } from "@paperclipai/db";
 import { registerCronJob } from "./cron-registry.js";
 import {
@@ -53,6 +57,39 @@ function utcDayString(d: Date): string {
 function addUtcDays(day: string, n: number): string {
   const ms = Date.parse(`${day}T00:00:00.000Z`);
   return utcDayString(new Date(ms + n * 24 * 60 * 60 * 1000));
+}
+
+// Re-engagement tiers: how many quiet days maps to which email kind. daysAway is
+// passed straight into the payload so the storefront template can render it.
+const REENGAGE_TIERS: ReadonlyArray<{
+  daysAway: number;
+  kind: CreditscoreEmailKind;
+}> = [
+  { daysAway: 7, kind: "university_reengage_d7" },
+  { daysAway: 14, kind: "university_reengage_d14" },
+  { daysAway: 30, kind: "university_reengage_d30" },
+];
+const REENGAGE_KINDS: CreditscoreEmailKind[] = REENGAGE_TIERS.map((t) => t.kind);
+
+// Records one lifecycle-email send in university_email_log for frequency-cap /
+// dedup lookups. Stores the lowercased email. Self-contained failure handling:
+// the send already happened, so a log-write failure is logged non-fatally
+// (degrades to a possible re-send next cycle) rather than masking the send.
+async function logUniversityEmail(
+  db: Db,
+  email: string,
+  kind: CreditscoreEmailKind,
+): Promise<void> {
+  try {
+    await db
+      .insert(universityEmailLog)
+      .values({ email: email.toLowerCase(), kind });
+  } catch (err) {
+    logger.error(
+      { err, email, kind },
+      "university:email-log — insert failed (non-fatal)",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -617,9 +654,26 @@ export async function runUniversityStreakNudge(
     memberByEmail.set(m.email.toLowerCase(), m.displayName);
   }
 
+  // Weekly frequency cap: skip anyone already nudged in the last 7 days. Backed
+  // by university_email_log (survives restarts), so a member gets at most one
+  // streak nudge per rolling 7-day window even while their streak stays at risk.
+  const recentNudges = await db
+    .select({ email: universityEmailLog.email })
+    .from(universityEmailLog)
+    .where(
+      and(
+        eq(universityEmailLog.kind, "university_streak_nudge"),
+        gte(universityEmailLog.sentAt, sql`now() - interval '7 days'`),
+        sql`LOWER(${universityEmailLog.email}) = ANY(${emails})`,
+      ),
+    );
+  const cappedEmails = new Set<string>();
+  for (const r of recentNudges) cappedEmails.add(r.email.toLowerCase());
+
   let sent = 0;
   for (const a of atRisk) {
     if (!memberByEmail.has(a.email)) continue; // not an active member
+    if (cappedEmails.has(a.email)) continue; // nudged within the last 7 days
     const displayName = memberByEmail.get(a.email) ?? null;
     try {
       await sendCreditscoreEmail({
@@ -631,6 +685,7 @@ export async function runUniversityStreakNudge(
           repUrl: UNIVERSITY_PRESENCE_URL,
         },
       });
+      await logUniversityEmail(db, a.email, "university_streak_nudge");
       sent += 1;
     } catch (err) {
       logger.error(
@@ -643,6 +698,150 @@ export async function runUniversityStreakNudge(
   logger.info(
     { considered: atRisk.length, activeMatched: members.length, sent },
     "university:streak-nudge — cycle complete",
+  );
+  return sent;
+}
+
+// ---------------------------------------------------------------------------
+// Re-engagement check-in — ACTIVE members who have gone quiet, at fixed
+// milestones. A member's "last activity day" is the max of their rep-days (UTC),
+// or their join date (UTC) if they never repped. We fire a single check-in when
+// that day is EXACTLY 7 / 14 / 30 days ago — one touch per milestone.
+//
+// The day-bucket match IS the primary once-per-tier idempotency (a member sits
+// in a given bucket for exactly one UTC day, so a daily sweep hits it once),
+// backed by a belt-and-suspenders dedup against university_email_log (skip the
+// same kind for the same email within 30 days) in case the activity signal
+// flaps across a boundary.
+//
+// Mutual exclusion vs streak-nudge holds by construction: a streak-eligible
+// member repped YESTERDAY (last activity = today-1), which is never 7/14/30
+// days ago — so the two crons can never target the same member on the same day.
+//
+// Last-activity is derived in code (Rule 5) from a bounded 30-day rep scan. That
+// window is safe: reps can't predate joined_at, so a member whose only reps are
+// >30 days old necessarily joined >30 days ago too — placing their fallback
+// join-date before every bucket, never a false positive.
+// ---------------------------------------------------------------------------
+
+export async function runUniversityReengage(
+  db: Db,
+  now: Date = new Date(),
+): Promise<number> {
+  const today = utcDayString(now);
+
+  // day-bucket → tier. Each tier occupies exactly one UTC day.
+  const tierByDay = new Map<string, { daysAway: number; kind: CreditscoreEmailKind }>();
+  for (const t of REENGAGE_TIERS) {
+    tierByDay.set(addUtcDays(today, -t.daysAway), t);
+  }
+
+  // Active members + their join date (the last-activity fallback for members
+  // who have never logged a rep).
+  const members = await db
+    .select({
+      email: universityMembers.email,
+      displayName: universityMembers.displayName,
+      joinedAt: universityMembers.joinedAt,
+    })
+    .from(universityMembers)
+    .where(eq(universityMembers.status, "active"));
+
+  if (members.length === 0) {
+    logger.info({ considered: 0, sent: 0 }, "university:reengage — cycle complete");
+    return 0;
+  }
+
+  // Max rep-day per (lowercased) email over a bounded 30-day scan (see header:
+  // the window can't produce a false positive).
+  const windowStart = addUtcDays(today, -30);
+  const progressRows = await db
+    .select({
+      email: universityProgress.email,
+      repDay: universityProgress.repDay,
+    })
+    .from(universityProgress)
+    .where(gte(universityProgress.repDay, windowStart));
+
+  const maxRepByEmail = new Map<string, string>();
+  for (const r of progressRows) {
+    const email = r.email.toLowerCase();
+    const day = String(r.repDay);
+    const prev = maxRepByEmail.get(email);
+    if (!prev || day > prev) maxRepByEmail.set(email, day); // ISO dates sort lexically
+  }
+
+  // Resolve each active member to a tier (if their quiet-day lands on a bucket).
+  const eligible: Array<{
+    email: string;
+    displayName: string | null;
+    daysAway: number;
+    kind: CreditscoreEmailKind;
+  }> = [];
+  for (const m of members) {
+    const email = m.email.toLowerCase();
+    const lastActivity =
+      maxRepByEmail.get(email) ?? (m.joinedAt ? utcDayString(m.joinedAt) : null);
+    if (!lastActivity) continue; // no reps and no join date — can't bucket
+    const tier = tierByDay.get(lastActivity);
+    if (!tier) continue; // not exactly 7 / 14 / 30 days quiet
+    eligible.push({
+      email,
+      displayName: m.displayName,
+      daysAway: tier.daysAway,
+      kind: tier.kind,
+    });
+  }
+
+  if (eligible.length === 0) {
+    logger.info({ considered: 0, sent: 0 }, "university:reengage — cycle complete");
+    return 0;
+  }
+
+  // Belt-and-suspenders dedup: skip anyone already sent the SAME kind in the
+  // last 30 days (log-backed).
+  const emails = eligible.map((e) => e.email);
+  const recent = await db
+    .select({
+      email: universityEmailLog.email,
+      kind: universityEmailLog.kind,
+    })
+    .from(universityEmailLog)
+    .where(
+      and(
+        inArray(universityEmailLog.kind, REENGAGE_KINDS),
+        gte(universityEmailLog.sentAt, sql`now() - interval '30 days'`),
+        sql`LOWER(${universityEmailLog.email}) = ANY(${emails})`,
+      ),
+    );
+  const alreadySent = new Set<string>();
+  for (const r of recent) alreadySent.add(`${r.email.toLowerCase()}|${r.kind}`);
+
+  let sent = 0;
+  for (const e of eligible) {
+    if (alreadySent.has(`${e.email}|${e.kind}`)) continue; // already sent this tier
+    try {
+      await sendCreditscoreEmail({
+        kind: e.kind,
+        to: e.email,
+        data: {
+          firstName: firstNameFromDisplayName(e.displayName),
+          daysAway: e.daysAway,
+        },
+      });
+      await logUniversityEmail(db, e.email, e.kind);
+      sent += 1;
+    } catch (err) {
+      logger.error(
+        { err, email: e.email, kind: e.kind },
+        "university:reengage — send failed for member (non-fatal)",
+      );
+    }
+  }
+
+  logger.info(
+    { considered: eligible.length, sent },
+    "university:reengage — cycle complete",
   );
   return sent;
 }
@@ -675,6 +874,18 @@ export function startUniversityCrons(db: Db): void {
     ownerAgent: "mark",
     sourceFile: "university-crons.ts",
     handler: () => runUniversityWinback(db),
+  });
+
+  // Re-engagement check-in — active members whose last activity was EXACTLY
+  // 7 / 14 / 30 UTC-days ago. Daily sweep; the day-bucket match is the primary
+  // once-per-tier idempotency (backed by the email log for belt-and-suspenders
+  // dedup). Slotted at :45 after the other daily lifecycle jobs (:00/:15/:30).
+  registerCronJob({
+    jobName: "university:reengage",
+    schedule: "45 14 * * *", // daily 14:45 UTC
+    ownerAgent: "mark",
+    sourceFile: "university-crons.ts",
+    handler: () => runUniversityReengage(db),
   });
 
   // Session reminders run HOURLY (not daily) — the 1-hour start-time window
