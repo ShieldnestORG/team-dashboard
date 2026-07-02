@@ -203,6 +203,7 @@ export {
   universityVoiceMeter,
   universityVoiceReservations,
   universityEmailLog,
+  universityEmailEvents,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -231,6 +232,8 @@ export type {
   NewUniversityVoiceReservation,
   UniversityEmailLog,
   NewUniversityEmailLog,
+  UniversityEmailEvent,
+  NewUniversityEmailEvent,
 } from "./university.js";
 export {
   universityCommunityPosts,

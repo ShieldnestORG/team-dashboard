@@ -98,6 +98,10 @@ import {
   universityCheckoutRoutes,
   universityWebhookRouter,
 } from "./routes/university-checkout.js";
+import {
+  universityEmailEventsRouter,
+  universityEmailStatsAdminRoutes,
+} from "./routes/university-email-events.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -219,6 +223,9 @@ export async function createApp(
   app.use("/api/creditscore", creditscoreWebhookRouter(db));
   app.use("/api/watchtower", watchtowerWebhookRouter(db));
   app.use("/api/university", universityWebhookRouter(db));
+  // Brevo engagement events forwarded by the storefront — HMAC over the raw
+  // body, so this router (express.raw) also mounts before the JSON parser.
+  app.use("/api/university", universityEmailEventsRouter(db));
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
@@ -353,6 +360,8 @@ export async function createApp(
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
   api.use("/university-agents-admin", universityAgentsAdminRoutes(db));
+  // Email-campaign analytics rollup — GET /api/admin/university/email-stats.
+  api.use("/admin/university", universityEmailStatsAdminRoutes(db));
   api.use("/university", universityCheckoutRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
