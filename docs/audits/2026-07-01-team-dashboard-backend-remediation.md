@@ -28,6 +28,26 @@ Sibling to the [audit report](2026-07-01-team-dashboard-backend-security-audit.m
 
 ---
 
+## Live verification (post-deploy, 2026-07-02 ~04:59 UTC, prod `api.coherencedaddy.com`)
+
+Anonymous probes over the internet against the deployed container (`1e77058a`), confirmed against app logs:
+
+| Endpoint (anonymous) | Before | After | ✓ |
+|---|---|---|---|
+| `GET /api/campaigns` | 200 (cross-tenant data) | **403** | ✅ |
+| `GET /api/youtube/productions` | 200 | **401** | ✅ |
+| `POST /api/moltbook/ingest` | 200 (ran) | **401** | ✅ |
+| `POST /api/repo-updates/run-audit` | 200 (SSRF) | **401** | ✅ |
+| `POST /api/maintenance/retention-sweep/run-now` | 200 (**destructive purge**) | **401** | ✅ |
+| `POST /api/firecrawl/admin/run/x` | 200 | **401** | ✅ |
+| `POST /api/portal/logout` Origin=`evil` | 200 | **403** (CSRF) | ✅ |
+| `POST /api/portal/logout` Origin=`app` | 200 | **200** (allowed) | ✅ |
+| `POST /api/portal/login` Origin=`app` | 200 | **200** + magic-link sent (no lockout) | ✅ |
+| `GET /api/portal/auth?token=` | 302 | **302** (magic-link interstitial OK) | ✅ |
+| `GET /health` | 200 | **200** | ✅ |
+
+Migration `0144` applied at boot as the single pending migration (`Applying 1 pending migrations: 0144_intel_billing_idempotency.sql` → `Migrations applied`); university `0142`/`0143` correctly recognized as already-applied, not re-run. Container `Up (healthy)`. A brief `500`/`502` window during the container recreate triggered a `Service RECOVERED: Backend API` self-alert — expected deploy blip, cleared once warm.
+
 ## Code fixes applied (mapped to audit findings)
 
 ### Critical
