@@ -49,6 +49,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "house-ads",
   "creditscore-review",
   "topic-takeover",
+  "university",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
