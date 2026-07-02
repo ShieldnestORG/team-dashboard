@@ -86,6 +86,7 @@ describe("marketingRoleGate — fail-closed path allowlist", () => {
     ["GET", "/api/instance-settings"],
     ["POST", "/api/companies"],
     ["POST", "/api/assets"],
+    ["GET", "/api/university-admin/members"], // member-management admin surface — default-deny, never allowlisted
     ["GET", "/API/costs"], // express routing is case-insensitive — the gate must be too
   ])("blocks a marketing-only user with a plain-English 403: %s %s", async (method, path) => {
     const app = gateApp(marketingUser, marketingRows);

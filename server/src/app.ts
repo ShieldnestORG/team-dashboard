@@ -108,6 +108,7 @@ import {
   universityEmailStatsAdminRoutes,
 } from "./routes/university-email-events.js";
 import { zernioWebhookRouter } from "./routes/zernio-webhook.js";
+import { universityAdminRoutes } from "./routes/university-admin.js";
 // Canva media cron — ready but paused until Canva folder API is sorted:
 // import { startCanvaMediaCrons } from "./services/canva-media-cron.js";
 import { xAnalyticsRoutes } from "./routes/x-analytics.js";
@@ -385,6 +386,7 @@ export async function createApp(
   // Email-campaign analytics rollup — GET /api/admin/university/email-stats.
   api.use("/admin/university", universityEmailStatsAdminRoutes(db));
   api.use("/university", universityCheckoutRoutes(db));
+  api.use("/university-admin", universityAdminRoutes(db));
   api.use("/auto-reply", autoReplyRoutes(db));
   api.use("/moltbook", moltbookRoutes(db));
   api.use("/youtube", youtubeRoutes(db));
