@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Coherent Ones University — lifecycle cron tests (streak nudge).
+// Coherent Ones University — lifecycle cron tests (streak nudge + dunning).
 //
 // No embedded Postgres: the cron runners take a Db and call sequential
 // select().from().where() chains, so we drive them with a tiny query-queue stub
@@ -13,6 +13,9 @@
 //   - repped today                         → skipped (chain already safe)
 //   - latest rep older than yesterday      → skipped (chain already broken)
 //   - at-risk but NOT an active member      → skipped (membership gate)
+// Dunning:
+//   - d3 fires university_past_due touch=2, no final warning
+//   - d7 fires university_past_due touch=3 AND university_payment_failed_final
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -23,7 +26,11 @@ vi.mock("../services/creditscore-email-callback.js", () => ({
   sendCreditscoreEmail: (...args: unknown[]) => emailSpy(...args),
 }));
 
-import { runUniversityStreakNudge } from "../services/university-crons.js";
+import {
+  runUniversityStreakNudge,
+  runUniversityDunningD3,
+  runUniversityDunningD7,
+} from "../services/university-crons.js";
 
 // ---------------------------------------------------------------------------
 // Query-queue db stub. Each select().from().where() consumes one queued result.
@@ -146,5 +153,56 @@ describe("runUniversityStreakNudge", () => {
     expect(emailSpy).not.toHaveBeenCalled();
     // Only the progress query ran (short-circuit before the member query).
     expect(harness.consumed).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dunning
+// ---------------------------------------------------------------------------
+
+describe("runUniversityDunningD3", () => {
+  it("fires past_due touch=2 and NO final warning", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "due@x.test" }];
+    const { db } = makeDb([subs]);
+
+    const sent = await runUniversityDunningD3(db);
+
+    expect(sent).toBe(1);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+    const call = emailSpy.mock.calls[0][0] as {
+      kind: string;
+      data: { touch: number };
+    };
+    expect(call.kind).toBe("university_past_due");
+    expect(call.data.touch).toBe(2);
+  });
+
+  it("skips subscription rows with no email", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: null }];
+    const { db } = makeDb([subs]);
+    const sent = await runUniversityDunningD3(db);
+    expect(sent).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("runUniversityDunningD7", () => {
+  it("fires past_due touch=3 AND the final payment-failed warning", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "lapsing@x.test" }];
+    const { db } = makeDb([subs]);
+
+    const sent = await runUniversityDunningD7(db);
+
+    expect(sent).toBe(1); // count tracks past_due nudges
+    expect(emailSpy).toHaveBeenCalledTimes(2);
+    const kinds = emailSpy.mock.calls.map(
+      (c) => (c[0] as { kind: string }).kind,
+    );
+    expect(kinds).toContain("university_past_due");
+    expect(kinds).toContain("university_payment_failed_final");
+    const pastDue = emailSpy.mock.calls
+      .map((c) => c[0] as { kind: string; data: { touch?: number } })
+      .find((p) => p.kind === "university_past_due");
+    expect(pastDue?.data.touch).toBe(3);
   });
 });
