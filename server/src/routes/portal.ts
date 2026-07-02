@@ -33,6 +33,7 @@ import {
 } from "../services/optimize-me-bridge.js";
 import { universitySessionsService } from "../services/university-sessions.js";
 import { voiceBudgetService } from "../services/voice-budget.js";
+import { coherenceService } from "../services/coherence.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
 import {
   UNIVERSITY_SESSIONS_URL,
@@ -591,6 +592,7 @@ export function portalRoutes(db: Db): Router {
   const svc = customerPortalService(db);
   const sessionsSvc = universitySessionsService(db);
   const voiceSvc = voiceBudgetService(db);
+  const coherenceSvc = coherenceService(db);
 
   function requireSession(req: Request, res: Response): string | null {
     // Impersonation cookie wins when present (admin "View as customer").
@@ -1116,6 +1118,110 @@ export function portalRoutes(db: Db): Router {
           "portal/university/voice/usage: failed",
         );
         res.status(500).json({ error: "Failed to record voice usage" });
+      }
+    },
+  );
+
+  // -- University coherence self-check ----------------------------------------
+  //
+  // The "how coherent am I right now?" self-rating. A member rates three axes
+  // (body / focus / direction, each 0..100); the backend derives a fixed 0..100
+  // score the frontend mirrors EXACTLY (see services/coherence.ts). Same member
+  // gate + resolver as the voice budget — coherence rows tie to the SAME member
+  // entity as the voice meter — and the mutation is blocked under impersonation
+  // (read-only), exactly like POST /university/progress and voice/reserve.
+  //
+  // GET  /university/coherence        → CoherenceSummary
+  // POST /university/coherence-check  { body, focus, direction } →
+  //        { score } & CoherenceSummary
+  //
+  // The member row is resolved from the account (active/past_due) via
+  // resolveVoiceMemberId; a membership with no active row → 403.
+
+  async function requireCoherenceMember(
+    req: Request,
+    res: Response,
+  ): Promise<string | null> {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return null;
+    let memberId: string | null;
+    try {
+      // Same resolver as the voice budget → same member identity.
+      memberId = await voiceSvc.resolveVoiceMemberId(accountId);
+    } catch (err) {
+      logger.error(
+        { err, accountId },
+        "portal/university/coherence: member resolve failed",
+      );
+      res.status(500).json({ error: "Failed to resolve member" });
+      return null;
+    }
+    if (!memberId) {
+      res.status(403).json({ error: "University membership required" });
+      return null;
+    }
+    return memberId;
+  }
+
+  router.get("/university/coherence", async (req: Request, res: Response) => {
+    const memberId = await requireCoherenceMember(req, res);
+    if (!memberId) return;
+    try {
+      const summary = await coherenceSvc.getCoherenceSummary(memberId);
+      res.json(summary);
+    } catch (err) {
+      logger.error(
+        { err, memberId },
+        "portal/university/coherence: summary failed",
+      );
+      res.status(500).json({ error: "Failed to load coherence" });
+    }
+  });
+
+  router.post(
+    "/university/coherence-check",
+    async (req: Request, res: Response) => {
+      // Logging a check mutates state — block under impersonation (read-only).
+      if (!requireNonImpersonating(req, res)) return;
+      const memberId = await requireCoherenceMember(req, res);
+      if (!memberId) return;
+
+      const body = (req.body ?? {}) as {
+        body?: unknown;
+        focus?: unknown;
+        direction?: unknown;
+      };
+      // Each axis is required and must be an integer in [0, 100].
+      const axes: Record<"body" | "focus" | "direction", number> = {
+        body: 0,
+        focus: 0,
+        direction: 0,
+      };
+      for (const key of ["body", "focus", "direction"] as const) {
+        const raw = body[key];
+        const n = Number(raw);
+        if (
+          raw === undefined ||
+          raw === null ||
+          !Number.isInteger(n) ||
+          n < 0 ||
+          n > 100
+        ) {
+          res.status(400).json({ error: `${key} must be an integer 0–100` });
+          return;
+        }
+        axes[key] = n;
+      }
+
+      try {
+        const result = await coherenceSvc.logCoherenceCheck(memberId, axes);
+        res.status(200).json(result);
+      } catch (err) {
+        logger.error(
+          { err, memberId },
+          "portal/university/coherence-check: failed",
+        );
+        res.status(500).json({ error: "Failed to record coherence check" });
       }
     },
   );

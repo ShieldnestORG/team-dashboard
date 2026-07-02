@@ -615,6 +615,57 @@ export const universityVoiceReservations = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University COHERENCE self-check — the "how coherent am I right now?" rating.
+//
+// A member self-rates three axes (body / focus / direction, each 0..100); the
+// backend derives a single 0..100 coherence score with a FIXED weighting the
+// frontend mirrors exactly: round(body*0.4 + focus*0.35 + direction*0.25). Each
+// submission is its own append-only row (no uniqueness key) so the full history
+// and trailing-window averages survive.
+//
+// The member is identified the SAME way the voice budget is — resolved via
+// resolveVoiceMemberId (services/voice-budget.ts) — so a member's coherence
+// rows tie to the same member entity as their voice meter. Hence the join key
+// is `member_id` (the university_members id), matching university_voice_meter,
+// NOT the email/account pair used by progress/notes.
+// ---------------------------------------------------------------------------
+
+export const universityCoherenceChecks = pgTable(
+  "university_coherence_checks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The University member id — SAME identity key as university_voice_meter
+    // (resolved via resolveVoiceMemberId).
+    memberId: uuid("member_id").notNull(),
+    // Self-rated axes, each an integer 0..100.
+    body: integer("body").notNull(),
+    focus: integer("focus").notNull(),
+    direction: integer("direction").notNull(),
+    // Derived, fixed formula: round(body*0.4 + focus*0.35 + direction*0.25).
+    // Stored so history + averages never recompute and stay stable even if the
+    // weighting were ever changed.
+    score: integer("score").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // Newest-first history + trailing-window scans per member.
+    memberCreatedIdx: index(
+      "university_coherence_checks_member_created_idx",
+    ).on(table.memberId, table.createdAt.desc()),
+    // Defensive: axes + derived score are all 0..100 (route also validates).
+    rangeCk: check(
+      "university_coherence_checks_range_ck",
+      sql`${table.body} BETWEEN 0 AND 100
+        AND ${table.focus} BETWEEN 0 AND 100
+        AND ${table.direction} BETWEEN 0 AND 100
+        AND ${table.score} BETWEEN 0 AND 100`,
+    ),
+  }),
+);
+
 export const universityEmailLog = pgTable(
   "university_email_log",
   {
@@ -714,6 +765,10 @@ export type UniversityVoiceReservation =
   typeof universityVoiceReservations.$inferSelect;
 export type NewUniversityVoiceReservation =
   typeof universityVoiceReservations.$inferInsert;
+export type UniversityCoherenceCheck =
+  typeof universityCoherenceChecks.$inferSelect;
+export type NewUniversityCoherenceCheck =
+  typeof universityCoherenceChecks.$inferInsert;
 export type UniversityEmailLog = typeof universityEmailLog.$inferSelect;
 export type NewUniversityEmailLog = typeof universityEmailLog.$inferInsert;
 export type UniversityEmailEvent = typeof universityEmailEvents.$inferSelect;
