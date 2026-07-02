@@ -195,9 +195,10 @@ describe("runUniversityStreakNudge", () => {
 
     expect(sent).toBe(1);
     expect(emailSpy).toHaveBeenCalledTimes(1);
-    // A log row is written, lowercased, with the nudge kind.
+    // A log row is written, lowercased, with the nudge kind. messageId is null
+    // here because the mocked send returns no storefront response id.
     expect(harness.inserts).toEqual([
-      { email: "due@x.test", kind: "university_streak_nudge" },
+      { email: "due@x.test", kind: "university_streak_nudge", messageId: null },
     ]);
   });
 });
@@ -327,7 +328,11 @@ describe("runUniversityReengage", () => {
 
     expect(sent).toBe(1);
     expect(harness.inserts).toEqual([
-      { email: "logme@x.test", kind: "university_reengage_d14" },
+      {
+        email: "logme@x.test",
+        kind: "university_reengage_d14",
+        messageId: null,
+      },
     ]);
   });
 });

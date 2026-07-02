@@ -79,11 +79,14 @@ async function logUniversityEmail(
   db: Db,
   email: string,
   kind: CreditscoreEmailKind,
+  // ESP messageId returned by the storefront send route (null when the
+  // storefront didn't report one) — joins engagement events to this send.
+  messageId: string | null = null,
 ): Promise<void> {
   try {
     await db
       .insert(universityEmailLog)
-      .values({ email: email.toLowerCase(), kind });
+      .values({ email: email.toLowerCase(), kind, messageId });
   } catch (err) {
     logger.error(
       { err, email, kind },
@@ -676,7 +679,7 @@ export async function runUniversityStreakNudge(
     if (cappedEmails.has(a.email)) continue; // nudged within the last 7 days
     const displayName = memberByEmail.get(a.email) ?? null;
     try {
-      await sendCreditscoreEmail({
+      const messageId = await sendCreditscoreEmail({
         kind: "university_streak_nudge",
         to: a.email,
         data: {
@@ -685,7 +688,12 @@ export async function runUniversityStreakNudge(
           repUrl: UNIVERSITY_PRESENCE_URL,
         },
       });
-      await logUniversityEmail(db, a.email, "university_streak_nudge");
+      await logUniversityEmail(
+        db,
+        a.email,
+        "university_streak_nudge",
+        messageId ?? null,
+      );
       sent += 1;
     } catch (err) {
       logger.error(
@@ -821,7 +829,7 @@ export async function runUniversityReengage(
   for (const e of eligible) {
     if (alreadySent.has(`${e.email}|${e.kind}`)) continue; // already sent this tier
     try {
-      await sendCreditscoreEmail({
+      const messageId = await sendCreditscoreEmail({
         kind: e.kind,
         to: e.email,
         data: {
@@ -829,7 +837,7 @@ export async function runUniversityReengage(
           daysAway: e.daysAway,
         },
       });
-      await logUniversityEmail(db, e.email, e.kind);
+      await logUniversityEmail(db, e.email, e.kind, messageId ?? null);
       sent += 1;
     } catch (err) {
       logger.error(

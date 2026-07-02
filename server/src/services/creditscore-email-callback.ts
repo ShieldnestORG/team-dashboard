@@ -108,7 +108,14 @@ function callbackEndpoint(): string | null {
     : fallback;
 }
 
-export async function sendCreditscoreEmail(args: SendArgs): Promise<void> {
+// Resolves to the ESP (Brevo) messageId the storefront reports back
+// (202 { accepted: true, id: <messageId>|null }), or null when the send was
+// skipped, failed, or the storefront didn't return one. Callers that keep a
+// send log store it so engagement events can be joined to the exact send;
+// existing fire-and-forget callers just ignore the return value.
+export async function sendCreditscoreEmail(
+  args: SendArgs,
+): Promise<string | null> {
   const secret = process.env.CREDITSCORE_CALLBACK_KEY?.trim();
   const endpoint = callbackEndpoint();
 
@@ -117,7 +124,7 @@ export async function sendCreditscoreEmail(args: SendArgs): Promise<void> {
       { kind: args.kind, hasSecret: !!secret, hasEndpoint: !!endpoint },
       "creditscore-email: callback not configured, skipping send",
     );
-    return;
+    return null;
   }
 
   const body = JSON.stringify({
@@ -145,13 +152,28 @@ export async function sendCreditscoreEmail(args: SendArgs): Promise<void> {
         { kind: args.kind, to: args.to, status: res.status, text: text.slice(0, 200) },
         "creditscore-email: callback returned non-2xx",
       );
-      return;
+      return null;
     }
-    logger.info({ kind: args.kind, to: args.to }, "creditscore-email: delivered");
+    // Tolerant id extraction: the storefront responds 202 { accepted, id },
+    // but id may be null (suppressed / owner-gated template) and older builds
+    // may omit it or respond with a non-JSON body entirely.
+    const parsed = (await res.json().catch(() => null)) as
+      | { id?: unknown }
+      | null;
+    const messageId =
+      parsed && typeof parsed.id === "string" && parsed.id.length > 0
+        ? parsed.id
+        : null;
+    logger.info(
+      { kind: args.kind, to: args.to, messageId },
+      "creditscore-email: delivered",
+    );
+    return messageId;
   } catch (err) {
     logger.error(
       { err, kind: args.kind, to: args.to },
       "creditscore-email: callback failed",
     );
+    return null;
   }
 }

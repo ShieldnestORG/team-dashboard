@@ -623,6 +623,10 @@ export const universityEmailLog = pgTable(
     email: text("email").notNull(),
     // The CreditscoreEmailKind that was sent (e.g. 'university_streak_nudge').
     kind: text("kind").notNull(),
+    // ESP (Brevo) messageId returned by the storefront send route at send time.
+    // Joins engagement events (university_email_events.message_id) back to the
+    // exact send. Nullable: the storefront may respond without an id.
+    messageId: text("message_id"),
     sentAt: timestamp("sent_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -634,6 +638,43 @@ export const universityEmailLog = pgTable(
       table.email,
       table.kind,
       table.sentAt.desc(),
+    ),
+  }),
+);
+
+export const universityEmailEvents = pgTable(
+  "university_email_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // ESP messageId — joins to university_email_log.message_id. Nullable: some
+    // events arrive without one (or the send predates message-id capture).
+    messageId: text("message_id"),
+    // Lowercased recipient — the durable join key, matching the rest of University.
+    email: text("email").notNull(),
+    // Campaign kind from the first Brevo tag starting with 'university_', else NULL.
+    kind: text("kind"),
+    // delivered | opened | clicked | bounced | spam | unsubscribed | blocked | other.
+    event: text("event").notNull(),
+    // Clicked link (clicked events only).
+    url: text("url"),
+    // ESP event time (Brevo's `at`).
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // Exact-repeat dedupe for webhook retries (ON CONFLICT DO NOTHING target).
+    // Leading message_id column doubles as the per-message lookup index.
+    dedupeUq: uniqueIndex("university_email_events_dedupe_uq").on(
+      table.messageId,
+      table.event,
+      table.occurredAt,
+    ),
+    // Stats rollup: "per kind, distinct emails per event".
+    kindEventIdx: index("university_email_events_kind_event_idx").on(
+      table.kind,
+      table.event,
     ),
   }),
 );
@@ -675,3 +716,5 @@ export type NewUniversityVoiceReservation =
   typeof universityVoiceReservations.$inferInsert;
 export type UniversityEmailLog = typeof universityEmailLog.$inferSelect;
 export type NewUniversityEmailLog = typeof universityEmailLog.$inferInsert;
+export type UniversityEmailEvent = typeof universityEmailEvents.$inferSelect;
+export type NewUniversityEmailEvent = typeof universityEmailEvents.$inferInsert;
