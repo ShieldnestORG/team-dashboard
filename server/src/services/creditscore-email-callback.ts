@@ -41,6 +41,13 @@ export type CreditscoreEmailKind =
   // university:streak-nudge cron to active members who repped yesterday but not
   // yet today. Commercial-classed storefront-side (suppression + unsubscribe).
   | "university_streak_nudge"
+  // Final payment-failed warning — the last dunning touch before Stripe
+  // auto-cancels a past_due subscription. Fired by the university:dunning-d7
+  // cron at the ~7-day mark (alongside university_past_due touch=3). Distinct
+  // kind from university_past_due so the storefront can carry stronger "last
+  // chance" copy. Transactional storefront-side (NOT suppressed): a lapsing
+  // paying member must receive it.
+  | "university_payment_failed_final"
   // Community reply notification ("someone replied to your post"). The storefront
   // Resend template is owner-gated (must ship CAN-SPAM compliant); until it
   // exists this kind no-ops via the warn-and-continue callback, so the in-app
