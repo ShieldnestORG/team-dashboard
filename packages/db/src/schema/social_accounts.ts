@@ -20,6 +20,10 @@ export const socialAccounts = pgTable(
     connectionType: text("connection_type").notNull().default("manual"),
     // Pointer like "x_oauth_tokens:<accountSlug>" or "canva_oauth_tokens:<id>"
     oauthRef: text("oauth_ref"),
+    // First-class Zernio account id (backfilled from oauth_ref "zernio:<id>",
+    // migration 0122_zernio_engagement). oauth_ref stays authoritative for
+    // publish routing; this column serves lead/analytics joins.
+    zernioAccountId: text("zernio_account_id"),
     // 'active' | 'dormant' | 'paused' | 'deprecated'
     status: text("status").notNull().default("active"),
     // 'full_auto' | 'assisted' | 'manual' | 'none'
@@ -40,5 +44,6 @@ export const socialAccounts = pgTable(
     ),
     platformIdx: index("social_accounts_platform_idx").on(table.platform),
     statusIdx: index("social_accounts_status_idx").on(table.status),
+    zernioAccountIdx: index("social_accounts_zernio_account_idx").on(table.zernioAccountId),
   }),
 );

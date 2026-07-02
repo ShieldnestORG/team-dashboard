@@ -288,3 +288,22 @@ export type {
 } from "./university_agent_state.js";
 export { answerCheckRuns } from "./answer_check.js";
 export type { AnswerCheckRun, NewAnswerCheckRun } from "./answer_check.js";
+export {
+  zernioWebhookEvents,
+  socialLeads,
+  zernioCommentAutomations,
+  zernioAnalyticsSnapshots,
+  zernioPostAnalytics,
+} from "./zernio_engagement.js";
+export type {
+  ZernioWebhookEvent,
+  NewZernioWebhookEvent,
+  SocialLead,
+  NewSocialLead,
+  ZernioCommentAutomation,
+  NewZernioCommentAutomation,
+  ZernioAnalyticsSnapshot,
+  NewZernioAnalyticsSnapshot,
+  ZernioPostAnalytics,
+  NewZernioPostAnalytics,
+} from "./zernio_engagement.js";

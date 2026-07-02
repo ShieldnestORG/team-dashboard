@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { logger } from "../../middleware/logger.js";
 import type {
   PlatformPublisher,
@@ -31,13 +31,13 @@ const PLATFORM_MAP: Record<string, string> = {
   twitter: "twitter",
 };
 
-function zernioKeyFor(zernioAccountId: string): string | undefined {
+export function zernioKeyFor(zernioAccountId: string): string | undefined {
   // Mirrors IG_Auditor's POST_KEY_<accountId>; read at call time so newly
   // provisioned keys are picked up without a restart of resolution logic.
   return process.env[`ZERNIO_KEY_${zernioAccountId}`];
 }
 
-function parseZernioAccountId(oauthRef?: string): string | undefined {
+export function parseZernioAccountId(oauthRef?: string): string | undefined {
   if (!oauthRef?.startsWith("zernio:")) return undefined;
   const id = oauthRef.slice("zernio:".length).trim();
   return id.length > 0 ? id : undefined;
@@ -252,4 +252,515 @@ function pickPostUrl(data: Record<string, unknown>): string | undefined {
   const candidates = [data.platformPostUrl, data.postUrl, data.url];
   const hit = candidates.find((v) => typeof v === "string" && v.length > 0);
   return hit as string | undefined;
+}
+
+// ============================================================================
+// Zernio engagement API client
+// (plan-zernio-leverage.md §2 lead-loop + §1 levers L4/L6; CONTROLLER-AUDIT
+// Goal B analytics wiring. Contracts verified against zernio-openapi.yaml.)
+//
+// Key model: keys are PER-ACCOUNT scoped — a key only sees its own account(s)
+// (proven by IG_Auditor automations.py discover(), which unions /accounts
+// across keys). Workspace-ish reads (webhooks settings, contacts) therefore
+// loop every configured ZERNIO_KEY_* rather than assuming one global key.
+//
+// HARD LINES carried from the spec (do not "fix" these):
+//   - NO Zernio Conversions API calls — the in-house Meta CAPI/TikTok Events
+//     build off the Stripe webhook is canonical; double-firing double-counts.
+//   - NO multi-day DM drips / sequences, NO comment-list broadcasts — ToS
+//     won't-build list in Ig_Auditor/DM-FUNNEL-PLAYBOOK.md.
+// ============================================================================
+
+const ZERNIO_TIMEOUT_MS = 30_000;
+
+export class ZernioApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly path: string,
+    readonly body: string,
+  ) {
+    super(`Zernio ${status} on ${path}: ${body.slice(0, 300)}`);
+    this.name = "ZernioApiError";
+  }
+}
+
+// 402 analytics_addon_required and 403 requiresAddon are the SAME condition
+// (add-on gate) and must be handled identically — audit Area 4.
+export class ZernioAddonMissingError extends ZernioApiError {
+  constructor(status: number, path: string, body: string) {
+    super(status, path, body);
+    this.name = "ZernioAddonMissingError";
+  }
+}
+
+function isAddonGate(status: number, body: string): boolean {
+  if (status === 402) return true;
+  return status === 403 && /requiresAddon|addon_required|add-?on/i.test(body);
+}
+
+type QueryValue = string | number | boolean | undefined;
+
+export async function zernioFetch<T = Record<string, unknown>>(
+  key: string,
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+  path: string,
+  opts: { query?: Record<string, QueryValue>; body?: unknown } = {},
+): Promise<T> {
+  const url = new URL(`${ZERNIO_API_BASE}${path}`);
+  for (const [k, v] of Object.entries(opts.query ?? {})) {
+    if (v !== undefined) url.searchParams.set(k, String(v));
+  }
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    signal: AbortSignal.timeout(ZERNIO_TIMEOUT_MS),
+  });
+  const txt = await res.text();
+  if (!res.ok) {
+    if (isAddonGate(res.status, txt)) {
+      throw new ZernioAddonMissingError(res.status, path, txt);
+    }
+    throw new ZernioApiError(res.status, path, txt);
+  }
+  try {
+    return JSON.parse(txt) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
+/** Every configured per-account key, from env ZERNIO_KEY_<zernioAccountId>. */
+export function allZernioKeys(): Array<{ zernioAccountId: string; key: string }> {
+  return Object.entries(process.env)
+    .filter(([k, v]) => k.startsWith("ZERNIO_KEY_") && Boolean(v))
+    .map(([k, v]) => ({ zernioAccountId: k.slice("ZERNIO_KEY_".length), key: v as string }));
+}
+
+// ----- accounts / profileId resolution ----- //
+
+interface ZernioAccountRow {
+  accountId: string;
+  platform: string;
+  username?: string;
+  displayName?: string;
+  profileId?: string;
+}
+
+function normalizeAccount(a: Record<string, unknown>): ZernioAccountRow {
+  const pid = a.profileId as Record<string, unknown> | string | undefined;
+  return {
+    accountId: String(a._id ?? a.accountId ?? a.id ?? ""),
+    platform: String(a.platform ?? "?"),
+    username: (a.username as string | undefined) ?? undefined,
+    displayName: (a.displayName as string | undefined) ?? undefined,
+    profileId:
+      typeof pid === "object" && pid !== null
+        ? String((pid as Record<string, unknown>)._id ?? (pid as Record<string, unknown>).id ?? "")
+        : (pid as string | undefined),
+  };
+}
+
+export async function listZernioAccountsForKey(key: string): Promise<ZernioAccountRow[]> {
+  const data = await zernioFetch<Record<string, unknown>>(key, "GET", "/accounts");
+  const raw = (data.accounts ?? data.data ?? []) as Record<string, unknown>[];
+  return raw.map(normalizeAccount).filter((r) => r.accountId);
+}
+
+// profileId is required by POST /comment-automations. It's stable per account,
+// so cache the resolution for the process lifetime.
+const profileIdCache = new Map<string, string>();
+
+export async function getZernioProfileId(zernioAccountId: string): Promise<string> {
+  const cached = profileIdCache.get(zernioAccountId);
+  if (cached) return cached;
+  const key = zernioKeyFor(zernioAccountId);
+  if (!key) throw new Error(`no ZERNIO_KEY_${zernioAccountId} configured`);
+  const accounts = await listZernioAccountsForKey(key);
+  const match =
+    accounts.find((a) => a.accountId === zernioAccountId) ??
+    // per-account keys usually see exactly one account — trust it as fallback
+    (accounts.length === 1 ? accounts[0] : undefined);
+  if (!match?.profileId) {
+    throw new Error(`could not resolve Zernio profileId for account ${zernioAccountId}`);
+  }
+  profileIdCache.set(zernioAccountId, match.profileId);
+  return match.profileId;
+}
+
+// ----- comment automations (keyword funnels: ROOM / COHERENT / ...) ----- //
+
+export interface ZernioDmButton {
+  type: "url" | "postback" | "phone";
+  title: string; // ≤20 chars (Meta button_template)
+  url?: string;
+  payload?: string;
+  phone?: string;
+}
+
+export interface ZernioAutomationInput {
+  zernioAccountId: string;
+  name: string;
+  trigger?: "comment" | "story_reply";
+  keywords: string[];
+  matchMode?: "exact" | "contains";
+  dmMessage: string; // ≤640 chars (button_template limit; enforced always)
+  buttons?: ZernioDmButton[];
+  commentReply?: string;
+  linkTracking?: boolean;
+  clickTag?: string;
+  platformPostId?: string;
+  postId?: string;
+  postTitle?: string;
+}
+
+/**
+ * Guardrail validation, returns human-readable problems (empty = valid).
+ * Encodes the DM-FUNNEL-PLAYBOOK lines: keyword-gated only (fire-on-any-comment
+ * is the volume/ban hazard), one-shot DM ≤640 chars, ≤3 buttons.
+ */
+export function validateZernioAutomationInput(input: ZernioAutomationInput): string[] {
+  const problems: string[] = [];
+  if (!input.zernioAccountId) problems.push("zernioAccountId is required");
+  if (!input.name?.trim()) problems.push("name is required");
+  const trigger = input.trigger ?? "comment";
+  if (trigger !== "comment" && trigger !== "story_reply") {
+    problems.push(`trigger must be 'comment' or 'story_reply' (got '${trigger}')`);
+  }
+  if (!Array.isArray(input.keywords) || input.keywords.filter((k) => k?.trim()).length === 0) {
+    problems.push("at least one keyword is required (fire-on-any-comment is a ToS hazard)");
+  }
+  const matchMode = input.matchMode ?? "contains";
+  if (matchMode !== "exact" && matchMode !== "contains") {
+    problems.push(`matchMode must be 'exact' or 'contains' (got '${matchMode}')`);
+  }
+  if (!input.dmMessage?.trim()) problems.push("dmMessage is required");
+  if (input.dmMessage && input.dmMessage.length > 640) {
+    problems.push(`dmMessage is ${input.dmMessage.length} chars (max 640)`);
+  }
+  if (input.buttons) {
+    if (input.buttons.length > 3) problems.push("at most 3 buttons allowed");
+    for (const b of input.buttons) {
+      if (!b.title?.trim()) problems.push("every button needs a title");
+      else if (b.title.length > 20) problems.push(`button title '${b.title}' exceeds 20 chars`);
+      if (b.type === "url" && !b.url) problems.push("url buttons need a url");
+      if (b.type === "postback" && !b.payload) problems.push("postback buttons need a payload");
+      if (b.type === "phone" && !b.phone) problems.push("phone buttons need a phone");
+    }
+  }
+  return problems;
+}
+
+export interface ZernioAutomation extends Record<string, unknown> {
+  id: string;
+  name: string;
+  platform?: string;
+  trigger?: string;
+  accountId?: string;
+  keywords?: string[];
+  matchMode?: string;
+  dmMessage?: string;
+  buttons?: ZernioDmButton[];
+  commentReply?: string;
+  linkTracking?: boolean;
+  clickTag?: string;
+  isActive?: boolean;
+  stats?: Record<string, unknown>;
+  createdAt?: string;
+}
+
+export async function createZernioCommentAutomation(
+  input: ZernioAutomationInput,
+): Promise<ZernioAutomation> {
+  const problems = validateZernioAutomationInput(input);
+  if (problems.length > 0) {
+    throw new Error(`invalid comment automation: ${problems.join("; ")}`);
+  }
+  const key = zernioKeyFor(input.zernioAccountId);
+  if (!key) throw new Error(`no ZERNIO_KEY_${input.zernioAccountId} configured`);
+  const profileId = await getZernioProfileId(input.zernioAccountId);
+  const body: Record<string, unknown> = {
+    profileId,
+    accountId: input.zernioAccountId,
+    name: input.name,
+    trigger: input.trigger ?? "comment",
+    keywords: input.keywords.map((k) => k.trim()).filter(Boolean),
+    matchMode: input.matchMode ?? "contains",
+    dmMessage: input.dmMessage,
+    linkTracking: input.linkTracking ?? true,
+  };
+  if (input.buttons?.length) body.buttons = input.buttons;
+  if (input.commentReply) body.commentReply = input.commentReply;
+  if (input.clickTag) body.clickTag = input.clickTag;
+  if (input.platformPostId) body.platformPostId = input.platformPostId;
+  if (input.postId) body.postId = input.postId;
+  if (input.postTitle) body.postTitle = input.postTitle;
+  const data = await zernioFetch<{ automation?: ZernioAutomation }>(
+    key,
+    "POST",
+    "/comment-automations",
+    { body },
+  );
+  if (!data.automation?.id) {
+    throw new Error("Zernio created the automation but returned no automation.id");
+  }
+  logger.info(
+    { zid: input.zernioAccountId, automationId: data.automation.id, name: input.name },
+    "Zernio comment automation created",
+  );
+  return data.automation;
+}
+
+/** List automations. With a zernioAccountId, uses that account's key; without
+ *  one, unions across every configured key (per-account key scoping). */
+export async function listZernioCommentAutomations(
+  zernioAccountId?: string,
+): Promise<{ automations: Array<ZernioAutomation & { zernioAccountId: string }>; errors: string[] }> {
+  const targets = zernioAccountId
+    ? [{ zernioAccountId, key: zernioKeyFor(zernioAccountId) }]
+    : allZernioKeys();
+  const automations: Array<ZernioAutomation & { zernioAccountId: string }> = [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  for (const t of targets) {
+    if (!t.key) {
+      errors.push(`no ZERNIO_KEY_${t.zernioAccountId} configured`);
+      continue;
+    }
+    try {
+      const data = await zernioFetch<{ automations?: ZernioAutomation[] }>(
+        t.key,
+        "GET",
+        "/comment-automations",
+      );
+      for (const a of data.automations ?? []) {
+        if (!a.id || seen.has(a.id)) continue;
+        seen.add(a.id);
+        automations.push({ ...a, zernioAccountId: String(a.accountId ?? t.zernioAccountId) });
+      }
+    } catch (err) {
+      errors.push(`${t.zernioAccountId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { automations, errors };
+}
+
+export async function deleteZernioCommentAutomation(
+  zernioAccountId: string,
+  automationId: string,
+): Promise<void> {
+  const key = zernioKeyFor(zernioAccountId);
+  if (!key) throw new Error(`no ZERNIO_KEY_${zernioAccountId} configured`);
+  await zernioFetch(key, "DELETE", `/comment-automations/${encodeURIComponent(automationId)}`);
+  logger.info({ zid: zernioAccountId, automationId }, "Zernio comment automation deleted");
+}
+
+export async function getZernioCommentAutomationLogs(
+  zernioAccountId: string,
+  automationId: string,
+  opts: { status?: "sent" | "failed" | "skipped"; limit?: number; skip?: number } = {},
+): Promise<Record<string, unknown>> {
+  const key = zernioKeyFor(zernioAccountId);
+  if (!key) throw new Error(`no ZERNIO_KEY_${zernioAccountId} configured`);
+  return zernioFetch(key, "GET", `/comment-automations/${encodeURIComponent(automationId)}/logs`, {
+    query: { status: opts.status, limit: opts.limit, skip: opts.skip },
+  });
+}
+
+// ----- webhooks (L4) ----- //
+
+export const ZERNIO_WEBHOOK_EVENTS = [
+  "comment.received",
+  "message.received",
+  "lead.received",
+  "post.published",
+  "post.failed",
+  "account.disconnected",
+] as const;
+
+/**
+ * Verify X-Zernio-Signature: HMAC-SHA256 over the raw request body with the
+ * webhook's configured secret. The spec doesn't pin the digest encoding, so
+ * hex, "sha256=<hex>", and base64 are all accepted — each compared
+ * timing-safely against our own computed digest.
+ */
+export function verifyZernioSignature(
+  rawBody: Buffer,
+  signatureHeader: string | undefined,
+  secret: string,
+): boolean {
+  if (!signatureHeader || !secret) return false;
+  const presented = signatureHeader.replace(/^sha256=/i, "").trim();
+  const hmac = createHmac("sha256", secret).update(rawBody);
+  const digest = hmac.digest();
+  const candidates = [digest.toString("hex"), digest.toString("base64")];
+  const presentedBuf = Buffer.from(presented, "utf8");
+  return candidates.some((c) => {
+    const candidateBuf = Buffer.from(c, "utf8");
+    return (
+      candidateBuf.length === presentedBuf.length && timingSafeEqual(candidateBuf, presentedBuf)
+    );
+  });
+}
+
+export interface ZernioWebhookRegistrationResult {
+  zernioAccountId: string;
+  status: "created" | "exists" | "error";
+  webhookId?: string;
+  error?: string;
+}
+
+/**
+ * Register (idempotently) a webhook pointing at `url` on EVERY configured key.
+ * Keys are per-account scoped, so each account's events need its own
+ * registration; an existing webhook with the same URL counts as done.
+ */
+export async function registerZernioWebhookForAllKeys(opts: {
+  url: string;
+  secret: string;
+  events?: string[];
+  name?: string;
+}): Promise<ZernioWebhookRegistrationResult[]> {
+  const events = opts.events ?? [...ZERNIO_WEBHOOK_EVENTS];
+  const name = opts.name ?? "team-dashboard";
+  const results: ZernioWebhookRegistrationResult[] = [];
+  for (const { zernioAccountId, key } of allZernioKeys()) {
+    try {
+      const existing = await zernioFetch<{ webhooks?: Array<Record<string, unknown>> }>(
+        key,
+        "GET",
+        "/webhooks/settings",
+      );
+      const already = (existing.webhooks ?? []).find((w) => w.url === opts.url);
+      if (already) {
+        results.push({
+          zernioAccountId,
+          status: "exists",
+          webhookId: String(already._id ?? ""),
+        });
+        continue;
+      }
+      const created = await zernioFetch<{ webhook?: Record<string, unknown> }>(
+        key,
+        "POST",
+        "/webhooks/settings",
+        { body: { name, url: opts.url, secret: opts.secret, events, isActive: true } },
+      );
+      results.push({
+        zernioAccountId,
+        status: "created",
+        webhookId: String(created.webhook?._id ?? ""),
+      });
+    } catch (err) {
+      results.push({
+        zernioAccountId,
+        status: "error",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return results;
+}
+
+// ----- contacts (capture layer ONLY — Brevo stays the nurture CRM, L3) ----- //
+
+export interface ZernioContact extends Record<string, unknown> {
+  id: string;
+  name?: string;
+  email?: string;
+  tags?: string[];
+  platform?: string;
+  platformIdentifier?: string;
+  displayIdentifier?: string;
+  createdAt?: string;
+}
+
+export async function listZernioContactsForKey(
+  key: string,
+  opts: { tag?: string; platform?: string; limit?: number; skip?: number } = {},
+): Promise<{ contacts: ZernioContact[]; hasMore: boolean }> {
+  const data = await zernioFetch<{
+    contacts?: ZernioContact[];
+    pagination?: { hasMore?: boolean };
+  }>(key, "GET", "/contacts", {
+    query: {
+      tag: opts.tag,
+      platform: opts.platform,
+      limit: opts.limit ?? 200,
+      skip: opts.skip,
+    },
+  });
+  return { contacts: data.contacts ?? [], hasMore: Boolean(data.pagination?.hasMore) };
+}
+
+// ----- analytics (L6 / Goal B) ----- //
+
+/**
+ * Allowlist of every Zernio analytics surface we call (the 26 /v1/analytics
+ * paths + the follower/health meta endpoints the audit groups with them).
+ * Values are API paths; {conversationId} is interpolated from query params.
+ * X-engine numbers from x_engagement_log are a DIFFERENT dataset — never
+ * blend the two in one response.
+ */
+export const ZERNIO_ANALYTICS_PATHS: Record<string, string> = {
+  posts: "/analytics",
+  "daily-metrics": "/analytics/daily-metrics",
+  "best-time": "/analytics/best-time",
+  "content-decay": "/analytics/content-decay",
+  "posting-frequency": "/analytics/posting-frequency",
+  "post-timeline": "/analytics/post-timeline",
+  "youtube-channel-insights": "/analytics/youtube/channel-insights",
+  "youtube-daily-views": "/analytics/youtube/daily-views",
+  "youtube-video-retention": "/analytics/youtube/video-retention",
+  "youtube-demographics": "/analytics/youtube/demographics",
+  "linkedin-org-aggregate-analytics": "/analytics/linkedin/org-aggregate-analytics",
+  "tiktok-account-insights": "/analytics/tiktok/account-insights",
+  "facebook-page-insights": "/analytics/facebook/page-insights",
+  "instagram-account-insights": "/analytics/instagram/account-insights",
+  "instagram-follower-history": "/analytics/instagram/follower-history",
+  "instagram-demographics": "/analytics/instagram/demographics",
+  "googlebusiness-performance": "/analytics/googlebusiness/performance",
+  "googlebusiness-search-keywords": "/analytics/googlebusiness/search-keywords",
+  "inbox-volume": "/analytics/inbox/volume",
+  "inbox-heatmap": "/analytics/inbox/heatmap",
+  "inbox-source-breakdown": "/analytics/inbox/source-breakdown",
+  "inbox-response-time": "/analytics/inbox/response-time",
+  "inbox-top-accounts": "/analytics/inbox/top-accounts",
+  "inbox-conversations": "/analytics/inbox/conversations",
+  "inbox-conversation": "/analytics/inbox/conversations/{conversationId}",
+  "follower-stats": "/accounts/follower-stats",
+  "accounts-health": "/accounts/health",
+  "usage-stats": "/usage-stats",
+};
+
+/**
+ * Call one allowlisted analytics endpoint with the given account's key.
+ * Throws ZernioAddonMissingError on the 402/403 add-on gate (callers store
+ * the gate rather than crashing — audit: handle both identically).
+ */
+export async function fetchZernioAnalytics(
+  zernioAccountId: string,
+  metricKey: string,
+  query: Record<string, QueryValue> = {},
+): Promise<Record<string, unknown>> {
+  let path = ZERNIO_ANALYTICS_PATHS[metricKey];
+  if (!path) throw new Error(`unknown analytics metric '${metricKey}'`);
+  const key = zernioKeyFor(zernioAccountId);
+  if (!key) throw new Error(`no ZERNIO_KEY_${zernioAccountId} configured`);
+  const q = { ...query };
+  if (path.includes("{conversationId}")) {
+    const conversationId = q.conversationId;
+    if (!conversationId) throw new Error("conversationId is required for this metric");
+    path = path.replace("{conversationId}", encodeURIComponent(String(conversationId)));
+    delete q.conversationId;
+  }
+  // Per-account keys scope the data already, but pass accountId explicitly on
+  // the paths that accept it so multi-account keys stay filtered.
+  if (!("accountId" in q) && !path.startsWith("/accounts") && path !== "/usage-stats") {
+    q.accountId = zernioAccountId;
+  }
+  return zernioFetch(key, "GET", path, { query: q });
 }

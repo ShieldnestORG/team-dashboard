@@ -102,6 +102,13 @@ These variables are required for the project to function. **VPS** requires all v
 | `LAUNCH_MONITOR_CRAWLEE_ENABLED` | Optional | VPS | `true` to activate Crawlee-powered launch-monitor sources (`server/src/services/launch-monitor-crawlee-sources.ts`) for platforms with no usable API — currently Product Hunt discussion pages. Service-only until a follow-up PR wires it into the launch-monitor cron; setting the flag without that wiring is a no-op. Requires Playwright browsers (`pnpm exec playwright install chromium`). Default `false`. |
 | `SOCIALS_BLUESKY_CRAWLEE_FALLBACK` | Optional | VPS | `true` to activate the Crawlee + Playwright fallback in `services/socials/bluesky-scrape.ts` when the `@atproto/api` SDK call fails. SDK path is always on (unauthenticated public read); this flag only gates the rendered-DOM fallback against `https://bsky.app/profile/<handle>`. Requires Playwright browsers installed in the runtime. Default `false`. |
 | `BING_NEWS_KEY` | Optional | VPS | Bing News Search API v7 key for trend scanning |
+| **Zernio + Brevo (socials engagement)** | | | |
+| `ZERNIO_KEY_<accountId>` | Required for Zernio publish + engagement | VPS | Per-account Zernio Bearer key (mirrors IG_Auditor's `POST_KEY_<accountId>`). Keys are PER-ACCOUNT scoped — one env var per connected account; the publisher, comment-automation CRUD, webhook registration, contacts poll, and analytics ingest all resolve keys from this namespace at call time. |
+| `ZERNIO_API_BASE` | Optional | VPS | Zernio API base. Default `https://zernio.com/api/v1`. |
+| `ZERNIO_WEBHOOK_SECRET` | Required for Zernio webhooks | VPS | HMAC-SHA256 secret for `POST /api/zernio/webhook` (`X-Zernio-Signature` over the raw body). Fail-closed: the route 503s when unset and 401s on a bad signature. Also sent as the webhook `secret` by `POST /api/socials/zernio/webhooks/register`. |
+| `BREVO_API_KEY` | Required for lead nurture sync | VPS | Brevo API key for the `socials:lead-sync` cron (captured `social_leads` with an email → Brevo contact upsert, same contract as the storefront's subscribe route). When unset the cron warns once and no-ops. |
+| `BREVO_FOUNDING_LIST_ID` | Required for lead nurture sync | VPS | Brevo list id the synced leads join (founding list, id `3` in prod — verify in Brevo). |
+| `BREVO_ENDPOINT` | Optional | VPS | Brevo API base. Default `https://api.brevo.com/v3`. |
 | **Payments** | | | |
 | `STRIPE_SECRET_KEY` | Optional | VPS | Stripe API secret key for donations + Intel API paid tier |
 | `STRIPE_WEBHOOK_SECRET` | Optional | VPS | Stripe webhook signature verification |
