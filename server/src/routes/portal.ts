@@ -663,7 +663,12 @@ export function portalRoutes(db: Db): Router {
       .setHeader("Content-Type", "text/html; charset=utf-8")
       // Tell intermediaries not to cache or prefetch deeper.
       .setHeader("Cache-Control", "no-store")
-      .setHeader("Referrer-Policy", "no-referrer")
+      // no-referrer would force Origin: null on the interstitial's same-origin
+      // POST (Fetch standard), which portalCsrfGuard then rejects as an
+      // untrusted origin — breaking every magic-link login. same-origin keeps
+      // the Origin header on the first-party submit (still stripped
+      // cross-origin), so the guard accepts it.
+      .setHeader("Referrer-Policy", "same-origin")
       .send(renderAuthInterstitial(token));
   });
 
