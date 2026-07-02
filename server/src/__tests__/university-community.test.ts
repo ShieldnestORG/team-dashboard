@@ -69,6 +69,10 @@ import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js"
 import { eq } from "drizzle-orm";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
+// Browsers send an Origin header on every unsafe (non-GET) request; the portal
+// CSRF guard (middleware/portal-csrf.ts) fail-closes without a trusted one.
+// Must match the PORTAL_BASE_URL this suite sets in beforeAll.
+const TRUSTED_ORIGIN = "https://app.test.local";
 const MEMBER_EMAIL = "member@community.test";
 const MEMBER2_EMAIL = "member2@community.test";
 const NONMEMBER_EMAIL = "nonmember@community.test";
@@ -109,7 +113,7 @@ describeDb("university community endpoints (integration)", () => {
 
   beforeAll(async () => {
     process.env.PORTAL_SESSION_SECRET = PORTAL_SECRET;
-    process.env.PORTAL_BASE_URL = "https://app.test.local";
+    process.env.PORTAL_BASE_URL = TRUSTED_ORIGIN;
     process.env.NODE_ENV = "development"; // skip Secure cookie attribute
     process.env.PORTAL_COOKIE_DOMAIN = "";
     process.env.COMMUNITY_AUTOHIDE_REPORTS = "2";
@@ -212,6 +216,7 @@ describeDb("university community endpoints (integration)", () => {
   ): Promise<{ status: number; id?: string; body: Record<string, unknown> }> {
     const res = await request(app)
       .post("/api/portal/university/community/posts")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", cookie)
       .send({ body });
     return { status: res.status, id: res.body?.post?.id, body: res.body };
@@ -232,6 +237,7 @@ describeDb("university community endpoints (integration)", () => {
 
     const post = await request(app)
       .post("/api/portal/university/community/posts")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
       .send({ body: "hello" });
     expect(post.status).toBe(403);
@@ -250,6 +256,7 @@ describeDb("university community endpoints (integration)", () => {
     // A write is blocked with 403 and writes nothing.
     const post = await request(app)
       .post("/api/portal/university/community/posts")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", impersonationCookie())
       .send({ body: "should be blocked" });
     expect(post.status).toBe(403);
@@ -310,6 +317,7 @@ describeDb("university community endpoints (integration)", () => {
 
     const comment = await request(app)
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ body: "here is my take" });
     expect(comment.status).toBe(201);
@@ -338,6 +346,7 @@ describeDb("university community endpoints (integration)", () => {
     // seen clears it.
     const seen = await request(app)
       .post("/api/portal/university/community/notifications/seen")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(seen.status).toBe(200);
     const unreadAfter = await request(app)
@@ -350,6 +359,7 @@ describeDb("university community endpoints (integration)", () => {
     const post = await createPost(memberCookie(), "talking to myself");
     await request(app)
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ body: "replying to my own post" });
     const notes = await db.select().from(universityCommunityNotifications);
@@ -375,6 +385,7 @@ describeDb("university community endpoints (integration)", () => {
 
     const comment = await request(app)
       .post(`/api/portal/university/community/posts/${agentPost.id}/comments`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ body: "a real member replies to the agent" });
     expect(comment.status).toBe(201);
@@ -401,6 +412,7 @@ describeDb("university community endpoints (integration)", () => {
 
     const react1 = await request(app)
       .post("/api/portal/university/community/react")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ targetType: "post", targetId: post.id });
     expect(react1.status).toBe(200);
@@ -410,6 +422,7 @@ describeDb("university community endpoints (integration)", () => {
     // Double-tap is a no-op (idempotent), not an error.
     const react2 = await request(app)
       .post("/api/portal/university/community/react")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ targetType: "post", targetId: post.id });
     expect(react2.status).toBe(200);
@@ -434,6 +447,7 @@ describeDb("university community endpoints (integration)", () => {
     // Un-react deletes the row and decrements.
     const unreact = await request(app)
       .delete("/api/portal/university/community/react")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ targetType: "post", targetId: post.id });
     expect(unreact.status).toBe(200);
@@ -457,6 +471,7 @@ describeDb("university community endpoints (integration)", () => {
 
     const r1 = await request(app)
       .post("/api/portal/university/community/report")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ targetType: "post", targetId: post.id, reason: "spam" });
     expect(r1.status).toBe(200);
@@ -472,6 +487,7 @@ describeDb("university community endpoints (integration)", () => {
     // reporter_email) crosses the threshold.
     const r2 = await request(app)
       .post("/api/portal/university/community/report")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ targetType: "post", targetId: post.id });
     expect(r2.status).toBe(200);
@@ -493,10 +509,12 @@ describeDb("university community endpoints (integration)", () => {
     const post = await createPost(memberCookie(), "report me twice");
     await request(app)
       .post("/api/portal/university/community/report")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ targetType: "post", targetId: post.id });
     await request(app)
       .post("/api/portal/university/community/report")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ targetType: "post", targetId: post.id });
     const reports = await db.select().from(universityCommunityReports);
@@ -513,6 +531,7 @@ describeDb("university community endpoints (integration)", () => {
     const post = await createPost(memberCookie(), "delete me");
     const del = await request(app)
       .delete(`/api/portal/university/community/posts/${post.id}`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(del.status).toBe(200);
 
@@ -525,6 +544,7 @@ describeDb("university community endpoints (integration)", () => {
     const post2 = await createPost(memberCookie(), "not yours");
     const del2 = await request(app)
       .delete(`/api/portal/university/community/posts/${post2.id}`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie());
     expect(del2.status).toBe(404);
   });
@@ -581,12 +601,14 @@ describeDb("university community endpoints (integration)", () => {
 
     const first = await request(tightApp)
       .post("/api/portal/university/community/posts")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ body: "first under limit" });
     expect(first.status).toBe(201);
 
     const second = await request(tightApp)
       .post("/api/portal/university/community/posts")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ body: "second over limit" });
     expect(second.status).toBe(429);
@@ -594,6 +616,7 @@ describeDb("university community endpoints (integration)", () => {
     // A DIFFERENT member is keyed separately — not throttled by member1's burst.
     const other = await request(tightApp)
       .post("/api/portal/university/community/posts")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ body: "different member, own bucket" });
     expect(other.status).toBe(201);
@@ -603,10 +626,12 @@ describeDb("university community endpoints (integration)", () => {
     const post = await createPost(memberCookie(), "thread root");
     await request(app)
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ body: "first comment" });
     await request(app)
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ body: "second comment" });
 

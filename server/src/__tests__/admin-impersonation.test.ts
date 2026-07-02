@@ -33,6 +33,11 @@ vi.mock("../services/activity-log.js", () => ({
 
 // PORTAL_SESSION_SECRET must be set before importing the service modules.
 process.env.PORTAL_SESSION_SECRET = "x".repeat(64);
+// Browsers send an Origin header on every unsafe (non-GET) request; the portal
+// CSRF guard (middleware/portal-csrf.ts) fail-closes without a trusted one.
+// Pin PORTAL_BASE_URL so the guard's allowlist is deterministic here.
+const TRUSTED_ORIGIN = "https://app.test.local";
+process.env.PORTAL_BASE_URL = TRUSTED_ORIGIN;
 
 import { portalRoutes } from "../routes/portal.js";
 import { errorHandler } from "../middleware/index.js";
@@ -355,6 +360,7 @@ describe("admin-impersonation service", () => {
     });
     const res = await request(app)
       .post("/admin-impersonate/end")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", `${ADMIN_IMPERSONATION_COOKIE}=${encodeURIComponent(value)}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, ended: true });
@@ -383,6 +389,7 @@ describe("admin-impersonation service", () => {
     });
     const res = await request(app)
       .post("/credentials")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", `${ADMIN_IMPERSONATION_COOKIE}=${encodeURIComponent(value)}`)
       .send({ kind: "ga4_property", value: "secret-token" });
     expect(res.status).toBe(403);

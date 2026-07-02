@@ -85,6 +85,10 @@ import {
 } from "../services/university-crons.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
+// Browsers send an Origin header on every unsafe (non-GET) request; the portal
+// CSRF guard (middleware/portal-csrf.ts) fail-closes without a trusted one.
+// Must match the PORTAL_BASE_URL this suite sets in beforeAll.
+const TRUSTED_ORIGIN = "https://app.test.local";
 const MEMBER_EMAIL = "member@sessions.test";
 const NONMEMBER_EMAIL = "nonmember@sessions.test";
 const ADMIN_EMAIL = "admin@sessions.test";
@@ -130,7 +134,7 @@ describeDb("university sessions endpoints (integration)", () => {
 
   beforeAll(async () => {
     process.env.PORTAL_SESSION_SECRET = PORTAL_SECRET;
-    process.env.PORTAL_BASE_URL = "https://app.test.local";
+    process.env.PORTAL_BASE_URL = TRUSTED_ORIGIN;
     process.env.NODE_ENV = "development"; // skip Secure cookie attribute
     process.env.PORTAL_COOKIE_DOMAIN = "";
     process.env.UNIVERSITY_SESSION_ADMINS = `${ADMIN_EMAIL}, someone-else@x.test`;
@@ -261,11 +265,13 @@ describeDb("university sessions endpoints (integration)", () => {
 
     const rsvp = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie());
     expect(rsvp.status).toBe(403);
 
     const create = await request(app)
       .post("/api/portal/university/sessions")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
       .send({
         title: "x",
@@ -284,6 +290,7 @@ describeDb("university sessions endpoints (integration)", () => {
     const sessionId = await seedSession();
     const res = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", impersonationCookie(memberAccountId));
     expect(res.status).toBe(403);
     expect(res.body.impersonating).toBe(true);
@@ -299,6 +306,7 @@ describeDb("university sessions endpoints (integration)", () => {
 
     const first = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(first.status).toBe(200);
     expect(first.body.session.myRsvp).toBe("going");
@@ -307,6 +315,7 @@ describeDb("university sessions endpoints (integration)", () => {
     // Re-RSVP → still one row, still going.
     const second = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(second.status).toBe(200);
     expect(second.body.session.goingCount).toBe(1);
@@ -320,6 +329,7 @@ describeDb("university sessions endpoints (integration)", () => {
     // Cancel → soft (row stays, status canceled).
     const cancel = await request(app)
       .delete(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(cancel.status).toBe(200);
     expect(cancel.body.ok).toBe(true);
@@ -331,12 +341,14 @@ describeDb("university sessions endpoints (integration)", () => {
     // Cancel again → idempotent 200.
     const cancelAgain = await request(app)
       .delete(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(cancelAgain.status).toBe(200);
 
     // Re-RSVP after cancel flips back to going (no new row).
     const reRsvp = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(reRsvp.status).toBe(200);
     expect(reRsvp.body.session.myRsvp).toBe("going");
@@ -350,6 +362,7 @@ describeDb("university sessions endpoints (integration)", () => {
       .delete(
         "/api/portal/university/sessions/00000000-0000-0000-0000-000000000000/rsvp",
       )
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(res.status).toBe(404);
   });
@@ -360,6 +373,7 @@ describeDb("university sessions endpoints (integration)", () => {
     // First member claims the only seat → going.
     const a = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(a.status).toBe(200);
     expect(a.body.session.myRsvpStatus).toBe("going");
@@ -368,6 +382,7 @@ describeDb("university sessions endpoints (integration)", () => {
     // Same member re-RSVPing is NOT blocked (no new seat) — stays going.
     const aAgain = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(aAgain.status).toBe(200);
     expect(aAgain.body.session.myRsvpStatus).toBe("going");
@@ -376,6 +391,7 @@ describeDb("university sessions endpoints (integration)", () => {
     // position #1, and the going seat count is unchanged.
     const b = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", otherMemberCookie());
     expect(b.status).toBe(200);
     expect(b.body.session.myRsvpStatus).toBe("waitlist");
@@ -393,6 +409,7 @@ describeDb("university sessions endpoints (integration)", () => {
     const sessionId = await seedSession({ status: "canceled" });
     const res = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(res.status).toBe(400);
   });
@@ -404,6 +421,7 @@ describeDb("university sessions endpoints (integration)", () => {
     });
     const res = await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(res.status).toBe(400);
   });
@@ -416,6 +434,7 @@ describeDb("university sessions endpoints (integration)", () => {
     });
     await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
 
     const list = await request(app)
@@ -439,6 +458,7 @@ describeDb("university sessions endpoints (integration)", () => {
     // RSVP'd member sees the link.
     await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     const mine = await request(app)
       .get("/api/portal/university/sessions?scope=upcoming")
@@ -536,6 +556,7 @@ describeDb("university sessions endpoints (integration)", () => {
   it("admin create rejected for a member NOT on the allow-list (403)", async () => {
     const res = await request(app)
       .post("/api/portal/university/sessions")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({
         title: "New Sit",
@@ -549,6 +570,7 @@ describeDb("university sessions endpoints (integration)", () => {
   it("admin create validates input (400 on past start / non-https url / bad duration)", async () => {
     const past = await request(app)
       .post("/api/portal/university/sessions")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie())
       .send({
         title: "x",
@@ -560,6 +582,7 @@ describeDb("university sessions endpoints (integration)", () => {
 
     const badUrl = await request(app)
       .post("/api/portal/university/sessions")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie())
       .send({
         title: "x",
@@ -571,6 +594,7 @@ describeDb("university sessions endpoints (integration)", () => {
 
     const badDuration = await request(app)
       .post("/api/portal/university/sessions")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie())
       .send({
         title: "x",
@@ -586,6 +610,7 @@ describeDb("university sessions endpoints (integration)", () => {
     const startsAt = new Date(Date.now() + 3 * HOUR).toISOString();
     const created = await request(app)
       .post("/api/portal/university/sessions")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie())
       .send({
         title: "Founder Sit",
@@ -602,11 +627,13 @@ describeDb("university sessions endpoints (integration)", () => {
     // A member RSVPs (so the cancel notice has a recipient).
     await request(app)
       .post(`/api/portal/university/sessions/${id}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
 
     // Patch the title.
     const patched = await request(app)
       .patch(`/api/portal/university/sessions/${id}`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie())
       .send({ title: "Founder Sit (renamed)" });
     expect(patched.status).toBe(200);
@@ -615,6 +642,7 @@ describeDb("university sessions endpoints (integration)", () => {
     sendEmailMock.mockClear();
     const canceled = await request(app)
       .post(`/api/portal/university/sessions/${id}/cancel`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie());
     expect(canceled.status).toBe(200);
     expect(canceled.body.session.status).toBe("canceled");
@@ -635,12 +663,14 @@ describeDb("university sessions endpoints (integration)", () => {
     const missing = "00000000-0000-0000-0000-000000000000";
     const patch = await request(app)
       .patch(`/api/portal/university/sessions/${missing}`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie())
       .send({ title: "nope" });
     expect(patch.status).toBe(404);
 
     const cancel = await request(app)
       .post(`/api/portal/university/sessions/${missing}/cancel`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", adminCookie());
     expect(cancel.status).toBe(404);
   });
@@ -758,6 +788,7 @@ describeDb("university sessions endpoints (integration)", () => {
     // A real member RSVP (name should resolve from university_members).
     await request(app)
       .post(`/api/portal/university/sessions/${sessionId}/rsvp`)
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
 
     // An email-only RSVP with NO university_members row (name → null). Insert
