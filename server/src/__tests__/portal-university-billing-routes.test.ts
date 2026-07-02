@@ -48,6 +48,10 @@ import {
 } from "@paperclipai/db";
 
 const ACCOUNT_ID = "11111111-1111-1111-1111-111111111111";
+// Browsers send an Origin header on every unsafe (non-GET) request; the portal
+// CSRF guard (middleware/portal-csrf.ts) fail-closes without a trusted one.
+// Must match the PORTAL_BASE_URL this suite sets in beforeAll.
+const TRUSTED_ORIGIN = "https://app.test.local";
 const EMAIL = "member@example.com";
 const SUB_ID = "sub_test_university_123";
 // Fixed period end so the ISO assertion is deterministic.
@@ -163,7 +167,7 @@ describe("portal university billing save-flow routes", () => {
     vi.clearAllMocks();
     process.env.PORTAL_SESSION_SECRET =
       "test-test-test-test-test-test-test-test-test-test-secret";
-    process.env.PORTAL_BASE_URL = "https://app.test.local";
+    process.env.PORTAL_BASE_URL = TRUSTED_ORIGIN;
     process.env.NODE_ENV = "development";
     process.env.PORTAL_COOKIE_DOMAIN = "";
   });
@@ -175,6 +179,7 @@ describe("portal university billing save-flow routes", () => {
 
     const res = await request(app)
       .post("/api/portal/university/cancel")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
       .send({ reason: "too busy this month" });
 
@@ -209,6 +214,7 @@ describe("portal university billing save-flow routes", () => {
 
     const res = await request(app)
       .post("/api/portal/university/cancel")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
       .send({});
 
@@ -226,6 +232,7 @@ describe("portal university billing save-flow routes", () => {
     const before = Date.now();
     const res = await request(app)
       .post("/api/portal/university/pause")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
       .send({});
 
@@ -257,6 +264,7 @@ describe("portal university billing save-flow routes", () => {
 
     const res = await request(app)
       .post("/api/portal/university/reactivate")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie());
 
     expect(res.status).toBe(200);
@@ -277,6 +285,7 @@ describe("portal university billing save-flow routes", () => {
 
     const res = await request(app)
       .post("/api/portal/university/cancel")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
       .send({ reason: "x" });
 
@@ -288,7 +297,10 @@ describe("portal university billing save-flow routes", () => {
   it("returns 401 and makes NO Stripe call without a session cookie", async () => {
     const state = freshState();
     const app = buildApp(state);
-    const res = await request(app).post("/api/portal/university/pause").send({});
+    const res = await request(app)
+      .post("/api/portal/university/pause")
+      .set("Origin", TRUSTED_ORIGIN)
+      .send({});
     expect(res.status).toBe(401);
     expect(mockStripeRequest).not.toHaveBeenCalled();
   });
@@ -298,6 +310,7 @@ describe("portal university billing save-flow routes", () => {
     const app = buildApp(state);
     const res = await request(app)
       .post("/api/portal/university/reactivate")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie());
     expect(res.status).toBe(400);
     expect(mockStripeRequest).not.toHaveBeenCalled();

@@ -30,6 +30,11 @@ import {
   bundleSubscriptions,
 } from "@paperclipai/db";
 
+// Browsers send an Origin header on every unsafe (non-GET) request; the portal
+// CSRF guard (middleware/portal-csrf.ts) fail-closes without a trusted one.
+// Must match the PORTAL_BASE_URL this suite sets in beforeAll.
+const TRUSTED_ORIGIN = "https://app.test.local";
+
 // ---------------------------------------------------------------------------
 // In-memory db stub. Drizzle's chained query builders are awaitable thenables;
 // we model that with promise-returning chains. Each test overrides the
@@ -204,7 +209,7 @@ describe("portal routes", () => {
     vi.clearAllMocks();
     process.env.PORTAL_SESSION_SECRET =
       "test-test-test-test-test-test-test-test-test-test-secret";
-    process.env.PORTAL_BASE_URL = "https://app.test.local";
+    process.env.PORTAL_BASE_URL = TRUSTED_ORIGIN;
     process.env.NODE_ENV = "development"; // skip Secure cookie attribute
     delete process.env.PORTAL_COOKIE_DOMAIN;
     process.env.PORTAL_COOKIE_DOMAIN = ""; // suppress Domain= for supertest
@@ -215,6 +220,7 @@ describe("portal routes", () => {
     const app = buildApp(makeDb(state));
     const res = await request(app)
       .post("/api/portal/login")
+      .set("Origin", TRUSTED_ORIGIN)
       .send({ email: "user@example.com" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
@@ -226,7 +232,10 @@ describe("portal routes", () => {
   it("POST /login rejects malformed emails with 400", async () => {
     const state: State = { links: [], accounts: [], actionLog: [] };
     const app = buildApp(makeDb(state));
-    const res = await request(app).post("/api/portal/login").send({ email: "not-an-email" });
+    const res = await request(app)
+      .post("/api/portal/login")
+      .set("Origin", TRUSTED_ORIGIN)
+      .send({ email: "not-an-email" });
     expect(res.status).toBe(400);
     expect(state.links).toHaveLength(0);
   });
@@ -268,7 +277,9 @@ describe("portal routes", () => {
       createdAt: new Date(),
     });
 
-    const res = await request(app).post("/api/portal/auth?token=tok-abc");
+    const res = await request(app)
+      .post("/api/portal/auth?token=tok-abc")
+      .set("Origin", TRUSTED_ORIGIN);
     expect(res.status).toBe(302);
     expect(res.headers["location"]).toBe("https://app.test.local/");
     const setCookie = res.headers["set-cookie"];
@@ -314,9 +325,13 @@ describe("portal routes", () => {
       consumedAt: null,
       createdAt: new Date(),
     });
-    const first = await request(app).post("/api/portal/auth?token=tok-once");
+    const first = await request(app)
+      .post("/api/portal/auth?token=tok-once")
+      .set("Origin", TRUSTED_ORIGIN);
     expect(first.headers["location"]).toBe("https://app.test.local/");
-    const second = await request(app).post("/api/portal/auth?token=tok-once");
+    const second = await request(app)
+      .post("/api/portal/auth?token=tok-once")
+      .set("Origin", TRUSTED_ORIGIN);
     expect(second.headers["location"]).toContain("error=invalid_or_expired");
   });
 
@@ -340,7 +355,9 @@ describe("portal routes", () => {
       consumedAt: null,
       createdAt: new Date(),
     });
-    const auth = await request(app).post("/api/portal/auth?token=tok-zzz");
+    const auth = await request(app)
+      .post("/api/portal/auth?token=tok-zzz")
+      .set("Origin", TRUSTED_ORIGIN);
     const setCookieHeader = auth.headers["set-cookie"];
     const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
     const sessionCookie = cookies

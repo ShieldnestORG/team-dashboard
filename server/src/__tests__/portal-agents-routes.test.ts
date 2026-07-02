@@ -29,6 +29,11 @@ import {
   bundleSubscriptions,
 } from "@paperclipai/db";
 
+// Browsers send an Origin header on every unsafe (non-GET) request; the portal
+// CSRF guard (middleware/portal-csrf.ts) fail-closes without a trusted one.
+// Must match the PORTAL_BASE_URL this suite sets in beforeAll.
+const TRUSTED_ORIGIN = "https://app.test.local";
+
 // ---------------------------------------------------------------------------
 // In-memory DB stub — mirrors the pattern from portal-routes.test.ts.
 // Extends it to handle the 3 agent output tables.
@@ -306,7 +311,9 @@ async function login(app: ReturnType<typeof buildApp>, state: State, email: stri
     consumedAt: null,
     createdAt: new Date(),
   });
-  const authRes = await request(app).post(`/api/portal/auth?token=tok-${email}`);
+  const authRes = await request(app)
+    .post(`/api/portal/auth?token=tok-${email}`)
+    .set("Origin", TRUSTED_ORIGIN);
   const setCookieHeader = authRes.headers["set-cookie"];
   const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
   const sessionCookie = cookies
@@ -326,7 +333,7 @@ describe("portal-agents routes", () => {
     vi.clearAllMocks();
     process.env.PORTAL_SESSION_SECRET =
       "test-test-test-test-test-test-test-test-test-test-secret";
-    process.env.PORTAL_BASE_URL = "https://app.test.local";
+    process.env.PORTAL_BASE_URL = TRUSTED_ORIGIN;
     process.env.NODE_ENV = "development";
     delete process.env.PORTAL_COOKIE_DOMAIN;
     process.env.PORTAL_COOKIE_DOMAIN = "";
@@ -527,6 +534,7 @@ describe("portal-agents routes", () => {
 
     const res = await request(app)
       .post("/api/portal/agents/items/content_draft/draft-003/approve")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", cookie);
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
@@ -575,6 +583,7 @@ describe("portal-agents routes", () => {
 
     const res = await request(app)
       .post("/api/portal/agents/items/schema_impl/schema-001/reject")
+      .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", cookie)
       .send({ reason: "Incorrect schema type" });
     expect(res.status).toBe(200);
