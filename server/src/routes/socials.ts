@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -23,6 +26,7 @@ import {
   listZernioCommentAutomations,
   registerZernioWebhookForAllKeys,
   fetchZernioAnalytics,
+  setZernioCommentAutomationActive,
   validateZernioAutomationInput,
   ZernioAddonMissingError,
   ZernioApiError,
@@ -41,6 +45,32 @@ import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
+
+// ----- funnel catalog (checked-in snapshot of Ig_Auditor/funnels.json) -----
+// Loaded the same way aeo-seo-playbook.ts loads its rules JSON: readFileSync
+// resolved from import.meta.url, so the relative layout is identical from src
+// (tsx dev / vitest) and from dist (prod: node --import tsx-loader dist/index.js
+// — the build already copies src/content-templates/*.json to dist/content-templates/). Lazy + cached: the file is
+// checked in and immutable at runtime.
+interface FunnelCatalog {
+  snapshotDate: string;
+  source: string;
+  funnels: Array<Record<string, unknown>>;
+}
+
+const FUNNEL_CATALOG_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../content-templates/funnel-catalog.json",
+);
+
+let funnelCatalogCache: FunnelCatalog | null = null;
+
+function loadFunnelCatalog(): FunnelCatalog {
+  if (!funnelCatalogCache) {
+    funnelCatalogCache = JSON.parse(readFileSync(FUNNEL_CATALOG_PATH, "utf8")) as FunnelCatalog;
+  }
+  return funnelCatalogCache;
+}
 
 /** True when the actor is an authenticated instance admin. */
 function isAdminActor(req: Request): boolean {
@@ -164,6 +194,85 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
       .returning();
     if (!updated[0]) return res.status(404).json({ error: "not found" });
     res.json({ ok: true });
+  });
+
+  // Funnel-control gate (migration 0146). Enabling only flips the local flag —
+  // no automation is touched. Disabling flips the flag AND kills every live
+  // Zernio-side automation for the account (local mirror isActive is NOT a DM
+  // kill-switch; only a Zernio-side PATCH/DELETE stops the DM engine — see
+  // setZernioCommentAutomationActive). Per-row try/catch: one Zernio failure
+  // must not strand the rest un-killed.
+  router.patch("/accounts/:id/funnels", requireAdmin, async (req, res) => {
+    const id = req.params.id as string;
+    const body = req.body ?? {};
+    if (typeof body.enabled !== "boolean") {
+      return res.status(400).json({ error: "enabled (boolean) required" });
+    }
+    const enabled = body.enabled as boolean;
+    const found = await db
+      .select()
+      .from(socialAccounts)
+      .where(and(eq(socialAccounts.id, id), eq(socialAccounts.companyId, COMPANY_ID)))
+      .limit(1);
+    const account = found[0];
+    if (!account) return res.status(404).json({ error: "not found" });
+
+    await db
+      .update(socialAccounts)
+      .set({ funnelsEnabled: enabled, updatedAt: sql`now()` })
+      .where(and(eq(socialAccounts.id, id), eq(socialAccounts.companyId, COMPANY_ID)));
+
+    const killed: Array<{
+      zernioAutomationId: string;
+      name: string;
+      mechanism?: string;
+      ok: boolean;
+      error?: string;
+    }> = [];
+
+    if (!enabled && account.zernioAccountId) {
+      const liveRows = await db
+        .select()
+        .from(zernioCommentAutomations)
+        .where(
+          and(
+            eq(zernioCommentAutomations.zernioAccountId, account.zernioAccountId),
+            eq(zernioCommentAutomations.isActive, true),
+          ),
+        );
+      for (const row of liveRows) {
+        try {
+          const result = await setZernioCommentAutomationActive(
+            account.zernioAccountId,
+            row.zernioAutomationId,
+            false,
+          );
+          await db
+            .update(zernioCommentAutomations)
+            .set({ isActive: false, updatedAt: sql`now()` })
+            .where(eq(zernioCommentAutomations.zernioAutomationId, row.zernioAutomationId));
+          killed.push({
+            zernioAutomationId: row.zernioAutomationId,
+            name: row.name,
+            mechanism: result.mechanism,
+            ok: true,
+          });
+        } catch (err) {
+          killed.push({
+            zernioAutomationId: row.zernioAutomationId,
+            name: row.name,
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      logger.info(
+        { accountId: id, zid: account.zernioAccountId, killed: killed.length },
+        "account funnels disabled — live Zernio automations killed",
+      );
+    }
+
+    res.json({ ok: true, funnelsEnabled: enabled, killed });
   });
 
   // ----- Automations -----
@@ -479,6 +588,19 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     if (problems.length > 0) {
       return res.status(400).json({ error: "invalid automation", problems });
     }
+    // Funnel-control gate (migration 0146): an account whose funnels_enabled is
+    // false may not get new DM automations. Fail-closed — a Zernio account with
+    // no social_accounts row is treated as disabled (onboard + enable it first).
+    const gateRows = await db
+      .select()
+      .from(socialAccounts)
+      .where(eq(socialAccounts.zernioAccountId, input.zernioAccountId))
+      .limit(1);
+    if (!gateRows[0]?.funnelsEnabled) {
+      return res
+        .status(409)
+        .json({ error: "funnels are disabled for this account — enable funnels first" });
+    }
     try {
       const automation = await createZernioCommentAutomation(input);
       // Mirror immediately so keyword attribution works from the first comment.
@@ -505,6 +627,82 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     } catch (err) {
       zernioErr(res, err);
     }
+  });
+
+  // Per-funnel on/off. This flips the ZERNIO-SIDE automation (the local mirror
+  // isActive alone does not stop DMs) and dual-writes the mirror. Re-activating
+  // requires the account's funnels_enabled gate to be ON. If Zernio has no
+  // PATCH support the service falls back to DELETE (off) / re-CREATE from the
+  // mirror row (on — the automation gets a NEW Zernio id, written back here).
+  router.patch("/zernio/automations/:automationId", requireAdmin, async (req, res) => {
+    const automationId = req.params.automationId as string;
+    const body = req.body ?? {};
+    if (typeof body.isActive !== "boolean") {
+      return res.status(400).json({ error: "isActive (boolean) required" });
+    }
+    if (!body.zernioAccountId || typeof body.zernioAccountId !== "string") {
+      return res.status(400).json({ error: "zernioAccountId required" });
+    }
+    const isActive = body.isActive as boolean;
+    const mirrorRows = await db
+      .select()
+      .from(zernioCommentAutomations)
+      .where(eq(zernioCommentAutomations.zernioAutomationId, automationId))
+      .limit(1);
+    const mirror = mirrorRows[0];
+    if (!mirror) return res.status(404).json({ error: "automation not found" });
+    // The mirror row's accountId is authoritative (Zernio listings are
+    // workspace-wide; never trust caller-supplied account scoping over it).
+    const zid = mirror.zernioAccountId || String(body.zernioAccountId);
+
+    if (isActive) {
+      // Funnel-control gate (migration 0146): fail-closed — no social_accounts
+      // row for this Zernio account means the gate was never enabled.
+      const gateRows = await db
+        .select()
+        .from(socialAccounts)
+        .where(eq(socialAccounts.zernioAccountId, zid))
+        .limit(1);
+      if (!gateRows[0]?.funnelsEnabled) {
+        return res
+          .status(409)
+          .json({ error: "funnels are disabled for this account — enable funnels first" });
+      }
+    }
+
+    try {
+      const result = await setZernioCommentAutomationActive(zid, automationId, isActive, mirror);
+      const mirrorPatch: Record<string, unknown> = { isActive, updatedAt: sql`now()` };
+      if (result.mechanism === "recreate") {
+        // Re-create minted a NEW Zernio automation id — repoint the mirror row
+        // so attribution and future toggles track the live automation.
+        mirrorPatch.zernioAutomationId = result.zernioAutomationId;
+        mirrorPatch.lastSyncedAt = sql`now()`;
+      }
+      await db
+        .update(zernioCommentAutomations)
+        .set(mirrorPatch)
+        .where(eq(zernioCommentAutomations.zernioAutomationId, automationId));
+      res.json({
+        ok: true,
+        isActive,
+        mechanism: result.mechanism,
+        zernioAutomationId: result.zernioAutomationId,
+      });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  // ----- funnel catalog (checked-in snapshot, board-gated read) -----
+
+  router.get("/funnels/catalog", (_req, res) => {
+    const catalog = loadFunnelCatalog();
+    res.json({
+      snapshotDate: catalog.snapshotDate,
+      source: catalog.source,
+      funnels: catalog.funnels,
+    });
   });
 
   router.get("/zernio/automations/:automationId/logs", async (req, res) => {

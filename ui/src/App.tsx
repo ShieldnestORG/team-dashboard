@@ -61,6 +61,7 @@ import { WatchtowerAdmin } from "./pages/WatchtowerAdmin";
 import { UniversityAgentsAdmin } from "./pages/UniversityAgentsAdmin";
 import { SessionsAdmin } from "./pages/SessionsAdmin";
 import { UniversityEmailAnalytics } from "./pages/UniversityEmailAnalytics";
+import { Funnels } from "./pages/Funnels";
 import { DirectoryPricing } from "./pages/DirectoryPricing";
 import { Bundles } from "./pages/Bundles";
 import { Discord } from "./pages/Discord";
@@ -294,6 +295,7 @@ function boardRoutes() {
       <Route path="community-agents" element={<UniversityAgentsAdmin />} />
       <Route path="sessions" element={<SessionsAdmin />} />
       <Route path="university-emails" element={<UniversityEmailAnalytics />} />
+      <Route path="funnels" element={<Funnels />} />
       <Route path="knowledge-graph" element={<KnowledgeGraph />} />
       <Route path="cities" element={<CityCollector />} />
       <Route path="repo-updates" element={<RepoUpdates />} />

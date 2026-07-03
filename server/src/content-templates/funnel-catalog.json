@@ -1,0 +1,382 @@
+{
+  "snapshotDate": "2026-07-02",
+  "source": "Ig_Auditor/funnels.json",
+  "funnels": [
+    {
+      "id": "coherent-2step",
+      "name": "COHERENT — Two-Step Link-Suppression",
+      "status": "live",
+      "accounts": [
+        "@coherencedaddy",
+        "@coherence_daddy (28k)"
+      ],
+      "trigger": "comment \"COHERENT\" (account-wide)",
+      "destination": "coherencedaddy.com/tools/coherence-engine",
+      "mechanic": "Comment COHERENT -> link-FREE DM #1 opener + public reply 'check your DMs' -> user replies -> cron (two_step.py, every 15min, in-window) sends DM #2 with the tracked Coherence Check button.",
+      "primitives": [
+        "automations.py (comment-automation)",
+        "two_step.py (inbox/conversations)",
+        "clickTag/UTM"
+      ],
+      "tos_risk": "low",
+      "live_stats": true,
+      "notes": "The headline funnel. Link moved out of cold DM #1 (was ~20-30% delivery) into reply-gated DM #2 (~70-90%). Idempotent + capped + jittered."
+    },
+    {
+      "id": "room-2step",
+      "name": "ROOM — Founding-Seat Two-Step Link-Suppression",
+      "status": "live",
+      "accounts": [
+        "@coherencedaddy"
+      ],
+      "trigger": "comment \"ROOM\" (account-wide)",
+      "destination": "jointhecoherent.com",
+      "mechanic": "Comment ROOM -> link-FREE DM #1 opener (the 'honest version' $50/mo Founding-seat pitch) + public reply -> user replies -> cron (two_step.py, every 15min, in-window) sends DM #2 with the tracked 'Reserve my Founding seat' button.",
+      "primitives": [
+        "automations.py (comment-automation)",
+        "two_step.py (inbox/conversations)",
+        "clickTag/UTM"
+      ],
+      "tos_risk": "low",
+      "live_stats": true,
+      "notes": "Second funnel routed through the shared two_step.py multi-funnel config (funnel id 'room', seg=room). Zernio automation 6a46e05af48898fb750519e4, brand account 6a2f0e515f7d1751abb350cf only, created 2026-07-02. Founding seat = $50/mo locked for life, first 100, no charge until doors open July 13. Idempotent + capped + jittered (shared caps with coherent-2step)."
+    },
+    {
+      "id": "soft-2step",
+      "name": "SOFT — Brianna Soft-Reset Two-Step",
+      "status": "live",
+      "accounts": [
+        "@bribriwaifu"
+      ],
+      "trigger": "comment \"SOFT\" (account-wide)",
+      "destination": "coherencedaddy.com/tools/soft-reset",
+      "mechanic": "Comment SOFT -> link-FREE DM #1 (persona voice, 'reply YES') + public reply 'sent 🤍' -> user replies -> cron (two_step.py, every 15min, in-window) sends DM #2 with the tracked Soft Reset button.",
+      "primitives": [
+        "Zernio comment-automation (dashboard)",
+        "two_step.py (inbox/conversations)",
+        "clickTag/UTM"
+      ],
+      "tos_risk": "low",
+      "live_stats": true,
+      "notes": "Created 2026-07-02 via dashboard, Bri Bri profile, account 6a2f14375f7d1751abb38592, tag ig-bri-soft. two_step funnel id 'bri-soft' (seg=bri-soft). Lead-magnet page shipped in coherencedaddy PR #93, live at /tools/soft-reset. Handoff footer links the free Coherence Check."
+    },
+    {
+      "id": "cache-2step",
+      "name": "CACHÉ — Mami Look-Caché-for-Less Two-Step (EN/ES)",
+      "status": "live",
+      "accounts": [
+        "@mamibest59"
+      ],
+      "trigger": "comment \"CACHÉ\" or \"CACHE\" (account-wide)",
+      "destination": "coherencedaddy.com/tools/look-cache-for-less",
+      "mechanic": "Comment CACHÉ/CACHE -> link-FREE DM #1 (persona voice EN/ES, 'reply SÍ or YES') + public reply 'te lo mandé 💋' -> user replies -> cron (two_step.py, every 15min, in-window) sends DM #2 with the tracked guide button.",
+      "primitives": [
+        "Zernio comment-automation (dashboard)",
+        "two_step.py (inbox/conversations)",
+        "clickTag/UTM"
+      ],
+      "tos_risk": "low",
+      "live_stats": true,
+      "notes": "Created 2026-07-02 via dashboard, Amber 808500 profile, account 6a2f15895f7d1751abb39208, tag ig-mami-cache. two_step funnel id 'mami-cache' (seg=mami-cache). Lead-magnet page (bilingual) shipped in coherencedaddy PR #93, live at /tools/look-cache-for-less."
+    },
+    {
+      "id": "inbox-engagement",
+      "name": "Manual Inbox Engagement",
+      "status": "built",
+      "accounts": [
+        "all brand"
+      ],
+      "trigger": "operator-driven (comments/threads)",
+      "destination": "varies",
+      "mechanic": "Read comments/threads, then public reply / private-reply DM (with buttons) / hide / like — human-in-the-loop, dry-by-default.",
+      "primitives": [
+        "inbox.py"
+      ],
+      "tos_risk": "medium",
+      "notes": "Tool, not a standing funnel. Every write --live-gated. Use sparingly on the 28k."
+    },
+    {
+      "id": "first-comment",
+      "name": "First-Comment CTA Seeding",
+      "status": "built",
+      "accounts": [
+        "all brand",
+        "YouTube/FB cross-post"
+      ],
+      "trigger": "auto at publish",
+      "destination": "drives the keyword funnel",
+      "mechanic": "Drop the keyword CTA (and niche hashtags) as comment #1 at publish so every post has a clean on-ramp; keep links out of the caption.",
+      "primitives": [
+        "firstComment field (crosspost.py / schedule_*.py)"
+      ],
+      "tos_risk": "low",
+      "notes": "Capability built + threaded into payload builders; not yet used systematically. IG can't PIN via API (manual)."
+    },
+    {
+      "id": "story-reply-keyword",
+      "name": "Story-Reply Keyword Trigger",
+      "status": "planned",
+      "accounts": [
+        "brand",
+        "girls (soft)"
+      ],
+      "trigger": "story reply \"READY\"",
+      "destination": "coherence-engine",
+      "mechanic": "Story CTA 'Reply READY' -> the reply opens the 24h window itself -> instant DM with link. Stronger opt-in than a comment.",
+      "primitives": [
+        "automations.py (trigger:story_reply)"
+      ],
+      "tos_risk": "low",
+      "notes": "One-field clone of the live automation. Cheapest new surface we own. Keep keyword-gated."
+    },
+    {
+      "id": "segmented-keywords",
+      "name": "Segmented Multi-Keyword Self-Routing",
+      "status": "planned",
+      "accounts": [
+        "brand",
+        "girls (soft splits)"
+      ],
+      "trigger": "comment STUCK vs READY (matchMode:exact)",
+      "destination": "two different tools/links",
+      "mechanic": "One post offers 2 keywords; each fires a distinct DM + link + clickTag. Audience self-segments; per-keyword CTR data.",
+      "primitives": [
+        "automations.py (2 per-post automations)",
+        "clickTag"
+      ],
+      "tos_risk": "low",
+      "notes": "Start with exactly 2 keywords. Vary/drop commentReply to avoid the auto-comment-similarity flag."
+    },
+    {
+      "id": "clean-caption-firstcomment",
+      "name": "Clean-Caption + Pinned-Comment Stack",
+      "status": "planned",
+      "accounts": [
+        "all brand"
+      ],
+      "trigger": "firstComment at publish + per-post keyword",
+      "destination": "DM button only",
+      "mechanic": "Strip URLs from captions, end on the keyword CTA, seed keyword via firstComment, pin a brand comment as backup on-ramp.",
+      "primitives": [
+        "firstComment",
+        "automations.py",
+        "manual pin"
+      ],
+      "tos_risk": "low",
+      "notes": "Pure hygiene wrapper around the funnel. Girls: clean-caption only, no keyword."
+    },
+    {
+      "id": "scored-assessment",
+      "name": "Off-Platform Scored Assessment",
+      "status": "planned",
+      "accounts": [
+        "@coherencedaddy"
+      ],
+      "trigger": "comment SCORE / COHERENT",
+      "destination": "scored coherence-engine quiz (email-gated)",
+      "mechanic": "DM #2 carries link to a 12-18Q scored assessment; email unlocks per-pillar score + named weakness -> segues to offer.",
+      "primitives": [
+        "automations.py",
+        "two_step.py",
+        "web build (coherence-engine upgrade)"
+      ],
+      "tos_risk": "low",
+      "notes": "Highest revenue ceiling. Brand-only (girls have no framework to score). Needs web work on the tool."
+    },
+    {
+      "id": "message-design",
+      "name": "Message-Design Levers (Brevity / Name / One-Ask / Jitter)",
+      "status": "planned",
+      "accounts": [
+        "all incl. girls"
+      ],
+      "trigger": "applied to every DM",
+      "destination": "n/a",
+      "mechanic": "<50-word DMs, first-name token, exactly ONE button/keyword, randomized send jitter + caps (bot-fingerprint avoidance).",
+      "primitives": [
+        "automations_staged.json defaults",
+        "two_step.py (jitter live)"
+      ],
+      "tos_risk": "low",
+      "notes": "Partially live: jitter+caps in two_step.py, brevity+one-ask in copy. PENDING: verify + add first-name merge token."
+    },
+    {
+      "id": "in-dm-quiz",
+      "name": "In-DM Branching Quiz",
+      "status": "idea",
+      "accounts": [
+        "@coherencedaddy"
+      ],
+      "trigger": "comment QUIZ",
+      "destination": "Coherence Type result + email capture",
+      "mechanic": "3-question branching quiz INSIDE DMs (quick-reply buttons) -> archetype result -> native email capture.",
+      "primitives": [
+        "Zernio /workflows graph (NEW build)"
+      ],
+      "tos_risk": "medium",
+      "notes": "Needs the Workflows graph (quick_reply/condition/wait_for_reply/set_field). Verify comment-automation can invoke a Workflow. Cut for girls."
+    },
+    {
+      "id": "human-takeover",
+      "name": "Human-Takeover Handoff",
+      "status": "idea",
+      "accounts": [
+        "@coherencedaddy"
+      ],
+      "trigger": "deterministic intent in inbox",
+      "destination": "Mark (human) closes",
+      "mechanic": "Auto opener (DM 1-2) -> a code-only watcher pattern-matches intent (price/refund kw or clickTag click) -> Slack/Telegram ping -> Mark types from there (legit HUMAN_AGENT window).",
+      "primitives": [
+        "inbox poller (NEW)",
+        "no model in routing loop"
+      ],
+      "tos_risk": "low",
+      "notes": "Cut for girls (no human closer). Routing is deterministic code, not an LLM."
+    },
+    {
+      "id": "question-sticker-branch",
+      "name": "Question-Sticker Story Branch",
+      "status": "idea",
+      "accounts": [
+        "brand"
+      ],
+      "trigger": "story question-sticker reply",
+      "destination": "branch-specific tool",
+      "mechanic": "Story question sticker 'What's your #1 block?' -> story_reply matchMode:contains branches (discipline/focus/presence) -> distinct DM + tool + clickTag per branch.",
+      "primitives": [
+        "automations.py (story_reply)"
+      ],
+      "tos_risk": "medium",
+      "notes": "Use the QUESTION sticker (typed reply fires the webhook). Poll/quiz/slider taps do NOT open the window in 2026."
+    },
+    {
+      "id": "ghost-recovery",
+      "name": "Tiered Ghost-Recovery (one in-window touch)",
+      "status": "idea",
+      "accounts": [
+        "@coherencedaddy"
+      ],
+      "trigger": "inbound DM goes silent",
+      "destination": "coherence-engine",
+      "mechanic": "On inbound DM, send value + wait_for_reply (timeout < 24h); the silent edge fires ONE graceful re-touch with the link; reply edge exits.",
+      "primitives": [
+        "Zernio /workflows (inbound_message trigger)"
+      ],
+      "tos_risk": "medium",
+      "notes": "ONE in-window touch only. Drop the day-2/7 steps (out-of-window = violation)."
+    },
+    {
+      "id": "high-ticket-budget-gate",
+      "name": "High-Ticket Budget-Gate -> Application",
+      "status": "idea",
+      "accounts": [
+        "@coherencedaddy"
+      ],
+      "trigger": "comment SCALE / READY",
+      "destination": "self-serve application form (price stated)",
+      "mechanic": "One automated DM + button -> application form that states price + asks 8 qs (budget gate + commitment). Mark DMs qualified leads a Calendly.",
+      "primitives": [
+        "automations.py",
+        "inbox.py (human handoff)"
+      ],
+      "tos_risk": "high",
+      "notes": "Premature — needs a paid 1:1 offer to exist. Automate only message #1; the rest is human. Cut for girls."
+    },
+    {
+      "id": "girls-soft-split",
+      "name": "Girls Soft Keyword Split",
+      "status": "idea",
+      "accounts": [
+        "girls (Bri / Mami / Remy / Solène)"
+      ],
+      "trigger": "comment OUTFIT / ROUTINE",
+      "destination": "link-in-bio variants",
+      "mechanic": "Soft, platform-safe keyword splits -> DM link-in-bio variants. Never a buy/explicit axis. AI-disclosed.",
+      "primitives": [
+        "automations.py"
+      ],
+      "tos_risk": "low",
+      "notes": "Blocked: girls' IG accounts not yet connected to Zernio (Remy/Solène). Lower leverage than brand."
+    },
+    {
+      "id": "multiday-drip",
+      "name": "Multi-Day DM Drip",
+      "status": "wont-build",
+      "accounts": [
+        "—"
+      ],
+      "trigger": "—",
+      "destination": "—",
+      "mechanic": "M3/M4/M5 promo DMs at 48h/4-5d/7d.",
+      "primitives": [
+        "—"
+      ],
+      "tos_risk": "high",
+      "notes": "Out-of-window promo = policy violation; IG DM has no opted-in-list equivalent. Multi-day nurture belongs in email/SMS off the clickTag audience."
+    },
+    {
+      "id": "comment-broadcast",
+      "name": "Broadcast to Comment List",
+      "status": "wont-build",
+      "accounts": [
+        "—"
+      ],
+      "trigger": "—",
+      "destination": "—",
+      "mechanic": "Collect commenters and blast them later.",
+      "primitives": [
+        "—"
+      ],
+      "tos_risk": "high",
+      "notes": "Top 2026 ban trigger. No safe primitive. Do not build."
+    },
+    {
+      "id": "autoreply-rotation",
+      "name": "Public Auto-Reply Rotation",
+      "status": "wont-build",
+      "accounts": [
+        "—"
+      ],
+      "trigger": "—",
+      "destination": "—",
+      "mechanic": "Randomize/rotate public comment replies to dodge similarity detection.",
+      "primitives": [
+        "—"
+      ],
+      "tos_risk": "high",
+      "notes": "Recreates exactly the evasion IG now catches. Keep commentReply a single low-volume string."
+    },
+    {
+      "id": "qualification-loop",
+      "name": "Qualification-Gate Multi-Message Loop",
+      "status": "wont-build",
+      "accounts": [
+        "—"
+      ],
+      "trigger": "—",
+      "destination": "—",
+      "mechanic": "Multi-message automated back-and-forth qualification before any human.",
+      "primitives": [
+        "—"
+      ],
+      "tos_risk": "high",
+      "notes": "Automation-at-scale risk on the 28k. The safe version is one opener + reply-gated DM #2 (already live)."
+    },
+    {
+      "id": "paid-platform-tail",
+      "name": "Girls Paid-Platform Monetization Tail",
+      "status": "wont-build",
+      "accounts": [
+        "—"
+      ],
+      "trigger": "—",
+      "destination": "—",
+      "mechanic": "SFW teaser -> destination-masking -> paid AI-chat platform.",
+      "primitives": [
+        "—"
+      ],
+      "tos_risk": "high",
+      "notes": "Destination-masking + paid AI chat = policy risk. Keep only the front-half traffic-driver for the girls."
+    }
+  ]
+}

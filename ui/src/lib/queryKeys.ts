@@ -160,6 +160,15 @@ export const queryKeys = {
     stats: (filters: Record<string, unknown>) =>
       ["university-emails", "stats", filters] as const,
   },
+  funnels: {
+    accounts: ["funnels", "accounts"] as const,
+    mirror: ["funnels", "mirror"] as const,
+    catalog: ["funnels", "catalog"] as const,
+    leads: (filters: Record<string, unknown>) =>
+      ["funnels", "leads", filters] as const,
+    events: (filters: Record<string, unknown>) =>
+      ["funnels", "events", filters] as const,
+  },
   apiRoutes: ["api-routes"] as const,
   plugins: {
     all: ["plugins"] as const,

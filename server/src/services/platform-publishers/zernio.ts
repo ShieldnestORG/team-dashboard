@@ -558,6 +558,138 @@ export async function deleteZernioCommentAutomation(
   logger.info({ zid: zernioAccountId, automationId }, "Zernio comment automation deleted");
 }
 
+// The mechanism actually used to flip a Zernio automation's active state.
+//   "patch"    — Zernio accepted a PATCH isActive (verified-if-it-works path).
+//   "delete"   — turned OFF by DELETE (the proven kill); also used when the
+//                automation is already gone on Zernio (already-off).
+//   "recreate" — turned ON by re-CREATE from the local mirror (PATCH-on path
+//                unsupported), yielding a NEW automation id.
+export type ZernioAutomationActiveMechanism = "patch" | "delete" | "recreate";
+
+export interface ZernioSetActiveResult {
+  mechanism: ZernioAutomationActiveMechanism;
+  // The automation id that is authoritative AFTER the call. For "patch"/"delete"
+  // this is the input id; for "recreate" it is the NEW id Zernio minted.
+  zernioAutomationId: string;
+}
+
+// Fields the re-create fallback needs off the local mirror row when Zernio does
+// not support PATCH-on. Mirrors zernio_comment_automations columns so a plain
+// ZernioCommentAutomation row satisfies it structurally.
+export interface ZernioAutomationMirrorRow {
+  name: string;
+  trigger?: string | null;
+  keywords?: string[] | null;
+  matchMode?: string | null;
+  dmMessage: string;
+  buttons?: unknown;
+  commentReply?: string | null;
+  linkTracking?: boolean | null;
+  clickTag?: string | null;
+}
+
+// Detects the "method unsupported" shape from Zernio: a PATCH that comes back
+// 404/405/400. Anything else (network, timeout, addon gate, 5xx) is a real
+// failure that must propagate — we only fall back for method-shape errors.
+function isPatchUnsupported(err: unknown): boolean {
+  return err instanceof ZernioApiError && [400, 404, 405].includes(err.status);
+}
+
+/**
+ * Set a Zernio comment automation active/inactive.
+ *
+ * The local mirror's isActive flag does NOTHING to Zernio's DM engine — only a
+ * Zernio-side change does. This tries the (unverified) PATCH isActive first; if
+ * Zernio rejects PATCH as method-unsupported (404/405/400) it falls back to the
+ * proven mechanics:
+ *   - isActive=false → DELETE the automation (proven kill).
+ *   - isActive=true  → re-CREATE from the mirror row (new automation id).
+ *
+ * A 404 on DELETE (automation already gone on Zernio) when turning OFF is a
+ * success — the automation is already-off; reported with mechanism "delete".
+ *
+ * Turning ON without a mirror row is impossible (nothing to re-create from) and
+ * throws a clear error rather than silently no-op'ing.
+ */
+export async function setZernioCommentAutomationActive(
+  zernioAccountId: string,
+  automationId: string,
+  isActive: boolean,
+  mirrorRow?: ZernioAutomationMirrorRow,
+): Promise<ZernioSetActiveResult> {
+  const key = zernioKeyFor(zernioAccountId);
+  if (!key) throw new Error(`no ZERNIO_KEY_${zernioAccountId} configured`);
+
+  // 1. Try the (unverified) PATCH isActive. If Zernio supports it, we're done
+  //    and the id is unchanged — no destructive fallback needed.
+  try {
+    await zernioFetch(key, "PATCH", `/comment-automations/${encodeURIComponent(automationId)}`, {
+      body: { isActive },
+    });
+    logger.info(
+      { zid: zernioAccountId, automationId, isActive },
+      "Zernio comment automation active set via PATCH",
+    );
+    return { mechanism: "patch", zernioAutomationId: automationId };
+  } catch (err) {
+    if (!isPatchUnsupported(err)) throw err; // real failure — do not fall back
+  }
+
+  // 2. PATCH is method-unsupported → fall back to the proven mechanics.
+  if (!isActive) {
+    // Turn OFF via DELETE (the proven kill). If it's already gone on Zernio
+    // (404), treat as already-off success.
+    try {
+      await zernioFetch(
+        key,
+        "DELETE",
+        `/comment-automations/${encodeURIComponent(automationId)}`,
+      );
+    } catch (err) {
+      if (err instanceof ZernioApiError && err.status === 404) {
+        logger.info(
+          { zid: zernioAccountId, automationId },
+          "Zernio comment automation already absent — treated as already-off",
+        );
+        return { mechanism: "delete", zernioAutomationId: automationId };
+      }
+      throw err;
+    }
+    logger.info(
+      { zid: zernioAccountId, automationId },
+      "Zernio comment automation turned OFF via DELETE (PATCH unsupported)",
+    );
+    return { mechanism: "delete", zernioAutomationId: automationId };
+  }
+
+  // Turn ON via re-CREATE from the mirror row. Impossible without the row.
+  if (!mirrorRow) {
+    throw new Error(
+      `cannot re-activate Zernio automation ${automationId}: PATCH unsupported and no mirror row provided to re-create from`,
+    );
+  }
+  const keywords = (mirrorRow.keywords ?? []).map((k) => String(k)).filter(Boolean);
+  const created = await createZernioCommentAutomation({
+    zernioAccountId,
+    name: mirrorRow.name,
+    trigger: mirrorRow.trigger === "story_reply" ? "story_reply" : "comment",
+    keywords,
+    matchMode: mirrorRow.matchMode === "exact" ? "exact" : "contains",
+    dmMessage: mirrorRow.dmMessage,
+    buttons: Array.isArray(mirrorRow.buttons)
+      ? (mirrorRow.buttons as ZernioDmButton[])
+      : undefined,
+    commentReply: mirrorRow.commentReply ?? undefined,
+    linkTracking: mirrorRow.linkTracking ?? undefined,
+    clickTag: mirrorRow.clickTag ?? undefined,
+  });
+  logger.info(
+    { zid: zernioAccountId, oldAutomationId: automationId, newAutomationId: created.id },
+    "Zernio comment automation turned ON via re-CREATE (PATCH unsupported)",
+  );
+  return { mechanism: "recreate", zernioAutomationId: created.id };
+}
+
 export async function getZernioCommentAutomationLogs(
   zernioAccountId: string,
   automationId: string,
