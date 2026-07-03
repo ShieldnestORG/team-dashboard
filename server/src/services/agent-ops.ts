@@ -58,7 +58,9 @@ export function agentOpsService(db: Db) {
         .select({
           agentId: heartbeatRuns.agentId,
           activeCount: sql<number>`count(*)::int`,
-          firstRunId: sql<string>`min(${heartbeatRuns.id})`,
+          // heartbeat_runs.id is uuid; Postgres has no min(uuid) aggregate, so
+          // pick the earliest-created run's id via array_agg instead.
+          firstRunId: sql<string>`(array_agg(${heartbeatRuns.id} order by ${heartbeatRuns.createdAt} asc))[1]`,
         })
         .from(heartbeatRuns)
         .where(

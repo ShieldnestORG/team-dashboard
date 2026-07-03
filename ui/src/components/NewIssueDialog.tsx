@@ -22,6 +22,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -862,6 +864,9 @@ export function NewIssueDialog() {
         if (!open && !createIssue.isPending) closeNewIssue();
       }}
     >
+      <DialogHeader className="sr-only">
+        <DialogTitle>New issue</DialogTitle>
+      </DialogHeader>
       <DialogContent
         showCloseButton={false}
         aria-describedby={undefined}
