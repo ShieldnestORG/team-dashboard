@@ -7,7 +7,6 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { HelpTip } from "@/components/HelpTip";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -72,7 +71,7 @@ function BriefBody({ sections }: { sections: DailyBriefSections }) {
         </CardHeader>
         <CardContent className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            The AI's response wasn't valid JSON, so here's the raw text instead. {sections.fallback.parseError}
+            The AI's answer came back in an unexpected format, so here's the raw text instead. {sections.fallback.parseError}
           </p>
           <pre className="max-h-64 overflow-auto rounded-md bg-muted/40 p-3 text-xs whitespace-pre-wrap">
             {sections.fallback.rawText}
@@ -208,7 +207,7 @@ export function DailyBrief() {
           <h1 className="flex items-center gap-1.5 text-xl font-semibold">
             Daily Brief
             <HelpTip label="What is the Daily Brief?">
-              Every morning the AI reads yesterday's numbers across every account and writes this
+              Every morning the AI reads the last 7 days across every account and writes this
               page. Green = keep doing, amber = underused.
             </HelpTip>
           </h1>

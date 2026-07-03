@@ -188,8 +188,6 @@ const TOK_SECTIONS: SidebarSection[] = [
     accentClassName: "text-violet-400",
     items: [
       { to: "/socials", label: "Socials & Content", icon: Share2 },
-      { to: "/daily-brief", label: "Daily Brief", icon: Sparkles },
-      { to: "/inspiration", label: "Inspiration", icon: Lightbulb },
     ],
   },
 ];

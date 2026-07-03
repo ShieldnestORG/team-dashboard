@@ -258,7 +258,13 @@ function asInspirationReview(v: unknown): InspirationReviewEntry[] {
     if (!item || typeof item !== "object") continue;
     const url = (item as Record<string, unknown>).url;
     const comment = (item as Record<string, unknown>).comment;
-    if (typeof url === "string" && typeof comment === "string") {
+    // The LLM echoes `url` back from the prompt payload, but prompt-injected
+    // note text could coax it into emitting a javascript:/data: URI instead
+    // of the original http(s) link. Re-validate here — the insert-time
+    // validateInspirationUrl() guard on the original pasted URL does NOT
+    // cover this re-entry point, since the URL is passing through model
+    // output before it reaches storage/rendering.
+    if (typeof url === "string" && typeof comment === "string" && validateInspirationUrl(url)) {
       out.push({ url, comment });
     }
   }

@@ -91,6 +91,25 @@ describe("parseBriefResponse", () => {
     expect(result.sections.llmVisibility).toBe("");
     expect(result.sections.summary).toEqual([]);
   });
+
+  it("drops inspirationReview entries whose url is not http(s), even though comment/url are both strings", () => {
+    // Guards against prompt-injected model output emitting a javascript:/data:
+    // URI — the insert-time validateInspirationUrl() guard on the original
+    // pasted link doesn't cover this re-entry point via LLM output.
+    const withBadUrl = {
+      ...validPayload,
+      inspirationReview: [
+        { url: "javascript:alert(document.cookie)", comment: "malicious" },
+        { url: "data:text/html,<script>alert(1)</script>", comment: "also malicious" },
+        { url: "https://instagram.com/p/abc", comment: "fine" },
+      ],
+    };
+    const result = parseBriefResponse(JSON.stringify(withBadUrl));
+    expect(result.ok).toBe(true);
+    expect(result.sections.inspirationReview).toEqual([
+      { url: "https://instagram.com/p/abc", comment: "fine" },
+    ]);
+  });
 });
 
 describe("validateInspirationUrl", () => {
