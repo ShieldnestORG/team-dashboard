@@ -17,6 +17,7 @@ import {
   GitBranch,
   GitPullRequest,
   Globe,
+  GraduationCap,
   Handshake,
   HeartPulse,
   Hexagon,
@@ -144,6 +145,7 @@ const DEFAULT_SECTIONS: SidebarSection[] = [
     accentClassName: "text-rose-400",
     items: [
       { to: "/members", label: "Members", icon: Users, adminOnly: true },
+      { to: "/university", label: "University", icon: GraduationCap, adminOnly: true },
       { to: "/affiliates", label: "Affiliates", icon: UsersRound },
       { to: "/partners", label: "Partners", icon: Handshake },
       { to: "/costs", label: "Costs", icon: DollarSign },
