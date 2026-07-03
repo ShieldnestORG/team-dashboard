@@ -22,6 +22,7 @@ import {
   HeartPulse,
   Hexagon,
   History,
+  Lightbulb,
   Mail,
   MapPin,
   Megaphone,
@@ -30,6 +31,7 @@ import {
   Repeat,
   Settings,
   Share2,
+  Sparkles,
   Target,
   Users,
   UsersRound,
@@ -124,6 +126,8 @@ const DEFAULT_SECTIONS: SidebarSection[] = [
       { to: "/socials", label: "Socials & Content", icon: Share2 },
       { to: "/funnels", label: "Funnels", icon: Filter, adminOnly: true },
       { to: "/content-hub", label: "Content Hub", icon: Megaphone },
+      { to: "/daily-brief", label: "Daily Brief", icon: Sparkles },
+      { to: "/inspiration", label: "Inspiration", icon: Lightbulb },
     ],
   },
   {
@@ -184,6 +188,8 @@ const TOK_SECTIONS: SidebarSection[] = [
     accentClassName: "text-violet-400",
     items: [
       { to: "/socials", label: "Socials & Content", icon: Share2 },
+      { to: "/daily-brief", label: "Daily Brief", icon: Sparkles },
+      { to: "/inspiration", label: "Inspiration", icon: Lightbulb },
     ],
   },
 ];

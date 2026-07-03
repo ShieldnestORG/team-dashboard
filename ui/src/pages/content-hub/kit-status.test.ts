@@ -165,7 +165,12 @@ describe("marketing-role sidebar filter", () => {
     expect(section.kind).toBe("items");
     if (section.kind === "items") {
       expect(section.label).toBe("Content & Socials");
-      expect(section.items.map((item) => item.to)).toEqual(["/socials", "/content-hub"]);
+      expect(section.items.map((item) => item.to)).toEqual([
+        "/socials",
+        "/content-hub",
+        "/daily-brief",
+        "/inspiration",
+      ]);
     }
   });
 

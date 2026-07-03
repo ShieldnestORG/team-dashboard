@@ -180,6 +180,14 @@ export const queryKeys = {
     library: (filters: Record<string, unknown>) => ["funnels", "library", filters] as const,
     coverage: ["funnels", "coverage"] as const,
   },
+  inspiration: {
+    list: (status?: string) => ["inspiration", status ?? "all"] as const,
+  },
+  dailyBrief: {
+    list: (limit?: number) => ["daily-brief", "list", limit ?? 30] as const,
+    latest: ["daily-brief", "latest"] as const,
+    forDate: (date: string) => ["daily-brief", "date", date] as const,
+  },
   apiRoutes: ["api-routes"] as const,
   plugins: {
     all: ["plugins"] as const,

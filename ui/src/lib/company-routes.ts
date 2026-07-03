@@ -71,6 +71,8 @@ export const BOARD_ROUTE_MANIFEST: readonly string[] = [
   "university-emails",
   "content-hub",
   "university",
+  "daily-brief",
+  "inspiration",
 ];
 
 const BOARD_ROUTE_ROOTS = new Set(BOARD_ROUTE_MANIFEST);
