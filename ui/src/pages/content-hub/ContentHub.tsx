@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { socialsApi } from "@/api/socials";
 import { KITS, KIT_SYNC_META } from "@/content/marketing-kits";
+import { CaptionStylePicker } from "./CaptionStylePicker";
 import { GreenLightBoard } from "./GreenLightBoard";
 import { KitCard } from "./KitCard";
 import { formatWhen } from "./kit-status";
@@ -70,6 +71,8 @@ export function ContentHub() {
           ))}
         </div>
       </section>
+
+      <CaptionStylePicker />
 
       <footer className="border-t border-border pt-4 text-xs text-muted-foreground">
         Synced from {sourceName} §6 · {syncDate} · {KIT_SYNC_META.sha256.slice(0, 8)}

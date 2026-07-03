@@ -42,6 +42,7 @@ import {
 import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
 import { invalidatePlatformCapCache, listCounters } from "../services/socials/platform-caps.js";
 import { logger } from "../middleware/logger.js";
+import { CAPTION_STYLES, CAPTION_STYLE_SYNC_META } from "../data/caption-styles.generated.js";
 import type { StorageService } from "../storage/types.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -725,6 +726,20 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     } catch (err) {
       zernioErr(res, err);
     }
+  });
+
+  // Caption preset menu for clip production (Content Hub picker + content
+  // agents choosing a `caption_clip.py --style <name>` value). Committed data
+  // synced from the tool's STYLES dict — see the generated module header for
+  // the refresh path. Static and read-only: no DB, no video engine on VPS4.
+  router.get("/caption-styles", (_req, res) => {
+    res.json({
+      styles: CAPTION_STYLES,
+      meta: CAPTION_STYLE_SYNC_META,
+      usage:
+        "python3 tools/caption_clip.py <video> --style <name> " +
+        "(tool lives in the 6-2026-new-youtube-automation repo, not on this server)",
+    });
   });
 
   // Mirror-only list (no Zernio round-trip) for fast cockpit rendering.

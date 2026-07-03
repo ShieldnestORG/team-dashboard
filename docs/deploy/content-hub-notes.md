@@ -206,3 +206,35 @@ committed), UI freshly built, Playwright click-through.
 - Tokns company creation via the onboarding wizard UI (this DB's TOK row
   was created by the earlier wave; the wizard path is documented in
   `docs/tokns-project.md` but was not re-clicked in this pass).
+
+## Caption style picker (stacked branch `feat/caption-style-picker`, 2026-07-02)
+
+> **Cluster:** content-hub · **Tags:** captions, styles, presets, caption-clip, picker, thumbnails · **Related:** [TODO-caption-style-system](../../../6-2026-new-youtube-automation/docs/TODO-caption-style-system.md), [HANDOFF-marketing-content-hub](../../HANDOFF-marketing-content-hub.md)
+
+Built in a separate session, stacked ON TOP of `feat/marketing-content-hub`
+(merge that branch first; this one follows). Adds the caption-look menu for
+clip production:
+
+- **UI:** `CaptionStylePicker` section at the bottom of the Content Hub page —
+  six preset thumbnails (classic/beast/outline/boxed/coral/clean), copy-name
+  buttons, brand/default badges. Pure committed data + static PNGs; no API
+  call, no video rendering in the app (VPS4 rootfs is read-only and has no
+  ffmpeg/ImageMagick/whisper — burns happen on Mark's Mac via
+  `caption_clip.py`, in the `6-2026-new-youtube-automation` repo).
+- **Agent surface:** `GET /api/socials/caption-styles` (read-only, inside the
+  marketing-gate's `/api/socials` allowlist) returns `{styles, meta, usage}`
+  so content agents can pick a `--style <name>` value without the tool repo.
+- **Sync:** `pnpm caption-styles:sync` (scripts/import-caption-styles.py)
+  importlib-loads `caption_clip.py`, mirrors its `STYLES` dict into
+  `ui/src/content/caption-styles/styles.generated.ts` +
+  `server/src/data/caption-styles.generated.ts`, and renders each preview PNG
+  **with the tool's own `render_caption_png()`** over a synthetic 9:16 frame —
+  thumbnails are pixel-true to a real burn. `--check` exits 1 on STYLES drift
+  (CI-able). Render-only changes to the tool need a manual re-run.
+- **Diagram note for Wave-4:** when the Content Hub node is added to
+  `docs/architecture/company-structure.mmd`, include this surface in the same
+  changelog line (endpoint granularity is below the diagram's level — no
+  separate node needed).
+- **Deliberately NOT built:** `--style-json` escape hatch on caption_clip.py
+  (custom per-project style dicts). The picker is preset-only; add the flag in
+  the tool repo only when a real custom-brand need shows up.
