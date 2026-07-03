@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -15,6 +12,7 @@ import {
   zernioWebhookEvents,
   zernioCommentAutomations,
   zernioPostAnalytics,
+  funnels,
 } from "@paperclipai/db";
 import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
@@ -41,37 +39,23 @@ import {
 } from "../services/socials/zernio-analytics.js";
 import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
 import { invalidatePlatformCapCache, listCounters } from "../services/socials/platform-caps.js";
+import {
+  loadFunnelCatalog,
+  ensureFunnelCatalogImported,
+  computeFunnelCoverage,
+  generateFunnelDraftsForAccount,
+  approveFunnel,
+  rejectFunnel,
+  armFunnel,
+  retireFunnel,
+  FunnelGuardError,
+  type FunnelStyle,
+} from "../services/socials/funnels-service.js";
 import { logger } from "../middleware/logger.js";
 import { CAPTION_STYLES, CAPTION_STYLE_SYNC_META } from "../data/caption-styles.generated.js";
 import type { StorageService } from "../storage/types.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
-
-// ----- funnel catalog (checked-in snapshot of Ig_Auditor/funnels.json) -----
-// Loaded the same way aeo-seo-playbook.ts loads its rules JSON: readFileSync
-// resolved from import.meta.url, so the relative layout is identical from src
-// (tsx dev / vitest) and from dist (prod: node --import tsx-loader dist/index.js
-// — the build already copies src/content-templates/*.json to dist/content-templates/). Lazy + cached: the file is
-// checked in and immutable at runtime.
-interface FunnelCatalog {
-  snapshotDate: string;
-  source: string;
-  funnels: Array<Record<string, unknown>>;
-}
-
-const FUNNEL_CATALOG_PATH = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../content-templates/funnel-catalog.json",
-);
-
-let funnelCatalogCache: FunnelCatalog | null = null;
-
-function loadFunnelCatalog(): FunnelCatalog {
-  if (!funnelCatalogCache) {
-    funnelCatalogCache = JSON.parse(readFileSync(FUNNEL_CATALOG_PATH, "utf8")) as FunnelCatalog;
-  }
-  return funnelCatalogCache;
-}
 
 // ---------------------------------------------------------------------------
 // Green-light board read model (Content Hub). Mirror-backed ONLY — this
@@ -887,6 +871,188 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
       source: catalog.source,
       funnels: catalog.funnels,
     });
+  });
+
+  // ----- Funnel Library (BUILD PHASE 2) -----
+  // Working table (funnels): AI-drafted + admin-authored funnel rows, lazily
+  // seeded from the catalog above. See funnels-service.ts for the full
+  // draft -> ready -> live -> retired lifecycle and every guard.
+
+  const funnelErr = (res: Response, err: unknown): void => {
+    if (err instanceof FunnelGuardError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    zernioErr(res, err);
+  };
+
+  router.get("/funnels", async (req, res) => {
+    await ensureFunnelCatalogImported(db);
+    const accountHandle = req.query.accountHandle as string | undefined;
+    const status = req.query.status as string | undefined;
+    const where = [eq(funnels.companyId, COMPANY_ID)];
+    if (accountHandle) where.push(eq(funnels.accountHandle, accountHandle));
+    if (status) where.push(eq(funnels.status, status));
+    const rows = await db
+      .select()
+      .from(funnels)
+      .where(and(...where))
+      .orderBy(desc(funnels.updatedAt));
+    res.json({ funnels: rows });
+  });
+
+  // Per funnels-capable account (zernioAccountId set): counts by status +
+  // the 5-ready target. Powers the coverage meter chips and the "Accounts at
+  // 5+ ready" KPI tile.
+  router.get("/funnels/coverage", async (_req, res) => {
+    try {
+      const coverage = await computeFunnelCoverage(db);
+      res.json({ coverage });
+    } catch (err) {
+      logger.error({ err }, "funnels coverage failed");
+      res.status(500).json({ error: "coverage failed" });
+    }
+  });
+
+  // Admin-authored funnel (draft by default) — distinct from AI drafting
+  // (POST /funnels/generate below).
+  router.post("/funnels", requireAdmin, async (req, res) => {
+    const body = req.body ?? {};
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const accountHandle = typeof body.accountHandle === "string" ? body.accountHandle.trim() : "";
+    if (!name || !accountHandle) {
+      return res.status(400).json({ error: "name and accountHandle required" });
+    }
+    const style = body.style === "controversial" || body.style === "weird" ? body.style : "standard";
+    const matchMode = body.matchMode === "exact" ? "exact" : "contains";
+    const accountRows = await db
+      .select({ id: socialAccounts.id })
+      .from(socialAccounts)
+      .where(
+        and(
+          eq(socialAccounts.companyId, COMPANY_ID),
+          eq(socialAccounts.handle, accountHandle),
+          eq(socialAccounts.archived, false),
+        ),
+      )
+      .limit(1);
+    const inserted = await db
+      .insert(funnels)
+      .values({
+        companyId: COMPANY_ID,
+        name,
+        accountHandle,
+        socialAccountId: accountRows[0]?.id ?? null,
+        keywords: Array.isArray(body.keywords) ? body.keywords.map(String) : [],
+        matchMode,
+        dmMessage: typeof body.dmMessage === "string" ? body.dmMessage : "",
+        destinationUrl: body.destinationUrl ? String(body.destinationUrl) : null,
+        postHooks: Array.isArray(body.postHooks) ? body.postHooks.map(String) : [],
+        style,
+        tosRisk: body.tosRisk ? String(body.tosRisk) : null,
+        notes: body.notes ? String(body.notes) : null,
+        status: "draft",
+        createdBy: actorUserId(req) ?? "admin",
+      })
+      .returning();
+    res.status(201).json({ funnel: inserted[0] });
+  });
+
+  // Edit an editable (draft/ready) funnel. Live/retired rows are immutable
+  // here — retire a live funnel before drafting its replacement.
+  router.patch("/funnels/:id", requireAdmin, async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await db
+      .select()
+      .from(funnels)
+      .where(and(eq(funnels.id, id), eq(funnels.companyId, COMPANY_ID)))
+      .limit(1);
+    const row = existing[0];
+    if (!row) return res.status(404).json({ error: "funnel not found" });
+    if (row.status === "live" || row.status === "retired") {
+      return res.status(409).json({ error: `cannot edit a '${row.status}' funnel` });
+    }
+    const body = req.body ?? {};
+    const patch: Record<string, unknown> = {};
+    if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim();
+    if (Array.isArray(body.keywords)) patch.keywords = body.keywords.map(String);
+    if (body.matchMode === "exact" || body.matchMode === "contains") patch.matchMode = body.matchMode;
+    if (typeof body.dmMessage === "string") patch.dmMessage = body.dmMessage;
+    if (body.destinationUrl === null || typeof body.destinationUrl === "string") {
+      patch.destinationUrl = body.destinationUrl;
+    }
+    if (Array.isArray(body.postHooks)) patch.postHooks = body.postHooks.map(String);
+    if (body.style === "standard" || body.style === "controversial" || body.style === "weird") {
+      patch.style = body.style;
+    }
+    if (body.tosRisk === null || typeof body.tosRisk === "string") patch.tosRisk = body.tosRisk;
+    if (body.notes === null || typeof body.notes === "string") patch.notes = body.notes;
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "no fields to update" });
+    patch.updatedAt = sql`now()`;
+    const updated = await db.update(funnels).set(patch).where(eq(funnels.id, id)).returning();
+    res.json({ funnel: updated[0] });
+  });
+
+  router.post("/funnels/:id/approve", requireAdmin, async (req, res) => {
+    try {
+      const funnel = await approveFunnel(db, req.params.id as string, actorUserId(req));
+      res.json({ funnel });
+    } catch (err) {
+      funnelErr(res, err);
+    }
+  });
+
+  router.post("/funnels/:id/reject", requireAdmin, async (req, res) => {
+    try {
+      const funnel = await rejectFunnel(db, req.params.id as string);
+      res.json({ funnel });
+    } catch (err) {
+      funnelErr(res, err);
+    }
+  });
+
+  // Requires status='ready' + the account's funnels_enabled gate on; creates
+  // the real Zernio comment automation (existing create function) and flips
+  // status -> live. On a Zernio failure the row stays 'ready' — never
+  // silently mark something live that Zernio rejected.
+  router.post("/funnels/:id/arm", requireAdmin, async (req, res) => {
+    try {
+      const funnel = await armFunnel(db, req.params.id as string);
+      res.json({ funnel });
+    } catch (err) {
+      funnelErr(res, err);
+    }
+  });
+
+  // Requires status='ready' or 'live'; if live, deletes the Zernio automation
+  // first (tolerating an already-gone 404) then flips status -> retired.
+  router.post("/funnels/:id/retire", requireAdmin, async (req, res) => {
+    try {
+      const funnel = await retireFunnel(db, req.params.id as string);
+      res.json({ funnel });
+    } catch (err) {
+      funnelErr(res, err);
+    }
+  });
+
+  // AI-draft new funnels for one account (status='draft' — always awaits
+  // human approval). Same generator the daily socials:funnel-topup cron
+  // calls; see funnels-service.ts for the prompt + defensive parser.
+  router.post("/funnels/generate", requireAdmin, async (req, res) => {
+    const body = req.body ?? {};
+    const accountHandle = typeof body.accountHandle === "string" ? body.accountHandle.trim() : "";
+    if (!accountHandle) return res.status(400).json({ error: "accountHandle required" });
+    const count = typeof body.count === "number" ? body.count : undefined;
+    const styles = Array.isArray(body.styles)
+      ? (body.styles.filter((s: unknown) => typeof s === "string") as FunnelStyle[])
+      : undefined;
+    try {
+      const result = await generateFunnelDraftsForAccount(db, accountHandle, { count, styles });
+      res.status(201).json(result);
+    } catch (err) {
+      logger.error({ err, accountHandle }, "funnels generate failed");
+      res.status(502).json({ error: err instanceof Error ? err.message : "generation failed" });
+    }
   });
 
   router.get("/zernio/automations/:automationId/logs", async (req, res) => {
