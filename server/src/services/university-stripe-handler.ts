@@ -632,6 +632,36 @@ export function voiceAddonTierByPriceId(
   return null;
 }
 
+// A minimal, API-version-tolerant shape for an invoice line item's price ref:
+// classic `price.id`, legacy `plan.id`, and the newer string id at
+// `pricing.price_details.price`. Only the price id matters for the add-on check.
+export interface InvoiceLineForAddonCheck {
+  price?: { id?: string | null } | null;
+  plan?: { id?: string | null } | null;
+  pricing?: { price_details?: { price?: string | null } | null } | null;
+}
+
+// Order-independent add-on detection: does this invoice bill a voice add-on
+// price? Reads the invoice's OWN line items — which Stripe embeds inline in the
+// invoice.paid webhook payload — so an add-on invoice is identified even before
+// checkout.session.completed has written the university_voice_addons row (Stripe
+// events can arrive out of order). Meant to be OR'd with isVoiceAddonSubscription:
+// it's an add-on iff EITHER the line items OR the DB row say so.
+export function invoiceLinesAreVoiceAddon(
+  lines: InvoiceLineForAddonCheck[] | null | undefined,
+): boolean {
+  if (!Array.isArray(lines)) return false;
+  for (const line of lines) {
+    const priceId =
+      line?.price?.id ??
+      line?.plan?.id ??
+      line?.pricing?.price_details?.price ??
+      null;
+    if (priceId && voiceAddonTierByPriceId(priceId)) return true;
+  }
+  return false;
+}
+
 // Map Stripe's subscription status to the add-on's two-state column, with a
 // THREE-way outcome that mirrors the membership mapStripeStatus above:
 //   active | trialing              → 'active'
