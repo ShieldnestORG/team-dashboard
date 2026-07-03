@@ -23,6 +23,10 @@ export interface SocialAccount {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
+  // Zernio linkage + funnel master-switch. Present on GET /socials/accounts
+  // rows; absent on create/update responses, hence optional.
+  zernioAccountId?: string | null;
+  funnelsEnabled?: boolean;
 }
 
 export interface SocialAutomation {
@@ -117,6 +121,102 @@ export interface CalendarEvent {
   automated: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Funnels — Zernio comment→DM automation mirror + strategy catalog + leads.
+// Response shapes are DEFENSIVE: the Zernio mirror + strategy catalog carry
+// free-form jsonb whose fields vary per row. Treat every optional as maybe-absent.
+// ---------------------------------------------------------------------------
+
+// One row of GET /socials/zernio/automations/mirror — a live comment→DM
+// automation as last synced from Zernio (mirror refreshes hourly).
+export interface ZernioAutomationMirror {
+  zernioAutomationId: string;
+  zernioAccountId: string;
+  name: string;
+  platform: string;
+  trigger: string | null;
+  keywords: string[];
+  matchMode: string | null;
+  dmMessage: string | null;
+  clickTag: string | null;
+  isActive: boolean;
+  // jsonb blob, shape varies (may carry triggered / dmsSent / clicks …).
+  stats: Record<string, unknown> | null;
+  lastSyncedAt: string | null;
+}
+
+// Result of toggling one automation on/off. `mechanism` reports how Zernio
+// actually applied the change — "patch" flips a flag, "delete" removes the
+// automation, "recreate" re-adds it. Never imply success the mechanism denies.
+export interface ZernioAutomationToggleResult {
+  ok: boolean;
+  isActive: boolean;
+  mechanism: "patch" | "delete" | "recreate";
+  zernioAutomationId: string;
+}
+
+// One automation killed as a side effect of turning an account's funnels OFF.
+export interface KilledAutomation {
+  zernioAutomationId: string;
+  name: string;
+  mechanism?: "patch" | "delete" | "recreate";
+  ok: boolean;
+  error?: string;
+}
+
+export interface AccountFunnelsToggleResult {
+  ok: boolean;
+  funnelsEnabled: boolean;
+  killed: KilledAutomation[];
+}
+
+// One entry of the read-only strategy catalog (GET /socials/funnels/catalog).
+// 19 entries; fields vary widely per status — everything past id/name/status
+// is optional.
+export interface FunnelCatalogEntry {
+  id: string;
+  name: string;
+  status: string;
+  accounts?: string[];
+  trigger?: string;
+  destination?: string;
+  mechanic?: string;
+  tos_risk?: string;
+  clickTag?: string;
+  [key: string]: unknown;
+}
+
+export interface FunnelCatalog {
+  snapshotDate: string | null;
+  source: string | null;
+  funnels: FunnelCatalogEntry[];
+}
+
+// One captured lead (GET /socials/leads).
+export interface FunnelLead {
+  id: string;
+  captureKind: string | null;
+  platform: string | null;
+  zernioAccountId: string | null;
+  handle: string | null;
+  displayName: string | null;
+  email: string | null;
+  keyword: string | null;
+  clickTag: string | null;
+  eventCount: number | null;
+  lastEventAt: string | null;
+  brevoSyncedAt: string | null;
+}
+
+// One inbound Zernio webhook event (GET /socials/zernio/events).
+export interface ZernioEvent {
+  id: string;
+  eventType: string | null;
+  receivedAt: string | null;
+  processedAt: string | null;
+  error: string | null;
+}
+
 export const socialsApi = {
   listAccounts: (params?: { brand?: string; platform?: string; status?: string }) => {
     const q = new URLSearchParams();
@@ -166,6 +266,50 @@ export const socialsApi = {
     if (params.platform) q.set("platform", params.platform);
     return api.get<{ from: string; to: string; events: CalendarEvent[] }>(
       `/socials/calendar?${q.toString()}`,
+    );
+  },
+
+  // ── Funnels ───────────────────────────────────────────────────────────────
+  // Live comment→DM automation mirror (refreshes hourly).
+  zernioAutomationsMirror: () =>
+    api.get<{ automations: ZernioAutomationMirror[] }>(
+      "/socials/zernio/automations/mirror",
+    ),
+  // Toggle one automation on/off directly on Zernio. 404 = not found;
+  // 409 {error} when enabling on a funnels-disabled account.
+  setAutomationActive: (
+    automationId: string,
+    body: { zernioAccountId: string; isActive: boolean },
+  ) =>
+    api.patch<ZernioAutomationToggleResult>(
+      `/socials/zernio/automations/${automationId}`,
+      body,
+    ),
+  // Master switch: enable/disable ALL funnels for an account. Disabling
+  // kills every live automation on Zernio (see `killed`).
+  setAccountFunnels: (accountId: string, body: { enabled: boolean }) =>
+    api.patch<AccountFunnelsToggleResult>(
+      `/socials/accounts/${accountId}/funnels`,
+      body,
+    ),
+  // Read-only strategy catalog.
+  funnelsCatalog: () => api.get<FunnelCatalog>("/socials/funnels/catalog"),
+  // Recent captured leads.
+  funnelLeads: (params?: { limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return api.get<{ leads: FunnelLead[]; brevoConfigured: boolean }>(
+      `/socials/leads${qs ? `?${qs}` : ""}`,
+    );
+  },
+  // Recent inbound Zernio webhook events.
+  zernioEvents: (params?: { limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return api.get<{ events: ZernioEvent[] }>(
+      `/socials/zernio/events${qs ? `?${qs}` : ""}`,
     );
   },
 };

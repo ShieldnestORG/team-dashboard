@@ -34,6 +34,7 @@ import {
   BarChart3,
   Video,
   Mail,
+  Filter,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -148,6 +149,7 @@ export function Sidebar() {
 
         <SidebarSection label="Content & Socials" accentClassName="text-violet-400">
           <SidebarNavItem to="/socials" label="Socials & Content" icon={Share2} />
+          <SidebarNavItem to="/funnels" label="Funnels" icon={Filter} />
         </SidebarSection>
 
         <SidebarSection label="Products" accentClassName="text-emerald-400">

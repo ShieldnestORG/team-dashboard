@@ -28,6 +28,10 @@ export const socialAccounts = pgTable(
     status: text("status").notNull().default("active"),
     // 'full_auto' | 'assisted' | 'manual' | 'none'
     automationMode: text("automation_mode").notNull().default("manual"),
+    // Funnel-control gate (migration 0146_account_funnel_gate): whether this
+    // account may run IG DM/comment funnels. Default OFF — an admin enables it
+    // before any Zernio comment automation can be created/re-activated for it.
+    funnelsEnabled: boolean("funnels_enabled").notNull().default(false),
     automationNotes: text("automation_notes"),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     ownerUserId: uuid("owner_user_id"),
