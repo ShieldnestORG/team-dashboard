@@ -314,3 +314,10 @@ export type {
 } from "./zernio_engagement.js";
 export { voiceSnippets } from "./voice_snippets.js";
 export type { VoiceSnippet, NewVoiceSnippet } from "./voice_snippets.js";
+export { inspirationItems, dailyBriefs } from "./daily_brief.js";
+export type {
+  InspirationItem,
+  NewInspirationItem,
+  DailyBrief,
+  NewDailyBrief,
+} from "./daily_brief.js";

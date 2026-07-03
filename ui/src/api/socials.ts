@@ -306,6 +306,64 @@ export interface GenerateFunnelsResult {
   model: string;
 }
 
+// ---------------------------------------------------------------------------
+// Inspiration board — paste-a-link (GET/POST /socials/inspiration).
+// ---------------------------------------------------------------------------
+
+export interface InspirationItem {
+  id: string;
+  companyId: string;
+  url: string;
+  note: string | null;
+  addedByUserId: string | null;
+  status: "new" | "reviewed" | "archived";
+  aiComment: string | null;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Daily AI Brief (GET/POST /socials/briefs). `sections` shape is defensive —
+// see server/src/services/socials/daily-brief.ts. A parse failure stores
+// sections.fallback instead of the normal fields, so treat every field as
+// maybe-absent.
+// ---------------------------------------------------------------------------
+
+export interface DailyBriefSections {
+  whatWorked?: string[];
+  underutilized?: string[];
+  contentSuggestions?: Record<string, string[]>;
+  funnelSuggestions?: string[];
+  inspirationReview?: Array<{ url: string; comment: string }>;
+  llmVisibility?: string;
+  summary?: string[];
+  fallback?: { rawText: string; parseError: string };
+}
+
+export interface DailyBrief {
+  id: string;
+  companyId: string;
+  briefDate: string;
+  sections: DailyBriefSections;
+  model: string | null;
+  createdAt: string;
+}
+
+export interface DailyBriefListEntry {
+  briefDate: string;
+  model: string | null;
+  createdAt: string;
+}
+
+export interface DailyBriefRunResult {
+  ok: boolean;
+  briefDate: string;
+  parseOk: boolean;
+  provider: string;
+  model: string;
+  inspirationReviewed: number;
+  error?: string;
+}
+
 export const socialsApi = {
   listAccounts: (params?: { brand?: string; platform?: string; status?: string }) => {
     const q = new URLSearchParams();
@@ -455,4 +513,23 @@ export const socialsApi = {
     api.post<{ funnel: LibraryFunnel }>(`/socials/funnels/${id}/retire`, {}),
   generateLibraryFunnels: (data: { accountHandle: string; count?: number; styles?: FunnelStyle[] }) =>
     api.post<GenerateFunnelsResult>("/socials/funnels/generate", data),
+  // ── Inspiration board ────────────────────────────────────────────────────
+  listInspiration: (status?: string) => {
+    const qs = status ? `?status=${status}` : "";
+    return api.get<{ items: InspirationItem[] }>(`/socials/inspiration${qs}`);
+  },
+  addInspiration: (data: { url: string; note?: string }) =>
+    api.post<{ item: InspirationItem }>("/socials/inspiration", data),
+  deleteInspiration: (id: string) => api.delete<{ ok: true }>(`/socials/inspiration/${id}`),
+  archiveInspiration: (id: string) =>
+    api.post<{ item: InspirationItem }>(`/socials/inspiration/${id}/archive`, {}),
+
+  // ── Daily AI Brief ────────────────────────────────────────────────────────
+  listBriefs: (limit?: number) =>
+    api.get<{ briefs: DailyBriefListEntry[] }>(
+      `/socials/briefs${limit ? `?limit=${limit}` : ""}`,
+    ),
+  latestBrief: () => api.get<{ brief: DailyBrief }>("/socials/briefs/latest"),
+  briefForDate: (date: string) => api.get<{ brief: DailyBrief }>(`/socials/briefs/${date}`),
+  runBriefNow: () => api.post<DailyBriefRunResult>("/socials/briefs/run-now", {}),
 };
