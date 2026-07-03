@@ -5,6 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KITS } from "@/content/marketing-kits";
 import { KitCard } from "./KitCard";
 
+// KitCard's "Send to Compose" button calls the company-prefix-aware
+// useNavigate from "@/lib/router", which requires a CompanyProvider +
+// Router ancestor to avoid throwing. Mocking it keeps this file's
+// createRoot-based rendering (no provider tree) working, and lets the
+// new test below assert on the navigation call directly. (vi.mock calls
+// are hoisted above imports by vitest, so this is safe despite the order.)
+const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
+vi.mock("@/lib/router", () => ({
+  useNavigate: () => navigateMock,
+}));
+
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement;
@@ -83,6 +94,20 @@ describe("KitCard clickTag conflict (KIT 1)", () => {
     expect(container.textContent).toContain("ig-room");
     expect(container.textContent).toContain("keyword doc says");
     expect(container.textContent).toContain("live automation uses");
+  });
+});
+
+describe("KitCard send to compose", () => {
+  it("navigates to Socials Compose with the kit's raw text prefilled", async () => {
+    navigateMock.mockClear();
+    const kit1 = KITS.find((kit) => kit.id === 1)!;
+    render(<KitCard kit={kit1} greenlightRows={[]} />);
+
+    await click(buttonByText("Send to Compose"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/socials?tab=compose", {
+      state: { prefillText: kit1.raw },
+    });
   });
 });
 

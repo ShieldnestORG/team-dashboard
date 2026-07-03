@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { socialsApi } from "@/api/socials";
 import { KITS, KIT_SYNC_META } from "@/content/marketing-kits";
+import { FlowStepper } from "@/components/FlowStepper";
+import { HelpTip } from "@/components/HelpTip";
 import { CaptionStylePicker } from "./CaptionStylePicker";
 import { GreenLightBoard } from "./GreenLightBoard";
 import { KitCard } from "./KitCard";
@@ -55,6 +57,8 @@ export function ContentHub() {
         </p>
       </header>
 
+      <FlowStepper current="create" createHref="/content-hub" />
+
       <GreenLightBoard
         rows={rows}
         isLoading={greenlightQuery.isLoading}
@@ -64,7 +68,15 @@ export function ContentHub() {
       />
 
       <section className="space-y-4">
-        <h2 className="text-base font-semibold">The kits</h2>
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-base font-semibold">The kits</h2>
+          <HelpTip label="What is a kit?">
+            A kit is a ready-to-use caption, plus any spoken lines and per-field pieces, for one
+            keyword or campaign. Copy the whole thing and paste it wherever you're posting by
+            hand, or hit "Send to Compose" to load it straight into the Socials queue — that way
+            it's tracked and attributed to you.
+          </HelpTip>
+        </div>
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           {KITS.map((kit) => (
             <KitCard key={kit.id} kit={kit} greenlightRows={rows} />
