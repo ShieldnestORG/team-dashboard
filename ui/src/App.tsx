@@ -1,128 +1,137 @@
+import { lazy, Suspense } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Layout } from "./components/Layout";
+import { Layout, PageLoading } from "./components/Layout";
 import { OnboardingWizard } from "./components/OnboardingWizard";
+import { NotFoundPage } from "./pages/NotFound";
 import { authApi } from "./api/auth";
 import { healthApi } from "./api/health";
-import { Dashboard } from "./pages/Dashboard";
-import { Companies } from "./pages/Companies";
-import { Agents } from "./pages/Agents";
-import { AgentDetail } from "./pages/AgentDetail";
-import { Projects } from "./pages/Projects";
-import { ProjectDetail } from "./pages/ProjectDetail";
-import { Issues } from "./pages/Issues";
-import { IssueDetail } from "./pages/IssueDetail";
-import { Routines } from "./pages/Routines";
-import { RoutineDetail } from "./pages/RoutineDetail";
-import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
-import { Goals } from "./pages/Goals";
-import { GoalDetail } from "./pages/GoalDetail";
-import { Approvals } from "./pages/Approvals";
-import { ApprovalDetail } from "./pages/ApprovalDetail";
-import { Costs } from "./pages/Costs";
-import { Activity } from "./pages/Activity";
-import { Members } from "./pages/Members";
-import { Inbox } from "./pages/Inbox";
-import { CompanySettings } from "./pages/CompanySettings";
-import { CompanySkills } from "./pages/CompanySkills";
-import { CompanyExport } from "./pages/CompanyExport";
-import { CompanyImport } from "./pages/CompanyImport";
-import { DesignGuide } from "./pages/DesignGuide";
-import { InstanceGeneralSettings } from "./pages/InstanceGeneralSettings";
-import { InstanceSettings } from "./pages/InstanceSettings";
-import { InstanceExperimentalSettings } from "./pages/InstanceExperimentalSettings";
-import { PluginManager } from "./pages/PluginManager";
-import { PluginSettings } from "./pages/PluginSettings";
-import { PluginPage } from "./pages/PluginPage";
-import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
-import { TwitterDashboard } from "./pages/TwitterDashboard";
-import { ContentHub } from "./pages/content-hub/ContentHub";
-import { SocialsLayout } from "./pages/socials/SocialsLayout";
-import { SocialsContentLayout } from "./pages/socials/SocialsContentLayout";
-import { LaunchMonitor } from "./pages/socials/LaunchMonitor";
-import { TxEcosystem } from "./pages/TxEcosystem";
-import Tokns from "./pages/Tokns";
-import { SystemHealth } from "./pages/SystemHealth";
-import { ContentReview } from "./pages/ContentReview";
-import { CreditScoreReview } from "./pages/CreditScoreReview";
-import { ContentAnalytics } from "./pages/ContentAnalytics";
-import { SiteAnalytics } from "./pages/SiteAnalytics";
-import { OwnedSites } from "./pages/OwnedSites";
-import { Structure } from "./pages/Structure";
-import { TopicTakeoverFlow } from "./pages/TopicTakeoverFlow";
-import { Intel } from "./pages/Intel";
-import { KnowledgeGraph } from "./pages/KnowledgeGraph";
-import { CityCollector } from "./pages/CityCollector";
-import { RepoUpdates } from "./pages/RepoUpdates";
-import { AutomationHealth } from "./pages/AutomationHealth";
-import { IntelPricing } from "./pages/IntelPricing";
-import { IntelBillingSuccess } from "./pages/IntelBillingSuccess";
-import { IntelBilling } from "./pages/IntelBilling";
-import { WatchtowerAdmin } from "./pages/WatchtowerAdmin";
-import { UniversityAdmin } from "./pages/UniversityAdmin";
-import { UniversityAgentsAdmin } from "./pages/UniversityAgentsAdmin";
-import { SessionsAdmin } from "./pages/SessionsAdmin";
-import { UniversityEmailAnalytics } from "./pages/UniversityEmailAnalytics";
-import { Funnels } from "./pages/Funnels";
-import { DailyBrief } from "./pages/DailyBrief";
-import { Inspiration } from "./pages/Inspiration";
-import { DirectoryPricing } from "./pages/DirectoryPricing";
-import { Bundles } from "./pages/Bundles";
-import { Discord } from "./pages/Discord";
-import { AutoReply } from "./pages/AutoReply";
-import { CronManagement } from "./pages/CronManagement";
-import { AgentOps } from "./pages/AgentOps";
-import { ApiDashboard } from "./pages/ApiDashboard";
-import { YouTubePipeline } from "./pages/YouTubePipeline";
-import { YouTubeVideos } from "./pages/YouTubeVideos";
-import { VideoEdit } from "./pages/VideoEdit";
-import { MarketingPushes } from "./pages/MarketingPushes";
-import { Partners } from "./pages/Partners";
-import { AffiliatesAdmin } from "./pages/AffiliatesAdmin";
-import { PartnerDetail } from "./pages/PartnerDetail";
-import { PartnerDashboard } from "./pages/PartnerDashboard";
-import { AffiliateLanding } from "./pages/AffiliateLanding";
-import { AffiliateDashboard } from "./pages/AffiliateDashboard";
-import { AffiliateEarnings } from "./pages/AffiliateEarnings";
-import { AffiliatePayouts } from "./pages/AffiliatePayouts";
-import { AffiliateTiers } from "./pages/AffiliateTiers";
-import { AffiliateLearn } from "./pages/AffiliateLearn";
-import { AffiliateLearnGuide } from "./pages/AffiliateLearnGuide";
-import { AffiliateProgramRules } from "./pages/AffiliateProgramRules";
-import { AffiliateClawbacks } from "./pages/AffiliateClawbacks";
-import { AffiliateLeaderboard } from "./pages/AffiliateLeaderboard";
-import { AffiliatePromo } from "./pages/AffiliatePromo";
-import { AffiliateMerch } from "./pages/AffiliateMerch";
-import { AffiliateLeadDetail } from "./pages/AffiliateLeadDetail";
-import { AffiliateProspectDetail } from "./pages/AffiliateProspectDetail";
-import { AffiliateResetPassword } from "./pages/AffiliateResetPassword";
-import { AffiliateAdminCommissions } from "./pages/AffiliateAdminCommissions";
-import { AffiliateAdminPayouts } from "./pages/AffiliateAdminPayouts";
-import { AffiliateAdminClawbacks } from "./pages/AffiliateAdminClawbacks";
-import { AffiliateAdminLeads } from "./pages/AffiliateAdminLeads";
-import { AffiliateAdminLeadDetail } from "./pages/AffiliateAdminLeadDetail";
-import { AffiliateAdminCompliance } from "./pages/AffiliateAdminCompliance";
-import { AffiliateAdminEngagement } from "./pages/AffiliateAdminEngagement";
-import { AffiliateAdminTiers } from "./pages/AffiliateAdminTiers";
-import { AffiliateAdminCampaigns } from "./pages/AffiliateAdminCampaigns";
-import { AffiliateAdminMerch } from "./pages/AffiliateAdminMerch";
-import { HouseAdsAdmin } from "./pages/HouseAdsAdmin";
-import { ShopSharersAdmin } from "./pages/ShopSharersAdmin";
-import { OrgChart } from "./pages/OrgChart";
-import { NewAgent } from "./pages/NewAgent";
-import { AuthPage } from "./pages/Auth";
-import { ResetPasswordPage } from "./pages/ResetPassword";
-import { BoardClaimPage } from "./pages/BoardClaim";
-import { CliAuthPage } from "./pages/CliAuth";
-import { InviteLandingPage } from "./pages/InviteLanding";
-import { NotFoundPage } from "./pages/NotFound";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
 import { useBoardAccess } from "./hooks/useBoardAccess";
 import { useDialog } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
 import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-route";
+
+// Page components are lazy-loaded so the entry bundle only ships the shell
+// (providers, layout, guards, sidebar). Each page's own chunk is fetched on
+// first navigation to it. Layout wraps its <Outlet /> in an inner Suspense
+// (content-pane fallback, shell stays mounted); the App-level Suspense below
+// covers routes rendered outside Layout (auth, affiliate site, billing).
+// NotFoundPage stays a static import: Layout already imports it eagerly, so
+// lazy() here would be misleading — it's in the entry chunk either way.
+const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const DailyBrief = lazy(() => import("./pages/DailyBrief").then((m) => ({ default: m.DailyBrief })));
+const Inspiration = lazy(() => import("./pages/Inspiration").then((m) => ({ default: m.Inspiration })));
+const Companies = lazy(() => import("./pages/Companies").then((m) => ({ default: m.Companies })));
+const Agents = lazy(() => import("./pages/Agents").then((m) => ({ default: m.Agents })));
+const AgentDetail = lazy(() => import("./pages/AgentDetail").then((m) => ({ default: m.AgentDetail })));
+const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m.Projects })));
+const ProjectDetail = lazy(() => import("./pages/ProjectDetail").then((m) => ({ default: m.ProjectDetail })));
+const Issues = lazy(() => import("./pages/Issues").then((m) => ({ default: m.Issues })));
+const IssueDetail = lazy(() => import("./pages/IssueDetail").then((m) => ({ default: m.IssueDetail })));
+const Routines = lazy(() => import("./pages/Routines").then((m) => ({ default: m.Routines })));
+const RoutineDetail = lazy(() => import("./pages/RoutineDetail").then((m) => ({ default: m.RoutineDetail })));
+const ExecutionWorkspaceDetail = lazy(() => import("./pages/ExecutionWorkspaceDetail").then((m) => ({ default: m.ExecutionWorkspaceDetail })));
+const Goals = lazy(() => import("./pages/Goals").then((m) => ({ default: m.Goals })));
+const GoalDetail = lazy(() => import("./pages/GoalDetail").then((m) => ({ default: m.GoalDetail })));
+const Approvals = lazy(() => import("./pages/Approvals").then((m) => ({ default: m.Approvals })));
+const ApprovalDetail = lazy(() => import("./pages/ApprovalDetail").then((m) => ({ default: m.ApprovalDetail })));
+const Costs = lazy(() => import("./pages/Costs").then((m) => ({ default: m.Costs })));
+const Activity = lazy(() => import("./pages/Activity").then((m) => ({ default: m.Activity })));
+const Members = lazy(() => import("./pages/Members").then((m) => ({ default: m.Members })));
+const Inbox = lazy(() => import("./pages/Inbox").then((m) => ({ default: m.Inbox })));
+const CompanySettings = lazy(() => import("./pages/CompanySettings").then((m) => ({ default: m.CompanySettings })));
+const CompanySkills = lazy(() => import("./pages/CompanySkills").then((m) => ({ default: m.CompanySkills })));
+const CompanyExport = lazy(() => import("./pages/CompanyExport").then((m) => ({ default: m.CompanyExport })));
+const CompanyImport = lazy(() => import("./pages/CompanyImport").then((m) => ({ default: m.CompanyImport })));
+const DesignGuide = lazy(() => import("./pages/DesignGuide").then((m) => ({ default: m.DesignGuide })));
+const InstanceGeneralSettings = lazy(() => import("./pages/InstanceGeneralSettings").then((m) => ({ default: m.InstanceGeneralSettings })));
+const InstanceSettings = lazy(() => import("./pages/InstanceSettings").then((m) => ({ default: m.InstanceSettings })));
+const InstanceExperimentalSettings = lazy(() => import("./pages/InstanceExperimentalSettings").then((m) => ({ default: m.InstanceExperimentalSettings })));
+const PluginManager = lazy(() => import("./pages/PluginManager").then((m) => ({ default: m.PluginManager })));
+const PluginSettings = lazy(() => import("./pages/PluginSettings").then((m) => ({ default: m.PluginSettings })));
+const PluginPage = lazy(() => import("./pages/PluginPage").then((m) => ({ default: m.PluginPage })));
+const RunTranscriptUxLab = lazy(() => import("./pages/RunTranscriptUxLab").then((m) => ({ default: m.RunTranscriptUxLab })));
+const TwitterDashboard = lazy(() => import("./pages/TwitterDashboard").then((m) => ({ default: m.TwitterDashboard })));
+const ContentHub = lazy(() => import("./pages/content-hub/ContentHub").then((m) => ({ default: m.ContentHub })));
+const SocialsLayout = lazy(() => import("./pages/socials/SocialsLayout").then((m) => ({ default: m.SocialsLayout })));
+const SocialsContentLayout = lazy(() => import("./pages/socials/SocialsContentLayout").then((m) => ({ default: m.SocialsContentLayout })));
+const LaunchMonitor = lazy(() => import("./pages/socials/LaunchMonitor").then((m) => ({ default: m.LaunchMonitor })));
+const TxEcosystem = lazy(() => import("./pages/TxEcosystem").then((m) => ({ default: m.TxEcosystem })));
+const Tokns = lazy(() => import("./pages/Tokns"));
+const SystemHealth = lazy(() => import("./pages/SystemHealth").then((m) => ({ default: m.SystemHealth })));
+const ContentReview = lazy(() => import("./pages/ContentReview").then((m) => ({ default: m.ContentReview })));
+const CreditScoreReview = lazy(() => import("./pages/CreditScoreReview").then((m) => ({ default: m.CreditScoreReview })));
+const ContentAnalytics = lazy(() => import("./pages/ContentAnalytics").then((m) => ({ default: m.ContentAnalytics })));
+const SiteAnalytics = lazy(() => import("./pages/SiteAnalytics").then((m) => ({ default: m.SiteAnalytics })));
+const OwnedSites = lazy(() => import("./pages/OwnedSites").then((m) => ({ default: m.OwnedSites })));
+const Structure = lazy(() => import("./pages/Structure").then((m) => ({ default: m.Structure })));
+const TopicTakeoverFlow = lazy(() => import("./pages/TopicTakeoverFlow").then((m) => ({ default: m.TopicTakeoverFlow })));
+const Intel = lazy(() => import("./pages/Intel").then((m) => ({ default: m.Intel })));
+const KnowledgeGraph = lazy(() => import("./pages/KnowledgeGraph").then((m) => ({ default: m.KnowledgeGraph })));
+const CityCollector = lazy(() => import("./pages/CityCollector").then((m) => ({ default: m.CityCollector })));
+const RepoUpdates = lazy(() => import("./pages/RepoUpdates").then((m) => ({ default: m.RepoUpdates })));
+const AutomationHealth = lazy(() => import("./pages/AutomationHealth").then((m) => ({ default: m.AutomationHealth })));
+const IntelPricing = lazy(() => import("./pages/IntelPricing").then((m) => ({ default: m.IntelPricing })));
+const IntelBillingSuccess = lazy(() => import("./pages/IntelBillingSuccess").then((m) => ({ default: m.IntelBillingSuccess })));
+const IntelBilling = lazy(() => import("./pages/IntelBilling").then((m) => ({ default: m.IntelBilling })));
+const WatchtowerAdmin = lazy(() => import("./pages/WatchtowerAdmin").then((m) => ({ default: m.WatchtowerAdmin })));
+const UniversityAdmin = lazy(() => import("./pages/UniversityAdmin").then((m) => ({ default: m.UniversityAdmin })));
+const UniversityAgentsAdmin = lazy(() => import("./pages/UniversityAgentsAdmin").then((m) => ({ default: m.UniversityAgentsAdmin })));
+const SessionsAdmin = lazy(() => import("./pages/SessionsAdmin").then((m) => ({ default: m.SessionsAdmin })));
+const UniversityEmailAnalytics = lazy(() => import("./pages/UniversityEmailAnalytics").then((m) => ({ default: m.UniversityEmailAnalytics })));
+const Funnels = lazy(() => import("./pages/Funnels").then((m) => ({ default: m.Funnels })));
+const DirectoryPricing = lazy(() => import("./pages/DirectoryPricing").then((m) => ({ default: m.DirectoryPricing })));
+const Bundles = lazy(() => import("./pages/Bundles").then((m) => ({ default: m.Bundles })));
+const Discord = lazy(() => import("./pages/Discord").then((m) => ({ default: m.Discord })));
+const AutoReply = lazy(() => import("./pages/AutoReply").then((m) => ({ default: m.AutoReply })));
+const CronManagement = lazy(() => import("./pages/CronManagement").then((m) => ({ default: m.CronManagement })));
+const AgentOps = lazy(() => import("./pages/AgentOps").then((m) => ({ default: m.AgentOps })));
+const ApiDashboard = lazy(() => import("./pages/ApiDashboard").then((m) => ({ default: m.ApiDashboard })));
+const YouTubePipeline = lazy(() => import("./pages/YouTubePipeline").then((m) => ({ default: m.YouTubePipeline })));
+const YouTubeVideos = lazy(() => import("./pages/YouTubeVideos").then((m) => ({ default: m.YouTubeVideos })));
+const VideoEdit = lazy(() => import("./pages/VideoEdit").then((m) => ({ default: m.VideoEdit })));
+const MarketingPushes = lazy(() => import("./pages/MarketingPushes").then((m) => ({ default: m.MarketingPushes })));
+const Partners = lazy(() => import("./pages/Partners").then((m) => ({ default: m.Partners })));
+const AffiliatesAdmin = lazy(() => import("./pages/AffiliatesAdmin").then((m) => ({ default: m.AffiliatesAdmin })));
+const PartnerDetail = lazy(() => import("./pages/PartnerDetail").then((m) => ({ default: m.PartnerDetail })));
+const PartnerDashboard = lazy(() => import("./pages/PartnerDashboard").then((m) => ({ default: m.PartnerDashboard })));
+const AffiliateLanding = lazy(() => import("./pages/AffiliateLanding").then((m) => ({ default: m.AffiliateLanding })));
+const AffiliateDashboard = lazy(() => import("./pages/AffiliateDashboard").then((m) => ({ default: m.AffiliateDashboard })));
+const AffiliateEarnings = lazy(() => import("./pages/AffiliateEarnings").then((m) => ({ default: m.AffiliateEarnings })));
+const AffiliatePayouts = lazy(() => import("./pages/AffiliatePayouts").then((m) => ({ default: m.AffiliatePayouts })));
+const AffiliateTiers = lazy(() => import("./pages/AffiliateTiers").then((m) => ({ default: m.AffiliateTiers })));
+const AffiliateLearn = lazy(() => import("./pages/AffiliateLearn").then((m) => ({ default: m.AffiliateLearn })));
+const AffiliateLearnGuide = lazy(() => import("./pages/AffiliateLearnGuide").then((m) => ({ default: m.AffiliateLearnGuide })));
+const AffiliateProgramRules = lazy(() => import("./pages/AffiliateProgramRules").then((m) => ({ default: m.AffiliateProgramRules })));
+const AffiliateClawbacks = lazy(() => import("./pages/AffiliateClawbacks").then((m) => ({ default: m.AffiliateClawbacks })));
+const AffiliateLeaderboard = lazy(() => import("./pages/AffiliateLeaderboard").then((m) => ({ default: m.AffiliateLeaderboard })));
+const AffiliatePromo = lazy(() => import("./pages/AffiliatePromo").then((m) => ({ default: m.AffiliatePromo })));
+const AffiliateMerch = lazy(() => import("./pages/AffiliateMerch").then((m) => ({ default: m.AffiliateMerch })));
+const AffiliateLeadDetail = lazy(() => import("./pages/AffiliateLeadDetail").then((m) => ({ default: m.AffiliateLeadDetail })));
+const AffiliateProspectDetail = lazy(() => import("./pages/AffiliateProspectDetail").then((m) => ({ default: m.AffiliateProspectDetail })));
+const AffiliateResetPassword = lazy(() => import("./pages/AffiliateResetPassword").then((m) => ({ default: m.AffiliateResetPassword })));
+const AffiliateAdminCommissions = lazy(() => import("./pages/AffiliateAdminCommissions").then((m) => ({ default: m.AffiliateAdminCommissions })));
+const AffiliateAdminPayouts = lazy(() => import("./pages/AffiliateAdminPayouts").then((m) => ({ default: m.AffiliateAdminPayouts })));
+const AffiliateAdminClawbacks = lazy(() => import("./pages/AffiliateAdminClawbacks").then((m) => ({ default: m.AffiliateAdminClawbacks })));
+const AffiliateAdminLeads = lazy(() => import("./pages/AffiliateAdminLeads").then((m) => ({ default: m.AffiliateAdminLeads })));
+const AffiliateAdminLeadDetail = lazy(() => import("./pages/AffiliateAdminLeadDetail").then((m) => ({ default: m.AffiliateAdminLeadDetail })));
+const AffiliateAdminCompliance = lazy(() => import("./pages/AffiliateAdminCompliance").then((m) => ({ default: m.AffiliateAdminCompliance })));
+const AffiliateAdminEngagement = lazy(() => import("./pages/AffiliateAdminEngagement").then((m) => ({ default: m.AffiliateAdminEngagement })));
+const AffiliateAdminTiers = lazy(() => import("./pages/AffiliateAdminTiers").then((m) => ({ default: m.AffiliateAdminTiers })));
+const AffiliateAdminCampaigns = lazy(() => import("./pages/AffiliateAdminCampaigns").then((m) => ({ default: m.AffiliateAdminCampaigns })));
+const AffiliateAdminMerch = lazy(() => import("./pages/AffiliateAdminMerch").then((m) => ({ default: m.AffiliateAdminMerch })));
+const HouseAdsAdmin = lazy(() => import("./pages/HouseAdsAdmin").then((m) => ({ default: m.HouseAdsAdmin })));
+const ShopSharersAdmin = lazy(() => import("./pages/ShopSharersAdmin").then((m) => ({ default: m.ShopSharersAdmin })));
+const OrgChart = lazy(() => import("./pages/OrgChart").then((m) => ({ default: m.OrgChart })));
+const NewAgent = lazy(() => import("./pages/NewAgent").then((m) => ({ default: m.NewAgent })));
+const AuthPage = lazy(() => import("./pages/Auth").then((m) => ({ default: m.AuthPage })));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPassword").then((m) => ({ default: m.ResetPasswordPage })));
+const BoardClaimPage = lazy(() => import("./pages/BoardClaim").then((m) => ({ default: m.BoardClaimPage })));
+const CliAuthPage = lazy(() => import("./pages/CliAuth").then((m) => ({ default: m.CliAuthPage })));
+const InviteLandingPage = lazy(() => import("./pages/InviteLanding").then((m) => ({ default: m.InviteLandingPage })));
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
@@ -543,25 +552,27 @@ const IS_AFFILIATES_SUBDOMAIN =
 function AffiliateSite() {
   return (
     <div className="h-screen overflow-y-auto">
-      <Routes>
-        <Route index element={<AffiliateLanding />} />
-        <Route path="dashboard" element={<AffiliateDashboard />} />
-        <Route path="earnings" element={<AffiliateEarnings />} />
-        <Route path="payouts" element={<AffiliatePayouts />} />
-        <Route path="clawbacks" element={<AffiliateClawbacks />} />
-        <Route path="tiers" element={<AffiliateTiers />} />
-        <Route path="learn" element={<AffiliateLearn />} />
-        <Route path="learn/:slug" element={<AffiliateLearnGuide />} />
-        <Route path="program-rules" element={<AffiliateProgramRules />} />
-        <Route path="affiliate-program-rules" element={<Navigate to="/program-rules" replace />} />
-        <Route path="leaderboard" element={<AffiliateLeaderboard />} />
-        <Route path="promo" element={<AffiliatePromo />} />
-        <Route path="merch" element={<AffiliateMerch />} />
-        <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
-        <Route path="affiliate/leads/:id" element={<AffiliateLeadDetail />} />
-        <Route path="reset-password" element={<AffiliateResetPassword />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<PageLoading />}>
+        <Routes>
+          <Route index element={<AffiliateLanding />} />
+          <Route path="dashboard" element={<AffiliateDashboard />} />
+          <Route path="earnings" element={<AffiliateEarnings />} />
+          <Route path="payouts" element={<AffiliatePayouts />} />
+          <Route path="clawbacks" element={<AffiliateClawbacks />} />
+          <Route path="tiers" element={<AffiliateTiers />} />
+          <Route path="learn" element={<AffiliateLearn />} />
+          <Route path="learn/:slug" element={<AffiliateLearnGuide />} />
+          <Route path="program-rules" element={<AffiliateProgramRules />} />
+          <Route path="affiliate-program-rules" element={<Navigate to="/program-rules" replace />} />
+          <Route path="leaderboard" element={<AffiliateLeaderboard />} />
+          <Route path="promo" element={<AffiliatePromo />} />
+          <Route path="merch" element={<AffiliateMerch />} />
+          <Route path="prospects/:slug" element={<AffiliateProspectDetail />} />
+          <Route path="affiliate/leads/:id" element={<AffiliateLeadDetail />} />
+          <Route path="reset-password" element={<AffiliateResetPassword />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </div>
   );
 }
@@ -573,6 +584,7 @@ export function App() {
 
   return (
     <>
+      <Suspense fallback={<PageLoading />}>
       <Routes>
         <Route path="auth" element={<AuthPage />} />
         <Route path="reset-password" element={<ResetPasswordPage />} />
@@ -639,6 +651,7 @@ export function App() {
           <Route path="*" element={<NotFoundPage scope="global" />} />
         </Route>
       </Routes>
+      </Suspense>
       <OnboardingWizard />
     </>
   );

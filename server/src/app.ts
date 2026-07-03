@@ -515,7 +515,17 @@ export async function createApp(
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {
       const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
-      app.use(express.static(uiDist));
+      app.use(express.static(uiDist, {
+        // Vite content-hashes every file under /assets/ (index-<hash>.js,
+        // index-<hash>.css, plus one chunk per lazy-loaded route) — safe to
+        // cache forever since a content change always produces a new hash.
+        // index.html is excluded (served separately below, unhashed).
+        setHeaders: (res, filePath) => {
+          if (path.dirname(filePath) === path.join(uiDist, "assets")) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      }));
       app.get(/.*/, (_req, res) => {
         res.status(200).set("Content-Type", "text/html").end(indexHtml);
       });
