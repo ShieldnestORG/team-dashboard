@@ -29,7 +29,8 @@ export function FlowStepper({ current, createHref = "/socials/content", classNam
       key: "create",
       label: "Create",
       href: createHref,
-      description: "Write it yourself in Compose, generate it with AI here, or grab a kit from Content Hub.",
+      description:
+        "Write it yourself in Compose, generate it with AI in the Content tab, or grab a kit from Content Hub.",
     },
     {
       key: "review",

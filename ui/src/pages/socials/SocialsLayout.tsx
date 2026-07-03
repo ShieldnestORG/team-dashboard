@@ -15,10 +15,26 @@ const TABS: Tab[] = ["accounts", "schedule", "automation", "calendar", "compose"
 
 export function SocialsLayout() {
   const { setBreadcrumbs } = useBreadcrumbs();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const initialTab: Tab = TABS.includes(requestedTab as Tab) ? (requestedTab as Tab) : "accounts";
   const [tab, setTab] = useState<Tab>(initialTab);
+
+  // Follow ?tab= changes after mount too — the FlowStepper's Queue step links
+  // to /socials?tab=queue, which is a same-route navigation (no remount) when
+  // the user is already on /socials.
+  useEffect(() => {
+    const requested = searchParams.get("tab");
+    if (requested && TABS.includes(requested as Tab)) {
+      setTab(requested as Tab);
+    }
+  }, [searchParams]);
+
+  function onTabChange(v: string) {
+    const next = v as Tab;
+    setTab(next);
+    setSearchParams({ tab: next }, { replace: true });
+  }
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Socials" }]);
@@ -34,7 +50,7 @@ export function SocialsLayout() {
         </p>
       </div>
       <FlowStepper />
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
+      <Tabs value={tab} onValueChange={onTabChange} className="w-full">
         <TabsList>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>

@@ -71,10 +71,9 @@ export function ContentHub() {
         <div className="flex items-center gap-1.5">
           <h2 className="text-base font-semibold">The kits</h2>
           <HelpTip label="What is a kit?">
-            A kit is a ready-to-use caption, plus any spoken lines and per-field pieces, for one
-            keyword or campaign. Copy the whole thing and paste it wherever you're posting by
-            hand, or hit "Send to Compose" to load it straight into the Socials queue — that way
-            it's tracked and attributed to you.
+            A kit is a ready-to-use caption, plus any spoken lines and copy-ready snippets, for
+            one keyword or campaign. Copy the whole thing and paste it wherever you're posting by
+            hand, or load it into Compose, tracked and attributed to you.
           </HelpTip>
         </div>
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

@@ -84,8 +84,8 @@ export function SocialsQueue() {
       <div className="flex items-center gap-1.5">
         <h2 className="text-sm font-semibold">Queue</h2>
         <HelpTip label="What is Queue?">
-          Everything scheduled to go out. Posts leave automatically every minute via Zernio —
-          nobody needs to hit post.
+          Everything scheduled to go out. Approved posts leave automatically within a minute —
+          nobody needs to hit post. Posts marked "pending approval" are waiting on an admin.
         </HelpTip>
       </div>
       <div className="flex justify-between items-center gap-3 flex-wrap">

@@ -145,6 +145,31 @@ function logField(row: Record<string, unknown>, keys: string[]): string | undefi
   return undefined;
 }
 
+// Numeric epoch (seconds or milliseconds) → ISO string Date can parse.
+// Second-epochs are ~1e9–1e10 today, ms-epochs ~1e12–1e13.
+function epochToIso(n: number): string | undefined {
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  const ms = n > 1e11 ? n : n * 1000;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+// Timestamp variant of logField: Zernio logs may carry ISO strings or
+// numeric epochs. Stringified epochs would make `new Date("169...")` render
+// "Invalid Date", so normalize numerics (and numeric strings) via the epoch.
+function logTimestamp(row: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "number") return epochToIso(v);
+    if (typeof v === "string" && v.trim() !== "") {
+      const trimmed = v.trim();
+      if (/^\d+(\.\d+)?$/.test(trimmed)) return epochToIso(Number(trimmed));
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Hand-rolled toggle switch (pattern from SocialsSchedule.tsx). Pure presentation
 // — the parent owns the mutation and passes `pending`/`onToggle`.
@@ -509,7 +534,7 @@ function FunnelDrilldown({
               </thead>
               <tbody>
                 {logRows.map((row, i) => {
-                  const when = logField(row, ["sentAt", "createdAt", "timestamp", "time", "receivedAt"]);
+                  const when = logTimestamp(row, ["sentAt", "createdAt", "timestamp", "time", "receivedAt"]);
                   const rowStatus = logField(row, ["status", "result", "outcome"]);
                   const detail = logField(row, [
                     "error",

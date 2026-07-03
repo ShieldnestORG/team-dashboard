@@ -103,8 +103,9 @@ export function SocialsCompose() {
       <div className="flex items-center gap-1.5">
         <h2 className="text-sm font-semibold">Compose</h2>
         <HelpTip label="What is Compose?">
-          Write a post by hand and queue it — it goes out on the next relayer tick, or at a time
-          you pick. A kit sent here from Content Hub shows up prefilled below.
+          Write a post and submit it. If you're an admin it queues right away; otherwise it waits
+          for an admin to approve it before going out. A kit sent from Content Hub shows up
+          prefilled below.
         </HelpTip>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

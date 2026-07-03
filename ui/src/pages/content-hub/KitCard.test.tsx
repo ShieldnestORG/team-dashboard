@@ -12,9 +12,13 @@ import { KitCard } from "./KitCard";
 // new test below assert on the navigation call directly. (vi.mock calls
 // are hoisted above imports by vitest, so this is safe despite the order.)
 const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
-vi.mock("@/lib/router", () => ({
-  useNavigate: () => navigateMock,
-}));
+vi.mock("@/lib/router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/router")>();
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 

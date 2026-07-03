@@ -41,8 +41,8 @@ export function SocialsAutomation() {
       <div className="flex items-center gap-1.5">
         <h2 className="text-sm font-semibold">Automation</h2>
         <HelpTip label="What is Automation?">
-          The cron-driven jobs that auto-generate content on a schedule — when each one last ran
-          and when it'll run again. Sync pulls the latest job list from the codebase.
+          The scheduled jobs that auto-generate content — when each last ran and when it runs
+          next. Sync refreshes the list.
         </HelpTip>
       </div>
       <div className="flex justify-between items-center">
