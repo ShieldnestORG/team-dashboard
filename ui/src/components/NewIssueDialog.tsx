@@ -864,9 +864,6 @@ export function NewIssueDialog() {
         if (!open && !createIssue.isPending) closeNewIssue();
       }}
     >
-      <DialogHeader className="sr-only">
-        <DialogTitle>New issue</DialogTitle>
-      </DialogHeader>
       <DialogContent
         showCloseButton={false}
         aria-describedby={undefined}
@@ -899,6 +896,9 @@ export function NewIssueDialog() {
           }
         }}
       >
+        <DialogHeader className="sr-only">
+          <DialogTitle>New issue</DialogTitle>
+        </DialogHeader>
         {/* Header bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
