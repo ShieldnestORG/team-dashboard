@@ -26,17 +26,32 @@ vi.mock("../services/creditscore-email-callback.js", () => ({
 import {
   runUniversityStreakNudge,
   runUniversityReengage,
+  runUniversityDunningD3,
+  runUniversityDunningD7,
 } from "../services/university-crons.js";
 
 // ---------------------------------------------------------------------------
 // Query-queue db stub. Each select().from().where() consumes one queued result.
 // insert().values(row) is a no-op that records the row (email-log writes) — it
 // does NOT consume the select queue.
+//
+// A queue slot may instead be an INSERTS sentinel `{ __insertsKind }`: the
+// stubbed query then returns the rows ACTUALLY recorded by insert().values()
+// so far, filtered to that kind — faithfully replicating the email-log dedup
+// query's `WHERE kind = <marker>` against the real logged rows. This lets the
+// dunning dedup path be exercised end-to-end (a second run reads the first
+// run's logged marker) instead of being handed a hand-faked result.
 // ---------------------------------------------------------------------------
 
 type Row = Record<string, unknown>;
+type InsertsSentinel = { __insertsKind: string };
+type QueueSlot = Row[] | InsertsSentinel;
 
-function makeDb(queue: Row[][]) {
+function isInsertsSentinel(slot: QueueSlot | undefined): slot is InsertsSentinel {
+  return !!slot && !Array.isArray(slot) && "__insertsKind" in slot;
+}
+
+function makeDb(queue: QueueSlot[]) {
   let i = 0;
   const inserts: Row[] = [];
   function selectChain() {
@@ -45,9 +60,13 @@ function makeDb(queue: Row[][]) {
         return chain;
       },
       where() {
-        const result = queue[i] ?? [];
+        const slot = queue[i];
         i += 1;
-        return Promise.resolve(result);
+        if (isInsertsSentinel(slot)) {
+          const kind = slot.__insertsKind;
+          return Promise.resolve(inserts.filter((r) => r.kind === kind));
+        }
+        return Promise.resolve(slot ?? []);
       },
     };
     return chain;
@@ -334,5 +353,160 @@ describe("runUniversityReengage", () => {
         messageId: null,
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dunning — day-3 (touch=2) / day-7 (touch=3 + final payment-failed warning).
+//   - d3 fires university_past_due touch=2 and NO final warning
+//   - d7 fires university_past_due touch=3 AND university_payment_failed_final
+//
+// Query order per run: (1) past_due subscription select, (2) email-log dedup
+// select (per-touch marker kind, 30-day horizon). Selection is a threshold
+// (updated_at <= now - dayMark days) enforced SQL-side; the stub is handed the
+// already-filtered subscription result. Per-touch idempotency comes from the
+// email-log dedup, exercised below via the INSERTS sentinel (real logged rows).
+// ---------------------------------------------------------------------------
+
+describe("runUniversityDunningD3", () => {
+  it("fires past_due touch=2, NO final warning, and logs the d3 marker", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "due@x.test" }];
+    const harness = makeDb([subs, []]);
+
+    const sent = await runUniversityDunningD3(harness.db);
+
+    expect(sent).toBe(1);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+    const call = emailSpy.mock.calls[0][0] as {
+      kind: string;
+      data: { touch: number };
+    };
+    expect(call.kind).toBe("university_past_due");
+    expect(call.data.touch).toBe(2);
+    // The final warning must NOT fire on d3.
+    const kinds = emailSpy.mock.calls.map(
+      (c) => (c[0] as { kind: string }).kind,
+    );
+    expect(kinds).not.toContain("university_payment_failed_final");
+    // The per-touch dedup marker is logged (lowercased, messageId null from the
+    // mocked send). This is what makes a second run dedup.
+    expect(harness.inserts).toEqual([
+      { email: "due@x.test", kind: "university_past_due_d3", messageId: null },
+    ]);
+  });
+
+  it("excludes a non-past_due subscription (status='past_due' filter is SQL-side)", async () => {
+    // The runner's WHERE pins status='past_due', so a non-past_due row never
+    // comes back from the subscription query; we model that filtered result as
+    // empty and assert nothing is sent.
+    const { db } = makeDb([[]]);
+    const sent = await runUniversityDunningD3(db);
+    expect(sent).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it("skips subscription rows with no email", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: null }];
+    const { db } = makeDb([subs]);
+    const sent = await runUniversityDunningD3(db);
+    expect(sent).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it("does NOT re-send on a second run — email-log dedup filters the prior send", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "due@x.test" }];
+    // ONE db across both runs. Run 1: subs, then dedup query (no prior log → []).
+    // Run 2: subs, then the dedup query reads the ACTUAL logged marker rows via
+    // the INSERTS sentinel (filtered to the d3 marker), exercising the real
+    // dedup query path rather than a hand-faked result.
+    const harness = makeDb([
+      subs,
+      [],
+      subs,
+      { __insertsKind: "university_past_due_d3" },
+    ]);
+
+    const first = await runUniversityDunningD3(harness.db);
+    expect(first).toBe(1);
+    expect(harness.inserts).toEqual([
+      { email: "due@x.test", kind: "university_past_due_d3", messageId: null },
+    ]);
+
+    emailSpy.mockClear();
+    const second = await runUniversityDunningD3(harness.db);
+    expect(second).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("runUniversityDunningD7", () => {
+  it("fires past_due touch=3 AND the final payment-failed warning", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "lapsing@x.test" }];
+    const harness = makeDb([subs, []]);
+
+    const sent = await runUniversityDunningD7(harness.db);
+
+    expect(sent).toBe(1); // count tracks past_due nudges
+    expect(emailSpy).toHaveBeenCalledTimes(2);
+    const kinds = emailSpy.mock.calls.map(
+      (c) => (c[0] as { kind: string }).kind,
+    );
+    expect(kinds).toContain("university_past_due");
+    expect(kinds).toContain("university_payment_failed_final");
+    const pastDue = emailSpy.mock.calls
+      .map((c) => c[0] as { kind: string; data: { touch?: number } })
+      .find((p) => p.kind === "university_past_due");
+    expect(pastDue?.data.touch).toBe(3);
+    // Both sends are logged: the d7 marker (dedup key) + the final-warning kind
+    // (so its own opens/clicks join). messageId null from the mocked send.
+    expect(harness.inserts).toEqual([
+      {
+        email: "lapsing@x.test",
+        kind: "university_past_due_d7",
+        messageId: null,
+      },
+      {
+        email: "lapsing@x.test",
+        kind: "university_payment_failed_final",
+        messageId: null,
+      },
+    ]);
+  });
+});
+
+// d3-then-d7 ladder across two runs on ONE db: the d3 send must not block d7,
+// because the two touches dedup on DISTINCT marker kinds.
+describe("dunning ladder (d3 then d7)", () => {
+  it("fires d3 (touch=2) then d7 (touch=3 + final); the d3 marker does not block d7", async () => {
+    const subs: Row[] = [{ id: "sub-1", email: "ladder@x.test" }];
+    // d3 run: subs, dedup(d3 marker) reads inserts → none yet → sends + logs d3.
+    // d7 run: subs, dedup(d7 marker) reads inserts → only a d3 marker exists →
+    // filtered to the d7 marker it's empty → d7 still fires.
+    const harness = makeDb([
+      subs,
+      { __insertsKind: "university_past_due_d3" },
+      subs,
+      { __insertsKind: "university_past_due_d7" },
+    ]);
+
+    const d3 = await runUniversityDunningD3(harness.db);
+    expect(d3).toBe(1);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+    expect(
+      (emailSpy.mock.calls[0][0] as { data: { touch: number } }).data.touch,
+    ).toBe(2);
+
+    emailSpy.mockClear();
+    const d7 = await runUniversityDunningD7(harness.db);
+    expect(d7).toBe(1);
+    const kinds = emailSpy.mock.calls.map(
+      (c) => (c[0] as { kind: string }).kind,
+    );
+    expect(kinds).toContain("university_past_due");
+    expect(kinds).toContain("university_payment_failed_final");
+    const pastDue = emailSpy.mock.calls
+      .map((c) => c[0] as { kind: string; data: { touch?: number } })
+      .find((p) => p.kind === "university_past_due");
+    expect(pastDue?.data.touch).toBe(3);
   });
 });
