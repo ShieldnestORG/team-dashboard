@@ -50,6 +50,22 @@ All content cron jobs below are mirrored into `social_automations` (linked to `s
 - **Owned Sites Content Refresh (1 job)**: Monthly trigger for Ollama-driven article refresh (pipeline wiring follow-up; was previously scoped to VPS2 — now targets Ollama Cloud per `reference_ollama_routing.md`). Owner: `content-agent`. Monthly, 1st at 9 AM (`owned-sites:content-refresh`).
 - **Watchtower Weekly Runs (1 job)**: Every Monday at 09:00 UTC, fans out across active+weekly `watchtower_subscriptions` rows (concurrency 5) and replays each subscription's prompts × engines (chatgpt/claude/perplexity/gemini/grok), persisting one `watchtower_results` row per cell and a `watchtower_runs` summary. Sends a digest email per subscription via the `WATCHTOWER_EMAIL_CALLBACK_URL` storefront callback. Engines without API keys configured are skipped with a single warning log per run (Gemini specifically per spec). Owner: `watchtower`. Weekly (`watchtower:weekly-runs`). See [docs/products/watchtower.md](../products/watchtower.md).
 
+## University Lifecycle Crons (`server/src/services/university-crons.ts`, owner `mark`)
+
+All 11 jobs are registered by `startUniversityCrons(db)` and named `university:*`. There is **no** per-cron `UNIVERSITY_*_ENABLED` env kill-switch — pause individual jobs from the cron UI (`system_crons.enabled`), and the global circuit breaker (`CRON_CIRCUIT_BREAKER_THRESHOLD` / `_ENABLED`) applies as it does to every cron. All emails are dispatched through the storefront email callback (`sendCreditscoreEmail`). The touch-1 / day-0 sends (welcome, receipt, first past-due notice, cancel) are **event-driven** on the University Stripe webhook (`server/src/services/university-stripe-handler.ts`), not crons.
+
+- **Onboarding D1 (1 job)**: `university:onboarding-d1` — daily 14:00 UTC (`0 14 * * *`). Active members who joined ~1 day ago. Emails `university_onboarding_d1`.
+- **Onboarding D3 (1 job)**: `university:onboarding-d3` — daily 14:15 UTC (`15 14 * * *`). Active members who joined ~3 days ago. Emails `university_onboarding_d3`.
+- **Win-back (1 job)**: `university:winback` — daily 14:30 UTC (`30 14 * * *`). Cancelled members ~14 days after cancel. Emails `university_winback`.
+- **Re-engagement (1 job)**: `university:reengage` — daily 14:45 UTC (`45 14 * * *`). Active members who have been quiet for exactly 7 / 14 / 30 UTC-days. One cron, three tiers — emits `university_reengage_d7` / `_d14` / `_d30` by tier (30-day log dedup).
+- **Dunning D3 (1 job)**: `university:dunning-d3` — daily 15:00 UTC (`0 15 * * *`). `past_due` subscriptions ≥3 days overdue. Emails `university_past_due` (touch 2). Added 2026-07-03 (#140). Log-only dedup marker `university_past_due_d3`.
+- **Dunning D7 (1 job)**: `university:dunning-d7` — daily 15:15 UTC (`15 15 * * *`). `past_due` subscriptions ≥7 days overdue. Emails `university_past_due` (touch 3) AND `university_payment_failed_final` (final pre-cancel warning). Added 2026-07-03 (#140). Log-only dedup marker `university_past_due_d7`.
+- **Session Reminder 24h (1 job)**: `university:session-reminder-24h` — hourly at :05 (`5 * * * *`). `going` RSVPs whose session starts in ~24h. Emails `university_session_reminder_24h`.
+- **Session Reminder 1h (1 job)**: `university:session-reminder-1h` — hourly at :10 (`10 * * * *`). `going` RSVPs whose session starts in ~1h. Emails `university_session_reminder_1h`.
+- **Session Starting Now (1 job)**: `university:session-starting-now` — every minute (`* * * * *`). `going` RSVPs for a session starting this minute. Emails `university_session_starting_now` (carries the real join URL).
+- **Session Recap (1 job)**: `university:session-recap` — every minute (`* * * * *`). `going` RSVPs for a session that just ended. Emails `university_session_recap` (optional recording URL).
+- **Streak Nudge (1 job)**: `university:streak-nudge` — daily 22:00 UTC (`0 22 * * *`). Active members who repped yesterday but not today (streak at risk). Emails `university_streak_nudge` (weekly cap, log-backed).
+
 ## Other Operational Crons
 - **Trends Scan (1 job)**: CoinGecko, HackerNews, Google Trends, Bing News every 6h.
 - **Maintenance (2 jobs)**: Stale content cleanup and general health checks.
