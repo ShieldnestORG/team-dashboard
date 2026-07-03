@@ -43,7 +43,31 @@ async function authPost(path: string, body: Record<string, unknown>) {
   return payload;
 }
 
+export type SessionProbeResult = "valid" | "invalid" | "unknown";
+
 export const authApi = {
+  /**
+   * Cheap REST check of whether the current session is still accepted by
+   * the server. Reuses the same boot-time session endpoint (see
+   * `getSession` below) rather than adding a new route — callers that only
+   * need a yes/no (e.g. deciding whether to keep retrying a rejected
+   * WebSocket upgrade, which doesn't expose HTTP status) can use this
+   * instead of parsing a full session payload.
+   */
+  probeSessionValid: async (): Promise<SessionProbeResult> => {
+    try {
+      const res = await fetch("/api/auth/get-session", {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      if (res.status === 401 || res.status === 403) return "invalid";
+      if (res.ok) return "valid";
+      return "unknown";
+    } catch {
+      return "unknown";
+    }
+  },
+
   getSession: async (): Promise<AuthSession | null> => {
     const res = await fetch("/api/auth/get-session", {
       credentials: "include",
