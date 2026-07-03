@@ -20,6 +20,7 @@ All content cron jobs below are mirrored into `social_automations` (linked to `s
 - **Lead Sync (1 job)**: `socials:lead-sync` — every 5 min, pushes email-bearing `social_leads` rows to the Brevo founding list (`SOURCE` = clickTag). Warns once and no-ops when `BREVO_API_KEY`/`BREVO_FOUNDING_LIST_ID` unset.
 - **Zernio Sync (1 job)**: `socials:zernio-sync` — hourly at :20, refreshes the `zernio_comment_automations` mirror and polls tagged Zernio contacts (clickTag audience) into `social_leads`. No-ops without `ZERNIO_KEY_*`.
 - **Zernio Analytics (1 job)**: `socials:zernio-analytics` — daily 06:40, snapshots daily-metrics / best-time / content-decay / posting-frequency / follower-stats / health / inbox-volume per connected account into `zernio_analytics_snapshots` (the 402/403 add-on gate is recorded, not thrown) and upserts per-post rows into `zernio_post_analytics` with External-Post-ID correlation back to `social_posts`. Zernio numbers only — never blended with `x_engagement_log`.
+- **Funnel Library Top-Up (1 job)**: `socials:funnel-topup` — daily 05:30, for every funnels-capable account (`social_accounts.zernio_account_id` set) AI-drafts the shortfall when `count(status IN ('draft','ready')) < 5` into the `funnels` table (status always `'draft'`; never approves or arms), capped at 10 drafts/run across every account. See [docs/products/funnels-library.md](../products/funnels-library.md).
 
 ## Content Engine Crons
 - **SEO Engine (1 job)**: Daily blog generation from trends at 7:03 AM (`content:seo-engine`).

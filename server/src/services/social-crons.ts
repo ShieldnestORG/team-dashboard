@@ -10,6 +10,7 @@ import { registerCronJob } from "./cron-registry.js";
 import { runSocialRelayerTick, runLeadRelayerTick } from "./social-relayer.js";
 import { runZernioEngagementSyncTick } from "./socials/zernio-sync.js";
 import { runZernioAnalyticsIngestTick } from "./socials/zernio-analytics.js";
+import { runFunnelTopupTick } from "./socials/funnels-service.js";
 import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 
@@ -57,7 +58,19 @@ export function startSocialCrons(db: Db, storageService: StorageService): void {
     handler: () => runZernioAnalyticsIngestTick(db),
   });
 
+  // Funnel Library top-up (BUILD PHASE 2): keeps every funnels-capable
+  // account's draft+ready backlog at >=5 by AI-drafting the shortfall.
+  // Never approves or arms — drafts always await a human. Daily, ahead of
+  // the analytics ingest so a fresh backlog is ready when admins check in.
+  registerCronJob({
+    jobName: "socials:funnel-topup",
+    schedule: "30 5 * * *",
+    ownerAgent: "system",
+    sourceFile: "social-crons.ts",
+    handler: () => runFunnelTopupTick(db),
+  });
+
   logger.info(
-    "Social crons registered (socials:relay, socials:lead-sync, socials:zernio-sync, socials:zernio-analytics)",
+    "Social crons registered (socials:relay, socials:lead-sync, socials:zernio-sync, socials:zernio-analytics, socials:funnel-topup)",
   );
 }

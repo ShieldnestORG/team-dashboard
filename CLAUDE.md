@@ -115,6 +115,7 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md) — Mermaid maintenance.
 - [Blog Distribution](docs/products/blog-distribution.md) — Target surfaces, cron → target map, current wiring status.
 - [Socials Hub](docs/products/socials-hub.md) — Unified `/socials` view: account registry + automation mirror + release calendar.
+- [Funnel Library](docs/products/funnels-library.md) — Standing library of comment→DM funnel drafts per Zernio-capable account; AI drafts, an admin approves/arms, keeps every account at ≥5 "ready" funnels.
 - [Shop Sharers](docs/products/shop-sharers.md) — Email capture on shop.coherencedaddy.com → referral code + QR + shareable link + opt-in affiliate approval queue.
 - [Tutorials Hub](docs/products/tutorials-hub.md) — `coherencedaddy.com/tutorials/<slug>` content surface: registry, subdirectory-vs-subdomain decision, add-a-tutorial checklist, AdSense behavior.
 - [Launch Monitor](docs/products/launch-monitor.md) — HN/Reddit/dev.to launch-post comment poller + Haiku pattern classifier + human-in-the-loop reply queue at `/socials/launch-monitor`.

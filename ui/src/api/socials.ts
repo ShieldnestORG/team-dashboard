@@ -242,6 +242,70 @@ export interface ZernioEvent {
   error: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Funnel Library (BUILD PHASE 2) — the working table behind the strategy
+// catalog above. AI drafts, an admin approves/rejects, "arm" creates the
+// real Zernio comment automation. See docs/products/funnels-library.md.
+// ---------------------------------------------------------------------------
+
+export type FunnelStatus = "draft" | "ready" | "live" | "rejected" | "retired";
+export type FunnelStyle = "standard" | "controversial" | "weird";
+
+export interface LibraryFunnel {
+  id: string;
+  companyId: string;
+  catalogId: string | null;
+  name: string;
+  accountHandle: string;
+  socialAccountId: string | null;
+  keywords: string[];
+  matchMode: "exact" | "contains";
+  dmMessage: string;
+  destinationUrl: string | null;
+  postHooks: string[];
+  style: FunnelStyle;
+  tosRisk: string | null;
+  notes: string | null;
+  status: FunnelStatus;
+  createdBy: string;
+  approvedByUserId: string | null;
+  zernioAutomationId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FunnelCoverageRow {
+  accountId: string;
+  handle: string;
+  zernioAccountId: string;
+  funnelsEnabled: boolean;
+  counts: Record<FunnelStatus, number>;
+  readyCount: number;
+  readyTarget: number;
+  atTarget: boolean;
+}
+
+export interface NewLibraryFunnel {
+  name: string;
+  accountHandle: string;
+  keywords?: string[];
+  matchMode?: "exact" | "contains";
+  dmMessage?: string;
+  destinationUrl?: string | null;
+  postHooks?: string[];
+  style?: FunnelStyle;
+  tosRisk?: string | null;
+  notes?: string | null;
+}
+
+export interface GenerateFunnelsResult {
+  inserted: LibraryFunnel[];
+  requestedCount: number;
+  parsedCount: number;
+  provider: string;
+  model: string;
+}
+
 export const socialsApi = {
   listAccounts: (params?: { brand?: string; platform?: string; status?: string }) => {
     const q = new URLSearchParams();
@@ -365,4 +429,30 @@ export const socialsApi = {
       `/socials/zernio/events${qs ? `?${qs}` : ""}`,
     );
   },
+
+  // ── Funnel Library ──────────────────────────────────────────────────────
+  listLibraryFunnels: (params?: { accountHandle?: string; status?: FunnelStatus }) => {
+    const q = new URLSearchParams();
+    if (params?.accountHandle) q.set("accountHandle", params.accountHandle);
+    if (params?.status) q.set("status", params.status);
+    const qs = q.toString();
+    return api.get<{ funnels: LibraryFunnel[] }>(`/socials/funnels${qs ? `?${qs}` : ""}`);
+  },
+  funnelCoverage: () => api.get<{ coverage: FunnelCoverageRow[] }>("/socials/funnels/coverage"),
+  createLibraryFunnel: (data: NewLibraryFunnel) =>
+    api.post<{ funnel: LibraryFunnel }>("/socials/funnels", data),
+  updateLibraryFunnel: (id: string, data: Partial<NewLibraryFunnel>) =>
+    api.patch<{ funnel: LibraryFunnel }>(`/socials/funnels/${id}`, data),
+  approveLibraryFunnel: (id: string) =>
+    api.post<{ funnel: LibraryFunnel }>(`/socials/funnels/${id}/approve`, {}),
+  rejectLibraryFunnel: (id: string) =>
+    api.post<{ funnel: LibraryFunnel }>(`/socials/funnels/${id}/reject`, {}),
+  // Creates the real Zernio comment automation. 409 {error} when not ready
+  // or the account's funnels gate is off; 402/502 on a Zernio-side failure.
+  armLibraryFunnel: (id: string) =>
+    api.post<{ funnel: LibraryFunnel }>(`/socials/funnels/${id}/arm`, {}),
+  retireLibraryFunnel: (id: string) =>
+    api.post<{ funnel: LibraryFunnel }>(`/socials/funnels/${id}/retire`, {}),
+  generateLibraryFunnels: (data: { accountHandle: string; count?: number; styles?: FunnelStyle[] }) =>
+    api.post<GenerateFunnelsResult>("/socials/funnels/generate", data),
 };
