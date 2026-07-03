@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HelpTip } from "@/components/HelpTip";
 
 const PLATFORMS = [
   "x", "reddit", "devto", "hn", "instagram", "facebook", "youtube",
@@ -65,6 +66,13 @@ export function SocialsAccounts() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold">Accounts</h2>
+        <HelpTip label="What is Accounts?">
+          Every social account we can post to or run comment-to-DM funnels on. Add a new one here;
+          its platform, handle, and connection type control how posts actually go out.
+        </HelpTip>
+      </div>
       <div className="flex justify-between items-center">
         <div className="text-sm text-muted-foreground">
           {accounts.length} account{accounts.length === 1 ? "" : "s"} across {byBrand.size} brand{byBrand.size === 1 ? "" : "s"}

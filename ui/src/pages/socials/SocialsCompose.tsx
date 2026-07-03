@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { socialsApi, type SocialAccount } from "../../api/socials";
+import { useLocation } from "@/lib/router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { HelpTip } from "@/components/HelpTip";
 
 // Platforms whose text relayer pipeline is wired up. IG-feed/X/LinkedIn
 // will appear once their adapters land.
@@ -17,6 +19,12 @@ function toLocalInputValue(d: Date): string {
 
 export function SocialsCompose() {
   const qc = useQueryClient();
+  const location = useLocation();
+  // Kit cards' "Send to Compose" button hands off a caption via router
+  // state — read once on mount so the queued post stays attributed to
+  // whoever sends it, instead of a copy-paste with no author trail.
+  const prefillText = (location.state as { prefillText?: string } | null)?.prefillText;
+
   const { data: accountsData, isLoading } = useQuery({
     queryKey: ["socials", "accounts"],
     queryFn: () => socialsApi.listAccounts(),
@@ -29,7 +37,7 @@ export function SocialsCompose() {
   }, [accountsData]);
 
   const [accountId, setAccountId] = useState<string>("");
-  const [text, setText] = useState<string>("");
+  const [text, setText] = useState<string>(prefillText ?? "");
   const [mediaUrlsText, setMediaUrlsText] = useState<string>("");
   const [scheduledAt, setScheduledAt] = useState<string>(toLocalInputValue(new Date(Date.now() + 60_000)));
   const [postNow, setPostNow] = useState<boolean>(true);
@@ -91,7 +99,15 @@ export function SocialsCompose() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div className="space-y-4">
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold">Compose</h2>
+        <HelpTip label="What is Compose?">
+          Write a post by hand and queue it — it goes out on the next relayer tick, or at a time
+          you pick. A kit sent here from Content Hub shows up prefilled below.
+        </HelpTip>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="text-base">Schedule a post</CardTitle>
@@ -199,6 +215,7 @@ export function SocialsCompose() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

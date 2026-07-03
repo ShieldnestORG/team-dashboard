@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
+import { useSearchParams } from "@/lib/router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { FlowStepper } from "@/components/FlowStepper";
 import { SocialsAccounts } from "./SocialsAccounts";
 import { SocialsAutomation } from "./SocialsAutomation";
 import { SocialsCalendar } from "./SocialsCalendar";
@@ -9,10 +11,14 @@ import { SocialsQueue } from "./SocialsQueue";
 import { SocialsSchedule } from "./SocialsSchedule";
 
 type Tab = "accounts" | "schedule" | "automation" | "calendar" | "compose" | "queue";
+const TABS: Tab[] = ["accounts", "schedule", "automation", "calendar", "compose", "queue"];
 
 export function SocialsLayout() {
   const { setBreadcrumbs } = useBreadcrumbs();
-  const [tab, setTab] = useState<Tab>("accounts");
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const initialTab: Tab = TABS.includes(requestedTab as Tab) ? (requestedTab as Tab) : "accounts";
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Socials" }]);
@@ -27,6 +33,7 @@ export function SocialsLayout() {
           composer that drains via the socials relayer.
         </p>
       </div>
+      <FlowStepper />
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
         <TabsList>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
