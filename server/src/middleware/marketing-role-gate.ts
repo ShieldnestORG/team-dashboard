@@ -18,15 +18,17 @@ import { logger } from "./logger.js";
  * every /api route regardless of where it is mounted. Non-/api paths (UI
  * HTML/assets) always pass.
  *
- * ⚠ SECURITY LIMIT of the every()-semantics: users with a MIX of roles
- * (marketing in one company, member/owner in another) are NOT restricted at
- * all — one non-marketing membership voids containment, and plain company
- * membership already grants costs/secrets reads for the marketing company
- * via assertCompanyAccess. Adding a marketing user to a second company as a
- * plain 'member' is therefore an escalation, not an add. The gate logs a
- * loud warning when it sees this state; a per-company gate (restrict on the
- * companies where the membership role IS 'marketing') is the real fix and is
- * recorded as deferred in docs/deploy/content-hub-notes.md.
+ * Mixed-role containment (fail-closed): a plain 'member' membership no longer
+ * voids the gate. A user is marketing-scoped whenever they hold at least one
+ * 'marketing' membership AND no elevated membership (owner / root / admin).
+ * So "marketing in A + member in B" stays gated — adding a marketing user to a
+ * second company as a plain 'member' was the escalation vector (it previously
+ * lifted ALL marketing restrictions, including costs/secrets of the marketing
+ * company via assertCompanyAccess), and that hole is now closed. Genuine
+ * elevated roles (owner/root/admin) are never gated, so real owners/admins are
+ * never locked out of their own surfaces. A per-company gate (restricting only
+ * on the companies where the role IS 'marketing') remains a possible future
+ * refinement, but containment no longer depends on it.
  */
 
 // Prefix → allowed methods. null = all methods (the routes carry their own
@@ -92,22 +94,30 @@ export function marketingRoleGate(db: Db): RequestHandler {
             eq(companyMemberships.status, "active"),
           ),
         );
-      const marketingOnly =
-        rows.length > 0 && rows.every((row) => row.membershipRole === "marketing");
-      if (!marketingOnly) {
-        // Loud warning (once per user per process): a marketing membership
-        // mixed with any non-marketing one means this user is fully
-        // UNRESTRICTED — including costs/secrets reads on the marketing
-        // company. Admins usually cause this by adding a marketing user to a
-        // second company with the default 'member' role.
+      // Fail-closed containment: a user is marketing-scoped when they hold a
+      // 'marketing' membership AND no elevated (owner/root/admin) membership. A
+      // plain 'member' membership does NOT lift containment — that was the
+      // escalation vector. Elevated roles are never gated (real owners/admins
+      // keep their own surfaces).
+      const roles = rows.map((row) => row.membershipRole);
+      const hasMarketing = roles.includes("marketing");
+      const hasElevatedRole = roles.some(
+        (role) => role === "owner" || role === "root" || role === "admin",
+      );
+      const marketingScoped = hasMarketing && !hasElevatedRole;
+      if (!marketingScoped) {
+        // A marketing user who ALSO holds an elevated role is ungated by design
+        // (they are a genuine owner/admin), but that combination widens their
+        // reach beyond marketing surfaces — worth a one-time heads-up.
         if (
-          rows.some((row) => row.membershipRole === "marketing") &&
+          hasMarketing &&
+          hasElevatedRole &&
           !warnedMixedRoleUsers.has(req.actor.userId)
         ) {
           warnedMixedRoleUsers.add(req.actor.userId);
           logger.warn(
             { userId: req.actor.userId },
-            "marketing-role gate VOIDED for user with mixed memberships: a non-marketing membership lifts ALL marketing restrictions (incl. costs/secrets of the marketing company). Set membership_role='marketing' on every membership to keep this user contained.",
+            "marketing user also holds an elevated (owner/root/admin) membership — ungated by design; confirm this elevation is intended.",
           );
         }
         return next();

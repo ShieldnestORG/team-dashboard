@@ -105,10 +105,28 @@ describe("marketingRoleGate — fail-closed path allowlist", () => {
     expect((await (await ipv4Request(app)).get("/api/costs")).status).toBe(200);
   });
 
-  it("does not restrict a user with MIXED roles (marketing + member)", async () => {
-    const app = gateApp(memberUser, [
+  it("GATES a mixed-role user (marketing + member): a plain 'member' membership no longer voids containment", async () => {
+    const app = gateApp(marketingUser, [
       { membershipRole: "marketing" },
       { membershipRole: "member" },
+    ]);
+    const res = await (await ipv4Request(app)).get("/api/costs");
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("marketing_role_restricted");
+  });
+
+  it("does NOT gate a marketing user who ALSO holds an elevated 'owner' role (owners keep their own surfaces)", async () => {
+    const app = gateApp(marketingUser, [
+      { membershipRole: "marketing" },
+      { membershipRole: "owner" },
+    ]);
+    expect((await (await ipv4Request(app)).get("/api/costs")).status).toBe(200);
+  });
+
+  it("does NOT gate a marketing user who ALSO holds an elevated 'root' role", async () => {
+    const app = gateApp(marketingUser, [
+      { membershipRole: "marketing" },
+      { membershipRole: "root" },
     ]);
     expect((await (await ipv4Request(app)).get("/api/costs")).status).toBe(200);
   });

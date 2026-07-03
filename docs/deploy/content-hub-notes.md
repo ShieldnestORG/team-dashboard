@@ -56,10 +56,12 @@ Full decision record: `docs/tokns-project.md`. Condensed:
 3. Eagan: sign up (see the sign-up pre-check above) → open the invite URL →
    "Submit join request". Admin: approve under the company's join requests.
    Repeat for the second invite.
-4. **⚠ Every membership must be `marketing`.** One non-marketing membership
-   voids ALL marketing restrictions for that user (see the deferred
-   per-company-gate finding below). Never approve a marketing user through a
-   plain default-role invite.
+4. **⚠ Never grant a marketing user an elevated (owner/root/admin) membership.**
+   A plain `member` membership alongside `marketing` is now safe — the gate is
+   fail-closed and keeps the user contained (see the mixed-role fix below). But
+   an owner/root/admin membership ungates them entirely (by design — real owners
+   keep their own surfaces). Prefer minting additional memberships with the
+   `marketing` role regardless.
 5. Verify as Eagan: login lands on `/CD/content-hub`, sidebar shows only
    Socials & Content + Content Hub, `/CD/costs` renders the plain
    "You don't have access" card.
@@ -99,20 +101,21 @@ artifact against a fresh parse.
 
 ## Deferred review findings
 
-- **Per-company marketing-role gate (minor, security).** The gate restricts a
-  user only when EVERY active membership has `membership_role='marketing'`.
-  One non-marketing membership (e.g. an admin adds the marketing user to a
-  second company with the default `member` role) voids ALL restrictions —
-  including costs/secrets reads on the marketing company, because plain
-  membership passes `assertCompanyAccess`. Shipped mitigation: the gate logs a
-  loud warning (once per user per process) when it sees a mixed-role user, and
-  the middleware header documents the escalation. The real fix — restricting
-  per company (gate the companies where the membership role IS `marketing`)
-  — needs a path→company resolver across the API surface and is deferred as a
-  follow-up. Until then: **never grant a marketing user a non-marketing
-  membership; mint every additional membership (CD + TOK) with
-  `membershipRole='marketing'`** (the Wave-4 onboarding runbook must repeat
-  this rule).
+- **Mixed-role marketing-role containment — FIXED (2026-07-03).** The gate
+  previously restricted a user only when EVERY active membership had
+  `membership_role='marketing'`; one non-marketing membership (e.g. an admin
+  adding the marketing user to a second company with the default `member` role)
+  voided ALL restrictions — including costs/secrets reads on the marketing
+  company via `assertCompanyAccess`. That hole is now closed: a user is
+  marketing-scoped whenever they hold a `marketing` membership AND no elevated
+  (`owner`/`root`/`admin`) membership, so a plain `member` membership no longer
+  lifts containment. Elevated roles remain ungated by design (real owners/admins
+  keep their own surfaces; the gate logs a one-time heads-up for the
+  marketing+elevated combination). Covered by
+  `server/src/__tests__/marketing-role.test.ts` (marketing+member → 403;
+  marketing+owner and marketing+root → 200). A per-company gate (restricting
+  only on the companies where the role IS `marketing`) remains a possible future
+  refinement, but containment no longer depends on it.
 
 ## Deferred findings from the final E2E (2026-07-02)
 
