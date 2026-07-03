@@ -14,6 +14,9 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
+import { PlatformBadge } from "@/components/PlatformBadge";
+import { normalizePlatform } from "@/lib/status-colors";
 import {
   Tabs,
   TabsList,
@@ -94,39 +97,8 @@ const CONTENT_TYPE_OPTIONS = [
 ] as const;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function platformColor(platform: string): string {
-  switch (platform) {
-    case "twitter":
-      return "bg-sky-500/15 text-sky-400 border-sky-500/30";
-    case "blog":
-      return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-    case "linkedin":
-      return "bg-blue-500/15 text-blue-400 border-blue-500/30";
-    case "reddit":
-      return "bg-orange-500/15 text-orange-400 border-orange-500/30";
-    case "discord":
-      return "bg-indigo-500/15 text-indigo-400 border-indigo-500/30";
-    case "bluesky":
-      return "bg-cyan-500/15 text-cyan-400 border-cyan-500/30";
-    default:
-      return "bg-muted/15 text-muted-foreground border-border";
-  }
-}
-
-function statusColor(status: string): string {
-  switch (status) {
-    case "published":
-      return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-    case "pending":
-      return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-    case "failed":
-    case "rejected":
-      return "bg-red-500/15 text-red-400 border-red-500/30";
-    default:
-      return "bg-muted/15 text-muted-foreground border-border";
-  }
-}
+// platform + status colors now come from the canonical PlatformBadge/StatusBadge
+// (ui/src/lib/status-colors.ts) instead of the ad-hoc functions that used to live here.
 
 function reviewStatusColor(reviewStatus: string | null): string {
   switch (reviewStatus) {
@@ -540,15 +512,11 @@ function ContentCard({
       <CardContent className="space-y-3 pt-0">
         {/* Badges row */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge className={`text-xs ${platformColor(item.platform)}`}>
-            {item.platform}
-          </Badge>
+          <PlatformBadge platform={normalizePlatform(item.platform)} />
           <Badge className={`text-xs ${personalityColor(item.personality)}`}>
             {item.personality}
           </Badge>
-          <Badge className={`text-xs ${statusColor(item.status)}`}>
-            {item.status}
-          </Badge>
+          <StatusBadge status={item.status} />
           {item.reviewStatus && (
             <Badge
               className={`text-xs ${reviewStatusColor(item.reviewStatus)}`}
@@ -679,26 +647,6 @@ const VISUAL_PLATFORM_TABS = [
   { value: "twitter_video", label: "X Video", icon: Twitter },
 ] as const;
 
-function visualPlatformColor(platform: string): string {
-  switch (platform) {
-    case "youtube_shorts": return "bg-red-500/15 text-red-400 border-red-500/30";
-    case "tiktok": return "bg-pink-500/15 text-pink-400 border-pink-500/30";
-    case "instagram_reels": return "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30";
-    case "twitter_video": return "bg-sky-500/15 text-sky-400 border-sky-500/30";
-    default: return "bg-muted/15 text-muted-foreground border-border";
-  }
-}
-
-function visualPlatformLabel(platform: string): string {
-  switch (platform) {
-    case "youtube_shorts": return "YouTube Shorts";
-    case "tiktok": return "TikTok";
-    case "instagram_reels": return "Instagram Reels";
-    case "twitter_video": return "X Video";
-    default: return platform;
-  }
-}
-
 function agentColor(agentId: string): string {
   switch (agentId) {
     case "lens": return "bg-teal-500/15 text-teal-400 border-teal-500/30";
@@ -726,9 +674,9 @@ function VisualContentCard({ item, onReview, isReviewing }: { item: VisualConten
     <Card className="rounded-xl">
       <CardContent className="space-y-3 pt-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge className={`text-xs ${visualPlatformColor(item.platform)}`}>{visualPlatformLabel(item.platform)}</Badge>
+          <PlatformBadge platform={normalizePlatform(item.platform)} />
           <Badge className={`text-xs ${agentColor(item.agentId)}`}>{item.agentId}</Badge>
-          <Badge className={`text-xs ${statusColor(item.status)}`}>{item.status}</Badge>
+          <StatusBadge status={item.status} />
           {item.reviewStatus && item.reviewStatus !== "pending" && <Badge className={`text-xs ${reviewStatusColor(item.reviewStatus)}`}>{item.reviewStatus}</Badge>}
           <Badge className="text-xs bg-muted/15 text-muted-foreground border-border">{item.backend}</Badge>
           <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground"><Clock className="h-3 w-3" />{formatRelativeTime(item.createdAt)}</span>

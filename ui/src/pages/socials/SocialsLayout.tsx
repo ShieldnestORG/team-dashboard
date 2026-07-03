@@ -45,8 +45,8 @@ export function SocialsLayout() {
       <div>
         <h1 className="text-2xl font-semibold">Socials Hub</h1>
         <p className="text-sm text-muted-foreground">
-          All social accounts, the automations driving them, the unified release calendar, and a queue-backed
-          composer that drains via the socials relayer.
+          All social accounts, the automations driving them, the unified release calendar, and a composer that
+          sends posts out automatically at their scheduled time.
         </p>
       </div>
       <FlowStepper />
