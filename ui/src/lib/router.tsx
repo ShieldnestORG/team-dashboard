@@ -8,13 +8,13 @@ import {
   normalizeCompanyPrefix,
 } from "@/lib/company-routes";
 
-function resolveTo(to: To, companyPrefix: string | null): To {
+function resolveTo(to: To, companyPrefix: string | null, knownCompanyPrefixes: readonly string[]): To {
   if (typeof to === "string") {
-    return applyCompanyPrefix(to, companyPrefix);
+    return applyCompanyPrefix(to, companyPrefix, knownCompanyPrefixes);
   }
 
   if (to.pathname && to.pathname.startsWith("/")) {
-    const pathname = applyCompanyPrefix(to.pathname, companyPrefix);
+    const pathname = applyCompanyPrefix(to.pathname, companyPrefix, knownCompanyPrefixes);
     if (pathname !== to.pathname) {
       return { ...to, pathname };
     }
@@ -23,10 +23,20 @@ function resolveTo(to: To, companyPrefix: string | null): To {
   return to;
 }
 
-function useActiveCompanyPrefix(): string | null {
+interface ActiveCompanyRouting {
+  companyPrefix: string | null;
+  /** Real company issuePrefixes; empty while companies are still loading. */
+  knownCompanyPrefixes: readonly string[];
+}
+
+function useActiveCompanyRouting(): ActiveCompanyRouting {
   const { selectedCompany, companies, loading: companiesLoading } = useCompany();
   const params = RouterDom.useParams<{ companyPrefix?: string }>();
   const location = RouterDom.useLocation();
+  const knownCompanyPrefixes = React.useMemo(
+    () => companies.map((company) => company.issuePrefix),
+    [companies],
+  );
 
   if (params.companyPrefix) {
     const normalizedParam = normalizeCompanyPrefix(params.companyPrefix);
@@ -37,42 +47,45 @@ function useActiveCompanyPrefix(): string | null {
       companiesLoading ||
       companies.some((c) => c.issuePrefix.toUpperCase() === normalizedParam);
     if (isValidCompany) {
-      return normalizedParam;
+      return { companyPrefix: normalizedParam, knownCompanyPrefixes };
     }
     // Not a known company prefix — the URL is missing the real company prefix.
     // Fall through to use selectedCompany so sidebar links don't inherit the bad value.
   }
 
-  const pathPrefix = extractCompanyPrefixFromPath(location.pathname);
-  if (pathPrefix) return pathPrefix;
+  const pathPrefix = extractCompanyPrefixFromPath(location.pathname, knownCompanyPrefixes);
+  if (pathPrefix) return { companyPrefix: pathPrefix, knownCompanyPrefixes };
 
-  return selectedCompany ? normalizeCompanyPrefix(selectedCompany.issuePrefix) : null;
+  return {
+    companyPrefix: selectedCompany ? normalizeCompanyPrefix(selectedCompany.issuePrefix) : null,
+    knownCompanyPrefixes,
+  };
 }
 
 export * from "react-router-dom";
 
 export const Link = React.forwardRef<HTMLAnchorElement, React.ComponentProps<typeof RouterDom.Link>>(
   function CompanyLink({ to, ...props }, ref) {
-    const companyPrefix = useActiveCompanyPrefix();
-    return <RouterDom.Link ref={ref} to={resolveTo(to, companyPrefix)} {...props} />;
+    const { companyPrefix, knownCompanyPrefixes } = useActiveCompanyRouting();
+    return <RouterDom.Link ref={ref} to={resolveTo(to, companyPrefix, knownCompanyPrefixes)} {...props} />;
   },
 );
 
 export const NavLink = React.forwardRef<HTMLAnchorElement, React.ComponentProps<typeof RouterDom.NavLink>>(
   function CompanyNavLink({ to, ...props }, ref) {
-    const companyPrefix = useActiveCompanyPrefix();
-    return <RouterDom.NavLink ref={ref} to={resolveTo(to, companyPrefix)} {...props} />;
+    const { companyPrefix, knownCompanyPrefixes } = useActiveCompanyRouting();
+    return <RouterDom.NavLink ref={ref} to={resolveTo(to, companyPrefix, knownCompanyPrefixes)} {...props} />;
   },
 );
 
 export function Navigate({ to, ...props }: React.ComponentProps<typeof RouterDom.Navigate>) {
-  const companyPrefix = useActiveCompanyPrefix();
-  return <RouterDom.Navigate to={resolveTo(to, companyPrefix)} {...props} />;
+  const { companyPrefix, knownCompanyPrefixes } = useActiveCompanyRouting();
+  return <RouterDom.Navigate to={resolveTo(to, companyPrefix, knownCompanyPrefixes)} {...props} />;
 }
 
 export function useNavigate(): ReturnType<typeof RouterDom.useNavigate> {
   const navigate = RouterDom.useNavigate();
-  const companyPrefix = useActiveCompanyPrefix();
+  const { companyPrefix, knownCompanyPrefixes } = useActiveCompanyRouting();
 
   return React.useCallback(
     ((to: To | number, options?: NavigateOptions) => {
@@ -80,8 +93,8 @@ export function useNavigate(): ReturnType<typeof RouterDom.useNavigate> {
         navigate(to);
         return;
       }
-      navigate(resolveTo(to, companyPrefix), options);
+      navigate(resolveTo(to, companyPrefix, knownCompanyPrefixes), options);
     }) as ReturnType<typeof RouterDom.useNavigate>,
-    [navigate, companyPrefix],
+    [navigate, companyPrefix, knownCompanyPrefixes],
   );
 }

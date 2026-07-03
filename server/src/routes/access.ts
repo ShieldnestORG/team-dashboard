@@ -27,8 +27,10 @@ import {
   resolveCliAuthChallengeSchema,
   updateMemberPermissionsSchema,
   updateUserCompanyAccessSchema,
+  MEMBERSHIP_ROLES,
   PERMISSION_KEYS
 } from "@paperclipai/shared";
+import type { MembershipRole } from "@paperclipai/shared";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import {
   forbidden,
@@ -1412,6 +1414,27 @@ function grantsFromDefaults(
   return result;
 }
 
+/**
+ * Membership role requested by an invite's `defaultsPayload.human.membershipRole`.
+ * Validated against MEMBERSHIP_ROLES; anything missing/unknown falls back to
+ * "member" (the pre-existing hardcoded behavior). Exported for tests.
+ */
+export function membershipRoleFromInviteDefaults(
+  defaultsPayload: Record<string, unknown> | null | undefined
+): MembershipRole {
+  if (!defaultsPayload || typeof defaultsPayload !== "object") return "member";
+  const human = defaultsPayload.human;
+  if (!human || typeof human !== "object" || Array.isArray(human)) return "member";
+  const requested = (human as Record<string, unknown>).membershipRole;
+  if (
+    typeof requested === "string" &&
+    (MEMBERSHIP_ROLES as readonly string[]).includes(requested)
+  ) {
+    return requested as MembershipRole;
+  }
+  return "member";
+}
+
 export function agentJoinGrantsFromDefaults(
   defaultsPayload: Record<string, unknown> | null | undefined
 ): Array<{
@@ -1754,6 +1777,8 @@ export function accessRoutes(
       userId: req.actor.userId,
       isInstanceAdmin: accessSnapshot.isInstanceAdmin,
       companyIds: accessSnapshot.companyIds,
+      // CONTRACT-4: per-company membership roles for the UI's useBoardAccess().
+      memberships: accessSnapshot.memberships,
       source: req.actor.source ?? "none",
       keyId: req.actor.source === "board_key" ? req.actor.keyId ?? null : null,
     });
@@ -2582,11 +2607,15 @@ export function accessRoutes(
       if (existing.requestType === "human") {
         if (!existing.requestingUserId)
           throw conflict("Join request missing user identity");
+        // Invites may request a scoped role via defaultsPayload.human
+        // .membershipRole (e.g. "marketing"); unknown/missing → "member".
         await access.ensureMembership(
           companyId,
           "user",
           existing.requestingUserId,
-          "member",
+          membershipRoleFromInviteDefaults(
+            invite.defaultsPayload as Record<string, unknown> | null
+          ),
           "active"
         );
         const grants = grantsFromDefaults(

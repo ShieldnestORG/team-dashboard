@@ -49,6 +49,18 @@ describe("getRememberedPathOwnerCompanyId", () => {
       }),
     ).toBe("pap");
   });
+
+  it("treats unprefixed plugin routes as board routes once companies are loaded", () => {
+    // "my-plugin-page" is in no static route list — the real issuePrefixes
+    // decide what counts as a company prefix.
+    expect(
+      getRememberedPathOwnerCompanyId({
+        companies,
+        pathname: "/my-plugin-page/section",
+        fallbackCompanyId: "pap",
+      }),
+    ).toBe("pap");
+  });
 });
 
 describe("sanitizeRememberedPathForCompany", () => {
@@ -86,5 +98,15 @@ describe("sanitizeRememberedPathForCompany", () => {
         companyPrefix: "PAP",
       }),
     ).toBe("/skills/skill-123/files/SKILL.md");
+  });
+
+  it("strips a legacy absolute plugin path with known prefixes instead of double-prefixing", () => {
+    expect(
+      sanitizeRememberedPathForCompany({
+        path: "/PAP/my-plugin-page/section",
+        companyPrefix: "PAP",
+        knownCompanyPrefixes: ["FOR", "PAP"],
+      }),
+    ).toBe("/my-plugin-page/section");
   });
 });

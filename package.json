@@ -15,6 +15,7 @@
     "db:generate": "pnpm --filter @paperclipai/db generate",
     "db:migrate": "pnpm --filter @paperclipai/db migrate",
     "secrets:migrate-inline-env": "tsx scripts/migrate-inline-env-secrets.ts",
+    "kits:sync": "tsx scripts/import-marketing-kits.ts",
     "db:backup": "./scripts/backup-db.sh",
     "paperclipai": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
     "team-dashboard": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",

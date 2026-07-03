@@ -28,7 +28,13 @@ export function getRememberedPathOwnerCompanyId<T extends { id: string; issuePre
   pathname: string;
   fallbackCompanyId: string | null;
 }): string | null {
-  const routeCompanyPrefix = extractCompanyPrefixFromPath(params.pathname);
+  // Real issuePrefixes make prefix detection exact — unprefixed plugin routes
+  // are no longer misread as company prefixes (falls back to the heuristic
+  // while companies are still loading).
+  const routeCompanyPrefix = extractCompanyPrefixFromPath(
+    params.pathname,
+    params.companies.map((company) => company.issuePrefix),
+  );
   if (!routeCompanyPrefix) {
     return params.fallbackCompanyId;
   }
@@ -42,8 +48,13 @@ export function getRememberedPathOwnerCompanyId<T extends { id: string; issuePre
 export function sanitizeRememberedPathForCompany(params: {
   path: string | null | undefined;
   companyPrefix: string;
+  knownCompanyPrefixes?: readonly string[];
 }): string {
-  const relativePath = params.path ? toCompanyRelativePath(params.path) : "/dashboard";
+  // Known prefixes let legacy absolute saves (e.g. "/CD/<plugin-route>") strip
+  // cleanly instead of double-prefixing on restore.
+  const relativePath = params.path
+    ? toCompanyRelativePath(params.path, params.knownCompanyPrefixes)
+    : "/dashboard";
   if (!isRememberableCompanyPath(relativePath)) {
     return "/dashboard";
   }

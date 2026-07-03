@@ -37,6 +37,7 @@ import type {
   PluginUiSlotType,
 } from "@paperclipai/shared";
 import { pluginsApi, type PluginUiContribution } from "@/api/plugins";
+import { ApiError } from "@/api/client";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -588,10 +589,15 @@ export function usePluginSlots(filters: SlotFilters): UsePluginSlotsResult {
   const modulesLoaded = data ? aggregateLoadState(data) === "loaded" : true;
   const isLoading = queryEnabled && (isQueryLoading || !modulesLoaded);
 
+  // A 403 means this user isn't allowed to read plugin contributions (e.g.
+  // the marketing-role gate). For them the truth is simply "no plugin
+  // extensions" — render nothing, not a red error box in the nav.
+  const accessDenied = error instanceof ApiError && error.status === 403;
+
   return {
     slots,
     isLoading,
-    errorMessage: error ? getErrorMessage(error) : null,
+    errorMessage: error && !accessDenied ? getErrorMessage(error) : null,
   };
 }
 

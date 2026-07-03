@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Layout } from "./components/Layout";
@@ -36,6 +36,7 @@ import { PluginSettings } from "./pages/PluginSettings";
 import { PluginPage } from "./pages/PluginPage";
 import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
 import { TwitterDashboard } from "./pages/TwitterDashboard";
+import { ContentHub } from "./pages/content-hub/ContentHub";
 import { SocialsLayout } from "./pages/socials/SocialsLayout";
 import { SocialsContentLayout } from "./pages/socials/SocialsContentLayout";
 import { LaunchMonitor } from "./pages/socials/LaunchMonitor";
@@ -114,6 +115,7 @@ import { InviteLandingPage } from "./pages/InviteLanding";
 import { NotFoundPage } from "./pages/NotFound";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
+import { useBoardAccess } from "./hooks/useBoardAccess";
 import { useDialog } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
 import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-route";
@@ -187,8 +189,8 @@ function CloudAccessGate() {
 
 function boardRoutes() {
   return (
-    <>
-      <Route index element={<Navigate to="dashboard" replace />} />
+    <Route element={<MarketingRouteGate />}>
+      <Route index element={<BoardIndexRedirect />} />
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
@@ -246,10 +248,11 @@ function boardRoutes() {
         <Route path="auto-reply" element={<AutoReply />} />
         <Route path="launch-monitor" element={<LaunchMonitor />} />
       </Route>
+      <Route path="content-hub" element={<ContentHub />} />
       <Route path="twitter" element={<Navigate to="/socials/twitter" replace />} />
       <Route path="discord" element={<Navigate to="/socials/discord" replace />} />
-      <Route path="tx-ecosystem" element={<TxEcosystem />} />
-      <Route path="tokns" element={<Tokns />} />
+      <Route path="tx-ecosystem" element={<TokProductRoute page="tx-ecosystem" />} />
+      <Route path="tokns" element={<TokProductRoute page="tokns" />} />
       <Route path="auto-reply" element={<Navigate to="/socials/auto-reply" replace />} />
       <Route path="system-health" element={<SystemHealth />} />
       <Route path="api-routes" element={<ApiDashboard />} />
@@ -310,8 +313,109 @@ function boardRoutes() {
       <Route path="tests/ux/runs" element={<RunTranscriptUxLab />} />
       <Route path=":pluginRoutePath" element={<PluginPage />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
-    </>
+    </Route>
   );
+}
+
+/**
+ * Board route roots a marketing-only user can open. Every root here must be
+ * backed by the server's marketing-role-gate API allowlist
+ * (server/src/middleware/marketing-role-gate.ts) — a route whose data calls
+ * the gate 403s must NOT be listed, or the user's first screen is a wall of
+ * failed requests. Dashboard/Inbox are deliberately absent: their reads
+ * (/api/companies/:id/dashboard, approvals, heartbeats, issues) are blocked
+ * server-side; marketing users land on the Content Hub instead. This
+ * client-side gate is a courtesy — the middleware is the real enforcement.
+ */
+const MARKETING_ROUTE_ROOTS = new Set(["socials", "content-hub"]);
+
+function MarketingRouteGate() {
+  const { isMarketingOnly, isLoading } = useBoardAccess();
+  const location = useLocation();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+
+  // Until the access snapshot resolves we don't know whether this user is
+  // marketing-scoped. Hold rendering so a blocked page never mounts and
+  // fires a burst of 403 requests during the loading window.
+  if (isLoading) return null;
+  if (!isMarketingOnly) return <Outlet />;
+
+  const segments = location.pathname.split("/").filter(Boolean);
+  const relative =
+    companyPrefix && segments[0]?.toUpperCase() === companyPrefix.toUpperCase()
+      ? segments.slice(1)
+      : segments;
+  // The bare board index is allowed: BoardIndexRedirect immediately sends
+  // marketing users to the Content Hub.
+  if (relative.length === 0) return <Outlet />;
+  const root = relative[0]!.toLowerCase();
+  if (MARKETING_ROUTE_ROOTS.has(root)) return <Outlet />;
+
+  return (
+    <div className="mx-auto max-w-xl py-10">
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h1 className="text-xl font-semibold">You don't have access to this page</h1>
+        <p className="mt-2 text-base text-muted-foreground">
+          Your account is set up for marketing work — kits, socials, and voice snippets. Ask Mark
+          if you need more.
+        </p>
+        <div className="mt-4">
+          <Button asChild>
+            <Link to="/content-hub">Go to the Content Hub</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Tokns + TX Ecosystem live under the TOK (Tokns) project — see
+ * docs/tokns-project.md. Old links under other prefixes (/CD/tokns, bare
+ * /tokns via Layout's auto-correct) redirect to the TOK-prefixed path.
+ * Loop-proof: under /TOK the active prefix matches, so the page renders.
+ * If no TOK company exists yet (fresh instance), render the page in place
+ * instead of redirecting into an invalid-prefix 404.
+ *
+ * The redirect target carries an explicit known prefix, so the router
+ * wrapper's Navigate leaves it untouched (extractCompanyPrefixFromPath
+ * recognizes TOK once the company exists — and the redirect only fires then).
+ */
+function TokProductRoute({ page }: { page: "tokns" | "tx-ecosystem" }) {
+  const { companies } = useCompany();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+  const location = useLocation();
+
+  const tokExists = companies.some((company) => company.issuePrefix.toUpperCase() === "TOK");
+  const activePrefix = companyPrefix?.toUpperCase() ?? null;
+  if (tokExists && activePrefix !== "TOK") {
+    return <Navigate to={`/TOK/${page}${location.search}${location.hash}`} replace />;
+  }
+
+  return page === "tokns" ? <Tokns /> : <TxEcosystem />;
+}
+
+function BoardIndexRedirect() {
+  const { companies, loading } = useCompany();
+  const { isMarketingOnly, isLoading: accessLoading } = useBoardAccess();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+
+  // The board index redirect is relative, so it must only fire when the
+  // ":companyPrefix" segment is a real company. For a bare board path like
+  // /dashboard the segment is a route root, and redirecting relative to it
+  // would double the segment (/dashboard/dashboard) before Layout's
+  // auto-correct effect gets a chance to prepend the real prefix.
+  if (loading || accessLoading) return null;
+  if (
+    companyPrefix &&
+    !companies.some((company) => company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase())
+  ) {
+    return null;
+  }
+
+  // Marketing-only users land on the Content Hub — the Dashboard's data
+  // reads are blocked by the server's marketing-role gate.
+  return <Navigate to={isMarketingOnly ? "content-hub" : "dashboard"} replace />;
 }
 
 function InboxRootRedirect() {
@@ -376,7 +480,11 @@ function CompanyRootRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  // Land on the board INDEX, not /dashboard directly: BoardIndexRedirect is
+  // role-aware (marketing-only users go to the Content Hub, everyone else to
+  // the Dashboard). Hardcoding /dashboard here made a marketing user's very
+  // first screen the no-access card.
+  return <Navigate to={`/${targetCompany.issuePrefix}`} replace />;
 }
 
 function UnprefixedBoardRedirect() {

@@ -92,11 +92,19 @@ type CompanyInviteCreated = {
   inviteMessage?: string | null;
 };
 
-type BoardAccessSnapshot = {
+export type BoardMembership = {
+  companyId: string;
+  /** membership_role is free-text server-side ("owner" | "member" | "marketing" today). */
+  role: string | null;
+};
+
+export type BoardAccessSnapshot = {
   user: { id: string; name: string | null; email: string | null };
   userId: string;
   isInstanceAdmin: boolean;
   companyIds: string[];
+  /** CONTRACT-4: per-company membership roles (useBoardAccess consumes this). */
+  memberships: BoardMembership[];
   source: string;
   keyId: string | null;
 };

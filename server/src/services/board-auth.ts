@@ -62,7 +62,10 @@ export function boardAuthService(db: Db) {
         .where(eq(authUsers.id, userId))
         .then((rows) => rows[0] ?? null),
       db
-        .select({ companyId: companyMemberships.companyId })
+        .select({
+          companyId: companyMemberships.companyId,
+          membershipRole: companyMemberships.membershipRole,
+        })
         .from(companyMemberships)
         .where(
           and(
@@ -70,8 +73,7 @@ export function boardAuthService(db: Db) {
             eq(companyMemberships.principalId, userId),
             eq(companyMemberships.status, "active"),
           ),
-        )
-        .then((rows) => rows.map((row) => row.companyId)),
+        ),
       db
         .select({ id: instanceUserRoles.id })
         .from(instanceUserRoles)
@@ -81,7 +83,13 @@ export function boardAuthService(db: Db) {
 
     return {
       user,
-      companyIds: memberships,
+      companyIds: memberships.map((row) => row.companyId),
+      // CONTRACT-4: per-company role alongside the legacy companyIds list.
+      // membership_role is free-text in the DB, so role stays string | null.
+      memberships: memberships.map((row) => ({
+        companyId: row.companyId,
+        role: row.membershipRole,
+      })),
       isInstanceAdmin: Boolean(adminRole),
     };
   }

@@ -109,7 +109,13 @@ export function Layout() {
       // If the "company prefix" segment is actually a board route (URL is missing the real
       // prefix, e.g. /automation-health instead of /CD/automation-health), auto-correct by
       // prepending the correct prefix. This prevents the stuck-navigation state.
-      if (fallback && companyPrefix && isBoardPathWithoutPrefix(companyPrefix)) {
+      // Companies are loaded here, so classification validates against real issuePrefixes
+      // (covers dynamic plugin routes too, not just the static route manifest).
+      if (
+        fallback &&
+        companyPrefix &&
+        isBoardPathWithoutPrefix(location.pathname, companies.map((company) => company.issuePrefix))
+      ) {
         navigate(`/${fallback.issuePrefix}${location.pathname}${location.search}`, { replace: true });
       }
       return;

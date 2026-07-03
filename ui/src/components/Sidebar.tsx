@@ -1,41 +1,4 @@
-import {
-  Inbox,
-  CircleDot,
-  Target,
-  LayoutDashboard,
-  DollarSign,
-  History,
-  Search,
-  SquarePen,
-  Network,
-  Boxes,
-  Repeat,
-  Settings,
-  Coins,
-  Hexagon,
-  HeartPulse,
-  Activity,
-  Radar,
-  GitBranch,
-  Database,
-  Clock,
-  Handshake,
-  UsersRound,
-  Globe,
-  MapPin,
-  GitPullRequest,
-  CheckSquare,
-  Gauge,
-  Share2,
-  Building2,
-  Eye,
-  CreditCard,
-  Film,
-  BarChart3,
-  Video,
-  Mail,
-  Filter,
-} from "lucide-react";
+import { Inbox, LayoutDashboard, Search, SquarePen } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
@@ -46,17 +9,29 @@ import { useCompany } from "../context/CompanyContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
+import { useBoardAccess } from "../hooks/useBoardAccess";
+import { filterSectionsForMarketing, getSidebarConfig } from "../config/company-sidebars";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
 export function Sidebar() {
   const { openNewIssue } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const inboxBadge = useInboxBadge(selectedCompanyId);
+
+  // Marketing-role users see only their working sections. The section filter
+  // is cosmetic (the server's marketing-role gate is the real enforcement),
+  // but skipping the badge/live-run polling below is functional: those reads
+  // are gate-blocked and would only ever 403. While the access snapshot is
+  // still loading we hold the polling off too, so a marketing user's first
+  // paint never fires doomed requests.
+  const { isMarketingOnly, isLoading: accessLoading } = useBoardAccess();
+  const showFullShell = !accessLoading && !isMarketingOnly;
+
+  const inboxBadge = useInboxBadge(showFullShell ? selectedCompanyId : null);
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.liveRuns(selectedCompanyId!),
     queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && showFullShell,
     refetchInterval: 10_000,
   });
   const liveRunCount = liveRuns?.length ?? 0;
@@ -69,6 +44,9 @@ export function Sidebar() {
     companyId: selectedCompanyId,
     companyPrefix: selectedCompany?.issuePrefix ?? null,
   };
+
+  const allSections = getSidebarConfig(selectedCompany?.issuePrefix ?? "");
+  const sections = isMarketingOnly ? filterSectionsForMarketing(allSections) : allSections;
 
   return (
     <aside className="w-60 h-full min-h-0 border-r border-border bg-background flex flex-col">
@@ -83,35 +61,46 @@ export function Sidebar() {
         <span className="flex-1 text-sm font-bold text-foreground truncate pl-1">
           {selectedCompany?.name ?? "Select company"}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground shrink-0"
-          onClick={openSearch}
-        >
-          <Search className="h-4 w-4" />
-        </Button>
+        {/* Search reaches issue queries the marketing gate blocks — hide it
+            rather than show an affordance that can only end in a 403. */}
+        {!isMarketingOnly && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground shrink-0"
+            onClick={openSearch}
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 px-3 py-2">
         <div className="flex flex-col gap-0.5">
-          {/* New Issue button aligned with nav items */}
-          <button
-            onClick={() => openNewIssue()}
-            className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-          >
-            <SquarePen className="h-4 w-4 shrink-0" />
-            <span className="truncate">New Issue</span>
-          </button>
-          <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          <SidebarNavItem
-            to="/inbox"
-            label="Inbox"
-            icon={Inbox}
-            badge={inboxBadge.inbox}
-            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
-            alert={inboxBadge.failedRuns > 0}
-          />
+          {/* Dashboard / Inbox / New Issue reach APIs the marketing gate
+              blocks (issues POST, dashboard summary, approvals) — a marketing
+              user gets the Content & Socials section below instead. */}
+          {!isMarketingOnly && (
+            <>
+              {/* New Issue button aligned with nav items */}
+              <button
+                onClick={() => openNewIssue()}
+                className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+              >
+                <SquarePen className="h-4 w-4 shrink-0" />
+                <span className="truncate">New Issue</span>
+              </button>
+              <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
+              <SidebarNavItem
+                to="/inbox"
+                label="Inbox"
+                icon={Inbox}
+                badge={inboxBadge.inbox}
+                badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
+                alert={inboxBadge.failedRuns > 0}
+              />
+            </>
+          )}
           <PluginSlotOutlet
             slotTypes={["sidebar"]}
             context={pluginContext}
@@ -121,62 +110,28 @@ export function Sidebar() {
           />
         </div>
 
-        <SidebarSection label="Work">
-          <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
-          <SidebarNavItem to="/routines" label="Routines" icon={Repeat} textBadge="Beta" textBadgeTone="amber" />
-          <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-        </SidebarSection>
-
-        <SidebarProjects />
-
-        <SidebarAgents />
-
-        <SidebarSection label="Agents & Org" accentClassName="text-amber-400">
-          <SidebarNavItem to="/activity" label="Activity" icon={History} />
-          <SidebarNavItem to="/agent-ops" label="Agent Ops" icon={Radar} />
-          <SidebarNavItem to="/org" label="Org" icon={Building2} />
-          <SidebarNavItem to="/structure" label="Structure" icon={GitBranch} />
-          <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-        </SidebarSection>
-
-        <SidebarSection label="Intel & Data" accentClassName="text-sky-400">
-          <SidebarNavItem to="/intel" label="Intel" icon={Database} />
-          <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
-          <SidebarNavItem to="/cities" label="City Collector" icon={MapPin} />
-          <SidebarNavItem to="/watchtower" label="Watchtower" icon={Eye} />
-          <SidebarNavItem to="/site-analytics" label="Site Analytics" icon={BarChart3} />
-        </SidebarSection>
-
-        <SidebarSection label="Content & Socials" accentClassName="text-violet-400">
-          <SidebarNavItem to="/socials" label="Socials & Content" icon={Share2} />
-          <SidebarNavItem to="/funnels" label="Funnels" icon={Filter} />
-        </SidebarSection>
-
-        <SidebarSection label="Products" accentClassName="text-emerald-400">
-          <SidebarNavItem to="/sessions" label="Sessions" icon={Video} />
-          <SidebarNavItem to="/university-emails" label="University Emails" icon={Mail} />
-          <SidebarNavItem to="/creditscore-review" label="CreditScore Review" icon={Gauge} />
-          <SidebarNavItem to="/video-edit" label="Video Edit" icon={Film} />
-          <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />
-          <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
-        </SidebarSection>
-
-        <SidebarSection label="Monetization" accentClassName="text-rose-400">
-          <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
-          <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
-          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-          <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={CreditCard} />
-        </SidebarSection>
-
-        <SidebarSection label="Ops & Admin" accentClassName="text-slate-400">
-          <SidebarNavItem to="/automation-health" label="Automation Health" icon={Activity} />
-          <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
-          <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
-          <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
-          <SidebarNavItem to="/approvals" label="Approvals" icon={CheckSquare} />
-          <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
-          <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
-        </SidebarSection>
+        {sections.map((section, index) => {
+          if (section.kind === "projects") return <SidebarProjects key={`projects-${index}`} />;
+          if (section.kind === "agents") return <SidebarAgents key={`agents-${index}`} />;
+          return (
+            <SidebarSection
+              key={section.label}
+              label={section.label}
+              accentClassName={section.accentClassName}
+            >
+              {section.items.map((item) => (
+                <SidebarNavItem
+                  key={item.to}
+                  to={item.to}
+                  label={item.label}
+                  icon={item.icon}
+                  textBadge={item.textBadge}
+                  textBadgeTone={item.textBadgeTone}
+                />
+              ))}
+            </SidebarSection>
+          );
+        })}
 
         <PluginSlotOutlet
           slotTypes={["sidebarPanel"]}
