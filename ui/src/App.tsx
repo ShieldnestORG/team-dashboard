@@ -1,10 +1,10 @@
 import { lazy, Suspense } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Layout } from "./components/Layout";
+import { Layout, PageLoading } from "./components/Layout";
 import { OnboardingWizard } from "./components/OnboardingWizard";
+import { NotFoundPage } from "./pages/NotFound";
 import { authApi } from "./api/auth";
 import { healthApi } from "./api/health";
 import { queryKeys } from "./lib/queryKeys";
@@ -16,7 +16,11 @@ import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-rou
 
 // Page components are lazy-loaded so the entry bundle only ships the shell
 // (providers, layout, guards, sidebar). Each page's own chunk is fetched on
-// first navigation to it. See PageLoading below for the shared fallback.
+// first navigation to it. Layout wraps its <Outlet /> in an inner Suspense
+// (content-pane fallback, shell stays mounted); the App-level Suspense below
+// covers routes rendered outside Layout (auth, affiliate site, billing).
+// NotFoundPage stays a static import: Layout already imports it eagerly, so
+// lazy() here would be misleading — it's in the entry chunk either way.
 const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const DailyBrief = lazy(() => import("./pages/DailyBrief").then((m) => ({ default: m.DailyBrief })));
 const Inspiration = lazy(() => import("./pages/Inspiration").then((m) => ({ default: m.Inspiration })));
@@ -128,15 +132,6 @@ const ResetPasswordPage = lazy(() => import("./pages/ResetPassword").then((m) =>
 const BoardClaimPage = lazy(() => import("./pages/BoardClaim").then((m) => ({ default: m.BoardClaimPage })));
 const CliAuthPage = lazy(() => import("./pages/CliAuth").then((m) => ({ default: m.CliAuthPage })));
 const InviteLandingPage = lazy(() => import("./pages/InviteLanding").then((m) => ({ default: m.InviteLandingPage })));
-const NotFoundPage = lazy(() => import("./pages/NotFound").then((m) => ({ default: m.NotFoundPage })));
-
-function PageLoading() {
-  return (
-    <div className="flex items-center justify-center py-20">
-      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-    </div>
-  );
-}
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (

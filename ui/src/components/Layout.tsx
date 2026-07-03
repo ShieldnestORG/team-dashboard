@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Moon, Settings, Sun } from "lucide-react";
+import { BookOpen, Loader2, Moon, Settings, Sun } from "lucide-react";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@/lib/router";
 import { CompanyRail } from "./CompanyRail";
 import { Sidebar } from "./Sidebar";
@@ -34,11 +34,27 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 
 // These dialogs pull in the rich-text editor (MarkdownEditor -> @mdxeditor/editor
 // + lexical), which is heavy and only needed once a user opens one of them —
-// lazy-load so it isn't part of the entry bundle.
+// lazy-load AND mount only while open (below) so the chunk isn't part of the
+// entry bundle and isn't fetched until a dialog is first opened. Unmounting on
+// close is safe: each dialog re-initializes its state on open, and the New
+// Issue draft survives via localStorage (loadDraft), not component state.
 const NewIssueDialog = lazy(() => import("./NewIssueDialog").then((m) => ({ default: m.NewIssueDialog })));
 const NewProjectDialog = lazy(() => import("./NewProjectDialog").then((m) => ({ default: m.NewProjectDialog })));
 const NewGoalDialog = lazy(() => import("./NewGoalDialog").then((m) => ({ default: m.NewGoalDialog })));
 const NewAgentDialog = lazy(() => import("./NewAgentDialog").then((m) => ({ default: m.NewAgentDialog })));
+
+/**
+ * Shared fallback for lazy-loaded route chunks. Rendered in the content pane
+ * while a page's chunk downloads on first navigation (and at the App-level
+ * boundary for routes outside Layout).
+ */
+export function PageLoading() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
 const INSTANCE_SETTINGS_MEMORY_KEY = "paperclip.lastInstanceSettingsPath";
 
@@ -53,7 +69,8 @@ function readRememberedInstanceSettingsPath(): string {
 
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
-  const { openNewIssue, openOnboarding } = useDialog();
+  const { openNewIssue, openOnboarding, newIssueOpen, newProjectOpen, newGoalOpen, newAgentOpen } =
+    useDialog();
   const { togglePanelVisible } = usePanel();
   const {
     companies,
@@ -439,7 +456,14 @@ export function Layout() {
                   requestedPrefix={companyPrefix ?? selectedCompany?.issuePrefix}
                 />
               ) : (
-                <Outlet />
+                // Inner Suspense boundary: on a first visit to a lazy route
+                // only the content pane shows the loading fallback — the
+                // sidebar/shell stays mounted (and Layout-local state like
+                // mobileNavVisible survives) instead of the App-level
+                // boundary blanking the whole screen.
+                <Suspense fallback={<PageLoading />}>
+                  <Outlet />
+                </Suspense>
               )}
             </main>
             <PropertiesPanel />
@@ -449,10 +473,10 @@ export function Layout() {
       {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
       <CommandPalette />
       <Suspense fallback={null}>
-        <NewIssueDialog />
-        <NewProjectDialog />
-        <NewGoalDialog />
-        <NewAgentDialog />
+        {newIssueOpen && <NewIssueDialog />}
+        {newProjectOpen && <NewProjectDialog />}
+        {newGoalOpen && <NewGoalDialog />}
+        {newAgentOpen && <NewAgentDialog />}
       </Suspense>
       <ToastViewport />
     </div>
