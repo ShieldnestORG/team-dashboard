@@ -55,6 +55,7 @@ export const BOARD_ROUTE_MANIFEST: readonly string[] = [
   "repo-updates",
   "automation-health",
   "socials",
+  "funnels",
   "launch-monitor",
   "house-ads",
   "creditscore-review",

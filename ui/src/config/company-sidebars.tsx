@@ -59,6 +59,12 @@ export interface SidebarItem {
   icon: LucideIcon;
   textBadge?: string;
   textBadgeTone?: "default" | "amber";
+  /**
+   * Admin/owner-only control surface — kept out of the marketing-role sidebar
+   * even when it sits inside a marketing-visible section (its writes are
+   * requireAdmin, so showing it to marketing users would only produce 403s).
+   */
+  adminOnly?: boolean;
 }
 
 export type SidebarSection =
@@ -114,7 +120,7 @@ const DEFAULT_SECTIONS: SidebarSection[] = [
     accentClassName: "text-violet-400",
     items: [
       { to: "/socials", label: "Socials & Content", icon: Share2 },
-      { to: "/funnels", label: "Funnels", icon: Filter },
+      { to: "/funnels", label: "Funnels", icon: Filter, adminOnly: true },
       { to: "/content-hub", label: "Content Hub", icon: Megaphone },
     ],
   },
@@ -195,7 +201,13 @@ const MARKETING_SECTION_LABELS = new Set(["Content & Socials"]);
  * (fail-closed path allowlist).
  */
 export function filterSectionsForMarketing(sections: SidebarSection[]): SidebarSection[] {
-  return sections.filter(
-    (section) => section.kind === "items" && MARKETING_SECTION_LABELS.has(section.label),
-  );
+  return sections
+    .filter(
+      (section) => section.kind === "items" && MARKETING_SECTION_LABELS.has(section.label),
+    )
+    .map((section) =>
+      section.kind === "items"
+        ? { ...section, items: section.items.filter((item) => !item.adminOnly) }
+        : section,
+    );
 }
