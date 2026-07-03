@@ -106,6 +106,7 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Cron Inventory](docs/operations/cron-inventory.md) — Scheduled jobs and ownership.
 - [Key Files Reference](docs/operations/key-files.md) — Critical file mapping.
 - [Branch Safety](docs/guides/branch-safety.md) — Concurrent session rules.
+- [Test Isolation](docs/guides/test-isolation.md) — macOS port-steal race; never `request(bare app)` in server tests, use `useLocalServer()`.
 - [VPS Cheat Sheet](docs/deploy/vps-cheat-sheet.md) — **One-page. Read before any SSH or deploy.** Which VPS does what + the pre-deploy `dig` check.
 - [Production Guide](docs/deploy/production.md) — VPS and Docker cleanup.
 - [Environment Variables](docs/deploy/env-vars.md) — Full variable reference.

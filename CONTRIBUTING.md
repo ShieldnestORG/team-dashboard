@@ -36,7 +36,7 @@ PRs that follow this path are **much** more likely to be accepted, even when the
 - Write clear commit messages
 - Keep PR title + description meaningful
 - One PR = one logical change (unless it's a small related group)
-- Run tests locally first
+- Run tests locally first (server tests: never `request(app)` with a bare app — see [Test Isolation](docs/guides/test-isolation.md))
 - Be kind in discussions 😄
 
 ## Writing a Good PR message
