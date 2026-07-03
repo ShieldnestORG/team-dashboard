@@ -61,6 +61,7 @@ import { portalRoutes } from "../routes/portal.js";
 import { errorHandler } from "../middleware/index.js";
 import { coherenceService, coherenceScore } from "../services/coherence.js";
 import { issueSession, PORTAL_SESSION_COOKIE } from "../services/customer-portal.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
 const MEMBER_EMAIL = "member@coherence.test";
@@ -135,6 +136,7 @@ describeDb("university coherence endpoints (integration)", () => {
   let db!: ReturnType<typeof createDb>;
   let cleanup: (() => Promise<void>) | null = null;
   let app!: express.Express;
+  const local = useLocalServer();
   let memberAccountId!: string;
   let nonMemberAccountId!: string;
   let memberId!: string;
@@ -212,18 +214,18 @@ describeDb("university coherence endpoints (integration)", () => {
   const TRUSTED_ORIGIN = "https://app.test.local";
 
   it("401 without a session cookie", async () => {
-    const res = await request(app).get("/api/portal/university/coherence");
+    const res = await request(local.via(app)).get("/api/portal/university/coherence");
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("Unauthenticated");
   });
 
   it("403 for a logged-in NON-member (membership gate)", async () => {
-    const get = await request(app)
+    const get = await request(local.via(app))
       .get("/api/portal/university/coherence")
       .set("Cookie", nonMemberCookie());
     expect(get.status).toBe(403);
 
-    const post = await request(app)
+    const post = await request(local.via(app))
       .post("/api/portal/university/coherence-check")
       .set("Cookie", nonMemberCookie())
       .set("Origin", TRUSTED_ORIGIN)
@@ -236,7 +238,7 @@ describeDb("university coherence endpoints (integration)", () => {
   });
 
   it("GET empty-state summary → nulls + empty arrays", async () => {
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/coherence")
       .set("Cookie", memberCookie());
     expect(res.status).toBe(200);
@@ -249,7 +251,7 @@ describeDb("university coherence endpoints (integration)", () => {
   });
 
   it("POST logs a check and returns { score } & CoherenceSummary", async () => {
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/coherence-check")
       .set("Cookie", memberCookie())
       .set("Origin", TRUSTED_ORIGIN)
@@ -286,7 +288,7 @@ describeDb("university coherence endpoints (integration)", () => {
       { body: "x", focus: 50, direction: 50 }, // non-numeric
     ];
     for (const payload of bad) {
-      const res = await request(app)
+      const res = await request(local.via(app))
         .post("/api/portal/university/coherence-check")
         .set("Cookie", memberCookie())
         .set("Origin", TRUSTED_ORIGIN)
@@ -312,7 +314,7 @@ describeDb("university coherence endpoints (integration)", () => {
       { memberId, body: 100, focus: 100, direction: 100, score: 60, createdAt: daysAgo(1) },
     ]);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/coherence")
       .set("Cookie", memberCookie());
     expect(res.status).toBe(200);

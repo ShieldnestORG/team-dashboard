@@ -43,6 +43,7 @@ import {
 } from "../services/watchtower-monitor.js";
 import { watchtowerRoutes } from "../routes/watchtower.js";
 import type { EngineAdapter } from "../services/watchtower-engines/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const support = await getEmbeddedPostgresTestSupport();
 const describeDb = support.supported ? describe : describe.skip;
@@ -64,6 +65,7 @@ function mockAdapter(): EngineAdapter {
 describeDb("watchtower prompt versions", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  const local = useLocalServer();
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("watchtower-prompts-");
@@ -237,7 +239,7 @@ describeDb("watchtower prompt versions", () => {
       .insert(watchtowerPromptVersions)
       .values({ subscriptionId: subId, prompts: ["old"] });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch(`/api/watchtower/subscriptions/${subId}/prompts`)
       .send({ prompts: ["new one", "new two"] });
 
@@ -268,7 +270,7 @@ describeDb("watchtower prompt versions", () => {
       promptCap: 25,
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch(`/api/watchtower/subscriptions/${subId}/prompts`)
       .send({ prompts: ["dup", "dup", "other"] });
 
@@ -285,7 +287,7 @@ describeDb("watchtower prompt versions", () => {
       promptCap: 25,
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch(`/api/watchtower/subscriptions/${subId}/prompts`)
       .send({ prompts: [] });
 
@@ -302,7 +304,7 @@ describeDb("watchtower prompt versions", () => {
       promptCap: 25,
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch(`/api/watchtower/subscriptions/${subId}/prompts`)
       .send({ prompts: ["a".repeat(501)] });
 
@@ -319,7 +321,7 @@ describeDb("watchtower prompt versions", () => {
       promptCap: 3,
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch(`/api/watchtower/subscriptions/${subId}/prompts`)
       .send({ prompts: ["a", "b", "c", "d"] });
 
@@ -328,7 +330,7 @@ describeDb("watchtower prompt versions", () => {
   });
 
   it("PATCH /prompts returns 404 for unknown subscription", async () => {
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch(`/api/watchtower/subscriptions/${randomUUID()}/prompts`)
       .send({ prompts: ["a"] });
     expect(res.status).toBe(404);

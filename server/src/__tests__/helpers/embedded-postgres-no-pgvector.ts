@@ -26,56 +26,26 @@
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
-import { createDb, ensurePostgresDatabase } from "@paperclipai/db";
+import {
+  createDb,
+  ensurePostgresDatabase,
+  startEmbeddedPostgresCluster,
+  type EmbeddedPostgresCluster,
+} from "@paperclipai/db";
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL("../../../../packages/db/src/migrations", import.meta.url),
 );
-
-type EmbeddedPostgresInstance = {
-  initialise(): Promise<void>;
-  start(): Promise<void>;
-  stop(): Promise<void>;
-};
-
-type EmbeddedPostgresCtor = new (opts: {
-  databaseDir: string;
-  user: string;
-  password: string;
-  port: number;
-  persistent: boolean;
-  initdbFlags?: string[];
-  onLog?: (message: unknown) => void;
-  onError?: (message: unknown) => void;
-}) => EmbeddedPostgresInstance;
 
 export type NoPgvectorTestDatabase = {
   db: ReturnType<typeof createDb>;
   connectionString: string;
   cleanup(): Promise<void>;
 };
-
-async function getAvailablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close(() => reject(new Error("Failed to allocate test port")));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => (error ? reject(error) : resolve(port)));
-    });
-  });
-}
 
 // Drizzle splits multi-statement migration files on this marker. Hand-written
 // migrations (e.g. 0122) have no marker and are a single chunk.
@@ -106,23 +76,17 @@ export async function startNoPgvectorTestDatabase(
   tempDirPrefix: string,
 ): Promise<NoPgvectorTestDatabase> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), tempDirPrefix));
-  const port = await getAvailablePort();
-  const mod = await import("embedded-postgres");
-  const EmbeddedPostgres = mod.default as unknown as EmbeddedPostgresCtor;
-  const instance = new EmbeddedPostgres({
-    databaseDir: dataDir,
-    user: "paperclip",
-    password: "paperclip",
-    port,
-    persistent: true,
-    initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
-    onLog: () => {},
-    onError: () => {},
-  });
+  let cluster: EmbeddedPostgresCluster | null = null;
 
   try {
-    await instance.initialise();
-    await instance.start();
+    // Steal-safe startup: initdb first, allocate the port right before
+    // postgres binds it, retry on bind conflict (see @paperclipai/db).
+    cluster = await startEmbeddedPostgresCluster({
+      databaseDir: dataDir,
+      user: "paperclip",
+      password: "paperclip",
+    });
+    const { instance, port } = cluster;
 
     const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
     await ensurePostgresDatabase(adminConnectionString, "paperclip");
@@ -147,7 +111,7 @@ export async function startNoPgvectorTestDatabase(
       },
     };
   } catch (error) {
-    await instance.stop().catch(() => {});
+    await cluster?.instance.stop().catch(() => {});
     fs.rmSync(dataDir, { recursive: true, force: true });
     throw error;
   }

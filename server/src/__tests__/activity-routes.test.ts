@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { errorHandler } from "../middleware/index.js";
 import { activityRoutes } from "../routes/activity.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockActivityService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -43,6 +44,8 @@ function createApp() {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("activity routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -59,7 +62,7 @@ describe("activity routes", () => {
       },
     ]);
 
-    const res = await request(createApp()).get("/api/issues/PAP-475/runs");
+    const res = await request(local.via(createApp())).get("/api/issues/PAP-475/runs");
 
     expect(res.status).toBe(200);
     expect(mockIssueService.getByIdentifier).toHaveBeenCalledWith("PAP-475");

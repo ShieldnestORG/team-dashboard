@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { agentRoutes } from "../routes/agents.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const agentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -130,6 +131,8 @@ function createApp(actor: Record<string, unknown>) {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("agent permission routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -185,7 +188,7 @@ describe("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post(`/api/companies/${companyId}/agents`)
       .send({
         name: "Builder",
@@ -235,7 +238,7 @@ describe("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app).get(`/api/agents/${agentId}`);
+    const res = await request(local.via(app)).get(`/api/agents/${agentId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.access.canAssignTasks).toBe(true);
@@ -256,7 +259,7 @@ describe("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/agents/${agentId}/permissions`)
       .send({ canCreateAgents: true, canAssignTasks: false });
 

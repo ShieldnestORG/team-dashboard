@@ -20,6 +20,7 @@ import { socialAccounts, zernioCommentAutomations } from "@paperclipai/db";
 import { socialsRoutes } from "../routes/socials.js";
 import { errorHandler } from "../middleware/index.js";
 import { setZernioCommentAutomationActive } from "../services/platform-publishers/zernio.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 vi.mock("../services/platform-publishers/zernio.js", async (importOriginal) => {
   const actual = await importOriginal<
@@ -107,10 +108,12 @@ function createDb(rowsByTable: Map<unknown, unknown[]>) {
   };
 }
 
+const local = useLocalServer();
+
 describe("funnel-control routes — auth, gates, kill path, catalog", () => {
   it("rejects an unauthenticated funnel toggle with 401", async () => {
     const app = createApp(unauthenticated, {});
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/socials/zernio/automations/${AUTOMATION_ID}`)
       .send({ zernioAccountId: ZID, isActive: false });
     expect(res.status).toBe(401);
@@ -118,7 +121,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
 
   it("rejects an unauthenticated account funnel-gate change with 401", async () => {
     const app = createApp(unauthenticated, {});
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/socials/accounts/${ACCOUNT_ID}/funnels`)
       .send({ enabled: false });
     expect(res.status).toBe(401);
@@ -126,7 +129,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
 
   it("a non-admin employee cannot toggle a funnel (403)", async () => {
     const app = createApp(boardMember, {});
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/socials/zernio/automations/${AUTOMATION_ID}`)
       .send({ zernioAccountId: ZID, isActive: false });
     expect(res.status).toBe(403);
@@ -134,7 +137,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
 
   it("a non-admin employee cannot change the account funnel gate (403)", async () => {
     const app = createApp(boardMember, {});
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/socials/accounts/${ACCOUNT_ID}/funnels`)
       .send({ enabled: true });
     expect(res.status).toBe(403);
@@ -145,7 +148,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
       new Map([[socialAccounts, [{ id: ACCOUNT_ID, funnelsEnabled: false }]]]),
     );
     const app = createApp(boardAdmin, db);
-    const res = await request(app).post("/api/socials/zernio/automations").send({
+    const res = await request(local.via(app)).post("/api/socials/zernio/automations").send({
       zernioAccountId: ZID,
       name: "ROOM",
       keywords: ["ROOM"],
@@ -163,7 +166,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
       ]),
     );
     const app = createApp(boardAdmin, db);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/socials/zernio/automations/${AUTOMATION_ID}`)
       .send({ zernioAccountId: ZID, isActive: true });
     expect(res.status).toBe(409);
@@ -183,7 +186,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
       ]),
     );
     const app = createApp(boardAdmin, db);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/socials/accounts/${ACCOUNT_ID}/funnels`)
       .send({ enabled: false });
 
@@ -209,7 +212,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
       ]),
     );
     const app = createApp(boardAdmin, db);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch(`/api/socials/accounts/${ACCOUNT_ID}/funnels`)
       .send({ enabled: true });
 
@@ -219,7 +222,7 @@ describe("funnel-control routes — auth, gates, kill path, catalog", () => {
 
   it("serves the checked-in funnel catalog to any board actor (200, no admin needed)", async () => {
     const app = createApp(boardMember, {});
-    const res = await request(app).get("/api/socials/funnels/catalog");
+    const res = await request(local.via(app)).get("/api/socials/funnels/catalog");
     expect(res.status).toBe(200);
     expect(res.body.snapshotDate).toBe("2026-07-02");
     expect(res.body.source).toBe("Ig_Auditor/funnels.json");

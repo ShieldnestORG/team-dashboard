@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { issueRoutes } from "../routes/issues.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -75,6 +76,8 @@ function makeIssue(status: "todo" | "done") {
   };
 }
 
+const local = useLocalServer();
+
 describe("issue comment reopen routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,7 +101,7 @@ describe("issue comment reopen routes", () => {
       ...patch,
     }));
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch("/api/issues/11111111-1111-4111-8111-111111111111")
       .send({ comment: "hello", reopen: true, assigneeAgentId: "33333333-3333-4333-8333-333333333333" });
 
@@ -122,7 +125,7 @@ describe("issue comment reopen routes", () => {
       ...patch,
     }));
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch("/api/issues/11111111-1111-4111-8111-111111111111")
       .send({ comment: "hello", reopen: true, assigneeAgentId: "33333333-3333-4333-8333-333333333333" });
 

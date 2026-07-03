@@ -21,6 +21,7 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const LOOKUP_KEY = "university_monthly";
 
@@ -58,13 +59,15 @@ function makeApp() {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("POST /api/university/checkout — referral attribution", () => {
   beforeEach(() => {
     checkoutSpy.mockClear();
   });
 
   it("plumbs `ref` into client_reference_id AND metadata.referral_code", async () => {
-    const res = await request(makeApp())
+    const res = await request(local.via(makeApp()))
       .post("/api/university/checkout")
       .send({ email: "Member@Example.com", ref: "ABC123" });
 
@@ -79,7 +82,7 @@ describe("POST /api/university/checkout — referral attribution", () => {
   });
 
   it("sets NEITHER client_reference_id NOR metadata.referral_code when `ref` is absent", async () => {
-    const res = await request(makeApp())
+    const res = await request(local.via(makeApp()))
       .post("/api/university/checkout")
       .send({ email: "Member@Example.com" });
 

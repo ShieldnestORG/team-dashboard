@@ -51,6 +51,7 @@ import {
 import { startNoPgvectorTestDatabase } from "./helpers/embedded-postgres-no-pgvector.js";
 import { universityWebhookRouter } from "../routes/university-checkout.js";
 import { getOrCreateReferralCode, REFERRAL_REWARD_CENTS } from "../services/university-referrals.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const COMPANY_ID = "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 const WEBHOOK_SECRET = "whsec_test_university";
@@ -72,7 +73,7 @@ async function postSignedWebhook(
   { secret = WEBHOOK_SECRET }: { secret?: string } = {},
 ) {
   const rawBody = JSON.stringify(event);
-  return request(app)
+  return request(local.via(app))
     .post("/api/university/webhook")
     .set("Content-Type", "application/json")
     .set("stripe-signature", signStripePayload(rawBody, secret))
@@ -154,6 +155,8 @@ if (dbMode === "skip") {
     }`,
   );
 }
+
+const local = useLocalServer();
 
 describeDb("university referral webhook wiring (integration)", () => {
   let db!: ReturnType<typeof createDb>;
@@ -288,7 +291,7 @@ describeDb("university referral webhook wiring (integration)", () => {
   it("rejects a tampered signature with 400 (real verification, nothing written)", async () => {
     const code = await seedActiveReferrer();
     const rawBody = JSON.stringify(checkoutEvent(code));
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/university/webhook")
       .set("Content-Type", "application/json")
       .set("stripe-signature", signStripePayload(rawBody, "whsec_wrong"))

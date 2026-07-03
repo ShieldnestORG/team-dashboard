@@ -3,6 +3,9 @@ import express from "express";
 import request from "supertest";
 
 import { auditRoutes } from "../routes/audit.ts";
+import { useLocalServer } from "./helpers/supertest-server.js";
+
+const local = useLocalServer();
 
 describe("GET /audit/health", () => {
   let originalFetch: typeof fetch;
@@ -35,7 +38,7 @@ describe("GET /audit/health", () => {
     ) as unknown as typeof fetch;
 
     const app = buildApp();
-    const res = await request(app).get("/api/public/audit/health");
+    const res = await request(local.via(app)).get("/api/public/audit/health");
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true });
   });
@@ -53,7 +56,7 @@ describe("GET /audit/health", () => {
 
     const app = express();
     app.use("/api/public", freshAuditRoutes());
-    const res = await request(app).get("/api/public/audit/health");
+    const res = await request(local.via(app)).get("/api/public/audit/health");
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({ ok: false });
     // Public health endpoint must not leak internal vendor name or raw error

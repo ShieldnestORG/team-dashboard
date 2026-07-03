@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { agentRoutes } from "../routes/agents.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -90,6 +91,8 @@ function makeAgent() {
   };
 }
 
+const local = useLocalServer();
+
 describe("agent instructions bundle routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -155,7 +158,7 @@ describe("agent instructions bundle routes", () => {
   });
 
   it("returns bundle metadata", async () => {
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .get("/api/agents/11111111-1111-4111-8111-111111111111/instructions-bundle?companyId=company-1");
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -169,7 +172,7 @@ describe("agent instructions bundle routes", () => {
   });
 
   it("writes a bundle file and persists compatibility config", async () => {
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .put("/api/agents/11111111-1111-4111-8111-111111111111/instructions-bundle/file?companyId=company-1")
       .send({
         path: "AGENTS.md",
@@ -211,7 +214,7 @@ describe("agent instructions bundle routes", () => {
       },
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
         adapterType: "claude_local",
@@ -250,7 +253,7 @@ describe("agent instructions bundle routes", () => {
       },
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
         adapterConfig: {
@@ -288,7 +291,7 @@ describe("agent instructions bundle routes", () => {
       },
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
         replaceAdapterConfig: true,

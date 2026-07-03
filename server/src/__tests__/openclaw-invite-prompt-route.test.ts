@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accessRoutes } from "../routes/access.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockAccessService = vi.hoisted(() => ({
   hasPermission: vi.fn(),
@@ -87,6 +88,8 @@ function createApp(actor: Record<string, unknown>, db: Record<string, unknown>) 
   return app;
 }
 
+const local = useLocalServer();
+
 describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
   beforeEach(() => {
     mockAccessService.canUser.mockResolvedValue(false);
@@ -111,7 +114,7 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/openclaw/invite-prompt")
       .send({});
 
@@ -136,7 +139,7 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/openclaw/invite-prompt")
       .send({ agentMessage: "Join and configure OpenClaw gateway." });
 
@@ -160,7 +163,7 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/openclaw/invite-prompt")
       .send({});
 
@@ -182,7 +185,7 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/openclaw/invite-prompt")
       .send({});
 

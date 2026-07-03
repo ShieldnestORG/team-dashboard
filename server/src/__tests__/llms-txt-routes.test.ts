@@ -24,6 +24,7 @@ vi.mock("../services/llms-txt-generator.ts", async () => {
 });
 
 import { llmsTxtRoutes } from "../routes/llms-txt.ts";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 function buildApp(jobs: any[] = [], outputs: any[] = []) {
   const db: any = {
@@ -59,6 +60,8 @@ function buildApp(jobs: any[] = [], outputs: any[] = []) {
   return app;
 }
 
+const local = useLocalServer();
+
 beforeEach(() => {
   generateForDomain.mockClear();
   generateForDomain.mockResolvedValue({ jobId: "job-123" });
@@ -66,19 +69,19 @@ beforeEach(() => {
 
 describe("POST /api/llms-txt/generate", () => {
   it("returns 400 when domain is missing", async () => {
-    const res = await request(buildApp()).post("/api/llms-txt/generate").send({});
+    const res = await request(local.via(buildApp())).post("/api/llms-txt/generate").send({});
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when neither accountId nor email provided", async () => {
-    const res = await request(buildApp())
+    const res = await request(local.via(buildApp()))
       .post("/api/llms-txt/generate")
       .send({ domain: "example.com" });
     expect(res.status).toBe(400);
   });
 
   it("returns 202 + jobId when given domain + email", async () => {
-    const res = await request(buildApp())
+    const res = await request(local.via(buildApp()))
       .post("/api/llms-txt/generate")
       .send({ domain: "example.com", email: "a@b.co" });
     expect(res.status).toBe(202);
@@ -90,7 +93,7 @@ describe("POST /api/llms-txt/generate", () => {
   });
 
   it("passes accountId + sitemapUrl through", async () => {
-    const res = await request(buildApp())
+    const res = await request(local.via(buildApp()))
       .post("/api/llms-txt/generate")
       .send({
         domain: "https://example.com",
@@ -110,7 +113,7 @@ describe("POST /api/llms-txt/generate", () => {
 
 describe("GET /api/llms-txt/jobs/:id", () => {
   it("returns 404 when job not found", async () => {
-    const res = await request(buildApp([])).get("/api/llms-txt/jobs/missing");
+    const res = await request(local.via(buildApp([]))).get("/api/llms-txt/jobs/missing");
     expect(res.status).toBe(404);
   });
 
@@ -123,7 +126,7 @@ describe("GET /api/llms-txt/jobs/:id", () => {
       completedAt: null,
       error: null,
     };
-    const res = await request(buildApp([job])).get("/api/llms-txt/jobs/job-1");
+    const res = await request(local.via(buildApp([job]))).get("/api/llms-txt/jobs/job-1");
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("queued");
     expect(res.body.pageCount).toBeNull();

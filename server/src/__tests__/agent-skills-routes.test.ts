@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { agentRoutes } from "../routes/agents.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -129,6 +130,8 @@ function makeAgent(adapterType: string) {
   };
 }
 
+const local = useLocalServer();
+
 describe("agent skill routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -214,7 +217,7 @@ describe("agent skill routes", () => {
   it("skips runtime materialization when listing Claude skills", async () => {
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .get("/api/agents/11111111-1111-4111-8111-111111111111/skills?companyId=company-1");
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -242,7 +245,7 @@ describe("agent skill routes", () => {
       warnings: [],
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .get("/api/agents/11111111-1111-4111-8111-111111111111/skills?companyId=company-1");
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -254,7 +257,7 @@ describe("agent skill routes", () => {
   it("skips runtime materialization when syncing Claude skills", async () => {
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1")
       .send({ desiredSkills: ["paperclipai/paperclip/paperclip"] });
 
@@ -268,7 +271,7 @@ describe("agent skill routes", () => {
   it("canonicalizes desired skill references before syncing", async () => {
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1")
       .send({ desiredSkills: ["paperclip"] });
 
@@ -288,7 +291,7 @@ describe("agent skill routes", () => {
   });
 
   it("persists canonical desired skills when creating an agent directly", async () => {
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/companies/company-1/agents")
       .send({
         name: "QA Agent",
@@ -313,7 +316,7 @@ describe("agent skill routes", () => {
   });
 
   it("materializes a managed AGENTS.md for directly created local agents", async () => {
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/companies/company-1/agents")
       .send({
         name: "QA Agent",
@@ -351,7 +354,7 @@ describe("agent skill routes", () => {
   });
 
   it("materializes the bundled CEO instruction set for default CEO agents", async () => {
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/companies/company-1/agents")
       .send({
         name: "CEO",
@@ -378,7 +381,7 @@ describe("agent skill routes", () => {
   });
 
   it("materializes the bundled default instruction set for non-CEO agents with no prompt template", async () => {
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/companies/company-1/agents")
       .send({
         name: "Engineer",
@@ -404,7 +407,7 @@ describe("agent skill routes", () => {
   it("includes canonical desired skills in hire approvals", async () => {
     const db = createDb(true);
 
-    const res = await request(createApp(db))
+    const res = await request(local.via(createApp(db)))
       .post("/api/companies/company-1/agent-hires")
       .send({
         name: "QA Agent",
@@ -430,7 +433,7 @@ describe("agent skill routes", () => {
   });
 
   it("uses managed AGENTS config in hire approval payloads", async () => {
-    const res = await request(createApp(createDb(true)))
+    const res = await request(local.via(createApp(createDb(true))))
       .post("/api/companies/company-1/agent-hires")
       .send({
         name: "QA Agent",

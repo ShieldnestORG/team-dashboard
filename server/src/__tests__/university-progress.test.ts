@@ -53,6 +53,7 @@ import { portalRoutes } from "../routes/portal.js";
 import { customerPortalService } from "../services/customer-portal.js";
 import { errorHandler } from "../middleware/index.js";
 import { issueSession, PORTAL_SESSION_COOKIE } from "../services/customer-portal.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
 // Browsers send an Origin header on every unsafe (non-GET) request; the portal
@@ -139,6 +140,7 @@ describeDb("university progress endpoints (integration)", () => {
   let db!: ReturnType<typeof createDb>;
   let cleanup: (() => Promise<void>) | null = null;
   let app!: express.Express;
+  const local = useLocalServer();
   let memberAccountId!: string;
   let nonMemberAccountId!: string;
 
@@ -205,17 +207,17 @@ describeDb("university progress endpoints (integration)", () => {
   }
 
   it("401 without a session cookie", async () => {
-    const res = await request(app).get("/api/portal/university/progress");
+    const res = await request(local.via(app)).get("/api/portal/university/progress");
     expect(res.status).toBe(401);
   });
 
   it("403 for a logged-in NON-member (membership gate)", async () => {
-    const get = await request(app)
+    const get = await request(local.via(app))
       .get("/api/portal/university/progress")
       .set("Cookie", nonMemberCookie());
     expect(get.status).toBe(403);
 
-    const post = await request(app)
+    const post = await request(local.via(app))
       .post("/api/portal/university/progress")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
@@ -228,7 +230,7 @@ describeDb("university progress endpoints (integration)", () => {
   });
 
   it("POST records a rep and returns streak=1 + weekCount=1 + weekGoal", async () => {
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/progress")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -248,7 +250,7 @@ describeDb("university progress endpoints (integration)", () => {
   });
 
   it("SAME-DAY re-POST is idempotent: no duplicate row, reflection updated", async () => {
-    const first = await request(app)
+    const first = await request(local.via(app))
       .post("/api/portal/university/progress")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -256,7 +258,7 @@ describeDb("university progress endpoints (integration)", () => {
     expect(first.status).toBe(200);
     expect(first.body.weekCount).toBe(1);
 
-    const second = await request(app)
+    const second = await request(local.via(app))
       .post("/api/portal/university/progress")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -273,12 +275,12 @@ describeDb("university progress endpoints (integration)", () => {
   });
 
   it("a DIFFERENT lesson the same day is a distinct rep but the same rep-day (streak stays 1, weekCount 2)", async () => {
-    await request(app)
+    await request(local.via(app))
       .post("/api/portal/university/progress")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101" });
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/progress")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -309,7 +311,7 @@ describeDb("university progress endpoints (integration)", () => {
       { accountId: memberAccountId, email: MEMBER_EMAIL, lessonSlug: "d", repDay: day(-5) },
     ]);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/progress")
       .set("Cookie", memberCookie());
     expect(res.status).toBe(200);

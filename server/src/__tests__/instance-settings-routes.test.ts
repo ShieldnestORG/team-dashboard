@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { errorHandler } from "../middleware/index.js";
 import { instanceSettingsRoutes } from "../routes/instance-settings.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockInstanceSettingsService = vi.hoisted(() => ({
   getGeneral: vi.fn(),
@@ -29,6 +30,8 @@ function createApp(actor: any) {
   app.use(errorHandler);
   return app;
 }
+
+const local = useLocalServer();
 
 describe("instance settings routes", () => {
   beforeEach(() => {
@@ -64,14 +67,14 @@ describe("instance settings routes", () => {
       isInstanceAdmin: true,
     });
 
-    const getRes = await request(app).get("/api/instance/settings/experimental");
+    const getRes = await request(local.via(app)).get("/api/instance/settings/experimental");
     expect(getRes.status).toBe(200);
     expect(getRes.body).toEqual({
       enableIsolatedWorkspaces: false,
       autoRestartDevServerWhenIdle: false,
     });
 
-    const patchRes = await request(app)
+    const patchRes = await request(local.via(app))
       .patch("/api/instance/settings/experimental")
       .send({ enableIsolatedWorkspaces: true });
 
@@ -90,7 +93,7 @@ describe("instance settings routes", () => {
       isInstanceAdmin: true,
     });
 
-    await request(app)
+    await request(local.via(app))
       .patch("/api/instance/settings/experimental")
       .send({ autoRestartDevServerWhenIdle: true })
       .expect(200);
@@ -108,11 +111,11 @@ describe("instance settings routes", () => {
       isInstanceAdmin: true,
     });
 
-    const getRes = await request(app).get("/api/instance/settings/general");
+    const getRes = await request(local.via(app)).get("/api/instance/settings/general");
     expect(getRes.status).toBe(200);
     expect(getRes.body).toEqual({ censorUsernameInLogs: false });
 
-    const patchRes = await request(app)
+    const patchRes = await request(local.via(app))
       .patch("/api/instance/settings/general")
       .send({ censorUsernameInLogs: true });
 
@@ -156,7 +159,7 @@ describe("instance settings routes", () => {
       companyIds: ["company-1"],
     });
 
-    const res = await request(app).get("/api/instance/settings/general");
+    const res = await request(local.via(app)).get("/api/instance/settings/general");
 
     expect(res.status).toBe(403);
     expect(mockInstanceSettingsService.getGeneral).not.toHaveBeenCalled();
@@ -170,7 +173,7 @@ describe("instance settings routes", () => {
       source: "agent_key",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch("/api/instance/settings/general")
       .send({ censorUsernameInLogs: true });
 

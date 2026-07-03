@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockCompanyService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -56,6 +57,8 @@ async function createApp(actor: Record<string, unknown>) {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("company portability routes", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -81,7 +84,7 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/11111111-1111-4111-8111-111111111111/exports/preview")
       .send({ include: { company: true, agents: true, projects: true } });
 
@@ -113,7 +116,7 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/11111111-1111-4111-8111-111111111111/exports/preview")
       .send({ include: { company: true, agents: true, projects: true } });
 
@@ -137,7 +140,7 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/11111111-1111-4111-8111-111111111111/imports/preview")
       .send({
         source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
@@ -160,7 +163,7 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/import/preview")
       .send({
         source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },

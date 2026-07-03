@@ -67,6 +67,7 @@ import {
 } from "../services/admin-impersonation.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
 import { eq } from "drizzle-orm";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
 // Browsers send an Origin header on every unsafe (non-GET) request; the portal
@@ -107,6 +108,7 @@ describeDb("university community endpoints (integration)", () => {
   let db!: ReturnType<typeof createDb>;
   let cleanup: (() => Promise<void>) | null = null;
   let app!: express.Express;
+  const local = useLocalServer();
   let memberAccountId!: string;
   let member2AccountId!: string;
   let nonMemberAccountId!: string;
@@ -214,7 +216,7 @@ describeDb("university community endpoints (integration)", () => {
     cookie: string,
     body: string,
   ): Promise<{ status: number; id?: string; body: Record<string, unknown> }> {
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/community/posts")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", cookie)
@@ -223,19 +225,19 @@ describeDb("university community endpoints (integration)", () => {
   }
 
   it("401 without a session cookie", async () => {
-    const res = await request(app).get(
+    const res = await request(local.via(app)).get(
       "/api/portal/university/community/feed",
     );
     expect(res.status).toBe(401);
   });
 
   it("403 for a logged-in NON-member on feed + post (membership gate)", async () => {
-    const feed = await request(app)
+    const feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", nonMemberCookie());
     expect(feed.status).toBe(403);
 
-    const post = await request(app)
+    const post = await request(local.via(app))
       .post("/api/portal/university/community/posts")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
@@ -248,13 +250,13 @@ describeDb("university community endpoints (integration)", () => {
 
   it("blocks writes under impersonation (read-only) but allows reads", async () => {
     // A read resolves as the impersonated member.
-    const feed = await request(app)
+    const feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", impersonationCookie());
     expect(feed.status).toBe(200);
 
     // A write is blocked with 403 and writes nothing.
-    const post = await request(app)
+    const post = await request(local.via(app))
       .post("/api/portal/university/community/posts")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", impersonationCookie())
@@ -271,7 +273,7 @@ describeDb("university community endpoints (integration)", () => {
     expect(created.status).toBe(201);
     expect(typeof created.id).toBe("string");
 
-    const feed = await request(app)
+    const feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", memberCookie());
     expect(feed.status).toBe(200);
@@ -289,7 +291,7 @@ describeDb("university community endpoints (integration)", () => {
 
   it("falls back to 'Coherent One' for a member with no display_name", async () => {
     await createPost(member2Cookie(), "first post from member2");
-    const feed = await request(app)
+    const feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", member2Cookie());
     expect(feed.status).toBe(200);
@@ -315,7 +317,7 @@ describeDb("university community endpoints (integration)", () => {
     const post = await createPost(memberCookie(), "question about lesson 3");
     expect(post.status).toBe(201);
 
-    const comment = await request(app)
+    const comment = await request(local.via(app))
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -332,24 +334,24 @@ describeDb("university community endpoints (integration)", () => {
     expect(postRow.commentCount).toBe(1);
 
     // member1 (the author) has one unread notification.
-    const unread = await request(app)
+    const unread = await request(local.via(app))
       .get("/api/portal/university/community/notifications/unread-count")
       .set("Cookie", memberCookie());
     expect(unread.body.count).toBe(1);
 
     // member2 (the commenter) has none (no self-notify).
-    const unread2 = await request(app)
+    const unread2 = await request(local.via(app))
       .get("/api/portal/university/community/notifications/unread-count")
       .set("Cookie", member2Cookie());
     expect(unread2.body.count).toBe(0);
 
     // seen clears it.
-    const seen = await request(app)
+    const seen = await request(local.via(app))
       .post("/api/portal/university/community/notifications/seen")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(seen.status).toBe(200);
-    const unreadAfter = await request(app)
+    const unreadAfter = await request(local.via(app))
       .get("/api/portal/university/community/notifications/unread-count")
       .set("Cookie", memberCookie());
     expect(unreadAfter.body.count).toBe(0);
@@ -357,7 +359,7 @@ describeDb("university community endpoints (integration)", () => {
 
   it("self-reply does NOT create a notification", async () => {
     const post = await createPost(memberCookie(), "talking to myself");
-    await request(app)
+    await request(local.via(app))
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -383,7 +385,7 @@ describeDb("university community endpoints (integration)", () => {
       })
       .returning({ id: universityCommunityPosts.id });
 
-    const comment = await request(app)
+    const comment = await request(local.via(app))
       .post(`/api/portal/university/community/posts/${agentPost.id}/comments`)
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -410,7 +412,7 @@ describeDb("university community endpoints (integration)", () => {
   it("reaction is idempotent and maintains reaction_count; un-react decrements", async () => {
     const post = await createPost(memberCookie(), "resonate with this");
 
-    const react1 = await request(app)
+    const react1 = await request(local.via(app))
       .post("/api/portal/university/community/react")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -420,7 +422,7 @@ describeDb("university community endpoints (integration)", () => {
     expect(react1.body.youReacted).toBe(true);
 
     // Double-tap is a no-op (idempotent), not an error.
-    const react2 = await request(app)
+    const react2 = await request(local.via(app))
       .post("/api/portal/university/community/react")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -438,14 +440,14 @@ describeDb("university community endpoints (integration)", () => {
     expect(postRow.reactionCount).toBe(1);
 
     // The reactor sees youReacted in the feed.
-    const feed = await request(app)
+    const feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", member2Cookie());
     expect(feed.body.posts[0].youReacted).toBe(true);
     expect(feed.body.posts[0].reactionCount).toBe(1);
 
     // Un-react deletes the row and decrements.
-    const unreact = await request(app)
+    const unreact = await request(local.via(app))
       .delete("/api/portal/university/community/react")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -469,7 +471,7 @@ describeDb("university community endpoints (integration)", () => {
     // member1 posts; two distinct members report → threshold (2) → hidden.
     const post = await createPost(memberCookie(), "this gets reported");
 
-    const r1 = await request(app)
+    const r1 = await request(local.via(app))
       .post("/api/portal/university/community/report")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -478,21 +480,21 @@ describeDb("university community endpoints (integration)", () => {
     expect(r1.body).toEqual({ ok: true }); // never reveals counts
 
     // Still visible after one report (threshold is 2).
-    let feed = await request(app)
+    let feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", memberCookie());
     expect(feed.body.posts).toHaveLength(1);
 
     // A second reporter (the author here, for test simplicity — a distinct
     // reporter_email) crosses the threshold.
-    const r2 = await request(app)
+    const r2 = await request(local.via(app))
       .post("/api/portal/university/community/report")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ targetType: "post", targetId: post.id });
     expect(r2.status).toBe(200);
 
-    feed = await request(app)
+    feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", memberCookie());
     expect(feed.body.posts).toHaveLength(0); // auto-hidden
@@ -507,12 +509,12 @@ describeDb("university community endpoints (integration)", () => {
 
   it("re-report by the same member is idempotent (no report-spam)", async () => {
     const post = await createPost(memberCookie(), "report me twice");
-    await request(app)
+    await request(local.via(app))
       .post("/api/portal/university/community/report")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ targetType: "post", targetId: post.id });
-    await request(app)
+    await request(local.via(app))
       .post("/api/portal/university/community/report")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -529,20 +531,20 @@ describeDb("university community endpoints (integration)", () => {
 
   it("author can soft-delete their own post; it leaves the feed", async () => {
     const post = await createPost(memberCookie(), "delete me");
-    const del = await request(app)
+    const del = await request(local.via(app))
       .delete(`/api/portal/university/community/posts/${post.id}`)
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie());
     expect(del.status).toBe(200);
 
-    const feed = await request(app)
+    const feed = await request(local.via(app))
       .get("/api/portal/university/community/feed")
       .set("Cookie", memberCookie());
     expect(feed.body.posts).toHaveLength(0);
 
     // Non-author cannot delete (404 — not theirs).
     const post2 = await createPost(memberCookie(), "not yours");
-    const del2 = await request(app)
+    const del2 = await request(local.via(app))
       .delete(`/api/portal/university/community/posts/${post2.id}`)
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie());
@@ -557,7 +559,7 @@ describeDb("university community endpoints (integration)", () => {
       expect(r.status).toBe(201);
     }
 
-    const page1 = await request(app)
+    const page1 = await request(local.via(app))
       .get("/api/portal/university/community/feed?limit=2")
       .set("Cookie", memberCookie());
     expect(page1.body.posts).toHaveLength(2);
@@ -565,7 +567,7 @@ describeDb("university community endpoints (integration)", () => {
     expect(page1.body.posts[1].body).toBe("p4");
     expect(typeof page1.body.nextCursor).toBe("string");
 
-    const page2 = await request(app)
+    const page2 = await request(local.via(app))
       .get(
         `/api/portal/university/community/feed?limit=2&cursor=${encodeURIComponent(
           page1.body.nextCursor,
@@ -576,7 +578,7 @@ describeDb("university community endpoints (integration)", () => {
     expect(page2.body.posts[0].body).toBe("p3");
     expect(page2.body.posts[1].body).toBe("p2");
 
-    const page3 = await request(app)
+    const page3 = await request(local.via(app))
       .get(
         `/api/portal/university/community/feed?limit=2&cursor=${encodeURIComponent(
           page2.body.nextCursor,
@@ -599,14 +601,14 @@ describeDb("university community endpoints (integration)", () => {
     tightApp.use(errorHandler);
     process.env.COMMUNITY_POST_RATE_PER_MIN = prev; // restore for other apps
 
-    const first = await request(tightApp)
+    const first = await request(local.via(tightApp))
       .post("/api/portal/university/community/posts")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ body: "first under limit" });
     expect(first.status).toBe(201);
 
-    const second = await request(tightApp)
+    const second = await request(local.via(tightApp))
       .post("/api/portal/university/community/posts")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -614,7 +616,7 @@ describeDb("university community endpoints (integration)", () => {
     expect(second.status).toBe(429);
 
     // A DIFFERENT member is keyed separately — not throttled by member1's burst.
-    const other = await request(tightApp)
+    const other = await request(local.via(tightApp))
       .post("/api/portal/university/community/posts")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
@@ -624,18 +626,18 @@ describeDb("university community endpoints (integration)", () => {
 
   it("post detail returns the thread (oldest first) and 404 for a hidden/missing post", async () => {
     const post = await createPost(memberCookie(), "thread root");
-    await request(app)
+    await request(local.via(app))
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ body: "first comment" });
-    await request(app)
+    await request(local.via(app))
       .post(`/api/portal/university/community/posts/${post.id}/comments`)
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", member2Cookie())
       .send({ body: "second comment" });
 
-    const detail = await request(app)
+    const detail = await request(local.via(app))
       .get(`/api/portal/university/community/posts/${post.id}`)
       .set("Cookie", memberCookie());
     expect(detail.status).toBe(200);
@@ -644,7 +646,7 @@ describeDb("university community endpoints (integration)", () => {
     expect(detail.body.comments[0].body).toBe("first comment"); // oldest first
     expect(detail.body.comments[1].body).toBe("second comment");
 
-    const missing = await request(app)
+    const missing = await request(local.via(app))
       .get(
         "/api/portal/university/community/posts/00000000-0000-0000-0000-000000000000",
       )

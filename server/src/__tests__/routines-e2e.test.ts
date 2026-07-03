@@ -26,6 +26,7 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/index.js";
 import { accessService } from "../services/access.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 vi.mock("../services/index.js", async () => {
   const actual = await vi.importActual<typeof import("../services/index.js")>("../services/index.js");
@@ -88,6 +89,7 @@ if (!embeddedPostgresSupport.supported) {
 describeEmbeddedPostgres("routine routes end-to-end", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  const local = useLocalServer();
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-routines-e2e-");
@@ -183,7 +185,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
       companyIds: [companyId],
     });
 
-    const createRes = await request(app)
+    const createRes = await request(local.via(app))
       .post(`/api/companies/${companyId}/routines`)
       .send({
         projectId,
@@ -201,7 +203,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
 
     const routineId = createRes.body.id as string;
 
-    const triggerRes = await request(app)
+    const triggerRes = await request(local.via(app))
       .post(`/api/routines/${routineId}/triggers`)
       .send({
         kind: "schedule",
@@ -215,7 +217,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
     expect(triggerRes.body.trigger.enabled).toBe(true);
     expect(triggerRes.body.secretMaterial).toBeNull();
 
-    const runRes = await request(app)
+    const runRes = await request(local.via(app))
       .post(`/api/routines/${routineId}/run`)
       .send({
         source: "manual",
@@ -227,7 +229,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
     expect(runRes.body.source).toBe("manual");
     expect(runRes.body.linkedIssueId).toBeTruthy();
 
-    const detailRes = await request(app).get(`/api/routines/${routineId}`);
+    const detailRes = await request(local.via(app)).get(`/api/routines/${routineId}`);
     expect(detailRes.status).toBe(200);
     expect(detailRes.body.triggers).toHaveLength(1);
     expect(detailRes.body.triggers[0]?.id).toBe(triggerRes.body.trigger.id);
@@ -235,7 +237,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
     expect(detailRes.body.recentRuns[0]?.id).toBe(runRes.body.id);
     expect(detailRes.body.activeIssue?.id).toBe(runRes.body.linkedIssueId);
 
-    const runsRes = await request(app).get(`/api/routines/${routineId}/runs?limit=10`);
+    const runsRes = await request(local.via(app)).get(`/api/routines/${routineId}/runs?limit=10`);
     expect(runsRes.status).toBe(200);
     expect(runsRes.body).toHaveLength(1);
     expect(runsRes.body[0]?.id).toBe(runRes.body.id);

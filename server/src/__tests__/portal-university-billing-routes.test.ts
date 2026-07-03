@@ -35,6 +35,7 @@ vi.mock("../services/stripe-client.js", () => ({
 
 import { portalRoutes } from "../routes/portal.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 import {
   PORTAL_SESSION_COOKIE,
   issueSession,
@@ -162,6 +163,8 @@ function authCookie(): string {
   return `${PORTAL_SESSION_COOKIE}=${issueSession(ACCOUNT_ID)}`;
 }
 
+const local = useLocalServer();
+
 describe("portal university billing save-flow routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -177,7 +180,7 @@ describe("portal university billing save-flow routes", () => {
     const app = buildApp(state);
     mockStripeRequest.mockResolvedValueOnce({ current_period_end: PERIOD_END_UNIX });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/cancel")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
@@ -212,7 +215,7 @@ describe("portal university billing save-flow routes", () => {
     const app = buildApp(state);
     mockStripeRequest.mockResolvedValueOnce({ current_period_end: PERIOD_END_UNIX });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/cancel")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
@@ -230,7 +233,7 @@ describe("portal university billing save-flow routes", () => {
     mockStripeRequest.mockResolvedValueOnce({});
 
     const before = Date.now();
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/pause")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
@@ -262,7 +265,7 @@ describe("portal university billing save-flow routes", () => {
     const app = buildApp(state);
     mockStripeRequest.mockResolvedValueOnce({});
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/reactivate")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie());
@@ -283,7 +286,7 @@ describe("portal university billing save-flow routes", () => {
     const state = freshState({ members: [] });
     const app = buildApp(state);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/cancel")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie())
@@ -297,7 +300,7 @@ describe("portal university billing save-flow routes", () => {
   it("returns 401 and makes NO Stripe call without a session cookie", async () => {
     const state = freshState();
     const app = buildApp(state);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/pause")
       .set("Origin", TRUSTED_ORIGIN)
       .send({});
@@ -308,7 +311,7 @@ describe("portal university billing save-flow routes", () => {
   it("returns 400 when the member has no recorded University subscription", async () => {
     const state = freshState({ subscriptions: [] });
     const app = buildApp(state);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/reactivate")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", authCookie());

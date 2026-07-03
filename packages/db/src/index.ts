@@ -13,7 +13,9 @@ export {
 } from "./client.js";
 export {
   getEmbeddedPostgresTestSupport,
+  startEmbeddedPostgresCluster,
   startEmbeddedPostgresTestDatabase,
+  type EmbeddedPostgresCluster,
   type EmbeddedPostgresTestDatabase,
   type EmbeddedPostgresTestSupport,
 } from "./test-embedded-postgres.js";

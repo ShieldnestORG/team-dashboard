@@ -3,13 +3,16 @@ import express from "express";
 import request from "supertest";
 import { healthRoutes } from "../routes/health.js";
 import { serverVersion } from "../version.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
+
+const local = useLocalServer();
 
 describe("GET /health", () => {
   const app = express();
   app.use("/health", healthRoutes());
 
   it("returns 200 with status ok", async () => {
-    const res = await request(app).get("/health");
+    const res = await request(local.via(app)).get("/health");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: "ok", version: serverVersion });
   });

@@ -20,6 +20,7 @@ vi.mock("../services/stripe-client.js", () => ({
 
 import { portalRoutes } from "../routes/portal.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 import { PORTAL_SESSION_COOKIE } from "../services/customer-portal.js";
 import {
   customerAccounts,
@@ -204,6 +205,8 @@ function buildApp(db: ReturnType<typeof makeDb>) {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("portal routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -218,7 +221,7 @@ describe("portal routes", () => {
   it("POST /login persists a magic-link row and returns ok", async () => {
     const state: State = { links: [], accounts: [], actionLog: [] };
     const app = buildApp(makeDb(state));
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/login")
       .set("Origin", TRUSTED_ORIGIN)
       .send({ email: "user@example.com" });
@@ -232,7 +235,7 @@ describe("portal routes", () => {
   it("POST /login rejects malformed emails with 400", async () => {
     const state: State = { links: [], accounts: [], actionLog: [] };
     const app = buildApp(makeDb(state));
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/login")
       .set("Origin", TRUSTED_ORIGIN)
       .send({ email: "not-an-email" });
@@ -253,7 +256,7 @@ describe("portal routes", () => {
       createdAt: new Date(),
     });
 
-    const res = await request(app).get("/api/portal/auth?token=tok-abc");
+    const res = await request(local.via(app)).get("/api/portal/auth?token=tok-abc");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/html/);
     expect(res.text).toContain('action="/api/portal/auth?token=tok-abc"');
@@ -277,7 +280,7 @@ describe("portal routes", () => {
       createdAt: new Date(),
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/auth?token=tok-abc")
       .set("Origin", TRUSTED_ORIGIN);
     expect(res.status).toBe(302);
@@ -294,7 +297,7 @@ describe("portal routes", () => {
   it("GET /auth with an unknown token redirects with error param", async () => {
     const state: State = { links: [], accounts: [], actionLog: [] };
     const app = buildApp(makeDb(state));
-    const res = await request(app).get("/api/portal/auth?token=does-not-exist");
+    const res = await request(local.via(app)).get("/api/portal/auth?token=does-not-exist");
     expect(res.status).toBe(302);
     expect(res.headers["location"]).toContain("error=invalid_or_expired");
   });
@@ -309,7 +312,7 @@ describe("portal routes", () => {
       consumedAt: new Date(),
       createdAt: new Date(),
     });
-    const res = await request(app).get("/api/portal/auth?token=tok-used");
+    const res = await request(local.via(app)).get("/api/portal/auth?token=tok-used");
     expect(res.status).toBe(302);
     // Uniform error — no token-existence oracle.
     expect(res.headers["location"]).toContain("error=invalid_or_expired");
@@ -325,11 +328,11 @@ describe("portal routes", () => {
       consumedAt: null,
       createdAt: new Date(),
     });
-    const first = await request(app)
+    const first = await request(local.via(app))
       .post("/api/portal/auth?token=tok-once")
       .set("Origin", TRUSTED_ORIGIN);
     expect(first.headers["location"]).toBe("https://app.test.local/");
-    const second = await request(app)
+    const second = await request(local.via(app))
       .post("/api/portal/auth?token=tok-once")
       .set("Origin", TRUSTED_ORIGIN);
     expect(second.headers["location"]).toContain("error=invalid_or_expired");
@@ -338,7 +341,7 @@ describe("portal routes", () => {
   it("GET /me returns 401 without a cookie", async () => {
     const state: State = { links: [], accounts: [], actionLog: [] };
     const app = buildApp(makeDb(state));
-    const res = await request(app).get("/api/portal/me");
+    const res = await request(local.via(app)).get("/api/portal/me");
     expect(res.status).toBe(401);
   });
 
@@ -355,7 +358,7 @@ describe("portal routes", () => {
       consumedAt: null,
       createdAt: new Date(),
     });
-    const auth = await request(app)
+    const auth = await request(local.via(app))
       .post("/api/portal/auth?token=tok-zzz")
       .set("Origin", TRUSTED_ORIGIN);
     const setCookieHeader = auth.headers["set-cookie"];
@@ -365,7 +368,7 @@ describe("portal routes", () => {
       .find((c) => c && c.startsWith(`${PORTAL_SESSION_COOKIE}=`));
     expect(sessionCookie).toBeTruthy();
 
-    const me = await request(app)
+    const me = await request(local.via(app))
       .get("/api/portal/me")
       .set("Cookie", sessionCookie as string);
     expect(me.status).toBe(200);

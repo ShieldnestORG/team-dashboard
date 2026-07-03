@@ -10,6 +10,10 @@ If two or more agents need to work in parallel, they MUST use one of the followi
 1. **Feature Branches**: Create a dedicated branch for the feature (e.g., `git checkout -b feat/my-feature`).
 2. **Worktrees**: Use the `/worktree` command to create an isolated git worktree.
 
+> **Run-time counterpart:** this guide covers parallel *edits*. For parallel *test
+> execution* (the macOS port-steal race between supertest and late-binding test
+> actors), see [Test Isolation Under Parallel Runs](test-isolation.md).
+
 ## Feature Branch Requirements
 Any work that introduces the following must be performed on a feature branch, not directly on `master`:
 - New backend services

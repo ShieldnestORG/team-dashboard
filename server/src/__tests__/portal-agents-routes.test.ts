@@ -16,6 +16,7 @@ vi.mock("../services/stripe-client.js", () => ({
 import { portalRoutes } from "../routes/portal.js";
 import { portalAgentsRoutes } from "../routes/portal-agents.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 import { PORTAL_SESSION_COOKIE } from "../services/customer-portal.js";
 import {
   customerAccounts,
@@ -311,7 +312,7 @@ async function login(app: ReturnType<typeof buildApp>, state: State, email: stri
     consumedAt: null,
     createdAt: new Date(),
   });
-  const authRes = await request(app)
+  const authRes = await request(local.via(app))
     .post(`/api/portal/auth?token=tok-${email}`)
     .set("Origin", TRUSTED_ORIGIN);
   const setCookieHeader = authRes.headers["set-cookie"];
@@ -321,6 +322,8 @@ async function login(app: ReturnType<typeof buildApp>, state: State, email: stri
     .find((c) => c && c.startsWith(`${PORTAL_SESSION_COOKIE}=`));
   return sessionCookie as string;
 }
+
+const local = useLocalServer();
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -351,7 +354,7 @@ describe("portal-agents routes", () => {
       competitorScans: [],
     };
     const app = buildApp(makeDb(state));
-    const res = await request(app).get("/api/portal/agents/feed");
+    const res = await request(local.via(app)).get("/api/portal/agents/feed");
     expect(res.status).toBe(401);
   });
 
@@ -369,7 +372,7 @@ describe("portal-agents routes", () => {
     const app = buildApp(makeDb(state));
     const cookie = await login(app, state, baseEmail);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/agents/feed")
       .set("Cookie", cookie);
     expect(res.status).toBe(200);
@@ -427,7 +430,7 @@ describe("portal-agents routes", () => {
     const app = buildApp(makeDb(state));
     const cookie = await login(app, state, baseEmail);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/agents/feed?limit=50")
       .set("Cookie", cookie);
     expect(res.status).toBe(200);
@@ -480,7 +483,7 @@ describe("portal-agents routes", () => {
     const app = buildApp(makeDb(state));
     const cookie = await login(app, state, baseEmail);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/agents/items/content_draft/draft-002")
       .set("Cookie", cookie);
     expect(res.status).toBe(200);
@@ -532,7 +535,7 @@ describe("portal-agents routes", () => {
     const app = buildApp(makeDb(state));
     const cookie = await login(app, state, baseEmail);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/agents/items/content_draft/draft-003/approve")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", cookie);
@@ -581,7 +584,7 @@ describe("portal-agents routes", () => {
     const app = buildApp(makeDb(state));
     const cookie = await login(app, state, baseEmail);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/agents/items/schema_impl/schema-001/reject")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", cookie)
@@ -608,7 +611,7 @@ describe("portal-agents routes", () => {
     const app = buildApp(makeDb(state));
     const cookie = await login(app, state, baseEmail);
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/agents/items/invalid_kind/some-id")
       .set("Cookie", cookie);
     expect(res.status).toBe(400);

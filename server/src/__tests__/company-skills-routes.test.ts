@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { companySkillRoutes } from "../routes/company-skills.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -38,6 +39,8 @@ function createApp(actor: Record<string, unknown>) {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("company skill mutation permissions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -51,13 +54,13 @@ describe("company skill mutation permissions", () => {
   });
 
   it("allows local board operators to mutate company skills", async () => {
-    const res = await request(createApp({
+    const res = await request(local.via(createApp({
       type: "board",
       userId: "local-board",
       companyIds: ["company-1"],
       source: "local_implicit",
       isInstanceAdmin: false,
-    }))
+    })))
       .post("/api/companies/company-1/skills/import")
       .send({ source: "https://github.com/vercel-labs/agent-browser" });
 
@@ -75,12 +78,12 @@ describe("company skill mutation permissions", () => {
       permissions: {},
     });
 
-    const res = await request(createApp({
+    const res = await request(local.via(createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
       runId: "run-1",
-    }))
+    })))
       .post("/api/companies/company-1/skills/import")
       .send({ source: "https://github.com/vercel-labs/agent-browser" });
 
@@ -95,12 +98,12 @@ describe("company skill mutation permissions", () => {
       permissions: { canCreateAgents: true },
     });
 
-    const res = await request(createApp({
+    const res = await request(local.via(createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
       runId: "run-1",
-    }))
+    })))
       .post("/api/companies/company-1/skills/import")
       .send({ source: "https://github.com/vercel-labs/agent-browser" });
 

@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { costRoutes } from "../routes/costs.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 function makeDb(overrides: Record<string, unknown> = {}) {
   const selectChain = {
@@ -111,6 +112,8 @@ function createAppWithActor(actor: any) {
   return app;
 }
 
+const local = useLocalServer();
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCompanyService.update.mockResolvedValue({
@@ -132,7 +135,7 @@ beforeEach(() => {
 describe("cost routes", () => {
   it("accepts valid ISO date strings and passes them to cost summary routes", async () => {
     const app = createApp();
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/companies/company-1/costs/summary")
       .query({ from: "2026-01-01T00:00:00.000Z", to: "2026-01-31T23:59:59.999Z" });
     expect(res.status).toBe(200);
@@ -140,7 +143,7 @@ describe("cost routes", () => {
 
   it("returns 400 for an invalid 'from' date string", async () => {
     const app = createApp();
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/companies/company-1/costs/summary")
       .query({ from: "not-a-date" });
     expect(res.status).toBe(400);
@@ -149,7 +152,7 @@ describe("cost routes", () => {
 
   it("returns 400 for an invalid 'to' date string", async () => {
     const app = createApp();
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/companies/company-1/costs/summary")
       .query({ to: "banana" });
     expect(res.status).toBe(400);
@@ -158,7 +161,7 @@ describe("cost routes", () => {
 
   it("returns finance summary rows for valid requests", async () => {
     const app = createApp();
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/companies/company-1/costs/finance-summary")
       .query({ from: "2026-02-01T00:00:00.000Z", to: "2026-02-28T23:59:59.999Z" });
     expect(res.status).toBe(200);
@@ -167,7 +170,7 @@ describe("cost routes", () => {
 
   it("returns 400 for invalid finance event list limits", async () => {
     const app = createApp();
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/companies/company-1/costs/finance-events")
       .query({ limit: "0" });
     expect(res.status).toBe(400);
@@ -176,7 +179,7 @@ describe("cost routes", () => {
 
   it("accepts valid finance event list limits", async () => {
     const app = createApp();
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/companies/company-1/costs/finance-events")
       .query({ limit: "25" });
     expect(res.status).toBe(200);
@@ -192,7 +195,7 @@ describe("cost routes", () => {
       companyIds: ["company-2"],
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch("/api/companies/company-1/budgets")
       .send({ budgetMonthlyCents: 2500 });
 
@@ -216,7 +219,7 @@ describe("cost routes", () => {
       companyIds: ["company-2"],
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch("/api/agents/agent-1/budgets")
       .send({ budgetMonthlyCents: 2500 });
 

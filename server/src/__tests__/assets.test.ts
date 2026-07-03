@@ -4,6 +4,7 @@ import request from "supertest";
 import { MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { assetRoutes } from "../routes/assets.js";
 import type { StorageService } from "../storage/types.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const { createAssetMock, getAssetByIdMock, logActivityMock } = vi.hoisted(() => ({
   createAssetMock: vi.fn(),
@@ -78,6 +79,8 @@ function createApp(storage: ReturnType<typeof createStorageService>) {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("POST /api/companies/:companyId/assets/images", () => {
   afterEach(() => {
     createAssetMock.mockReset();
@@ -91,7 +94,7 @@ describe("POST /api/companies/:companyId/assets/images", () => {
 
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/assets/images")
       .field("namespace", "goals")
       .attach("file", Buffer.from("png"), "logo.png");
@@ -118,7 +121,7 @@ describe("POST /api/companies/:companyId/assets/images", () => {
       originalFilename: "note.txt",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/assets/images")
       .field("namespace", "issues/drafts")
       .attach("file", Buffer.from("hello"), { filename: "note.txt", contentType: "text/plain" });
@@ -147,7 +150,7 @@ describe("POST /api/companies/:companyId/logo", () => {
 
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/logo")
       .attach("file", Buffer.from("png"), "logo.png");
 
@@ -173,7 +176,7 @@ describe("POST /api/companies/:companyId/logo", () => {
       originalFilename: "logo.svg",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/logo")
       .attach(
         "file",
@@ -202,7 +205,7 @@ describe("POST /api/companies/:companyId/logo", () => {
     createAssetMock.mockResolvedValue(createAsset());
 
     const file = Buffer.alloc(150 * 1024, "a");
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/logo")
       .attach("file", file, "within-limit.png");
 
@@ -214,7 +217,7 @@ describe("POST /api/companies/:companyId/logo", () => {
     createAssetMock.mockResolvedValue(createAsset());
 
     const file = Buffer.alloc(MAX_ATTACHMENT_BYTES + 1, "a");
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/logo")
       .attach("file", file, "too-large.png");
 
@@ -226,7 +229,7 @@ describe("POST /api/companies/:companyId/logo", () => {
     const app = createApp(createStorageService("text/plain"));
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/logo")
       .attach("file", Buffer.from("not an image"), "note.txt");
 
@@ -239,7 +242,7 @@ describe("POST /api/companies/:companyId/logo", () => {
     const app = createApp(createStorageService("image/svg+xml"));
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/companies/company-1/logo")
       .attach("file", Buffer.from("not actually svg"), "logo.svg");
 
