@@ -9,13 +9,23 @@ import {
   type FunnelLead,
   type ZernioEvent,
   type KilledAutomation,
+  type LibraryFunnel,
+  type FunnelCoverageRow,
+  type FunnelStatus,
+  type FunnelStyle,
+  type NewLibraryFunnel,
 } from "../api/socials";
 import { queryKeys } from "../lib/queryKeys";
 import { relativeTime } from "../lib/utils";
+import { useBoardAccess } from "../hooks/useBoardAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { HelpTip } from "@/components/HelpTip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +36,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -40,6 +57,13 @@ import {
   Users,
   ToggleRight,
   Send,
+  Sparkles,
+  Pencil,
+  Check,
+  X as XIcon,
+  Rocket,
+  Archive,
+  Target,
 } from "lucide-react";
 import { ApiError } from "../api/client";
 
@@ -218,11 +242,15 @@ function KpiTiles({
   accountsOn,
   leadsCaptured,
   awaitingSync,
+  accountsAtTarget,
+  accountsCoverageTotal,
 }: {
   liveFunnels: number;
   accountsOn: number;
   leadsCaptured: number;
   awaitingSync: number;
+  accountsAtTarget: number;
+  accountsCoverageTotal: number;
 }) {
   const tiles = [
     {
@@ -236,6 +264,12 @@ function KpiTiles({
       value: accountsOn,
       icon: <ToggleRight className="h-5 w-5 text-blue-500" />,
       tint: "bg-blue-500/10",
+    },
+    {
+      label: `Accounts at 5+ ready${accountsCoverageTotal > 0 ? ` / ${accountsCoverageTotal}` : ""}`,
+      value: accountsAtTarget,
+      icon: <Target className="h-5 w-5 text-teal-500" />,
+      tint: "bg-teal-500/10",
     },
     {
       label: "Leads captured (recent)",
@@ -252,7 +286,7 @@ function KpiTiles({
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
       {tiles.map((t) => (
         <Card key={t.label}>
           <CardContent className="flex items-center gap-3 py-4">
@@ -267,6 +301,566 @@ function KpiTiles({
         </Card>
       ))}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Funnel Library — the working table of drafts/ready/live/rejected/retired
+// funnels behind the strategy catalog. AI drafts, an admin approves, "arm"
+// creates the real Zernio comment automation.
+// ---------------------------------------------------------------------------
+
+const FUNNEL_STATUS_LABELS: Record<FunnelStatus, string> = {
+  draft: "Draft",
+  ready: "Ready",
+  live: "Live",
+  rejected: "Rejected",
+  retired: "Retired",
+};
+
+function funnelStatusVariant(
+  status: FunnelStatus,
+): "default" | "secondary" | "outline" | "destructive" {
+  if (status === "live") return "default";
+  if (status === "ready") return "secondary";
+  if (status === "rejected") return "destructive";
+  return "outline"; // draft, retired
+}
+
+// Mirrors the pure guard functions in server/src/services/socials/funnels-service.ts
+// (canApprove/canReject/canArm/canRetire) — cosmetic only; the routes are the
+// real enforcement.
+function canApproveStatus(status: FunnelStatus): boolean {
+  return status === "draft";
+}
+function canRejectStatus(status: FunnelStatus): boolean {
+  return status === "draft" || status === "ready";
+}
+function canArmStatus(status: FunnelStatus, funnelsEnabled: boolean): boolean {
+  return status === "ready" && funnelsEnabled;
+}
+function canRetireStatus(status: FunnelStatus): boolean {
+  return status === "ready" || status === "live";
+}
+
+function CoverageChips({ coverage }: { coverage: FunnelCoverageRow[] }) {
+  if (coverage.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No Zernio-connected accounts yet.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {coverage.map((c) => (
+        <span
+          key={c.accountId}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium ${
+            c.atTarget
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+          }`}
+          title={`draft ${c.counts.draft} · ready ${c.counts.ready} · live ${c.counts.live} · rejected ${c.counts.rejected} · retired ${c.counts.retired}`}
+        >
+          @{c.handle} {c.readyCount}/{c.readyTarget} ready
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EditFunnelDialog({
+  funnel,
+  open,
+  onOpenChange,
+}: {
+  funnel: LibraryFunnel | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<Partial<NewLibraryFunnel>>({});
+
+  useEffect(() => {
+    if (funnel) {
+      setForm({
+        name: funnel.name,
+        keywords: funnel.keywords,
+        matchMode: funnel.matchMode,
+        dmMessage: funnel.dmMessage,
+        destinationUrl: funnel.destinationUrl,
+        postHooks: funnel.postHooks,
+        style: funnel.style,
+        tosRisk: funnel.tosRisk,
+        notes: funnel.notes,
+      });
+    }
+  }, [funnel]);
+
+  const saveMut = useMutation({
+    mutationFn: (data: Partial<NewLibraryFunnel>) => {
+      if (!funnel) throw new Error("no funnel selected");
+      return socialsApi.updateLibraryFunnel(funnel.id, data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.funnels.library({}) });
+      onOpenChange(false);
+    },
+  });
+
+  if (!funnel) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Edit funnel</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label className="block space-y-1">
+            <div className="text-xs text-muted-foreground">Name</div>
+            <Input
+              value={form.name ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </label>
+          <label className="block space-y-1">
+            <div className="text-xs text-muted-foreground">Keywords (comma-separated)</div>
+            <Input
+              value={(form.keywords ?? []).join(", ")}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  keywords: e.target.value
+                    .split(",")
+                    .map((k) => k.trim().toUpperCase())
+                    .filter(Boolean),
+                }))
+              }
+            />
+          </label>
+          <label className="block space-y-1">
+            <div className="text-xs text-muted-foreground">DM message (2-step opener)</div>
+            <Textarea
+              rows={3}
+              value={form.dmMessage ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, dmMessage: e.target.value }))}
+            />
+          </label>
+          <label className="block space-y-1">
+            <div className="text-xs text-muted-foreground">Destination URL</div>
+            <Input
+              value={form.destinationUrl ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, destinationUrl: e.target.value }))}
+            />
+          </label>
+          <label className="block space-y-1">
+            <div className="text-xs text-muted-foreground">Post hooks (one per line)</div>
+            <Textarea
+              rows={3}
+              value={(form.postHooks ?? []).join("\n")}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  postHooks: e.target.value.split("\n").map((h) => h.trim()).filter(Boolean),
+                }))
+              }
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1">
+              <div className="text-xs text-muted-foreground">Style</div>
+              <select
+                className="w-full rounded border px-2 py-1 text-sm"
+                value={form.style ?? "standard"}
+                onChange={(e) => setForm((f) => ({ ...f, style: e.target.value as FunnelStyle }))}
+              >
+                <option value="standard">standard</option>
+                <option value="controversial">controversial</option>
+                <option value="weird">weird</option>
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <div className="text-xs text-muted-foreground">ToS risk</div>
+              <select
+                className="w-full rounded border px-2 py-1 text-sm"
+                value={form.tosRisk ?? ""}
+                onChange={(e) => setForm((f) => ({ ...f, tosRisk: e.target.value }))}
+              >
+                <option value="">—</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <div className="text-xs text-muted-foreground">Notes</div>
+            <Textarea
+              rows={2}
+              value={form.notes ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+          </label>
+          {saveMut.isError && (
+            <p className="text-xs text-destructive">
+              {saveMut.error instanceof ApiError
+                ? saveMut.error.message
+                : saveMut.error instanceof Error
+                  ? saveMut.error.message
+                  : "Save failed"}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => saveMut.mutate(form)} disabled={saveMut.isPending}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FunnelDetail({ funnel }: { funnel: LibraryFunnel }) {
+  return (
+    <div className="grid gap-2 border-t bg-muted/10 p-3 text-xs sm:grid-cols-2">
+      <div>
+        <p className="mb-1 font-medium text-muted-foreground">DM message</p>
+        <p>{funnel.dmMessage || "—"}</p>
+      </div>
+      <div>
+        <p className="mb-1 font-medium text-muted-foreground">Post hooks</p>
+        {funnel.postHooks.length > 0 ? (
+          <ul className="list-disc space-y-0.5 pl-4">
+            {funnel.postHooks.map((h, i) => (
+              <li key={i}>{h}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>—</p>
+        )}
+      </div>
+      <div>
+        <p className="mb-1 font-medium text-muted-foreground">ToS risk</p>
+        <p>{funnel.tosRisk ?? "—"}</p>
+      </div>
+      <div>
+        <p className="mb-1 font-medium text-muted-foreground">Notes</p>
+        <p>{funnel.notes ?? "—"}</p>
+      </div>
+    </div>
+  );
+}
+
+function FunnelLibraryRow({
+  funnel,
+  isAdmin,
+  onEdit,
+}: {
+  funnel: LibraryFunnel;
+  isAdmin: boolean;
+  onEdit: (f: LibraryFunnel) => void;
+}) {
+  const qc = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
+  const [confirmArm, setConfirmArm] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: queryKeys.funnels.library({}) });
+    qc.invalidateQueries({ queryKey: queryKeys.funnels.coverage });
+  };
+
+  const approveMut = useMutation({
+    mutationFn: () => socialsApi.approveLibraryFunnel(funnel.id),
+    onSuccess: invalidate,
+    onError: (err) => setRowError(err instanceof Error ? err.message : "Approve failed"),
+  });
+  const rejectMut = useMutation({
+    mutationFn: () => socialsApi.rejectLibraryFunnel(funnel.id),
+    onSuccess: invalidate,
+    onError: (err) => setRowError(err instanceof Error ? err.message : "Reject failed"),
+  });
+  const armMut = useMutation({
+    mutationFn: () => socialsApi.armLibraryFunnel(funnel.id),
+    onSuccess: () => {
+      invalidate();
+      setConfirmArm(false);
+    },
+    onError: (err) => {
+      setRowError(err instanceof Error ? err.message : "Arm failed");
+      setConfirmArm(false);
+    },
+  });
+  const retireMut = useMutation({
+    mutationFn: () => socialsApi.retireLibraryFunnel(funnel.id),
+    onSuccess: invalidate,
+    onError: (err) => setRowError(err instanceof Error ? err.message : "Retire failed"),
+  });
+
+  const anyPending =
+    approveMut.isPending || rejectMut.isPending || armMut.isPending || retireMut.isPending;
+
+  return (
+    <Fragment>
+      <tr className="border-b last:border-0 hover:bg-muted/30 align-top">
+        <td className="px-2 py-2">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Hide details" : "Show DM message, hooks, notes"}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        </td>
+        <td className="px-4 py-2">
+          <p className="font-medium">{funnel.name}</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {funnel.keywords.map((k) => (
+              <Badge key={k} variant="outline" className="text-[10px] px-1 py-0">
+                {k}
+              </Badge>
+            ))}
+          </div>
+          {rowError && <p className="mt-1 text-[11px] text-destructive">{rowError}</p>}
+        </td>
+        <td className="px-2 py-2">
+          <Badge variant="outline" className="text-[10px] px-1 py-0 capitalize">
+            {funnel.style}
+          </Badge>
+        </td>
+        <td className="px-2 py-2 hidden sm:table-cell">
+          {funnel.destinationUrl ? (
+            <span className="text-[11px] text-muted-foreground break-all">{funnel.destinationUrl}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+        <td className="px-2 py-2">
+          <Badge variant={funnelStatusVariant(funnel.status)}>
+            {FUNNEL_STATUS_LABELS[funnel.status]}
+          </Badge>
+        </td>
+        <td className="px-4 py-2">
+          {isAdmin ? (
+            <div className="flex flex-wrap items-center justify-end gap-1">
+              {canApproveStatus(funnel.status) && (
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  title="Approve"
+                  disabled={anyPending}
+                  onClick={() => approveMut.mutate()}
+                >
+                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                </Button>
+              )}
+              {canRejectStatus(funnel.status) && (
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  title="Reject"
+                  disabled={anyPending}
+                  onClick={() => rejectMut.mutate()}
+                >
+                  <XIcon className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              )}
+              {funnel.status !== "live" && funnel.status !== "retired" && (
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  title="Edit"
+                  disabled={anyPending}
+                  onClick={() => onEdit(funnel)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {funnel.status === "ready" && (
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  title="Arm on Zernio"
+                  disabled={anyPending}
+                  onClick={() => setConfirmArm(true)}
+                >
+                  <Rocket className="h-3.5 w-3.5 text-blue-600" />
+                </Button>
+              )}
+              {canRetireStatus(funnel.status) && (
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  title="Retire"
+                  disabled={anyPending}
+                  onClick={() => retireMut.mutate()}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">read-only</span>
+          )}
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="border-b last:border-0">
+          <td colSpan={6} className="p-0">
+            <FunnelDetail funnel={funnel} />
+          </td>
+        </tr>
+      )}
+
+      <AlertDialog open={confirmArm} onOpenChange={setConfirmArm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Arm "{funnel.name}" on Zernio?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This goes live on Instagram immediately — commenting{" "}
+              {funnel.keywords.join(" or ")} on @{funnel.accountHandle}'s posts will start
+              triggering the DM sequence right away.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => armMut.mutate()} disabled={armMut.isPending}>
+              Arm now
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Fragment>
+  );
+}
+
+function GenerateDraftsButton({ accountHandle }: { accountHandle: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const genMut = useMutation({
+    mutationFn: () => socialsApi.generateLibraryFunnels({ accountHandle, count: 5 }),
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: queryKeys.funnels.library({}) });
+      qc.invalidateQueries({ queryKey: queryKeys.funnels.coverage });
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "Generation failed"),
+  });
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" disabled={genMut.isPending} onClick={() => genMut.mutate()}>
+        <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+        {genMut.isPending ? "Generating…" : "Generate 5 drafts"}
+      </Button>
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
+    </div>
+  );
+}
+
+function FunnelLibrarySection() {
+  const { isInstanceAdmin: isAdmin } = useBoardAccess();
+  const [editing, setEditing] = useState<LibraryFunnel | null>(null);
+
+  const coverageQ = useQuery({
+    queryKey: queryKeys.funnels.coverage,
+    queryFn: () => socialsApi.funnelCoverage(),
+  });
+  const libraryQ = useQuery({
+    queryKey: queryKeys.funnels.library({}),
+    queryFn: () => socialsApi.listLibraryFunnels(),
+  });
+
+  const coverage = coverageQ.data?.coverage ?? [];
+  const library = libraryQ.data?.funnels ?? [];
+
+  const grouped = useMemo(() => {
+    const by = new Map<string, LibraryFunnel[]>();
+    for (const f of library) {
+      if (!by.has(f.accountHandle)) by.set(f.accountHandle, []);
+      by.get(f.accountHandle)!.push(f);
+    }
+    return [...by.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [library]);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <div className="flex items-center gap-1.5">
+          <CardTitle className="text-sm font-medium">Funnel library</CardTitle>
+          <HelpTip label="What is the funnel library?">
+            A funnel = a keyword people comment + the DM they get + where it
+            sends them. Ready = approved and waiting. Live = running on
+            Instagram right now. Every account keeps at least 5 funnels
+            ready to go so there's always something to arm next.
+          </HelpTip>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {coverageQ.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading coverage…</p>
+        ) : (
+          <CoverageChips coverage={coverage} />
+        )}
+
+        {libraryQ.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading funnels…</p>
+        ) : libraryQ.error ? (
+          <p className="text-sm text-destructive">
+            {libraryQ.error instanceof Error ? libraryQ.error.message : "Failed to load funnels"}
+          </p>
+        ) : grouped.length === 0 ? (
+          <EmptyState icon={Sparkles} message="No funnels drafted yet — generate a batch below." />
+        ) : (
+          grouped.map(([handle, funnelsForAccount]) => (
+            <div key={handle} className="rounded-md border">
+              <div className="flex items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2">
+                <p className="text-sm font-medium">@{handle}</p>
+                {isAdmin && <GenerateDraftsButton accountHandle={handle} />}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="w-8 px-2 py-2" aria-hidden="true" />
+                      <th className="px-4 py-2 text-left font-medium">Funnel</th>
+                      <th className="px-2 py-2 text-left font-medium">Style</th>
+                      <th className="px-2 py-2 text-left font-medium hidden sm:table-cell">
+                        Destination
+                      </th>
+                      <th className="px-2 py-2 text-left font-medium">Status</th>
+                      <th className="px-4 py-2 text-right font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {funnelsForAccount.map((f) => (
+                      <FunnelLibraryRow key={f.id} funnel={f} isAdmin={isAdmin} onEdit={setEditing} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
+        )}
+
+        {isAdmin && grouped.length === 0 && coverage.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {coverage.map((c) => (
+              <GenerateDraftsButton key={c.accountId} accountHandle={c.handle} />
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <EditFunnelDialog funnel={editing} open={editing !== null} onOpenChange={(open) => !open && setEditing(null)} />
+    </Card>
   );
 }
 
@@ -1151,6 +1745,12 @@ export function Funnels() {
     queryKey: queryKeys.funnels.events({ limit: EVENTS_LIMIT }),
     queryFn: () => socialsApi.zernioEvents({ limit: EVENTS_LIMIT }),
   });
+  // Shares its cache entry with FunnelLibrarySection's own coverage query
+  // (same query key) — one network fetch, not two.
+  const coverageQ = useQuery({
+    queryKey: queryKeys.funnels.coverage,
+    queryFn: () => socialsApi.funnelCoverage(),
+  });
 
   const accounts = useMemo(
     () => (accountsQ.data?.accounts ?? []).filter((a) => !a.archived),
@@ -1160,6 +1760,7 @@ export function Funnels() {
   const leads = leadsQ.data?.leads ?? [];
   const events = eventsQ.data?.events ?? [];
   const catalog = catalogQ.data;
+  const coverage = coverageQ.data?.coverage ?? [];
 
   // The two core feeds are accounts + mirror; block the page shell on them.
   const coreLoading = accountsQ.isLoading || mirrorQ.isLoading;
@@ -1171,6 +1772,7 @@ export function Funnels() {
   const awaitingSync = leads.filter(
     (l) => l.email && !l.brevoSyncedAt,
   ).length;
+  const accountsAtTarget = coverage.filter((c) => c.atTarget).length;
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
@@ -1197,7 +1799,11 @@ export function Funnels() {
             accountsOn={accountsOn}
             leadsCaptured={leadsCaptured}
             awaitingSync={awaitingSync}
+            accountsAtTarget={accountsAtTarget}
+            accountsCoverageTotal={coverage.length}
           />
+
+          <FunnelLibrarySection />
 
           {accounts.length === 0 ? (
             <Card>
