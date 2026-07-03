@@ -8,6 +8,7 @@ import { getRecentAlerts } from "../services/alerting.js";
 import { getRecentLogs } from "../services/log-store.js";
 import { getServiceStatuses, getSystemMetrics, INFRA_COSTS, getSslCertStatuses } from "../services/vps-monitor.js";
 import { getOllamaUsageStats } from "../services/ollama-client.js";
+import { getAnthropicUsageStats } from "../services/anthropic-client.js";
 import { API_REGISTRY, getTotalEndpointCount, type ApiRouteGroup } from "../services/api-registry.js";
 
 export function systemHealthRoutes(db: Db) {
@@ -152,6 +153,7 @@ export function systemHealthRoutes(db: Db) {
         infraCosts: INFRA_COSTS,
         totalMonthlyCents,
         ollamaUsage: getOllamaUsageStats(),
+        anthropicUsage: getAnthropicUsageStats(),
         sslCerts: getSslCertStatuses(),
       });
     } catch (err) {

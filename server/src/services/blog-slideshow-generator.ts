@@ -9,7 +9,7 @@
  */
 
 import { logger } from "../middleware/logger.js";
-import { callOllamaChat } from "./ollama-client.js";
+import { callLlmChat } from "./llm-client.js";
 import { buildSlidesFromScriptAI, buildSlidesFromScript, type Slide } from "./youtube/presentation-renderer.js";
 import {
   type SlideTemplate,
@@ -76,7 +76,7 @@ Rules:
 - Return ONLY valid JSON, no markdown fences or extra text`;
 
   try {
-    const result = await callOllamaChat(
+    const result = await callLlmChat(
       [
         { role: "system", content: systemPrompt },
         { role: "user", content: `Create a blog presentation script about: ${topic}` },

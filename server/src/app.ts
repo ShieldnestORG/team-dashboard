@@ -55,6 +55,8 @@ import { startContentCrons } from "./services/content-crons.js";
 import { startSocialCrons } from "./services/social-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
 import { initFeedbackDb } from "./services/intel-quality.js";
+import { configureLlmSettingsProvider } from "./services/llm-client.js";
+import { instanceSettingsService } from "./services/instance-settings.js";
 import { startMaintenanceCrons } from "./services/maintenance-crons.js";
 import { startRetentionCron } from "./services/maintenance-retention-cron.js";
 import { startAdminAccessLogRetentionCron } from "./services/admin-access-log-retention-cron.js";
@@ -198,6 +200,10 @@ export async function createApp(
   },
 ) {
   const app = express();
+
+  // Content-generation LLM router reads its provider (ollama vs claude) from
+  // instance settings — register the reader once, here, where db exists.
+  configureLlmSettingsProvider(() => instanceSettingsService(db).getGeneral());
 
   // Behind a reverse proxy (nginx), Express must trust the proxy hop(s) so
   // req.ip reflects the real client — otherwise the auth/global rate limiters

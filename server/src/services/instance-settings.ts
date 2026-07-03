@@ -18,10 +18,15 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
   if (parsed.success) {
     return {
       censorUsernameInLogs: parsed.data.censorUsernameInLogs ?? false,
+      contentLlmProvider: parsed.data.contentLlmProvider ?? "ollama",
+      // Empty string clears the override back to the provider default.
+      contentLlmModel: parsed.data.contentLlmModel?.trim() || undefined,
     };
   }
   return {
     censorUsernameInLogs: false,
+    contentLlmProvider: "ollama",
+    contentLlmModel: undefined,
   };
 }
 

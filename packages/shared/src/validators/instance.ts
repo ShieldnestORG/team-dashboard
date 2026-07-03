@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const instanceGeneralSettingsSchema = z.object({
   censorUsernameInLogs: z.boolean().default(false),
+  contentLlmProvider: z.enum(["ollama", "claude"]).default("ollama"),
+  contentLlmModel: z.string().optional(),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = instanceGeneralSettingsSchema.partial();

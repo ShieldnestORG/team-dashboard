@@ -95,13 +95,17 @@ const PERSONALITIES: Record<string, {
 };
 
 // ---------------------------------------------------------------------------
-// Ollama client
+// LLM client — provider-routed (Ollama or Claude API, per the
+// `contentLlmProvider` instance setting)
 // ---------------------------------------------------------------------------
 
-import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
+import { OLLAMA_MODEL } from "./ollama-client.js";
+import { callLlmGenerate } from "./llm-client.js";
 import { enforceCharLimit, smartTruncate } from "./char-limit.js";
 
-const callOllama = callOllamaGenerate;
+// Keeps the historical (prompt) => text shape used throughout this pipeline.
+const callOllama = async (prompt: string): Promise<string> =>
+  (await callLlmGenerate(prompt)).text;
 
 // ---------------------------------------------------------------------------
 // Context fetcher — query intel_reports via pgvector similarity
@@ -292,6 +296,8 @@ interface ProducedText {
   charLimit: number;
   platform: string;
   companyId: string;
+  /** The model that actually served the generation (provider-resolved). */
+  model: string;
 }
 
 export function contentService(db: Db) {
@@ -324,7 +330,8 @@ export function contentService(db: Db) {
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context) + brandBlock;
     const fullPrompt = `${systemPrompt}${feedbackContext}${partnerContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
-    const rawGeneratedText = await callOllama(fullPrompt);
+    const generated = await callLlmGenerate(fullPrompt);
+    const rawGeneratedText = generated.text;
 
     const enforced = await enforceCharLimit(
       rawGeneratedText,
@@ -363,11 +370,11 @@ export function contentService(db: Db) {
       generatedText = smartTruncate(generatedText, charLimit);
     }
 
-    return { text: generatedText, charLimit, platform, companyId };
+    return { text: generatedText, charLimit, platform, companyId, model: generated.model };
   }
 
   async function generate(opts: GenerateOpts): Promise<GeneratedContent> {
-    const { text: generatedText, charLimit, platform, companyId } = await produceText(opts);
+    const { text: generatedText, charLimit, platform, companyId, model } = await produceText(opts);
 
     const charCount = generatedText.length;
     const withinLimit = charCount <= charLimit;
@@ -375,7 +382,7 @@ export function contentService(db: Db) {
     const metadata: ContentItem["metadata"] = {
       topic: opts.topic,
       contextQuery: opts.contextQuery,
-      model: OLLAMA_MODEL,
+      model,
       charCount,
       charLimit,
       withinLimit,
@@ -393,7 +400,7 @@ export function contentService(db: Db) {
       content: generatedText,
       topic: opts.topic,
       contextQuery: opts.contextQuery ?? null,
-      model: OLLAMA_MODEL,
+      model,
       charCount,
       charLimit,
       reviewStatus: "pending",
@@ -580,7 +587,8 @@ export function contentService(db: Db) {
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context);
     const fullPrompt = `${systemPrompt}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
-    const rawGeneratedText = await callOllama(fullPrompt);
+    const generated = await callLlmGenerate(fullPrompt);
+    const rawGeneratedText = generated.text;
     const generatedText = await enforceCharLimit(
       rawGeneratedText,
       charLimit,
@@ -596,7 +604,7 @@ export function contentService(db: Db) {
     const metadata: ContentItem["metadata"] = {
       topic: opts.topic,
       contextQuery: opts.contextQuery,
-      model: OLLAMA_MODEL,
+      model: generated.model,
       charCount,
       charLimit,
       withinLimit,
@@ -623,7 +631,7 @@ export function contentService(db: Db) {
     }
 
     const beforeLen = row.content.length;
-    const { text: newText, charLimit } = await produceText({
+    const { text: newText, charLimit, model } = await produceText({
       personalityId: row.personalityId,
       contentType: row.contentType,
       topic: row.topic,
@@ -639,7 +647,7 @@ export function contentService(db: Db) {
         content: newText,
         charCount,
         charLimit,
-        model: OLLAMA_MODEL,
+        model,
         // reset review state — this is effectively a new draft
         reviewStatus: "pending",
         reviewComment: null,
