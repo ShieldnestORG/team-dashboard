@@ -9,7 +9,8 @@ import { useCompany } from "../context/CompanyContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
-import { getSidebarConfig } from "../config/company-sidebars";
+import { useBoardAccess } from "../hooks/useBoardAccess";
+import { filterSectionsForMarketing, getSidebarConfig } from "../config/company-sidebars";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
@@ -34,7 +35,11 @@ export function Sidebar() {
     companyPrefix: selectedCompany?.issuePrefix ?? null,
   };
 
-  const sections = getSidebarConfig(selectedCompany?.issuePrefix ?? "");
+  // Marketing-role users see only their working sections. Cosmetic — the
+  // server's marketing-role gate is the real enforcement.
+  const { isMarketingOnly } = useBoardAccess();
+  const allSections = getSidebarConfig(selectedCompany?.issuePrefix ?? "");
+  const sections = isMarketingOnly ? filterSectionsForMarketing(allSections) : allSections;
 
   return (
     <aside className="w-60 h-full min-h-0 border-r border-border bg-background flex flex-col">

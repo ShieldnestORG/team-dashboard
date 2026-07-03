@@ -108,6 +108,29 @@ export interface PlatformCounter {
   enabled: boolean;
 }
 
+// Green-light board rows (GET /socials/zernio/greenlight — mirror-backed,
+// read-only). Shape mirrors GreenlightRow in server/src/routes/socials.ts.
+export interface ZernioGreenlightStats {
+  /** null = Zernio didn't report this number — render "not reported", never 0. */
+  triggered: number | null;
+  dmsSent: number | null;
+  linkClicks: number | null;
+}
+
+export interface ZernioGreenlightRow {
+  keyword: string;
+  automationName: string;
+  zernioAccountId: string;
+  /** "@handle" of the connected account, or the raw Zernio id. */
+  accountLabel: string;
+  clickTag: string | null;
+  isActive: boolean;
+  lastSyncedAt: string | null;
+  stats: ZernioGreenlightStats;
+  tone: "green" | "amber" | "red";
+  addonMissing: boolean;
+}
+
 export interface CalendarEvent {
   id: string;
   source: "content" | "cron-projection";
@@ -235,6 +258,16 @@ export const socialsApi = {
     api.get<{ automations: SocialAutomation[] }>(
       `/socials/automations${accountId ? `?accountId=${accountId}` : ""}`,
     ),
+  // Fast mirror-backed read (no Zernio call) — the Content Hub's default.
+  getZernioGreenlight: () =>
+    api.get<{ rows: ZernioGreenlightRow[]; source: string; generatedAt: string }>(
+      "/socials/zernio/greenlight",
+    ),
+  // ONE live Zernio fetch per key + mirror refresh side effect. Explicit
+  // user action only ("Refresh from Zernio now") — rate limits are shared
+  // with Mark's crons and the team's Claude account. Read-only endpoint.
+  refreshZernioAutomations: () =>
+    api.get<{ automations: unknown[]; errors: unknown[] }>("/socials/zernio/automations"),
   syncAutomations: () => api.post<{ upserted: number; skipped: number }>("/socials/automations/sync", {}),
   listPosts: (params?: { accountId?: string; status?: string; limit?: number }) => {
     const q = new URLSearchParams();

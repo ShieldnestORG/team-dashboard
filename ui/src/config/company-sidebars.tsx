@@ -23,6 +23,7 @@ import {
   History,
   Mail,
   MapPin,
+  Megaphone,
   Network,
   Radar,
   Repeat,
@@ -114,7 +115,7 @@ const DEFAULT_SECTIONS: SidebarSection[] = [
     items: [
       { to: "/socials", label: "Socials & Content", icon: Share2 },
       { to: "/funnels", label: "Funnels", icon: Filter },
-      // WAVE-3: content-hub item + marketing-role filter land here
+      { to: "/content-hub", label: "Content Hub", icon: Megaphone },
     ],
   },
   {
@@ -180,4 +181,19 @@ const TOK_SECTIONS: SidebarSection[] = [
 export function getSidebarConfig(issuePrefix: string): SidebarSection[] {
   if (issuePrefix.trim().toUpperCase() === "TOK") return TOK_SECTIONS;
   return DEFAULT_SECTIONS;
+}
+
+/** Section labels a marketing-only user keeps (plus the structural Dashboard/Inbox block Sidebar owns). */
+const MARKETING_SECTION_LABELS = new Set(["Content & Socials"]);
+
+/**
+ * The sidebar a marketing-role user sees: Dashboard + Inbox (structural,
+ * rendered by Sidebar itself) and Content & Socials — nothing else. This
+ * filtering is cosmetic; the server's marketing-role-gate middleware is the
+ * real enforcement (fail-closed path allowlist).
+ */
+export function filterSectionsForMarketing(sections: SidebarSection[]): SidebarSection[] {
+  return sections.filter(
+    (section) => section.kind === "items" && MARKETING_SECTION_LABELS.has(section.label),
+  );
 }

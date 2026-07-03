@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Layout } from "./components/Layout";
@@ -36,6 +36,7 @@ import { PluginSettings } from "./pages/PluginSettings";
 import { PluginPage } from "./pages/PluginPage";
 import { RunTranscriptUxLab } from "./pages/RunTranscriptUxLab";
 import { TwitterDashboard } from "./pages/TwitterDashboard";
+import { ContentHub } from "./pages/content-hub/ContentHub";
 import { SocialsLayout } from "./pages/socials/SocialsLayout";
 import { SocialsContentLayout } from "./pages/socials/SocialsContentLayout";
 import { LaunchMonitor } from "./pages/socials/LaunchMonitor";
@@ -114,6 +115,7 @@ import { InviteLandingPage } from "./pages/InviteLanding";
 import { NotFoundPage } from "./pages/NotFound";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
+import { useBoardAccess } from "./hooks/useBoardAccess";
 import { useDialog } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
 import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-route";
@@ -187,7 +189,7 @@ function CloudAccessGate() {
 
 function boardRoutes() {
   return (
-    <>
+    <Route element={<MarketingRouteGate />}>
       <Route index element={<BoardIndexRedirect />} />
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
@@ -246,6 +248,7 @@ function boardRoutes() {
         <Route path="auto-reply" element={<AutoReply />} />
         <Route path="launch-monitor" element={<LaunchMonitor />} />
       </Route>
+      <Route path="content-hub" element={<ContentHub />} />
       <Route path="twitter" element={<Navigate to="/socials/twitter" replace />} />
       <Route path="discord" element={<Navigate to="/socials/discord" replace />} />
       <Route path="tx-ecosystem" element={<TokProductRoute page="tx-ecosystem" />} />
@@ -310,7 +313,50 @@ function boardRoutes() {
       <Route path="tests/ux/runs" element={<RunTranscriptUxLab />} />
       <Route path=":pluginRoutePath" element={<PluginPage />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
-    </>
+    </Route>
+  );
+}
+
+/**
+ * Board route roots a marketing-only user can open. Mirrors the server's
+ * marketing-role-gate allowlist (server/src/middleware/marketing-role-gate.ts)
+ * mapped onto UI routes. This client-side gate is a courtesy — it swaps the
+ * page for a plain "no access" card instead of a wall of failed requests.
+ * The middleware is the real enforcement.
+ */
+const MARKETING_ROUTE_ROOTS = new Set(["dashboard", "inbox", "socials", "content-hub"]);
+
+function MarketingRouteGate() {
+  const { isMarketingOnly } = useBoardAccess();
+  const location = useLocation();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+
+  if (!isMarketingOnly) return <Outlet />;
+
+  const segments = location.pathname.split("/").filter(Boolean);
+  const relative =
+    companyPrefix && segments[0]?.toUpperCase() === companyPrefix.toUpperCase()
+      ? segments.slice(1)
+      : segments;
+  // The bare board index redirects to the dashboard, which is allowed.
+  const root = (relative[0] ?? "dashboard").toLowerCase();
+  if (MARKETING_ROUTE_ROOTS.has(root)) return <Outlet />;
+
+  return (
+    <div className="mx-auto max-w-xl py-10">
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h1 className="text-xl font-semibold">You don't have access to this page</h1>
+        <p className="mt-2 text-base text-muted-foreground">
+          Your account is set up for marketing work — kits, socials, and voice snippets. Ask Mark
+          if you need more.
+        </p>
+        <div className="mt-4">
+          <Button asChild>
+            <Link to="/content-hub">Go to the Content Hub</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

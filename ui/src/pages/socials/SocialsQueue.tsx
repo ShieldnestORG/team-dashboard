@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { socialsApi, type SocialPost } from "../../api/socials";
-import { accessApi } from "../../api/access";
+import { useBoardAccess } from "../../hooks/useBoardAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,14 +39,9 @@ export function SocialsQueue() {
     refetchInterval: 5000,
   });
 
-  // Instance-admin signal (GET /cli-auth/me → isInstanceAdmin). Returns 401 for
-  // non-board sessions; treat any failure as "not admin" so Approve stays hidden.
-  const { data: access } = useQuery({
-    queryKey: ["board-access"],
-    queryFn: () => accessApi.getBoardAccess(),
-    retry: false,
-  });
-  const isAdmin = access?.isInstanceAdmin ?? false;
+  // Instance-admin signal — any /cli-auth/me failure reads as "not admin"
+  // inside useBoardAccess, so Approve stays hidden.
+  const { isInstanceAdmin: isAdmin } = useBoardAccess();
 
   const cancelMut = useMutation({
     mutationFn: (id: string) => socialsApi.cancelPost(id),
