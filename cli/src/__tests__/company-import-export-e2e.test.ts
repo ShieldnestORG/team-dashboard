@@ -217,7 +217,12 @@ async function waitForServer(
 
     try {
       const res = await fetch(`${apiBase}/api/health`);
-      if (res.ok) return;
+      if (res.ok) {
+        // Require the app's health shape, not just any 200 — a foreign
+        // process that stole the pre-allocated port could answer here.
+        const body = (await res.json().catch(() => null)) as { status?: string } | null;
+        if (body?.status === "ok") return;
+      }
     } catch {
       // Server is still starting.
     }
@@ -245,30 +250,48 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
 
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-company-cli-db-");
 
-    const port = await getAvailablePort();
-    writeTestConfig(configPath, tempRoot, port, tempDb.connectionString);
-    apiBase = `http://127.0.0.1:${port}`;
-
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-    const output = { stdout: [] as string[], stderr: [] as string[] };
-    const child = spawn(
-      "pnpm",
-      ["paperclipai", "run", "--config", configPath],
-      {
-        cwd: repoRoot,
-        env: createServerEnv(configPath, port, tempDb.connectionString),
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    serverProcess = child;
-    child.stdout?.on("data", (chunk) => {
-      output.stdout.push(String(chunk));
-    });
-    child.stderr?.on("data", (chunk) => {
-      output.stderr.push(String(chunk));
-    });
 
-    await waitForServer(apiBase, child, output);
+    // The pre-allocated port can be stolen before the server binds it (the
+    // macOS port-steal race) — if the child dies on a bind conflict before
+    // the healthcheck passes, respawn on a freshly allocated port.
+    const maxPortAttempts = 3;
+    for (let attempt = 1; ; attempt++) {
+      const port = await getAvailablePort();
+      writeTestConfig(configPath, tempRoot, port, tempDb.connectionString);
+      apiBase = `http://127.0.0.1:${port}`;
+
+      const output = { stdout: [] as string[], stderr: [] as string[] };
+      const child = spawn(
+        "pnpm",
+        ["paperclipai", "run", "--config", configPath],
+        {
+          cwd: repoRoot,
+          env: createServerEnv(configPath, port, tempDb.connectionString),
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      serverProcess = child;
+      child.stdout?.on("data", (chunk) => {
+        output.stdout.push(String(chunk));
+      });
+      child.stderr?.on("data", (chunk) => {
+        output.stderr.push(String(chunk));
+      });
+
+      try {
+        await waitForServer(apiBase, child, output);
+        break;
+      } catch (error) {
+        await stopServerProcess(child);
+        serverProcess = null;
+        const combined = output.stdout.join("") + output.stderr.join("");
+        if (attempt < maxPortAttempts && /EADDRINUSE|address already in use/i.test(combined)) {
+          continue;
+        }
+        throw error;
+      }
+    }
   }, 60_000);
 
   afterAll(async () => {

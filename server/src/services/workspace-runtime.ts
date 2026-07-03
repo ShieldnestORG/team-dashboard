@@ -1123,99 +1123,143 @@ async function startLocalRuntimeService(input: {
   if (!command) throw new Error(`Runtime service "${serviceName}" is missing command`);
   const serviceCwdTemplate = asString(input.service.cwd, ".");
   const portConfig = parseObject(input.service.port);
-  const port = asString(portConfig.type, "") === "auto" ? await allocatePort() : null;
+  const autoPort = asString(portConfig.type, "") === "auto";
   const envConfig = parseObject(input.service.env);
-  const templateData = buildTemplateData({
-    workspace: input.workspace,
-    agent: input.agent,
-    issue: input.issue,
-    adapterEnv: input.adapterEnv,
-    port,
-  });
-  const serviceCwd = resolveConfiguredPath(renderTemplate(serviceCwdTemplate, templateData), input.workspace.cwd);
-  const env: Record<string, string> = {
-    ...sanitizeRuntimeServiceBaseEnv(process.env),
-    ...input.adapterEnv,
-  } as Record<string, string>;
-  for (const [key, value] of Object.entries(envConfig)) {
-    if (typeof value === "string") {
-      env[key] = renderTemplate(value, templateData);
-    }
-  }
-  if (port) {
-    const portEnvKey = asString(portConfig.envKey, "PORT");
-    env[portEnvKey] = String(port);
-  }
-  const shell = process.env.SHELL?.trim() || "/bin/sh";
-  const child = spawn(shell, ["-lc", command], {
-    cwd: serviceCwd,
-    env,
-    detached: process.platform !== "win32",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let stderrExcerpt = "";
-  let stdoutExcerpt = "";
-  child.stdout?.on("data", async (chunk) => {
-    const text = String(chunk);
-    stdoutExcerpt = (stdoutExcerpt + text).slice(-4096);
-    if (input.onLog) await input.onLog("stdout", `[service:${serviceName}] ${text}`);
-  });
-  child.stderr?.on("data", async (chunk) => {
-    const text = String(chunk);
-    stderrExcerpt = (stderrExcerpt + text).slice(-4096);
-    if (input.onLog) await input.onLog("stderr", `[service:${serviceName}] ${text}`);
-  });
-
   const expose = parseObject(input.service.expose);
   const readiness = parseObject(input.service.readiness);
-  const urlTemplate =
-    asString(expose.urlTemplate, "") ||
-    asString(readiness.urlTemplate, "");
-  const url = urlTemplate ? renderTemplate(urlTemplate, templateData) : null;
 
-  try {
-    await waitForReadiness({ service: input.service, url });
-  } catch (err) {
-    terminateChildProcess(child);
-    throw new Error(
-      `Failed to start runtime service "${serviceName}": ${err instanceof Error ? err.message : String(err)}${stderrExcerpt ? ` | stderr: ${stderrExcerpt.trim()}` : ""}`,
-    );
+  // allocatePort() hands out a port by binding and releasing it, so another
+  // process can grab it before the service command binds it itself (the
+  // macOS port-steal race). The PORT env contract with service commands
+  // rules out having the child pick its own port, so instead: when the
+  // child dies with a bind conflict before becoming ready, stop waiting
+  // out the readiness timeout and respawn on a freshly allocated port.
+  const maxPortAttempts = 3;
+  for (let attempt = 1; ; attempt++) {
+    const port = autoPort ? await allocatePort() : null;
+    const templateData = buildTemplateData({
+      workspace: input.workspace,
+      agent: input.agent,
+      issue: input.issue,
+      adapterEnv: input.adapterEnv,
+      port,
+    });
+    const serviceCwd = resolveConfiguredPath(renderTemplate(serviceCwdTemplate, templateData), input.workspace.cwd);
+    const env: Record<string, string> = {
+      ...sanitizeRuntimeServiceBaseEnv(process.env),
+      ...input.adapterEnv,
+    } as Record<string, string>;
+    for (const [key, value] of Object.entries(envConfig)) {
+      if (typeof value === "string") {
+        env[key] = renderTemplate(value, templateData);
+      }
+    }
+    if (port) {
+      const portEnvKey = asString(portConfig.envKey, "PORT");
+      env[portEnvKey] = String(port);
+    }
+    const shell = process.env.SHELL?.trim() || "/bin/sh";
+    const spawnedAt = Date.now();
+    const child = spawn(shell, ["-lc", command], {
+      cwd: serviceCwd,
+      env,
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderrExcerpt = "";
+    let stdoutExcerpt = "";
+    child.stdout?.on("data", async (chunk) => {
+      const text = String(chunk);
+      stdoutExcerpt = (stdoutExcerpt + text).slice(-4096);
+      if (input.onLog) await input.onLog("stdout", `[service:${serviceName}] ${text}`);
+    });
+    child.stderr?.on("data", async (chunk) => {
+      const text = String(chunk);
+      stderrExcerpt = (stderrExcerpt + text).slice(-4096);
+      if (input.onLog) await input.onLog("stderr", `[service:${serviceName}] ${text}`);
+    });
+
+    // 'close' (not 'exit') so stdio is fully drained before the excerpt is
+    // inspected. A shell that exits 0 (a daemonizing command) is left to
+    // the readiness probe exactly as before.
+    let portConflict = false;
+    const bindConflictAbort = new Promise<never>((_, reject) => {
+      child.once("close", (code) => {
+        if (code !== 0 && /EADDRINUSE|address already in use/i.test(stderrExcerpt + stdoutExcerpt)) {
+          portConflict = true;
+          reject(new Error(`service exited with code ${code}: port ${port} was already in use`));
+        }
+      });
+    });
+
+    const urlTemplate =
+      asString(expose.urlTemplate, "") ||
+      asString(readiness.urlTemplate, "");
+    const url = urlTemplate ? renderTemplate(urlTemplate, templateData) : null;
+
+    try {
+      await Promise.race([
+        waitForReadiness({ service: input.service, url }),
+        bindConflictAbort,
+      ]);
+      // The thief holding a stolen port can answer the readiness probe
+      // before the child has even finished crashing on EADDRINUSE. Don't
+      // trust a readiness that went green faster than the child could
+      // fail-fast — hold until the startup window has passed, then re-check.
+      const settleMs = 500 - (Date.now() - spawnedAt);
+      if (settleMs > 0) await delay(settleMs);
+      if (portConflict) {
+        throw new Error(`service exited during startup: port ${port} was already in use`);
+      }
+    } catch (err) {
+      terminateChildProcess(child);
+      if (portConflict && autoPort && attempt < maxPortAttempts) {
+        logger.warn(
+          { serviceName, port, attempt },
+          "Runtime service port was stolen before the service could bind — retrying on a fresh port",
+        );
+        continue;
+      }
+      throw new Error(
+        `Failed to start runtime service "${serviceName}": ${err instanceof Error ? err.message : String(err)}${stderrExcerpt ? ` | stderr: ${stderrExcerpt.trim()}` : ""}`,
+      );
+    }
+
+    const envFingerprint = createHash("sha256").update(stableStringify(envConfig)).digest("hex");
+    return {
+      id: randomUUID(),
+      companyId: input.agent.companyId,
+      projectId: input.workspace.projectId,
+      projectWorkspaceId: input.workspace.workspaceId,
+      executionWorkspaceId: input.executionWorkspaceId ?? null,
+      issueId: input.issue?.id ?? null,
+      serviceName,
+      status: "running",
+      lifecycle,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      reuseKey: input.reuseKey,
+      command,
+      cwd: serviceCwd,
+      port,
+      url,
+      provider: "local_process",
+      providerRef: child.pid ? String(child.pid) : null,
+      ownerAgentId: input.agent.id,
+      startedByRunId: input.runId,
+      lastUsedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      stoppedAt: null,
+      stopPolicy: parseObject(input.service.stopPolicy),
+      healthStatus: "healthy",
+      reused: false,
+      db: input.db,
+      child,
+      leaseRunIds: new Set([input.runId]),
+      idleTimer: null,
+      envFingerprint,
+    };
   }
-
-  const envFingerprint = createHash("sha256").update(stableStringify(envConfig)).digest("hex");
-  return {
-    id: randomUUID(),
-    companyId: input.agent.companyId,
-    projectId: input.workspace.projectId,
-    projectWorkspaceId: input.workspace.workspaceId,
-    executionWorkspaceId: input.executionWorkspaceId ?? null,
-    issueId: input.issue?.id ?? null,
-    serviceName,
-    status: "running",
-    lifecycle,
-    scopeType: input.scopeType,
-    scopeId: input.scopeId,
-    reuseKey: input.reuseKey,
-    command,
-    cwd: serviceCwd,
-    port,
-    url,
-    provider: "local_process",
-    providerRef: child.pid ? String(child.pid) : null,
-    ownerAgentId: input.agent.id,
-    startedByRunId: input.runId,
-    lastUsedAt: new Date().toISOString(),
-    startedAt: new Date().toISOString(),
-    stoppedAt: null,
-    stopPolicy: parseObject(input.service.stopPolicy),
-    healthStatus: "healthy",
-    reused: false,
-    db: input.db,
-    child,
-    leaseRunIds: new Set([input.runId]),
-    idleTimer: null,
-    envFingerprint,
-  };
 }
 
 function scheduleIdleStop(record: RuntimeServiceRecord) {
