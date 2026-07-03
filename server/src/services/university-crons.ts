@@ -30,7 +30,7 @@
 // cron-registry (cron-registry.ts); started from app.ts:startUniversityCrons.
 // ---------------------------------------------------------------------------
 
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   universityMembers,
@@ -77,6 +77,15 @@ const REENGAGE_TIERS: ReadonlyArray<{
 ];
 const REENGAGE_KINDS: CreditscoreEmailKind[] = REENGAGE_TIERS.map((t) => t.kind);
 
+// Per-touch dunning dedup markers written to university_email_log. LOG-ONLY:
+// never passed to sendCreditscoreEmail. The dunning email actually sent keeps
+// kind 'university_past_due' (+ touch) so the existing storefront template
+// renders it; these markers exist only so the (email, kind) log-dedup can tell
+// the day-3 touch from the day-7 touch. Kept OUT of CreditscoreEmailKind (the
+// team-dashboard → storefront kind contract) on purpose — they are never sent.
+// See the dunning section below.
+type DunningLogMarker = "university_past_due_d3" | "university_past_due_d7";
+
 // Records one lifecycle-email send in university_email_log for frequency-cap /
 // dedup lookups. Stores the lowercased email. Self-contained failure handling:
 // the send already happened, so a log-write failure is logged non-fatally
@@ -84,7 +93,7 @@ const REENGAGE_KINDS: CreditscoreEmailKind[] = REENGAGE_TIERS.map((t) => t.kind)
 async function logUniversityEmail(
   db: Db,
   email: string,
-  kind: CreditscoreEmailKind,
+  kind: CreditscoreEmailKind | DunningLogMarker,
   // ESP messageId returned by the storefront send route (null when the
   // storefront didn't report one) — joins engagement events to this send.
   messageId: string | null = null,
@@ -871,32 +880,57 @@ export async function runUniversityReengage(
 //             university_payment_failed_final warning, fired before Stripe's
 //             own auto-cancel (typically ~the end of the smart-retry window).
 //
-// We window on updated_at (mirroring winback), selecting subscriptions still in
-// status='past_due'. A member who fixes their card transitions OUT of past_due
-// (handler flips status + re-stamps updated_at), so they naturally fall out of
-// the window and are never nudged again. Caveat: updated_at is the LAST status
-// write, so if some other event re-stamps it mid-dunning the window resets — an
-// accepted approximation consistent with the existing winback cron, and erring
-// toward fewer (not duplicate) nudges.
+// SELECTION — a THRESHOLD, not a 1-day window. We select subscriptions still in
+// status='past_due' whose updated_at is at least `dayMark` days old
+// (updated_at <= now - dayMark days). The old [now-(N+1)d, now-Nd) window was
+// broken: handleUniversitySubscriptionUpdated re-stamps updated_at on EVERY
+// Stripe smart-retry event, so a member could slide out of a 1-day window
+// between daily sweeps and silently never be nudged. With a threshold the
+// member stays selected every day until they leave past_due, and the email-log
+// dedup below (NOT the window) guarantees exactly-once per touch.
 //
-// Idempotency across the daily run is the 1-DAY window: a member sits in the
-// [now-(N+1)d, now-Nd) bucket for exactly one daily fire.
+// A member who fixes their card transitions OUT of past_due (handler flips
+// status), so they drop out of the status filter and are never nudged again —
+// recovery cancels the ladder naturally.
+//
+// DEDUP — per-touch, log-backed, mirroring the streak/reengage siblings'
+// (email, kind) log dedup (and the (email, kind, sent_at) index built for it).
+// Each touch writes a distinct LOG-ONLY marker kind (university_past_due_d3 /
+// _d7) to university_email_log; before sending we skip any member who already
+// has that marker inside the horizon. The marker is log-only: the email SENT
+// stays kind=university_past_due (+ touch) so the existing storefront template
+// renders it — we introduce no new storefront kinds. (The log has no data-JSON
+// column, and analytics groups the log by `kind`, so distinct kinds — not a
+// data field — are what the existing query patterns support.)
+//
+// HORIZON — 30 days, mirroring reengage's belt-and-suspenders log lookback. An
+// episode that recovers and later re-lapses re-stamps updated_at; a marker from
+// a PRIOR episode older than 30d must NOT block the new episode's touch, so we
+// only count markers newer than now-30d. A past_due episode resolves (recovery
+// or Stripe auto-cancel) well within 30d, so within an episode each touch still
+// fires exactly once; a re-lapse INSIDE 30d suppresses a near-duplicate nudge —
+// erring toward fewer sends, consistent with reengage.
 // ---------------------------------------------------------------------------
 
 /**
  * Shared past_due dunning runner. Selects past_due subscriptions whose
- * updated_at lands in [now-(dayMark+1)d, now-dayMark d) and fires a
- * university_past_due email at the given touch level. When `final` is set
- * (day-7), ALSO fires the university_payment_failed_final warning. Each send is
- * independently non-fatal. Returns the count of past_due nudges sent.
+ * updated_at is at least `dayMark` days old and fires a university_past_due
+ * email at the given touch level, deduped per-touch against university_email_log
+ * (the `logMarker` kind, 30-day horizon). When `final` is set (day-7), ALSO
+ * fires the university_payment_failed_final warning. Each send is logged (with
+ * its messageId, for open/click joins) and independently non-fatal. Returns the
+ * count of past_due nudges sent.
  */
 async function runUniversityDunning(
   db: Db,
-  opts: { dayMark: number; touch: number; final: boolean },
+  opts: {
+    dayMark: number;
+    touch: number;
+    final: boolean;
+    logMarker: DunningLogMarker;
+  },
 ): Promise<number> {
-  const { dayMark, touch, final } = opts;
-  const olderThan = `now() - interval '${dayMark + 1} days'`;
-  const newerThan = `now() - interval '${dayMark} days'`;
+  const { dayMark, touch, final, logMarker } = opts;
 
   const due = await db
     .select({
@@ -907,27 +941,57 @@ async function runUniversityDunning(
     .where(
       and(
         eq(universitySubscriptions.status, "past_due"),
-        gte(universitySubscriptions.updatedAt, sql.raw(olderThan)),
-        lt(universitySubscriptions.updatedAt, sql.raw(newerThan)),
+        lte(
+          universitySubscriptions.updatedAt,
+          sql`now() - interval '${sql.raw(String(dayMark))} days'`,
+        ),
       ),
     );
+
+  // Per-touch, log-backed dedup: skip anyone already sent THIS touch inside the
+  // 30-day horizon (see header). Emails lowercased to match the log's stored
+  // form. Same shape as the reengage/streak dedup queries.
+  const emails = due
+    .map((s) => s.email?.toLowerCase())
+    .filter((e): e is string => !!e);
+
+  const alreadySent = new Set<string>();
+  if (emails.length > 0) {
+    const recent = await db
+      .select({ email: universityEmailLog.email })
+      .from(universityEmailLog)
+      .where(
+        and(
+          eq(universityEmailLog.kind, logMarker),
+          gte(universityEmailLog.sentAt, sql`now() - interval '30 days'`),
+          sql`LOWER(${universityEmailLog.email}) = ANY(${emails})`,
+        ),
+      );
+    for (const r of recent) alreadySent.add(r.email.toLowerCase());
+  }
 
   let sent = 0;
   for (const s of due) {
     if (!s.email) continue;
+    const email = s.email;
+    if (alreadySent.has(email.toLowerCase())) continue; // already sent this touch
+
     try {
-      await sendCreditscoreEmail({
+      const messageId = await sendCreditscoreEmail({
         kind: "university_past_due",
-        to: s.email,
+        to: email,
         data: {
           manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
           touch,
         },
       });
+      // Log the per-touch marker (with the real messageId for open/click joins)
+      // so this touch dedups on re-run and the analytics rollup sees the send.
+      await logUniversityEmail(db, email, logMarker, messageId ?? null);
       sent += 1;
     } catch (err) {
       logger.error(
-        { err, email: s.email, kind: "university_past_due", touch },
+        { err, email, kind: "university_past_due", touch },
         `university:dunning-d${dayMark} — past_due send failed (non-fatal)`,
       );
     }
@@ -936,16 +1000,22 @@ async function runUniversityDunning(
       // Last warning before Stripe auto-cancels. Transactional storefront-side
       // (NOT suppressed) — a lapsing paying member must receive it.
       try {
-        await sendCreditscoreEmail({
+        const finalMessageId = await sendCreditscoreEmail({
           kind: "university_payment_failed_final",
-          to: s.email,
+          to: email,
           data: {
             manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
           },
         });
+        await logUniversityEmail(
+          db,
+          email,
+          "university_payment_failed_final",
+          finalMessageId ?? null,
+        );
       } catch (err) {
         logger.error(
-          { err, email: s.email, kind: "university_payment_failed_final" },
+          { err, email, kind: "university_payment_failed_final" },
           `university:dunning-d${dayMark} — final-warning send failed (non-fatal)`,
         );
       }
@@ -961,12 +1031,22 @@ async function runUniversityDunning(
 
 /** Day-3 past_due nudge (touch=2). */
 export async function runUniversityDunningD3(db: Db): Promise<number> {
-  return runUniversityDunning(db, { dayMark: 3, touch: 2, final: false });
+  return runUniversityDunning(db, {
+    dayMark: 3,
+    touch: 2,
+    final: false,
+    logMarker: "university_past_due_d3",
+  });
 }
 
 /** Day-7 past_due nudge (touch=3) + final pre-cancellation warning. */
 export async function runUniversityDunningD7(db: Db): Promise<number> {
-  return runUniversityDunning(db, { dayMark: 7, touch: 3, final: true });
+  return runUniversityDunning(db, {
+    dayMark: 7,
+    touch: 3,
+    final: true,
+    logMarker: "university_past_due_d7",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1012,8 +1092,10 @@ export function startUniversityCrons(db: Db): void {
   });
 
   // Dunning — day-3 (touch=2) and day-7 (touch=3 + final warning) past_due
-  // nudges. Daily sweep; the 1-day updated_at window is the idempotency. Slotted
-  // after the 14:xx lifecycle jobs (reengage is :45) to avoid collisions.
+  // nudges. Daily sweep; selection is an updated_at THRESHOLD (>= dayMark days
+  // past_due) and idempotency is per-touch email-log dedup (NOT a 1-day window
+  // — smart-retry re-stamps updated_at). Slotted after the 14:xx lifecycle jobs
+  // (reengage is :45) to avoid collisions.
   registerCronJob({
     jobName: "university:dunning-d3",
     schedule: "0 15 * * *", // daily 15:00 UTC
