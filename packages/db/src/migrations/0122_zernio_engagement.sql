@@ -163,6 +163,27 @@ CREATE INDEX IF NOT EXISTS zernio_analytics_snapshots_lookup_idx
   ON zernio_analytics_snapshots (metric, zernio_account_id, fetched_at);
 
 -- 5b) Per-post analytics, flattened per platform, correlated to social_posts.
+-- The live DB may carry an ORPHANED pre-engagement zernio_post_analytics (created
+-- outside this journal by the superseded x-accounts-optimize branch; verified empty
+-- + referenced by no code on 2026-07-02). Its presence makes the CREATE TABLE below
+-- a no-op and the external_post_id index fail — supersede it, but refuse if data
+-- has appeared since the check.
+DO $$
+BEGIN
+  IF to_regclass('public.zernio_post_analytics') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'zernio_post_analytics'
+         AND column_name = 'external_post_id'
+     ) THEN
+    IF EXISTS (SELECT 1 FROM public.zernio_post_analytics LIMIT 1) THEN
+      RAISE EXCEPTION 'zernio_post_analytics has the pre-0122 shape AND rows — reconcile manually before applying 0122';
+    END IF;
+    DROP TABLE public.zernio_post_analytics;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS zernio_post_analytics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   external_post_id TEXT NOT NULL,              -- analytics list `_id`
