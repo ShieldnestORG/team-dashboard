@@ -79,15 +79,6 @@ const LEADS_FETCH_LIMIT = 100;
 const LEADS_TABLE_LIMIT = 10;
 const EVENTS_LIMIT = 10;
 
-function statusVariant(
-  status: string,
-): "default" | "secondary" | "outline" | "destructive" {
-  const s = status.toLowerCase();
-  if (s === "active") return "default";
-  if (s === "paused" || s === "dormant") return "secondary";
-  return "outline";
-}
-
 // Strategy-catalog status ordering, most-active first.
 const CATALOG_STATUS_ORDER = [
   "live",
@@ -1501,9 +1492,7 @@ function CatalogSection({
         {grouped.map(([status, entries]) => (
           <div key={status}>
             <div className="mb-2 flex items-center gap-2">
-              <Badge variant={statusVariant(status)}>
-                {CATALOG_STATUS_LABELS[status] ?? status}
-              </Badge>
+              <StatusBadge status={status} label={CATALOG_STATUS_LABELS[status] ?? status} />
               <span className="text-[11px] text-muted-foreground">
                 {entries.length}
               </span>

@@ -114,7 +114,7 @@ describe("KitCard clickTag conflict (KIT 1)", () => {
 });
 
 describe("KitCard send to compose", () => {
-  it("navigates to Socials Compose with the kit's raw text as a reference panel, plus parsed account handle", async () => {
+  it("navigates to Socials Compose with the kit's raw text as a reference panel, plus parsed account handle and platform", async () => {
     navigateMock.mockClear();
     pushToastMock.mockClear();
     const kit1 = KITS.find((kit) => kit.id === 1)!;
@@ -127,6 +127,7 @@ describe("KitCard send to compose", () => {
         prefillKitTitle: kit1.title,
         prefillKitRaw: kit1.raw,
         prefillAccountHandle: "coherencedaddy",
+        prefillAccountPlatform: "instagram",
       },
     });
     expect(pushToastMock).toHaveBeenCalledWith(

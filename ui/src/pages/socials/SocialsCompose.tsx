@@ -35,6 +35,8 @@ interface ComposeLocationState {
   prefillKitTitle?: string;
   prefillKitRaw?: string;
   prefillAccountHandle?: string;
+  /** Normalized platform key (see normalizePlatform) parsed from the kit's account line, e.g. "instagram". */
+  prefillAccountPlatform?: string;
 }
 
 
@@ -80,19 +82,32 @@ export function SocialsCompose() {
   const [kitDetailsOpen, setKitDetailsOpen] = useState(Boolean(state?.prefillKitRaw));
 
   // Pre-select the kit's account once accounts load — a ref (not state) so a
-  // later manual deselect doesn't get silently re-applied on refetch.
+  // later manual deselect doesn't get silently re-applied on refetch. Match on
+  // platform + handle, not handle alone: handles aren't unique across
+  // platforms (an IG handle can coincidentally collide with an unrelated
+  // Bluesky handle) and today's only composable platform (Bluesky) uses
+  // full-domain handles that would never equal an IG handle anyway.
   const didPrefillAccount = useRef(false);
   useEffect(() => {
     if (didPrefillAccount.current) return;
     if (!state?.prefillAccountHandle || composableAccounts.length === 0) return;
     const match = composableAccounts.find(
-      (a) => a.handle.toLowerCase() === state.prefillAccountHandle!.toLowerCase(),
+      (a) =>
+        a.handle.toLowerCase() === state.prefillAccountHandle!.toLowerCase() &&
+        (!state.prefillAccountPlatform || normalizePlatform(a.platform) === state.prefillAccountPlatform),
     );
     didPrefillAccount.current = true;
     if (match) {
       setSelectedIds((prev) => new Set(prev).add(match.id));
     }
-  }, [state?.prefillAccountHandle, composableAccounts]);
+  }, [state?.prefillAccountHandle, state?.prefillAccountPlatform, composableAccounts]);
+
+  // The kit's target platform has no text adapter yet (e.g. Instagram) — say
+  // so instead of silently failing to pre-select anything.
+  const prefillPlatformUnsupported =
+    state?.prefillAccountPlatform && !TEXT_PLATFORMS.has(state.prefillAccountPlatform)
+      ? (PLATFORM_META[state.prefillAccountPlatform]?.label ?? state.prefillAccountPlatform)
+      : null;
 
   function toggleAccount(id: string) {
     setSelectedIds((prev) => {
@@ -203,6 +218,12 @@ export function SocialsCompose() {
             <CardTitle className="text-base">Schedule a post</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {prefillPlatformUnsupported && (
+              <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/20 dark:text-amber-200">
+                This kit targets {prefillPlatformUnsupported}, which Compose can't post to yet —
+                pick an account below to send this caption somewhere Compose supports.
+              </div>
+            )}
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground">Accounts</div>
               {groupedAccounts.length === 0 ? (
