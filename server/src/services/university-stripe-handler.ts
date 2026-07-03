@@ -364,8 +364,8 @@ export async function handleUniversityCheckout(
         html: `<div style="font-family:system-ui,sans-serif;font-size:15px;color:#111">
           <h2 style="margin:0 0 12px">💸 New paying member</h2>
           <table style="border-collapse:collapse">
-            <tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td><strong>${email}</strong></td></tr>
-            <tr><td style="padding:2px 12px 2px 0;color:#666">Name</td><td>${displayName ?? "—"}</td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td><strong>${escapeHtml(email)}</strong></td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Name</td><td>${displayName ? escapeHtml(displayName) : "—"}</td></tr>
             <tr><td style="padding:2px 12px 2px 0;color:#666">Plan</td><td>${planLabel(plan)}</td></tr>
             <tr><td style="padding:2px 12px 2px 0;color:#666">When</td><td>${now.toISOString()}</td></tr>
           </table>
@@ -925,4 +925,15 @@ export async function handleVoiceAddonSubscriptionDeleted(
     }
   }
   return { matched: updated.length };
+}
+
+// Escape untrusted values (member displayName/email) before interpolating them
+// into owner-alert email HTML. Matches the local per-file escapeHtml convention
+// used across services (partner-reports.ts, partner-deployment.ts).
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

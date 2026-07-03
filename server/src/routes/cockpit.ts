@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { assertCompanyAccess } from "./authz.js";
+import { notFound } from "../errors.js";
 import {
   getBrevoAccount,
   getBrevoEmailStats,
@@ -11,6 +12,23 @@ import { revenueSummary, listMembers, type CockpitMember } from "../services/coc
 
 // The Brevo "Founding" contact list (free-tier signups).
 const FOUNDING_LIST_ID = 3;
+
+// The cockpit reads University-wide data (all university_subscriptions/members
+// + the Brevo founding list) that is NOT scoped by companyId, so it must be
+// pinned to the Coherence Daddy / team-dashboard company. Without this, a board
+// user scoped to a DIFFERENT company passes assertCompanyAccess for their OWN
+// companyId yet still receives CD University member PII. Matches the module-level
+// TEAM_DASHBOARD_COMPANY_ID convention used by portal.ts / watchtower-admin.ts.
+const TEAM_DASHBOARD_COMPANY_ID =
+  process.env.TEAM_DASHBOARD_COMPANY_ID ||
+  "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
+
+// Reject any companyId other than the CD company with a 404 (do not confirm the
+// cockpit exists for other tenants). Call AFTER assertCompanyAccess so the auth
+// check still runs first.
+function assertCockpitCompany(companyId: string) {
+  if (companyId !== TEAM_DASHBOARD_COMPANY_ID) throw notFound();
+}
 
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
@@ -23,6 +41,7 @@ export function cockpitRoutes(db: Db) {
   router.get("/companies/:companyId/cockpit/email-health", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    assertCockpitCompany(companyId);
 
     const [account, stats, list] = await Promise.all([
       getBrevoAccount(),
@@ -59,6 +78,7 @@ export function cockpitRoutes(db: Db) {
   router.get("/companies/:companyId/cockpit/revenue", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    assertCockpitCompany(companyId);
 
     const summary = await revenueSummary(db);
     res.json(summary);
@@ -68,6 +88,7 @@ export function cockpitRoutes(db: Db) {
   router.get("/companies/:companyId/cockpit/members", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    assertCockpitCompany(companyId);
 
     const q = (req.query.q as string | undefined)?.trim() || undefined;
 

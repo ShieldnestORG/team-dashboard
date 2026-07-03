@@ -1075,8 +1075,12 @@ export async function sendTransactional(
 
   try {
     // Brevo-first; falls back to Proton SMTP if Brevo is unconfigured or fails.
-    await sendMailBrevoFirst({ from, to, bcc, subject, html }, transport);
-    logger.info({ template, to }, "email-templates: sent");
+    const sent = await sendMailBrevoFirst({ from, to, bcc, subject, html }, transport);
+    if (sent) {
+      logger.info({ template, to }, "email-templates: sent");
+    } else {
+      logger.warn({ template, to }, "email-templates: send dropped (Brevo unconfigured/failed and no SMTP fallback)");
+    }
   } catch (err) {
     logger.error({ err, template, to }, "email-templates: send failed");
   }
