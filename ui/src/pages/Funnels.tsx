@@ -688,7 +688,7 @@ function FunnelLibraryRow({
                 <Button
                   size="icon-xs"
                   variant="ghost"
-                  title="Arm on Zernio"
+                  title="Turn on"
                   disabled={anyPending}
                   onClick={() => setConfirmArm(true)}
                 >
@@ -723,7 +723,7 @@ function FunnelLibraryRow({
       <AlertDialog open={confirmArm} onOpenChange={setConfirmArm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Arm "{funnel.name}" on Zernio?</AlertDialogTitle>
+            <AlertDialogTitle>Turn on "{funnel.name}"?</AlertDialogTitle>
             <AlertDialogDescription>
               This goes live on Instagram immediately — commenting{" "}
               {funnel.keywords.join(" or ")} on @{funnel.accountHandle}'s posts will start
@@ -733,7 +733,7 @@ function FunnelLibraryRow({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => armMut.mutate()} disabled={armMut.isPending}>
-              Arm now
+              Turn on
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

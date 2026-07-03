@@ -156,18 +156,31 @@ describe("canReject", () => {
 });
 
 describe("canArm", () => {
-  it("allows ready + funnelsEnabled -> live", () => {
-    expect(canArm("ready", true)).toEqual({ ok: true });
+  it("allows ready + funnelsEnabled + dmMessage + keywords -> live", () => {
+    expect(canArm("ready", true, "hey! click below", ["ROOM"])).toEqual({ ok: true });
   });
   it("blocks a non-ready status with a plain-English error", () => {
-    const result = canArm("draft", true);
+    const result = canArm("draft", true, "hey!", ["ROOM"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/must be 'ready'/);
   });
   it("blocks arming when the account's funnels gate is off", () => {
-    const result = canArm("ready", false);
+    const result = canArm("ready", false, "hey!", ["ROOM"]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/funnels are disabled/);
+  });
+  it("blocks arming when dmMessage is empty", () => {
+    const result = canArm("ready", true, "   ", ["ROOM"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/DM message/);
+  });
+  it("blocks arming when there is no non-empty keyword", () => {
+    const result = canArm("ready", true, "hey!", []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/keyword/);
+
+    const resultBlank = canArm("ready", true, "hey!", ["  "]);
+    expect(resultBlank.ok).toBe(false);
   });
 });
 

@@ -118,16 +118,31 @@ export function canReject(status: FunnelStatus): boolean {
   return status === "draft" || status === "ready";
 }
 
-/** ready -> live. Requires the account's funnels_enabled gate to be on. */
+/**
+ * ready -> live. Requires the account's funnels_enabled gate to be on, and
+ * requires the funnel to actually be armable (non-empty DM message + at
+ * least one non-empty keyword) — otherwise createZernioCommentAutomation
+ * throws a generic error that would surface as an opaque 500 instead of a
+ * clean 409. Catches the empty-dmMessage/keywords stubs that POST /funnels
+ * (defaults) and the catalog import ('built' rows) can produce.
+ */
 export function canArm(
   status: FunnelStatus,
   funnelsEnabled: boolean,
+  dmMessage: string,
+  keywords: string[],
 ): { ok: true } | { ok: false; error: string } {
   if (status !== "ready") {
     return { ok: false, error: `funnel must be 'ready' to arm (current status: '${status}')` };
   }
   if (!funnelsEnabled) {
     return { ok: false, error: "funnels are disabled for this account — enable funnels first" };
+  }
+  if (!dmMessage.trim()) {
+    return { ok: false, error: "funnel has no DM message set — add one before arming" };
+  }
+  if (!keywords.some((k) => k.trim().length > 0)) {
+    return { ok: false, error: "funnel has no keyword set — add at least one before arming" };
   }
   return { ok: true };
 }
@@ -637,7 +652,12 @@ export async function armFunnel(db: Db, id: string): Promise<Funnel> {
   if (!account?.zernioAccountId) {
     throw new FunnelGuardError(409, `@${funnel.accountHandle} is not connected to Zernio yet`);
   }
-  const guard = canArm(funnel.status as FunnelStatus, account.funnelsEnabled === true);
+  const guard = canArm(
+    funnel.status as FunnelStatus,
+    account.funnelsEnabled === true,
+    funnel.dmMessage,
+    funnel.keywords,
+  );
   if (!guard.ok) throw new FunnelGuardError(409, guard.error);
 
   // Not caught here — a Zernio failure must leave the row 'ready' and
@@ -651,6 +671,12 @@ export async function armFunnel(db: Db, id: string): Promise<Funnel> {
     dmMessage: funnel.dmMessage,
   });
 
+  // Gate the write on status='ready' too (not just id) so two concurrent arm
+  // requests for the same row can't both pass the read-time guard above and
+  // both create a live Zernio automation. Whichever request loses the race
+  // gets a zero-row result here — its freshly-created Zernio automation is
+  // orphaned (not attached to this row), so log it loudly for manual cleanup
+  // rather than silently overwriting the winner's zernioAutomationId.
   const updated = await db
     .update(funnels)
     .set({
@@ -659,9 +685,20 @@ export async function armFunnel(db: Db, id: string): Promise<Funnel> {
       socialAccountId: account.id,
       updatedAt: sql`now()`,
     })
-    .where(eq(funnels.id, id))
+    .where(and(eq(funnels.id, id), eq(funnels.status, "ready")))
     .returning();
-  return updated[0]!;
+  const row = updated[0];
+  if (!row) {
+    logger.error(
+      { funnelId: id, zernioAutomationId: automation.id },
+      "funnel arm: status changed concurrently after the Zernio automation was created — orphaned automation, needs manual cleanup",
+    );
+    throw new FunnelGuardError(
+      409,
+      "funnel was armed by another request — check Zernio for a possible duplicate automation",
+    );
+  }
+  return row;
 }
 
 /**
