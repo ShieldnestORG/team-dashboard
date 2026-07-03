@@ -95,13 +95,29 @@ const PERSONALITIES: Record<string, {
 };
 
 // ---------------------------------------------------------------------------
-// Ollama client
+// LLM client — provider-routed (Ollama or Claude API, per the
+// `contentLlmProvider` instance setting)
 // ---------------------------------------------------------------------------
 
-import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
+import { OLLAMA_MODEL } from "./ollama-client.js";
+import { callLlmGenerate } from "./llm-client.js";
 import { enforceCharLimit, smartTruncate } from "./char-limit.js";
 
-const callOllama = callOllamaGenerate;
+// Adapts the provider-routed generator to the historical (prompt) => text
+// shape this pipeline's char-limit enforcer expects. (Named for the LLM router,
+// not Ollama — the provider is resolved per instance setting.)
+const callLlm = async (prompt: string): Promise<string> =>
+  (await callLlmGenerate(prompt)).text;
+
+/**
+ * Provider-attributed model id for the content_items.model column, e.g.
+ * "claude:claude-sonnet-5" or "ollama:gemma4:31b". Nothing parses this column
+ * (routes/UI only display it), so the provider prefix is display-only metadata
+ * that makes it obvious which side actually served each row.
+ */
+function attributedModel(generated: { provider: string; model: string }): string {
+  return `${generated.provider}:${generated.model}`;
+}
 
 // ---------------------------------------------------------------------------
 // Context fetcher — query intel_reports via pgvector similarity
@@ -292,6 +308,8 @@ interface ProducedText {
   charLimit: number;
   platform: string;
   companyId: string;
+  /** The model that actually served the generation (provider-resolved). */
+  model: string;
 }
 
 export function contentService(db: Db) {
@@ -324,12 +342,13 @@ export function contentService(db: Db) {
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context) + brandBlock;
     const fullPrompt = `${systemPrompt}${feedbackContext}${partnerContext}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
-    const rawGeneratedText = await callOllama(fullPrompt);
+    const generated = await callLlmGenerate(fullPrompt);
+    const rawGeneratedText = generated.text;
 
     const enforced = await enforceCharLimit(
       rawGeneratedText,
       charLimit,
-      callOllama,
+      callLlm,
       (attempt) =>
         `${fullPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The output MUST be ${charLimit} characters or fewer, including spaces, line breaks, and emojis. Count carefully. Output ONLY the post text — no preamble, no quotes, no explanation.`,
       { personalityId: opts.personalityId, contentType: opts.contentType },
@@ -363,11 +382,11 @@ export function contentService(db: Db) {
       generatedText = smartTruncate(generatedText, charLimit);
     }
 
-    return { text: generatedText, charLimit, platform, companyId };
+    return { text: generatedText, charLimit, platform, companyId, model: attributedModel(generated) };
   }
 
   async function generate(opts: GenerateOpts): Promise<GeneratedContent> {
-    const { text: generatedText, charLimit, platform, companyId } = await produceText(opts);
+    const { text: generatedText, charLimit, platform, companyId, model } = await produceText(opts);
 
     const charCount = generatedText.length;
     const withinLimit = charCount <= charLimit;
@@ -375,7 +394,7 @@ export function contentService(db: Db) {
     const metadata: ContentItem["metadata"] = {
       topic: opts.topic,
       contextQuery: opts.contextQuery,
-      model: OLLAMA_MODEL,
+      model,
       charCount,
       charLimit,
       withinLimit,
@@ -393,7 +412,7 @@ export function contentService(db: Db) {
       content: generatedText,
       topic: opts.topic,
       contextQuery: opts.contextQuery ?? null,
-      model: OLLAMA_MODEL,
+      model,
       charCount,
       charLimit,
       reviewStatus: "pending",
@@ -580,11 +599,12 @@ export function contentService(db: Db) {
     const systemPrompt = personality.SYSTEM_PROMPT.replace("{CONTEXT}", context);
     const fullPrompt = `${systemPrompt}\n\n${contentTypePrompt}\n\nTopic: ${opts.topic}`;
 
-    const rawGeneratedText = await callOllama(fullPrompt);
+    const generated = await callLlmGenerate(fullPrompt);
+    const rawGeneratedText = generated.text;
     const generatedText = await enforceCharLimit(
       rawGeneratedText,
       charLimit,
-      callOllama,
+      callLlm,
       (attempt) =>
         `${fullPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The output MUST be ${charLimit} characters or fewer, including spaces, line breaks, and emojis. Count carefully. Output ONLY the post text — no preamble, no quotes, no explanation.`,
       { personalityId: opts.personalityId, contentType: opts.contentType },
@@ -596,7 +616,7 @@ export function contentService(db: Db) {
     const metadata: ContentItem["metadata"] = {
       topic: opts.topic,
       contextQuery: opts.contextQuery,
-      model: OLLAMA_MODEL,
+      model: attributedModel(generated),
       charCount,
       charLimit,
       withinLimit,
@@ -623,7 +643,7 @@ export function contentService(db: Db) {
     }
 
     const beforeLen = row.content.length;
-    const { text: newText, charLimit } = await produceText({
+    const { text: newText, charLimit, model } = await produceText({
       personalityId: row.personalityId,
       contentType: row.contentType,
       topic: row.topic,
@@ -639,7 +659,7 @@ export function contentService(db: Db) {
         content: newText,
         charCount,
         charLimit,
-        model: OLLAMA_MODEL,
+        model,
         // reset review state — this is effectively a new draft
         reviewStatus: "pending",
         reviewComment: null,

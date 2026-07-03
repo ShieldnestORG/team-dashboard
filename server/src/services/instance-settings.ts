@@ -10,6 +10,7 @@ import {
   type PatchInstanceExperimentalSettings,
 } from "@paperclipai/shared";
 import { eq } from "drizzle-orm";
+import { invalidateLlmSettingsCache } from "./llm-client.js";
 
 const DEFAULT_SINGLETON_KEY = "default";
 
@@ -18,10 +19,15 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
   if (parsed.success) {
     return {
       censorUsernameInLogs: parsed.data.censorUsernameInLogs ?? false,
+      contentLlmProvider: parsed.data.contentLlmProvider ?? "ollama",
+      // Empty string clears the override back to the provider default.
+      contentLlmModel: parsed.data.contentLlmModel?.trim() || undefined,
     };
   }
   return {
     censorUsernameInLogs: false,
+    contentLlmProvider: "ollama",
+    contentLlmModel: undefined,
   };
 }
 
@@ -107,6 +113,10 @@ export function instanceSettingsService(db: Db) {
         })
         .where(eq(instanceSettings.id, current.id))
         .returning();
+      // The content-LLM provider/model live in general settings and llm-client
+      // caches them for SETTINGS_CACHE_TTL_MS — bust that cache now so an admin's
+      // flip takes effect on the very next content call, not up to 30s later.
+      invalidateLlmSettingsCache();
       return toInstanceSettings(updated ?? current);
     },
 

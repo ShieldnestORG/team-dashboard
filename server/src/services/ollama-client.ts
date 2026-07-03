@@ -159,7 +159,14 @@ export function getOllamaUsageStats(): OllamaUsageStats {
 // /api/generate — text completion (used by content services)
 // ---------------------------------------------------------------------------
 
-export async function callOllamaGenerate(prompt: string): Promise<string> {
+export interface OllamaGenerateOptions {
+  model?: string;
+}
+
+export async function callOllamaGenerate(
+  prompt: string,
+  opts: OllamaGenerateOptions = {},
+): Promise<string> {
   const start = Date.now();
   let res: Response;
   try {
@@ -167,7 +174,7 @@ export async function callOllamaGenerate(prompt: string): Promise<string> {
       method: "POST",
       headers: ollamaHeaders(),
       body: JSON.stringify({
-        model: OLLAMA_MODEL,
+        model: opts.model || OLLAMA_MODEL,
         prompt,
         stream: false,
       }),

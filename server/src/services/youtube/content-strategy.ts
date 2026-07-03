@@ -11,7 +11,7 @@
 import type { Db } from "@paperclipai/db";
 import { ytContentStrategies, ytAnalytics, ytKeywordPerformance } from "@paperclipai/db";
 import { desc, eq, and, isNotNull } from "drizzle-orm";
-import { callOllamaChat } from "../ollama-client.js";
+import { callLlmChat } from "../llm-client.js";
 import { logger } from "../../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -206,7 +206,7 @@ async function generateAngleWithAI(topic: string, recentInsights: string[] = [])
     const insightContext = recentInsights.length > 0
       ? `\nChannel performance insights to inform the angle: ${recentInsights.slice(0, 3).join("; ")}`
       : "";
-    const result = await callOllamaChat(
+    const result = await callLlmChat(
       [
         {
           role: "system",

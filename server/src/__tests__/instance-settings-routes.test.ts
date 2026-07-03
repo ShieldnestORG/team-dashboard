@@ -123,6 +123,30 @@ describe("instance settings routes", () => {
     expect(mockLogActivity).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts content LLM provider/model patches and rejects invalid providers", async () => {
+    const app = createApp({
+      type: "board",
+      userId: "local-board",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+    });
+
+    await request(app)
+      .patch("/api/instance/settings/general")
+      .send({ contentLlmProvider: "claude", contentLlmModel: "claude-sonnet-5" })
+      .expect(200);
+
+    expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({
+      contentLlmProvider: "claude",
+      contentLlmModel: "claude-sonnet-5",
+    });
+
+    const invalid = await request(app)
+      .patch("/api/instance/settings/general")
+      .send({ contentLlmProvider: "openai" });
+    expect(invalid.status).toBe(400);
+  });
+
   it("rejects non-admin board users", async () => {
     const app = createApp({
       type: "board",
