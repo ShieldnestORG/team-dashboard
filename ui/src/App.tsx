@@ -480,7 +480,11 @@ function CompanyRootRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  // Land on the board INDEX, not /dashboard directly: BoardIndexRedirect is
+  // role-aware (marketing-only users go to the Content Hub, everyone else to
+  // the Dashboard). Hardcoding /dashboard here made a marketing user's very
+  // first screen the no-access card.
+  return <Navigate to={`/${targetCompany.issuePrefix}`} replace />;
 }
 
 function UnprefixedBoardRedirect() {
