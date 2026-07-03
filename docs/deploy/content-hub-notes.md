@@ -162,6 +162,11 @@ committed), UI freshly built, Playwright click-through.
   `/dashboard`, so a marketing user's first screen was the no-access card;
   "/" now lands on the board index and the role-aware redirect picks
   Content Hub vs Dashboard.)
+  (Second fix from the click-through: the sidebar's plugin-slot outlet
+  rendered a red "Plugin extensions unavailable" jargon box when the
+  marketing gate 403'd the plugin-contributions read; a 403 there now
+  renders as "no plugin extensions" — nothing — and the clean sidebar was
+  re-verified with a fresh marketing sign-in.)
 - Content Hub: KIT 0 renders from the synced module; "Copy the whole kit"
   clipboard is byte-exact (2517 bytes, emoji 🟢🟡🔴 intact) and a per-field
   copy is byte-exact; KIT 1 shows both clickTags (`ig-room` / `room`) with
