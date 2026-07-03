@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { socialsApi } from "../../api/socials";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { HelpTip } from "@/components/HelpTip";
 
 const PLATFORM_COLOR: Record<string, string> = {
   x: "bg-sky-500/20 text-sky-700",
@@ -55,6 +56,13 @@ export function SocialsCalendar() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold">Calendar</h2>
+        <HelpTip label="What is Calendar?">
+          Everything scheduled or already posted, laid out by day, across every platform — the
+          unified release calendar.
+        </HelpTip>
+      </div>
       <div className="flex gap-3 items-end">
         <label className="space-y-1">
           <div className="text-xs">Brand</div>

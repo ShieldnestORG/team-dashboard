@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { User } from "lucide-react";
 import { socialsApi, type SocialPost } from "../../api/socials";
 import { useBoardAccess } from "../../hooks/useBoardAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HelpTip } from "@/components/HelpTip";
 
 const STATUS_OPTIONS = ["all", "pending_approval", "scheduled", "publishing", "posted", "failed", "canceled"] as const;
 type StatusFilter = typeof STATUS_OPTIONS[number];
+const ALL_ACCOUNTS = "all";
 
 function statusVariant(s: string): "default" | "secondary" | "outline" | "destructive" {
   if (s === "posted") return "default";
@@ -31,11 +34,22 @@ function formatWhen(iso: string): string {
 export function SocialsQueue() {
   const qc = useQueryClient();
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [accountId, setAccountId] = useState<string>(ALL_ACCOUNTS);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const { data: accountsData } = useQuery({
+    queryKey: ["socials", "accounts"],
+    queryFn: () => socialsApi.listAccounts(),
+  });
+  const accounts = accountsData?.accounts ?? [];
+
   const { data, isLoading } = useQuery({
-    queryKey: ["socials", "posts", status],
-    queryFn: () => socialsApi.listPosts(status === "all" ? {} : { status }),
+    queryKey: ["socials", "posts", status, accountId],
+    queryFn: () =>
+      socialsApi.listPosts({
+        ...(status === "all" ? {} : { status }),
+        ...(accountId === ALL_ACCOUNTS ? {} : { accountId }),
+      }),
     refetchInterval: 5000,
   });
 
@@ -67,8 +81,15 @@ export function SocialsQueue() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold">Queue</h2>
+        <HelpTip label="What is Queue?">
+          Everything scheduled to go out. Approved posts leave automatically within a minute —
+          nobody needs to hit post. Posts marked "pending approval" are waiting on an admin.
+        </HelpTip>
+      </div>
       <div className="flex justify-between items-center gap-3 flex-wrap">
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center flex-wrap">
           <span className="text-sm text-muted-foreground">Status:</span>
           {STATUS_OPTIONS.map((s) => (
             <Button
@@ -80,6 +101,19 @@ export function SocialsQueue() {
               {s}
             </Button>
           ))}
+          <span className="ml-2 text-sm text-muted-foreground">Account:</span>
+          <select
+            className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            <option value={ALL_ACCOUNTS}>All accounts</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.brand} · {a.platform} · @{a.handle}
+              </option>
+            ))}
+          </select>
         </div>
         <Button size="sm" variant="secondary" onClick={() => relayMut.mutate()} disabled={relayMut.isPending}>
           {relayMut.isPending ? "Running…" : "Run relayer now"}
@@ -113,7 +147,10 @@ export function SocialsQueue() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm space-y-2">
-                <div className="text-xs text-muted-foreground">by {authorLabel(p)}</div>
+                <Badge variant="outline" className="gap-1 text-xs font-normal text-muted-foreground">
+                  <User className="h-3 w-3" />
+                  {authorLabel(p)}
+                </Badge>
                 <div className="whitespace-pre-wrap font-mono text-xs">{p.text}</div>
                 {p.mediaUrls.length > 0 && (
                   <div className="text-xs text-muted-foreground">

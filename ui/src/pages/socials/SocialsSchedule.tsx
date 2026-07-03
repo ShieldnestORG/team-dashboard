@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Clock, Check, X, Pencil, RefreshCw, Loader2, Play } from "lucide-react";
+import { HelpTip } from "@/components/HelpTip";
 
 const POLL_COUNTERS_MS = 5_000;
 const POLL_OTHER_MS = 30_000;
@@ -367,6 +368,13 @@ export function SocialsSchedule() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold">Schedule</h2>
+        <HelpTip label="What is Schedule?">
+          How much each platform is allowed to post per day, and what's actually posting against
+          that limit right now. This is the automatic cadence — not a manual calendar.
+        </HelpTip>
+      </div>
       <div className="text-sm text-muted-foreground">
         Per-platform daily caps, automations, and account modes. Counters refresh every 5s.
       </div>

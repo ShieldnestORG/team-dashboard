@@ -8,6 +8,7 @@ import type { VisualContentItem } from "../api/visual-content";
 import { contentFeedbackApi } from "../api/content-feedback";
 import type { FeedbackStats } from "../api/content-feedback";
 import { PlatformPreview } from "../components/content-previews";
+import { FlowStepper } from "../components/FlowStepper";
 import {
   Card,
   CardContent,
@@ -917,6 +918,8 @@ export function ContentReview() {
           </p>
         </div>
       </div>
+
+      <FlowStepper current="review" />
 
       {/* ── How-To Guide ──────────────────────────────────────────────── */}
       <HowToGuide

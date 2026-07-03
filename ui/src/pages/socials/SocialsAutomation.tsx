@@ -3,6 +3,7 @@ import { socialsApi } from "../../api/socials";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HelpTip } from "@/components/HelpTip";
 import { cn, relativeTime } from "../../lib/utils";
 
 function fmt(d: string | null): string {
@@ -37,6 +38,13 @@ export function SocialsAutomation() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold">Automation</h2>
+        <HelpTip label="What is Automation?">
+          The scheduled jobs that auto-generate content — when each last ran and when it runs
+          next. Sync refreshes the list.
+        </HelpTip>
+      </div>
       <div className="flex justify-between items-center">
         <div className="text-sm text-muted-foreground">
           {automations.length} automation{automations.length === 1 ? "" : "s"} mirrored from <code>content-crons.ts</code>

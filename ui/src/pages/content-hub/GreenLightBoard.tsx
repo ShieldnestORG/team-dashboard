@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpTip } from "@/components/HelpTip";
 import type { ZernioGreenlightRow } from "@/api/socials";
 import {
   describeGreenlightRow,
@@ -58,7 +59,15 @@ export function GreenLightBoard({ rows, isLoading, error, onRefresh, refreshing 
     <Card>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base">Which keywords are live</CardTitle>
+          <span className="flex items-center gap-1.5">
+            <CardTitle className="text-base">Which keywords are live</CardTitle>
+            <HelpTip label="What does the light mean?">
+              Green means the keyword's automation is on and ready — someone commenting it gets a
+              DM. Amber and red mean something's off (paused, missing an add-on, or not synced
+              recently) — hover the line for the exact reason before you tell someone to comment
+              it.
+            </HelpTip>
+          </span>
           <Button
             type="button"
             variant="outline"

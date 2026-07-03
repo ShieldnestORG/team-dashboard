@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate } from "@/lib/router";
 import type { MarketingKit } from "@/content/marketing-kits";
 import type { ZernioGreenlightRow } from "@/api/socials";
 import { CopyButton } from "./CopyButton";
@@ -47,7 +48,12 @@ function StatusLine({ kit, rows }: { kit: MarketingKit; rows: ZernioGreenlightRo
  */
 export function KitCard({ kit, greenlightRows }: { kit: MarketingKit; greenlightRows: ZernioGreenlightRow[] }) {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const hasConflictingClickTags = (kit.clickTags?.length ?? 0) > 1;
+
+  function sendToCompose() {
+    navigate("/socials?tab=compose", { state: { prefillText: kit.raw } });
+  }
 
   return (
     <Card>
@@ -78,6 +84,16 @@ export function KitCard({ kit, greenlightRows }: { kit: MarketingKit; greenlight
           <Button type="button" variant="ghost" size="sm" onClick={() => setOpen((value) => !value)}>
             {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             {open ? "Hide the details" : "Show everything in this kit"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={sendToCompose}
+            title="Load this kit's caption into Socials Compose, tracked and attributed to you"
+          >
+            <Send className="h-4 w-4" />
+            Send to Compose
           </Button>
         </div>
 
