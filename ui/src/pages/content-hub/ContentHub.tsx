@@ -31,10 +31,11 @@ export function ContentHub() {
   });
 
   const rows = greenlightQuery.data?.rows ?? [];
+  // Never surface the server's error message here — a 500 can carry raw
+  // technical detail (SQL, upstream jargon) that means nothing to a
+  // marketing user. One fixed, plain, actionable line instead.
   const greenlightError = greenlightQuery.error
-    ? greenlightQuery.error instanceof Error
-      ? greenlightQuery.error.message
-      : "Couldn't load the keyword board."
+    ? 'Couldn\'t load the keyword board. Try "Refresh from Zernio now", or tell Mark if it keeps happening.'
     : null;
 
   const syncDate = formatWhen(KIT_SYNC_META.syncedAt);

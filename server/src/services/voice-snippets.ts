@@ -76,6 +76,30 @@ export class VoiceNotConfiguredError extends Error {
   }
 }
 
+// Cost-abuse guard: every cache MISS is a paid ElevenLabs call on Mark's
+// voice-owning account, and distinct text always misses — so a scripted
+// loop of unique texts is unbounded spend. Cap paid generations per user
+// per UTC day (cache hits are free and never counted). In-memory on purpose:
+// single-process server, and a restart resetting the counter is fine for an
+// abuse guard. Override via VOICE_SNIPPETS_DAILY_LIMIT (tests use this).
+export const DEFAULT_DAILY_GENERATION_LIMIT = 200;
+
+export function dailyGenerationLimit(): number {
+  const raw = process.env.VOICE_SNIPPETS_DAILY_LIMIT;
+  const parsed = raw === undefined || raw === "" ? NaN : Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  return DEFAULT_DAILY_GENERATION_LIMIT;
+}
+
+/** The per-user daily paid-generation cap was hit (route → 429). */
+export class VoiceQuotaExceededError extends Error {
+  limit: number;
+  constructor(limit: number) {
+    super(`daily voice-generation limit reached (${limit} new snippets per day)`);
+    this.limit = limit;
+  }
+}
+
 /** ElevenLabs answered with a non-2xx status. Carries no response body. */
 export class ElevenLabsError extends Error {
   status: number;
@@ -146,6 +170,21 @@ export function voiceSnippetService(
   // Concurrent double-click dedupe: one in-process generation per cache key.
   // The DB unique index + ON CONFLICT DO NOTHING covers the multi-process race.
   const inflight = new Map<string, Promise<VoiceSnippet>>();
+  // Paid generations per user per UTC day (see VoiceQuotaExceededError above).
+  const generationsToday = new Map<string, { day: string; count: number }>();
+
+  /** Count a paid generation against the user's daily cap; throw at the cap. */
+  function consumeDailyQuota(createdByUserId: string | null): void {
+    // The local_trusted implicit dev principal has no user row — keyed
+    // under one shared bucket so even dev/agent traffic stays bounded.
+    const key = createdByUserId ?? "(no-user)";
+    const day = new Date().toISOString().slice(0, 10);
+    const limit = dailyGenerationLimit();
+    const entry = generationsToday.get(key);
+    const count = entry && entry.day === day ? entry.count : 0;
+    if (count >= limit) throw new VoiceQuotaExceededError(limit);
+    generationsToday.set(key, { day, count: count + 1 });
+  }
 
   async function findByCacheKey(cacheKey: string): Promise<VoiceSnippet | null> {
     const rows = await db
@@ -256,6 +295,9 @@ export function voiceSnippetService(
 
       let promise = inflight.get(cacheKey);
       if (!promise) {
+        // Only a NEW paid generation consumes quota — cache hits (above) and
+        // piggy-backing on an in-flight twin never do.
+        consumeDailyQuota(input.createdByUserId);
         promise = generateAndPersist(
           input.voiceKey,
           voice,

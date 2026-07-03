@@ -17,11 +17,21 @@ import { PluginSlotOutlet } from "@/plugins/slots";
 export function Sidebar() {
   const { openNewIssue } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const inboxBadge = useInboxBadge(selectedCompanyId);
+
+  // Marketing-role users see only their working sections. The section filter
+  // is cosmetic (the server's marketing-role gate is the real enforcement),
+  // but skipping the badge/live-run polling below is functional: those reads
+  // are gate-blocked and would only ever 403. While the access snapshot is
+  // still loading we hold the polling off too, so a marketing user's first
+  // paint never fires doomed requests.
+  const { isMarketingOnly, isLoading: accessLoading } = useBoardAccess();
+  const showFullShell = !accessLoading && !isMarketingOnly;
+
+  const inboxBadge = useInboxBadge(showFullShell ? selectedCompanyId : null);
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.liveRuns(selectedCompanyId!),
     queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && showFullShell,
     refetchInterval: 10_000,
   });
   const liveRunCount = liveRuns?.length ?? 0;
@@ -35,9 +45,6 @@ export function Sidebar() {
     companyPrefix: selectedCompany?.issuePrefix ?? null,
   };
 
-  // Marketing-role users see only their working sections. Cosmetic — the
-  // server's marketing-role gate is the real enforcement.
-  const { isMarketingOnly } = useBoardAccess();
   const allSections = getSidebarConfig(selectedCompany?.issuePrefix ?? "");
   const sections = isMarketingOnly ? filterSectionsForMarketing(allSections) : allSections;
 
@@ -54,35 +61,46 @@ export function Sidebar() {
         <span className="flex-1 text-sm font-bold text-foreground truncate pl-1">
           {selectedCompany?.name ?? "Select company"}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground shrink-0"
-          onClick={openSearch}
-        >
-          <Search className="h-4 w-4" />
-        </Button>
+        {/* Search reaches issue queries the marketing gate blocks — hide it
+            rather than show an affordance that can only end in a 403. */}
+        {!isMarketingOnly && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground shrink-0"
+            onClick={openSearch}
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 px-3 py-2">
         <div className="flex flex-col gap-0.5">
-          {/* New Issue button aligned with nav items */}
-          <button
-            onClick={() => openNewIssue()}
-            className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-          >
-            <SquarePen className="h-4 w-4 shrink-0" />
-            <span className="truncate">New Issue</span>
-          </button>
-          <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          <SidebarNavItem
-            to="/inbox"
-            label="Inbox"
-            icon={Inbox}
-            badge={inboxBadge.inbox}
-            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
-            alert={inboxBadge.failedRuns > 0}
-          />
+          {/* Dashboard / Inbox / New Issue reach APIs the marketing gate
+              blocks (issues POST, dashboard summary, approvals) — a marketing
+              user gets the Content & Socials section below instead. */}
+          {!isMarketingOnly && (
+            <>
+              {/* New Issue button aligned with nav items */}
+              <button
+                onClick={() => openNewIssue()}
+                className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+              >
+                <SquarePen className="h-4 w-4 shrink-0" />
+                <span className="truncate">New Issue</span>
+              </button>
+              <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
+              <SidebarNavItem
+                to="/inbox"
+                label="Inbox"
+                icon={Inbox}
+                badge={inboxBadge.inbox}
+                badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
+                alert={inboxBadge.failedRuns > 0}
+              />
+            </>
+          )}
           <PluginSlotOutlet
             slotTypes={["sidebar"]}
             context={pluginContext}

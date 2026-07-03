@@ -81,6 +81,7 @@ function loadFunnelCatalog(): FunnelCatalog {
 
 /** Mirror row fields the green-light derivation needs. */
 export interface GreenlightAutomationRow {
+  zernioAutomationId: string;
   zernioAccountId: string;
   name: string;
   keywords: string[];
@@ -93,6 +94,12 @@ export interface GreenlightAutomationRow {
 export interface GreenlightRow {
   keyword: string;
   automationName: string;
+  /**
+   * Zernio's automation id — with the keyword, the only stable per-row
+   * identity. Two automations on one account can share a keyword (per-post
+   * SHIRT automations), so account+keyword is NOT unique.
+   */
+  zernioAutomationId: string;
   zernioAccountId: string;
   /** Handle of the connected account ("@coherencedaddy") or the raw id. */
   accountLabel: string;
@@ -174,6 +181,7 @@ export function deriveGreenlightRows(input: {
       rows.push({
         keyword,
         automationName: automation.name,
+        zernioAutomationId: automation.zernioAutomationId,
         zernioAccountId: automation.zernioAccountId,
         accountLabel,
         clickTag: automation.clickTag,

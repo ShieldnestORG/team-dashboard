@@ -95,6 +95,19 @@ export function staticStatusTone(status: "live" | "plan" | "defer"): "green" | "
   return "red";
 }
 
+/**
+ * Plain-English sentence for the hand-maintained plan status. NEVER render
+ * the raw enum ("live"/"plan"/"defer") — "Plan status: live — not live data."
+ * is self-contradictory and "defer" is undefined jargon to a marketing user.
+ */
+export function staticStatusLabel(status: "live" | "plan" | "defer"): string {
+  if (status === "live") {
+    return "Marked ready in the plan — check the keyword board above for live numbers.";
+  }
+  if (status === "plan") return "Planned — not running yet.";
+  return "On hold for now — don't post this one.";
+}
+
 /** Download filename for a generated voice snippet. */
 export function snippetFileName(voiceKey: string, label: string): string {
   const slug = label

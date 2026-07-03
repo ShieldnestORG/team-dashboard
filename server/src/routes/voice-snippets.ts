@@ -9,6 +9,7 @@ import {
   VOICE_KEYS,
   VOICE_REGISTRY,
   VoiceNotConfiguredError,
+  VoiceQuotaExceededError,
   normalizeSnippetText,
   voiceSnippetService,
 } from "../services/voice-snippets.js";
@@ -114,6 +115,14 @@ export function voiceSnippetsRouter(
       if (err instanceof VoiceNotConfiguredError) {
         res.status(503).json({
           error: "Voice generation isn't set up yet — the server is missing its voice key. Tell Mark.",
+        });
+        return;
+      }
+      if (err instanceof VoiceQuotaExceededError) {
+        // Cost guard: each new line is a paid call on Mark's ElevenLabs
+        // account. Cached lines still play — only NEW generations are capped.
+        res.status(429).json({
+          error: `You've hit today's limit for new voice lines (${err.limit}). Lines you already generated still play — try again tomorrow, or tell Mark if you need more today.`,
         });
         return;
       }

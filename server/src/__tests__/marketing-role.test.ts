@@ -10,8 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import express from "express";
-import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { marketingRoleGate } from "../middleware/marketing-role-gate.js";
 import { membershipRoleFromInviteDefaults } from "../routes/access.js";
 import { accessService } from "../services/access.js";
@@ -22,6 +21,12 @@ import {
   socialsRoutes,
 } from "../routes/socials.js";
 import { errorHandler } from "../middleware/index.js";
+import { closeIpv4Servers, ipv4Request } from "./helpers/ipv4-agent.js";
+
+// supertest servers are IPv4-pinned (see helpers/ipv4-agent.ts) so a local
+// daemon squatting the ephemeral port's 127.0.0.1 side can never hijack an
+// assertion (the once-seen, never-reproduced 403→200 flake).
+afterEach(closeIpv4Servers);
 
 const USER_ID = "user_mkt1";
 const COMPANY_ID = "33333333-3333-4333-8333-333333333333";
@@ -70,7 +75,7 @@ describe("marketingRoleGate — fail-closed path allowlist", () => {
     ["GET", "/api/assets/abc/content"],
   ])("allows a marketing-only user: %s %s", async (method, path) => {
     const app = gateApp(marketingUser, marketingRows);
-    const res = await request(app)[method.toLowerCase() as "get" | "post"](path);
+    const res = await (await ipv4Request(app))[method.toLowerCase() as "get" | "post"](path);
     expect(res.status).toBe(200);
   });
 
@@ -84,7 +89,7 @@ describe("marketingRoleGate — fail-closed path allowlist", () => {
     ["GET", "/API/costs"], // express routing is case-insensitive — the gate must be too
   ])("blocks a marketing-only user with a plain-English 403: %s %s", async (method, path) => {
     const app = gateApp(marketingUser, marketingRows);
-    const res = await request(app)[method.toLowerCase() as "get" | "post"](path);
+    const res = await (await ipv4Request(app))[method.toLowerCase() as "get" | "post"](path);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("marketing_role_restricted");
     expect(res.body.error).toMatch(/marketing/i);
@@ -92,12 +97,12 @@ describe("marketingRoleGate — fail-closed path allowlist", () => {
 
   it("does not restrict an instance admin (even with a marketing membership)", async () => {
     const app = gateApp(adminUser, marketingRows);
-    expect((await request(app).get("/api/costs")).status).toBe(200);
+    expect((await (await ipv4Request(app)).get("/api/costs")).status).toBe(200);
   });
 
   it("does not restrict a plain member", async () => {
     const app = gateApp(memberUser, [{ membershipRole: "member" }]);
-    expect((await request(app).get("/api/costs")).status).toBe(200);
+    expect((await (await ipv4Request(app)).get("/api/costs")).status).toBe(200);
   });
 
   it("does not restrict a user with MIXED roles (marketing + member)", async () => {
@@ -105,22 +110,22 @@ describe("marketingRoleGate — fail-closed path allowlist", () => {
       { membershipRole: "marketing" },
       { membershipRole: "member" },
     ]);
-    expect((await request(app).get("/api/costs")).status).toBe(200);
+    expect((await (await ipv4Request(app)).get("/api/costs")).status).toBe(200);
   });
 
   it("does not restrict a user with zero active memberships", async () => {
     const app = gateApp(memberUser, []);
-    expect((await request(app).get("/api/costs")).status).toBe(200);
+    expect((await (await ipv4Request(app)).get("/api/costs")).status).toBe(200);
   });
 
   it("ignores the local_trusted implicit principal and unauthenticated actors", async () => {
-    expect((await request(gateApp(localImplicit, marketingRows)).get("/api/costs")).status).toBe(200);
-    expect((await request(gateApp(unauthenticated, marketingRows)).get("/api/costs")).status).toBe(200);
+    expect((await (await ipv4Request(gateApp(localImplicit, marketingRows))).get("/api/costs")).status).toBe(200);
+    expect((await (await ipv4Request(gateApp(unauthenticated, marketingRows))).get("/api/costs")).status).toBe(200);
   });
 
   it("never touches non-/api paths (UI shell always loads)", async () => {
     const app = gateApp(marketingUser, marketingRows);
-    expect((await request(app).get("/CD/content-hub")).status).toBe(200);
+    expect((await (await ipv4Request(app)).get("/CD/content-hub")).status).toBe(200);
   });
 });
 
@@ -242,6 +247,7 @@ describe("green-light read model (mirror-backed, no live Zernio call)", () => {
   const stale = new Date("2026-07-01T12:00:00Z"); // 24h old
 
   const automation = (over: Partial<Parameters<typeof deriveGreenlightRows>[0]["automations"][number]>) => ({
+    zernioAutomationId: "auto-room",
     zernioAccountId: "z1",
     name: "ROOM",
     keywords: ["ROOM"],
@@ -327,6 +333,23 @@ describe("green-light read model (mirror-backed, no live Zernio call)", () => {
     });
     expect(rows.map((row) => row.keyword)).toEqual(["CACHÉ", "CACHE", "SHIRT"]);
   });
+
+  it("keeps rows distinguishable when two automations on one account share a keyword (per-post SHIRT pattern)", () => {
+    const rows = deriveGreenlightRows({
+      automations: [
+        automation({ zernioAutomationId: "auto-shirt-1", name: "SHIRT post 1", keywords: ["SHIRT"] }),
+        automation({ zernioAutomationId: "auto-shirt-2", name: "SHIRT post 2", keywords: ["SHIRT"] }),
+      ],
+      handlesByZid: new Map(),
+      addonGatedZids: new Set(),
+      now: NOW,
+    });
+    // account+keyword collide; automationId+keyword must stay unique — the UI
+    // keys its list rows on exactly that pair.
+    expect(rows).toHaveLength(2);
+    const keys = rows.map((row) => `${row.zernioAutomationId}-${row.keyword}`);
+    expect(new Set(keys).size).toBe(2);
+  });
 });
 
 describe("GET /api/socials/zernio/greenlight — RBAC + composition", () => {
@@ -339,6 +362,7 @@ describe("GET /api/socials/zernio/greenlight — RBAC + composition", () => {
         from: () => ({
           orderBy: async () => [
             {
+              zernioAutomationId: "auto-room",
               zernioAccountId: "z1",
               name: "ROOM",
               keywords: ["ROOM"],
@@ -373,12 +397,12 @@ describe("GET /api/socials/zernio/greenlight — RBAC + composition", () => {
   }
 
   it("rejects unauthenticated requests with 401", async () => {
-    const res = await request(socialsApp(unauthenticated)).get("/api/socials/zernio/greenlight");
+    const res = await (await ipv4Request(socialsApp(unauthenticated))).get("/api/socials/zernio/greenlight");
     expect(res.status).toBe(401);
   });
 
   it("serves a non-admin board member (marketing users read it) from the mirror", async () => {
-    const res = await request(socialsApp(memberUser)).get("/api/socials/zernio/greenlight");
+    const res = await (await ipv4Request(socialsApp(memberUser))).get("/api/socials/zernio/greenlight");
     expect(res.status).toBe(200);
     expect(res.body.source).toBe("mirror");
     expect(res.body.rows).toHaveLength(1);

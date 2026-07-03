@@ -11,6 +11,7 @@ import {
   latestSyncedAt,
   personaName,
   snippetFileName,
+  staticStatusLabel,
   staticStatusTone,
 } from "./kit-status";
 
@@ -18,6 +19,7 @@ function row(over: Partial<ZernioGreenlightRow> = {}): ZernioGreenlightRow {
   return {
     keyword: "ROOM",
     automationName: "ROOM",
+    zernioAutomationId: "auto-1",
     zernioAccountId: "z1",
     accountLabel: "@coherencedaddy",
     clickTag: "room",
@@ -97,6 +99,21 @@ describe("staticStatusTone", () => {
     expect(staticStatusTone("live")).toBe("green");
     expect(staticStatusTone("plan")).toBe("amber");
     expect(staticStatusTone("defer")).toBe("red");
+  });
+});
+
+describe("staticStatusLabel", () => {
+  it("maps every plan-status enum to a plain sentence — the raw enum never leaks", () => {
+    expect(staticStatusLabel("live")).toBe(
+      "Marked ready in the plan — check the keyword board above for live numbers.",
+    );
+    expect(staticStatusLabel("plan")).toBe("Planned — not running yet.");
+    expect(staticStatusLabel("defer")).toBe("On hold for now — don't post this one.");
+    // No label is ever the bare enum or contradicts itself.
+    for (const status of ["live", "plan", "defer"] as const) {
+      expect(staticStatusLabel(status)).not.toBe(status);
+      expect(staticStatusLabel(status)).not.toContain("not live data");
+    }
   });
 });
 

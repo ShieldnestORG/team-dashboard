@@ -11,6 +11,7 @@ import {
   describeGreenlightRow,
   kitLiveStatus,
   personaName,
+  staticStatusLabel,
   staticStatusTone,
   toneDotClassName,
 } from "./kit-status";
@@ -31,7 +32,7 @@ function StatusLine({ kit, rows }: { kit: MarketingKit; rows: ZernioGreenlightRo
         <span
           className={`h-2.5 w-2.5 shrink-0 rounded-full opacity-60 ${toneDotClassName(staticStatusTone(status.staticStatus))}`}
         />
-        <span>Plan status: {status.staticStatus} — not live data.</span>
+        <span>{staticStatusLabel(status.staticStatus)}</span>
       </span>
     );
   }

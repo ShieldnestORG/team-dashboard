@@ -318,19 +318,26 @@ function boardRoutes() {
 }
 
 /**
- * Board route roots a marketing-only user can open. Mirrors the server's
- * marketing-role-gate allowlist (server/src/middleware/marketing-role-gate.ts)
- * mapped onto UI routes. This client-side gate is a courtesy — it swaps the
- * page for a plain "no access" card instead of a wall of failed requests.
- * The middleware is the real enforcement.
+ * Board route roots a marketing-only user can open. Every root here must be
+ * backed by the server's marketing-role-gate API allowlist
+ * (server/src/middleware/marketing-role-gate.ts) — a route whose data calls
+ * the gate 403s must NOT be listed, or the user's first screen is a wall of
+ * failed requests. Dashboard/Inbox are deliberately absent: their reads
+ * (/api/companies/:id/dashboard, approvals, heartbeats, issues) are blocked
+ * server-side; marketing users land on the Content Hub instead. This
+ * client-side gate is a courtesy — the middleware is the real enforcement.
  */
-const MARKETING_ROUTE_ROOTS = new Set(["dashboard", "inbox", "socials", "content-hub"]);
+const MARKETING_ROUTE_ROOTS = new Set(["socials", "content-hub"]);
 
 function MarketingRouteGate() {
-  const { isMarketingOnly } = useBoardAccess();
+  const { isMarketingOnly, isLoading } = useBoardAccess();
   const location = useLocation();
   const { companyPrefix } = useParams<{ companyPrefix?: string }>();
 
+  // Until the access snapshot resolves we don't know whether this user is
+  // marketing-scoped. Hold rendering so a blocked page never mounts and
+  // fires a burst of 403 requests during the loading window.
+  if (isLoading) return null;
   if (!isMarketingOnly) return <Outlet />;
 
   const segments = location.pathname.split("/").filter(Boolean);
@@ -338,8 +345,10 @@ function MarketingRouteGate() {
     companyPrefix && segments[0]?.toUpperCase() === companyPrefix.toUpperCase()
       ? segments.slice(1)
       : segments;
-  // The bare board index redirects to the dashboard, which is allowed.
-  const root = (relative[0] ?? "dashboard").toLowerCase();
+  // The bare board index is allowed: BoardIndexRedirect immediately sends
+  // marketing users to the Content Hub.
+  if (relative.length === 0) return <Outlet />;
+  const root = relative[0]!.toLowerCase();
   if (MARKETING_ROUTE_ROOTS.has(root)) return <Outlet />;
 
   return (
@@ -388,6 +397,7 @@ function TokProductRoute({ page }: { page: "tokns" | "tx-ecosystem" }) {
 
 function BoardIndexRedirect() {
   const { companies, loading } = useCompany();
+  const { isMarketingOnly, isLoading: accessLoading } = useBoardAccess();
   const { companyPrefix } = useParams<{ companyPrefix?: string }>();
 
   // The board index redirect is relative, so it must only fire when the
@@ -395,7 +405,7 @@ function BoardIndexRedirect() {
   // /dashboard the segment is a route root, and redirecting relative to it
   // would double the segment (/dashboard/dashboard) before Layout's
   // auto-correct effect gets a chance to prepend the real prefix.
-  if (loading) return null;
+  if (loading || accessLoading) return null;
   if (
     companyPrefix &&
     !companies.some((company) => company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase())
@@ -403,7 +413,9 @@ function BoardIndexRedirect() {
     return null;
   }
 
-  return <Navigate to="dashboard" replace />;
+  // Marketing-only users land on the Content Hub — the Dashboard's data
+  // reads are blocked by the server's marketing-role gate.
+  return <Navigate to={isMarketingOnly ? "content-hub" : "dashboard"} replace />;
 }
 
 function InboxRootRedirect() {

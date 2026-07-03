@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companyMemberships } from "@paperclipai/db";
+import { logger } from "./logger.js";
 
 /**
  * Fail-closed path allowlist for marketing-role actors.
@@ -15,8 +16,17 @@ import { companyMemberships } from "@paperclipai/db";
  * The UI's role-filtered sidebar is cosmetic — this middleware is the real
  * enforcement. Mounted app-level (right after actorMiddleware) so it covers
  * every /api route regardless of where it is mounted. Non-/api paths (UI
- * HTML/assets) always pass. Users with a mix of roles (e.g. marketing in one
- * company, member in another) are NOT restricted.
+ * HTML/assets) always pass.
+ *
+ * ⚠ SECURITY LIMIT of the every()-semantics: users with a MIX of roles
+ * (marketing in one company, member/owner in another) are NOT restricted at
+ * all — one non-marketing membership voids containment, and plain company
+ * membership already grants costs/secrets reads for the marketing company
+ * via assertCompanyAccess. Adding a marketing user to a second company as a
+ * plain 'member' is therefore an escalation, not an add. The gate logs a
+ * loud warning when it sees this state; a per-company gate (restrict on the
+ * companies where the membership role IS 'marketing') is the real fix and is
+ * recorded as deferred in docs/deploy/content-hub-notes.md.
  */
 
 // Prefix → allowed methods. null = all methods (the routes carry their own
@@ -40,6 +50,9 @@ const ALLOWED: Array<{ prefix: string; methods: Set<string> | null; exact?: bool
   // Asset playback/download for voice chips (GET /api/assets/:id/content).
   { prefix: "/api/assets", methods: new Set(["GET", "HEAD"]) },
 ];
+
+// Users already warned about (mixed-role containment void) — once per process.
+const warnedMixedRoleUsers = new Set<string>();
 
 function isAllowed(method: string, path: string): boolean {
   const m = method.toUpperCase();
@@ -81,7 +94,24 @@ export function marketingRoleGate(db: Db): RequestHandler {
         );
       const marketingOnly =
         rows.length > 0 && rows.every((row) => row.membershipRole === "marketing");
-      if (!marketingOnly) return next();
+      if (!marketingOnly) {
+        // Loud warning (once per user per process): a marketing membership
+        // mixed with any non-marketing one means this user is fully
+        // UNRESTRICTED — including costs/secrets reads on the marketing
+        // company. Admins usually cause this by adding a marketing user to a
+        // second company with the default 'member' role.
+        if (
+          rows.some((row) => row.membershipRole === "marketing") &&
+          !warnedMixedRoleUsers.has(req.actor.userId)
+        ) {
+          warnedMixedRoleUsers.add(req.actor.userId);
+          logger.warn(
+            { userId: req.actor.userId },
+            "marketing-role gate VOIDED for user with mixed memberships: a non-marketing membership lifts ALL marketing restrictions (incl. costs/secrets of the marketing company). Set membership_role='marketing' on every membership to keep this user contained.",
+          );
+        }
+        return next();
+      }
 
       res.status(403).json({
         error:

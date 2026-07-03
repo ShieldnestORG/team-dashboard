@@ -183,14 +183,16 @@ export function getSidebarConfig(issuePrefix: string): SidebarSection[] {
   return DEFAULT_SECTIONS;
 }
 
-/** Section labels a marketing-only user keeps (plus the structural Dashboard/Inbox block Sidebar owns). */
+/** Section labels a marketing-only user keeps. */
 const MARKETING_SECTION_LABELS = new Set(["Content & Socials"]);
 
 /**
- * The sidebar a marketing-role user sees: Dashboard + Inbox (structural,
- * rendered by Sidebar itself) and Content & Socials — nothing else. This
- * filtering is cosmetic; the server's marketing-role-gate middleware is the
- * real enforcement (fail-closed path allowlist).
+ * The sidebar a marketing-role user sees: Content & Socials — nothing else.
+ * Sidebar also hides its structural block (New Issue, Dashboard, Inbox,
+ * Search) for marketing users: those surfaces read APIs the server's
+ * marketing-role gate blocks, so showing them would only produce 403s.
+ * This filtering is cosmetic; the middleware is the real enforcement
+ * (fail-closed path allowlist).
  */
 export function filterSectionsForMarketing(sections: SidebarSection[]): SidebarSection[] {
   return sections.filter(

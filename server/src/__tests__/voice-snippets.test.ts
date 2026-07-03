@@ -9,11 +9,11 @@
 // ---------------------------------------------------------------------------
 
 import express from "express";
-import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assets } from "@paperclipai/db";
 import { voiceSnippetsRouter } from "../routes/voice-snippets.js";
 import { errorHandler } from "../middleware/index.js";
+import { closeIpv4Servers, ipv4Request } from "./helpers/ipv4-agent.js";
 import type { StorageService } from "../storage/types.js";
 
 const COMPANY_ID = "33333333-3333-4333-8333-333333333333";
@@ -37,10 +37,17 @@ function createDbStub() {
   const db = {
     select: () => ({
       from: () => ({
-        where: () => ({
-          // The route only ever selects by the single test's cache key, so the
-          // stub returns whatever row exists without parsing the condition.
-          limit: async () => state.snippets.slice(0, 1),
+        where: (cond: unknown) => ({
+          // Match the real eq(cacheKey, <value>) condition: drizzle's SQL
+          // object carries the bound value in its Param chunk (the only
+          // chunk whose `value` is a plain string).
+          limit: async () => {
+            const chunks =
+              (cond as { queryChunks?: Array<{ value?: unknown }> })?.queryChunks ?? [];
+            const param = chunks.find((chunk) => typeof chunk?.value === "string");
+            if (!param) return state.snippets.slice(0, 1);
+            return state.snippets.filter((s) => s.cacheKey === param.value).slice(0, 1);
+          },
         }),
       }),
     }),
@@ -133,6 +140,7 @@ describe("voice-snippet routes", () => {
   const envBefore = {
     voiceKey: process.env.ELEVENLABS_VOICE_KEY,
     companyId: process.env.TEAM_DASHBOARD_COMPANY_ID,
+    dailyLimit: process.env.VOICE_SNIPPETS_DAILY_LIMIT,
   };
 
   beforeEach(() => {
@@ -140,18 +148,21 @@ describe("voice-snippet routes", () => {
     process.env.TEAM_DASHBOARD_COMPANY_ID = COMPANY_ID;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (envBefore.voiceKey === undefined) delete process.env.ELEVENLABS_VOICE_KEY;
     else process.env.ELEVENLABS_VOICE_KEY = envBefore.voiceKey;
     if (envBefore.companyId === undefined) delete process.env.TEAM_DASHBOARD_COMPANY_ID;
     else process.env.TEAM_DASHBOARD_COMPANY_ID = envBefore.companyId;
+    if (envBefore.dailyLimit === undefined) delete process.env.VOICE_SNIPPETS_DAILY_LIMIT;
+    else process.env.VOICE_SNIPPETS_DAILY_LIMIT = envBefore.dailyLimit;
+    await closeIpv4Servers();
   });
 
   it("rejects an unauthenticated request with 401", async () => {
     const { db } = createDbStub();
     const { storage } = createStorageStub();
     const app = createApp(unauthenticated, db, storage, createFetchMock());
-    const res = await request(app)
+    const res = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       .send({ voiceKey: "mark", text: "hello" });
     expect(res.status).toBe(401);
@@ -162,7 +173,7 @@ describe("voice-snippet routes", () => {
     const { storage } = createStorageStub();
     const fetchMock = createFetchMock();
     const app = createApp(boardMember, db, storage, fetchMock);
-    const res = await request(app)
+    const res = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       // A raw ElevenLabs voice_id is NOT a voiceKey — must be rejected.
       .send({ voiceKey: "n45mfBjBoGc0McY8O2Aw", text: "hello" });
@@ -175,7 +186,7 @@ describe("voice-snippet routes", () => {
     const { storage } = createStorageStub();
     const fetchMock = createFetchMock();
     const app = createApp(boardMember, db, storage, fetchMock);
-    const res = await request(app)
+    const res = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       .send({ voiceKey: "mark", text: "x".repeat(1501) });
     expect(res.status).toBe(400);
@@ -188,7 +199,7 @@ describe("voice-snippet routes", () => {
     const { storage } = createStorageStub();
     const fetchMock = createFetchMock();
     const app = createApp(boardMember, db, storage, fetchMock);
-    const res = await request(app)
+    const res = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       .send({ voiceKey: "mark", text: "hello there" });
     expect(res.status).toBe(503);
@@ -202,7 +213,7 @@ describe("voice-snippet routes", () => {
     const fetchMock = createFetchMock();
     const app = createApp(boardMember, db, storage, fetchMock);
 
-    const res = await request(app)
+    const res = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       .send({ voiceKey: "mark", text: "Coherence is trainable.", kitId: 1, field: "endcard" });
 
@@ -232,13 +243,13 @@ describe("voice-snippet routes", () => {
     const fetchMock = createFetchMock();
     const app = createApp(boardMember, db, storage, fetchMock);
 
-    const first = await request(app)
+    const first = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       .send({ voiceKey: "brianna", text: "Small reps, big shifts." });
     expect(first.status).toBe(200);
     expect(first.body.cached).toBe(false);
 
-    const second = await request(app)
+    const second = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       .send({ voiceKey: "brianna", text: "Small reps, big shifts." });
     expect(second.status).toBe(200);
@@ -255,8 +266,8 @@ describe("voice-snippet routes", () => {
     const app = createApp(boardMember, db, storage, fetchMock);
 
     const [a, b] = await Promise.all([
-      request(app).post("/api/voice-snippets").send({ voiceKey: "mark", text: "Double click." }),
-      request(app).post("/api/voice-snippets").send({ voiceKey: "mark", text: "Double click." }),
+      (await ipv4Request(app)).post("/api/voice-snippets").send({ voiceKey: "mark", text: "Double click." }),
+      (await ipv4Request(app)).post("/api/voice-snippets").send({ voiceKey: "mark", text: "Double click." }),
     ]);
 
     expect(a.status).toBe(200);
@@ -264,6 +275,41 @@ describe("voice-snippet routes", () => {
     expect(a.body.assetId).toBe(b.body.assetId);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(putFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps paid generations per user per day (429) — cached lines stay free", async () => {
+    // Cost-abuse guard: distinct texts always miss the cache, so without a
+    // cap any board user could script unbounded paid TTS on Mark's account.
+    process.env.VOICE_SNIPPETS_DAILY_LIMIT = "2";
+    const { db } = createDbStub();
+    const { storage } = createStorageStub();
+    const fetchMock = createFetchMock();
+    const app = createApp(boardMember, db, storage, fetchMock);
+
+    const first = await (await ipv4Request(app))
+      .post("/api/voice-snippets")
+      .send({ voiceKey: "mark", text: "Unique line one." });
+    expect(first.status).toBe(200);
+    const second = await (await ipv4Request(app))
+      .post("/api/voice-snippets")
+      .send({ voiceKey: "mark", text: "Unique line two." });
+    expect(second.status).toBe(200);
+
+    // Third NEW text: over the cap → plain-English 429, no ElevenLabs call.
+    const third = await (await ipv4Request(app))
+      .post("/api/voice-snippets")
+      .send({ voiceKey: "mark", text: "Unique line three." });
+    expect(third.status).toBe(429);
+    expect(third.body.error).toMatch(/limit/i);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // A cache hit is not a paid generation — still served over the cap.
+    const cached = await (await ipv4Request(app))
+      .post("/api/voice-snippets")
+      .send({ voiceKey: "mark", text: "Unique line one." });
+    expect(cached.status).toBe(200);
+    expect(cached.body.cached).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("maps an ElevenLabs failure to a plain 502 without leaking the response", async () => {
@@ -276,7 +322,7 @@ describe("voice-snippet routes", () => {
     }) as unknown as Response);
     const app = createApp(boardMember, db, storage, fetchMock as unknown as typeof fetch);
 
-    const res = await request(app)
+    const res = await (await ipv4Request(app))
       .post("/api/voice-snippets")
       .send({ voiceKey: "mark", text: "hello" });
     expect(res.status).toBe(502);
@@ -288,7 +334,7 @@ describe("voice-snippet routes", () => {
       const { db } = createDbStub();
       const { storage } = createStorageStub();
       const app = createApp(boardMember, db, storage, createFetchMock(ALL_VOICE_IDS));
-      const res = await request(app).get("/api/voice-snippets/health");
+      const res = await (await ipv4Request(app)).get("/api/voice-snippets/health");
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true, missingVoices: [] });
     });
@@ -298,7 +344,7 @@ describe("voice-snippet routes", () => {
       const { storage } = createStorageStub();
       // Scribe-account scenario: none of the 5 voices exist there.
       const app = createApp(boardMember, db, storage, createFetchMock(["someone-elses-voice"]));
-      const res = await request(app).get("/api/voice-snippets/health");
+      const res = await (await ipv4Request(app)).get("/api/voice-snippets/health");
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(false);
       expect(res.body.missingVoices).toEqual(["mark", "brianna", "mami", "remy", "solene"]);
@@ -309,7 +355,7 @@ describe("voice-snippet routes", () => {
       const { db } = createDbStub();
       const { storage } = createStorageStub();
       const app = createApp(boardMember, db, storage, createFetchMock(ALL_VOICE_IDS));
-      const res = await request(app).get("/api/voice-snippets/health");
+      const res = await (await ipv4Request(app)).get("/api/voice-snippets/health");
       expect(res.status).toBe(503);
       expect(res.body.ok).toBe(false);
     });

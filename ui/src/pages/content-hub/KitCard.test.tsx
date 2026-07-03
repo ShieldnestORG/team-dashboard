@@ -87,10 +87,23 @@ describe("KitCard clickTag conflict (KIT 1)", () => {
 });
 
 describe("KitCard status line", () => {
-  it("labels the static fallback explicitly as plan status, not live data", () => {
+  it("renders the static fallback as a plain-English sentence, never the raw enum", () => {
     const kit4 = KITS.find((kit) => kit.id === 4)!; // SCORE — staticStatus "plan"
     render(<KitCard kit={kit4} greenlightRows={[]} />);
-    expect(container.textContent).toContain("Plan status: plan — not live data.");
+    expect(container.textContent).toContain("Planned — not running yet.");
+    expect(container.textContent).not.toContain("Plan status:");
+  });
+
+  it("never shows the self-contradictory 'live — not live data' or raw 'defer'", () => {
+    const kit0 = KITS.find((kit) => kit.id === 0)!; // no keyword → staticStatus "live" fallback
+    render(<KitCard kit={kit0} greenlightRows={[]} />);
+    expect(container.textContent).toContain("Marked ready in the plan");
+    expect(container.textContent).not.toContain("not live data");
+
+    const kit8 = KITS.find((kit) => kit.id === 8)!; // staticStatus "defer"
+    render(<KitCard kit={kit8} greenlightRows={[]} />);
+    expect(container.textContent).toContain("On hold for now — don't post this one.");
+    expect(container.textContent).not.toContain("defer");
   });
 
   it("shows the live green-light state when Zernio has the keyword", () => {
@@ -102,6 +115,7 @@ describe("KitCard status line", () => {
           {
             keyword: "ROOM",
             automationName: "ROOM",
+            zernioAutomationId: "auto-1",
             zernioAccountId: "z1",
             accountLabel: "@coherencedaddy",
             clickTag: "room",
@@ -115,6 +129,6 @@ describe("KitCard status line", () => {
       />,
     );
     expect(container.textContent).toContain("Live — safe to post.");
-    expect(container.textContent).not.toContain("Plan status");
+    expect(container.textContent).not.toContain("in the plan");
   });
 });

@@ -120,6 +120,8 @@ export interface ZernioGreenlightStats {
 export interface ZernioGreenlightRow {
   keyword: string;
   automationName: string;
+  /** Stable per-row identity with the keyword — account+keyword is NOT unique. */
+  zernioAutomationId: string;
   zernioAccountId: string;
   /** "@handle" of the connected account, or the raw Zernio id. */
   accountLabel: string;
