@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import {
@@ -33,10 +33,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  ChevronDown,
+  ChevronRight,
   Filter,
   Radio,
-  ToggleRight,
   Users,
+  ToggleRight,
   Send,
 } from "lucide-react";
 import { ApiError } from "../api/client";
@@ -109,6 +111,36 @@ function statNum(
     if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) {
       return Number(v);
     }
+  }
+  return undefined;
+}
+
+// The Zernio automation-logs endpoint passes its response straight through —
+// shape is whatever Zernio returns, not something we control. Look for the
+// array under a handful of likely keys before giving up.
+function extractLogRows(raw: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(raw)) {
+    return raw.filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null);
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    for (const key of ["logs", "data", "items", "results"]) {
+      const v = obj[key];
+      if (Array.isArray(v)) {
+        return v.filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null);
+      }
+    }
+  }
+  return [];
+}
+
+// Best-effort pull of a string field out of a log row, trying several
+// likely key spellings before giving up.
+function logField(row: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "string" && v.trim() !== "") return v;
+    if (typeof v === "number") return String(v);
   }
   return undefined;
 }
@@ -424,6 +456,142 @@ function AccountsTable({
 }
 
 // ---------------------------------------------------------------------------
+// Funnel drill-down — recent automation logs + recent leads for one funnel.
+// Mounted only while its row is expanded (queries are `enabled` on that).
+// ---------------------------------------------------------------------------
+
+const DRILLDOWN_LOGS_LIMIT = 20;
+const DRILLDOWN_LEADS_LIMIT = 10;
+
+function FunnelDrilldown({
+  automationId,
+  zernioAccountId,
+}: {
+  automationId: string;
+  zernioAccountId: string;
+}) {
+  const logsQ = useQuery({
+    queryKey: queryKeys.funnels.automationLogs(automationId, zernioAccountId),
+    queryFn: () =>
+      socialsApi.zernioAutomationLogs(automationId, {
+        zernioAccountId,
+        limit: DRILLDOWN_LOGS_LIMIT,
+      }),
+  });
+  const leadsQ = useQuery({
+    queryKey: queryKeys.funnels.leads({ zernioAccountId, limit: DRILLDOWN_LEADS_LIMIT }),
+    queryFn: () => socialsApi.funnelLeads({ zernioAccountId, limit: DRILLDOWN_LEADS_LIMIT }),
+  });
+
+  const logRows = logsQ.data ? extractLogRows(logsQ.data) : [];
+
+  return (
+    <div className="grid gap-3 border-t bg-muted/10 p-3 md:grid-cols-2">
+      <div>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Recent automation logs</p>
+        {logsQ.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : logsQ.error ? (
+          <p className="text-xs text-destructive">
+            {logsQ.error instanceof Error ? logsQ.error.message : "Failed to load logs"}
+          </p>
+        ) : logRows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No logs reported for this automation yet.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="px-2 py-1.5 text-left font-medium">When</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Status</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logRows.map((row, i) => {
+                  const when = logField(row, ["sentAt", "createdAt", "timestamp", "time", "receivedAt"]);
+                  const rowStatus = logField(row, ["status", "result", "outcome"]);
+                  const detail = logField(row, [
+                    "error",
+                    "message",
+                    "reason",
+                    "recipient",
+                    "contact",
+                    "to",
+                    "handle",
+                  ]);
+                  return (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="whitespace-nowrap px-2 py-1.5 text-muted-foreground">
+                        {when ? relativeTime(when) : "—"}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {rowStatus ? (
+                          <Badge
+                            variant={
+                              rowStatus === "sent"
+                                ? "default"
+                                : rowStatus === "failed"
+                                  ? "destructive"
+                                  : "outline"
+                            }
+                            className="text-[10px] px-1 py-0"
+                          >
+                            {rowStatus}
+                          </Badge>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-muted-foreground">{detail ?? "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Recent leads for this account</p>
+        {leadsQ.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : leadsQ.error ? (
+          <p className="text-xs text-destructive">
+            {leadsQ.error instanceof Error ? leadsQ.error.message : "Failed to load leads"}
+          </p>
+        ) : (leadsQ.data?.leads.length ?? 0) === 0 ? (
+          <p className="text-xs text-muted-foreground">No leads captured on this account yet.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="px-2 py-1.5 text-left font-medium">Lead</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Keyword</th>
+                  <th className="px-2 py-1.5 text-right font-medium">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leadsQ.data!.leads.map((l) => (
+                  <tr key={l.id} className="border-b last:border-0">
+                    <td className="px-2 py-1.5">{l.handle ? `@${l.handle}` : (l.displayName ?? "—")}</td>
+                    <td className="px-2 py-1.5 text-muted-foreground">{l.keyword ?? l.clickTag ?? "—"}</td>
+                    <td className="whitespace-nowrap px-2 py-1.5 text-right text-muted-foreground">
+                      {l.lastEventAt ? relativeTime(l.lastEventAt) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Live funnels table (Zernio mirror) — per-funnel toggle
 // ---------------------------------------------------------------------------
 
@@ -436,6 +604,7 @@ function LiveFunnelsTable({
 }) {
   const qc = useQueryClient();
   const [rowError, setRowError] = useState<Record<string, string>>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const handleByZid = useMemo(() => {
     const m = new Map<string, string>();
@@ -509,6 +678,7 @@ function LiveFunnelsTable({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-xs text-muted-foreground">
+                <th className="w-8 px-2 py-2" aria-hidden="true" />
                 <th className="px-4 py-2 text-left font-medium">Funnel</th>
                 <th className="px-2 py-2 text-left font-medium hidden md:table-cell">
                   Account
@@ -551,11 +721,27 @@ function LiveFunnelsTable({
                 ]);
                 const handle = handleByZid.get(a.zernioAccountId);
                 const err = rowError[a.zernioAutomationId];
+                const isExpanded = expandedId === a.zernioAutomationId;
                 return (
+                  <Fragment key={a.zernioAutomationId}>
                   <tr
-                    key={a.zernioAutomationId}
                     className="border-b last:border-0 hover:bg-muted/30 align-top"
                   >
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(isExpanded ? null : a.zernioAutomationId)}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? "Hide details" : "Show recent logs and leads"}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </button>
+                    </td>
                     <td className="px-4 py-2">
                       <p className="font-medium">{a.name}</p>
                       <p className="text-[11px] text-muted-foreground">
@@ -635,6 +821,17 @@ function LiveFunnelsTable({
                       </div>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr className="border-b last:border-0">
+                      <td colSpan={10} className="p-0">
+                        <FunnelDrilldown
+                          automationId={a.zernioAutomationId}
+                          zernioAccountId={a.zernioAccountId}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

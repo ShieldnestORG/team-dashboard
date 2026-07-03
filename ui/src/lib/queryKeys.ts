@@ -174,6 +174,8 @@ export const queryKeys = {
       ["funnels", "leads", filters] as const,
     events: (filters: Record<string, unknown>) =>
       ["funnels", "events", filters] as const,
+    automationLogs: (automationId: string, zernioAccountId: string) =>
+      ["funnels", "automation-logs", automationId, zernioAccountId] as const,
   },
   apiRoutes: ["api-routes"] as const,
   plugins: {

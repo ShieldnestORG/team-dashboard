@@ -329,13 +329,31 @@ export const socialsApi = {
     ),
   // Read-only strategy catalog.
   funnelsCatalog: () => api.get<FunnelCatalog>("/socials/funnels/catalog"),
-  // Recent captured leads.
-  funnelLeads: (params?: { limit?: number }) => {
+  // Recent captured leads, optionally scoped to one Zernio account (the
+  // funnel drill-down uses this to show only leads for one live automation).
+  funnelLeads: (params?: { limit?: number; zernioAccountId?: string }) => {
     const q = new URLSearchParams();
     if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.zernioAccountId) q.set("zernioAccountId", params.zernioAccountId);
     const qs = q.toString();
     return api.get<{ leads: FunnelLead[]; brevoConfigured: boolean }>(
       `/socials/leads${qs ? `?${qs}` : ""}`,
+    );
+  },
+  // Recent send/skip/fail logs for one comment->DM automation. The Zernio
+  // response shape is free-form (opaque passthrough) — callers must parse
+  // defensively.
+  zernioAutomationLogs: (
+    automationId: string,
+    params: { zernioAccountId: string; status?: "sent" | "failed" | "skipped"; limit?: number; skip?: number },
+  ) => {
+    const q = new URLSearchParams();
+    q.set("zernioAccountId", params.zernioAccountId);
+    if (params.status) q.set("status", params.status);
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.skip) q.set("skip", String(params.skip));
+    return api.get<Record<string, unknown>>(
+      `/socials/zernio/automations/${automationId}/logs?${q.toString()}`,
     );
   },
   // Recent inbound Zernio webhook events.
