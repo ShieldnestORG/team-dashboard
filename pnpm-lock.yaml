@@ -15,18 +15,22 @@ overrides:
   path-to-regexp: '>=8.4.0'
   lodash-es: '>=4.18.0'
   kysely: '>=0.28.17 <0.29'
-  fast-xml-parser: '>=5.5.7'
+  fast-xml-parser: '>=5.7.0'
   fast-xml-builder: '>=1.1.7'
   fast-uri: '>=3.1.2 <4'
-  react-router: '>=7.15.0'
-  react-router-dom: '>=7.15.0'
+  react-router: '>=7.15.1'
+  react-router-dom: '>=7.15.1'
   vitest: '>=3.2.6'
   defu: '>=6.1.5'
   file-type: '>=21.3.2 <22'
   ip-address: '>=10.1.1 <11'
-  ws: '>=8.20.1 <9'
+  ws: '>=8.21.0 <9'
   uuid@^11: '>=11.1.1 <12'
   qs: '>=6.15.2 <7'
+  dompurify: '>=3.4.11'
+  undici@6: '>=6.27.0 <7'
+  undici@7: '>=7.28.0 <8'
+  form-data: '>=4.0.6'
 
 patchedDependencies:
   embedded-postgres@18.1.0-beta.16:
@@ -212,7 +216,7 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1
       ws:
-        specifier: '>=8.20.1 <9'
+        specifier: '>=8.21.0 <9'
         version: 8.21.0
     devDependencies:
       '@types/node':
@@ -611,8 +615,8 @@ importers:
         specifier: ^2.1.0
         version: 2.1.0
       dompurify:
-        specifier: ^3.4.0
-        version: 3.4.0
+        specifier: '>=3.4.11'
+        version: 3.4.11
       dotenv:
         specifier: ^17.0.1
         version: 17.3.1
@@ -665,7 +669,7 @@ importers:
         specifier: ^7.2.4
         version: 7.2.4
       ws:
-        specifier: '>=8.20.1 <9'
+        specifier: '>=8.21.0 <9'
         version: 8.21.0
       zod:
         specifier: ^3.24.2
@@ -813,7 +817,7 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.14)(react@19.2.4)
       react-router-dom:
-        specifier: '>=7.15.0'
+        specifier: '>=7.15.1'
         version: 7.17.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react-zoom-pan-pinch:
         specifier: ^3.7.0
@@ -4878,11 +4882,8 @@ packages:
     resolution: {integrity: sha512-cgwlv/1iFQiFnU96XXgROh8xTeetsnJiDsTc7TYCLFd9+/WNkIqPTxiM/8pSd8VIrhXGTf1Ny1q1hquVqDJB5w==}
     engines: {node: '>= 4'}
 
-  dompurify@3.4.0:
-    resolution: {integrity: sha512-nolgK9JcaUXMSmW+j1yaSvaEaoXYHwWyGJlkoCTghc97KgGDDSnpoU/PlEnw63Ah+TGKFOyY+X5LnxaWbCSfXg==}
-
-  dompurify@3.4.1:
-    resolution: {integrity: sha512-JahakDAIg1gyOm7dlgWSDjV4n7Ip2PKR55NIT6jrMfIgLFgWo81vdr1/QGqWtFNRqXP9UV71oVePtjqS2ebnPw==}
+  dompurify@3.4.11:
+    resolution: {integrity: sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==}
 
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
@@ -5258,8 +5259,8 @@ packages:
     resolution: {integrity: sha512-G6NsmEW15s0Uw9XnCg+33H3ViYRyiM0hMrMhhqQOR8NFc5GhYrI+6I3u7OTw7b91J2g8rtvMBZJDbcGb2YUniw==}
     engines: {node: '>= 18'}
 
-  form-data@4.0.5:
-    resolution: {integrity: sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==}
+  form-data@4.0.6:
+    resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
     engines: {node: '>= 6'}
 
   format@0.2.2:
@@ -5373,6 +5374,10 @@ packages:
 
   hasown@2.0.2:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
+    engines: {node: '>= 0.4'}
+
+  hasown@2.0.4:
+    resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
   hast-util-to-jsx-runtime@2.3.6:
@@ -7176,12 +7181,12 @@ packages:
   undici-types@7.24.4:
     resolution: {integrity: sha512-cRaY9PagdEZoRmcwzk3tUV3SVGrVQkR6bcSilav/A0vXsfpW4Lvd0BvgRMwTEDTLLGN+QdyBTG+nnvTgJhdt6w==}
 
-  undici@6.24.1:
-    resolution: {integrity: sha512-sC+b0tB1whOCzbtlx20fx3WgCXwkW627p4EA9uM+/tNNPkSS+eSEld6pAs9nDv7WbY1UUljBMYPtu9BCOrCWKA==}
+  undici@6.27.0:
+    resolution: {integrity: sha512-YmfV3YnEDzXRC5lZ2jWtWWHKGUm1zIt8AhesR1tens+HTNv+YZlN/dp6G727LOvMJ8xjP9Be7Y2Sdr96LDm+pg==}
     engines: {node: '>=18.17'}
 
-  undici@7.24.4:
-    resolution: {integrity: sha512-BM/JzwwaRXxrLdElV2Uo6cTLEjhSb3WXboncJamZ15NgUURmvlXvxa6xkwIOILIjPNo9i8ku136ZvWV0Uly8+w==}
+  undici@7.28.0:
+    resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
     engines: {node: '>=20.18.1'}
 
   unicode-segmenter@0.14.5:
@@ -8895,7 +8900,7 @@ snapshots:
       discord-api-types: 0.38.44
       magic-bytes.js: 1.13.0
       tslib: 2.8.1
-      undici: 6.24.1
+      undici: 6.27.0
 
   '@discordjs/util@1.2.0':
     dependencies:
@@ -11379,7 +11384,7 @@ snapshots:
       '@types/cookiejar': 2.1.5
       '@types/methods': 1.1.4
       '@types/node': 25.2.3
-      form-data: 4.0.5
+      form-data: 4.0.6
 
   '@types/supertest@6.0.3':
     dependencies:
@@ -11547,7 +11552,7 @@ snapshots:
   axios@1.17.0:
     dependencies:
       follow-redirects: 1.16.0
-      form-data: 4.0.5
+      form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
@@ -12260,7 +12265,7 @@ snapshots:
       lodash.snakecase: 4.1.1
       magic-bytes.js: 1.13.0
       tslib: 2.8.1
-      undici: 6.24.1
+      undici: 6.27.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -12277,11 +12282,7 @@ snapshots:
     dependencies:
       domelementtype: 2.3.0
 
-  dompurify@3.4.0:
-    optionalDependencies:
-      '@types/trusted-types': 2.0.7
-
-  dompurify@3.4.1:
+  dompurify@3.4.11:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -12392,7 +12393,7 @@ snapshots:
       es-errors: 1.3.0
       get-intrinsic: 1.3.0
       has-tostringtag: 1.0.2
-      hasown: 2.0.2
+      hasown: 2.0.4
 
   es-toolkit@1.47.0: {}
 
@@ -12682,12 +12683,12 @@ snapshots:
 
   form-data-encoder@4.1.0: {}
 
-  form-data@4.0.5:
+  form-data@4.0.6:
     dependencies:
       asynckit: 0.4.0
       combined-stream: 1.0.8
       es-set-tostringtag: 2.1.0
-      hasown: 2.0.2
+      hasown: 2.0.4
       mime-types: 2.1.35
 
   format@0.2.2: {}
@@ -12807,6 +12808,10 @@ snapshots:
       has-symbols: 1.1.0
 
   hasown@2.0.2:
+    dependencies:
+      function-bind: 1.1.2
+
+  hasown@2.0.4:
     dependencies:
       function-bind: 1.1.2
 
@@ -13102,7 +13107,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.1
-      undici: 7.24.4
+      undici: 7.28.0
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -13533,7 +13538,7 @@ snapshots:
       d3-sankey: 0.12.3
       dagre-d3-es: 7.0.14
       dayjs: 1.11.20
-      dompurify: 3.4.1
+      dompurify: 3.4.11
       es-toolkit: 1.47.0
       katex: 0.16.45
       khroma: 2.1.0
@@ -14850,7 +14855,7 @@ snapshots:
       cookiejar: 2.1.4
       debug: 4.4.3
       fast-safe-stringify: 2.1.1
-      form-data: 4.0.5
+      form-data: 4.0.6
       formidable: 3.5.4
       methods: 1.1.2
       mime: 2.6.0
@@ -15028,9 +15033,9 @@ snapshots:
 
   undici-types@7.24.4: {}
 
-  undici@6.24.1: {}
+  undici@6.27.0: {}
 
-  undici@7.24.4: {}
+  undici@7.28.0: {}
 
   unicode-segmenter@0.14.5: {}
 
