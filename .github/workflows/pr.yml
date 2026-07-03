@@ -24,9 +24,18 @@ jobs:
         if: github.head_ref != 'chore/refresh-lockfile'
         run: |
           changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+          # A lockfile change is only legitimate alongside a manifest change in
+          # the same PR — verify/e2e install with --frozen-lockfile, so a dep or
+          # overrides bump WITHOUT the lockfile can never pass them (2026-07-03).
+          # A lockfile-ONLY diff is still blocked: that's the tampering case this
+          # guard exists for; the refresh-lockfile workflow owns those.
           if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
-            echo "Do not commit pnpm-lock.yaml in pull requests. CI owns lockfile updates."
-            exit 1
+            if printf '%s\n' "$changed" | grep -q 'package\.json$'; then
+              echo "pnpm-lock.yaml change accompanies package.json change(s) — allowed."
+            else
+              echo "Do not commit pnpm-lock.yaml without a package.json change. CI owns lockfile-only updates."
+              exit 1
+            fi
           fi
 
       - name: Setup pnpm

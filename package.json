@@ -42,7 +42,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/nodemailer": "^7.0.11",
     "cross-env": "^10.1.0",
-    "esbuild": "^0.27.3",
+    "esbuild": "^0.28.1",
     "typescript": "^5.7.3",
     "vitest": "^3.2.6"
   },
@@ -53,7 +53,7 @@
   "pnpm": {
     "overrides": {
       "axios": ">=1.16.0",
-      "esbuild": ">=0.25.0",
+      "esbuild": ">=0.28.1",
       "follow-redirects": ">=1.16.0",
       "hono": ">=4.12.18",
       "rollup": ">=4.59.0",
@@ -62,18 +62,35 @@
       "path-to-regexp": ">=8.4.0",
       "lodash-es": ">=4.18.0",
       "kysely": ">=0.28.17 <0.29",
-      "fast-xml-parser": ">=5.5.7",
+      "fast-xml-parser": ">=5.7.0",
       "fast-xml-builder": ">=1.1.7",
       "fast-uri": ">=3.1.2 <4",
-      "react-router": ">=7.15.0",
-      "react-router-dom": ">=7.15.0",
+      "react-router": ">=7.15.1",
+      "react-router-dom": ">=7.15.1",
       "vitest": ">=3.2.6",
       "defu": ">=6.1.5",
       "file-type": ">=21.3.2 <22",
       "ip-address": ">=10.1.1 <11",
-      "ws": ">=8.20.1 <9",
+      "ws": ">=8.21.0 <9",
       "uuid@^11": ">=11.1.1 <12",
-      "qs": ">=6.15.2 <7"
+      "qs": ">=6.15.2 <7",
+      "dompurify": ">=3.4.11",
+      "vite": ">=6.4.3 <7",
+      "undici@6": ">=6.27.0 <7",
+      "undici@7": ">=7.28.0 <8",
+      "@babel/core": ">=7.29.6 <8",
+      "form-data": ">=4.0.6"
+    },
+    "overridesReasons": {
+      "fast-xml-parser": "GHSA-gh4j-gqv2-49f6 (medium) XMLBuilder comment/CDATA injection, fixed >=5.7.0",
+      "react-router": "GHSA-84g9-w2xq-vcv6 (low) CSRF via PUT/PATCH/DELETE document requests, fixed >=7.15.1 (covers all other react-router advisories too)",
+      "ws": "GHSA-96hv-2xvq-fx4p (high) memory exhaustion DoS from tiny fragments/data chunks, fixed >=8.21.0",
+      "dompurify": "GHSA-cmwh-pvxp-8882 + GHSA-rp9w-3fw7-7cwq + GHSA-76mc-f452-cxcm + others (medium/low) ALLOWED_ATTR pollution / IN_PLACE sanitization bypasses, fixed >=3.4.11 (latest 3.4.x; GHSA-x4vx-rjvf-j5p4 has no upstream fix yet but requires IN_PLACE:true usage, which is not present in this codebase)",
+      "vite": "GHSA-fx2h-pf6j-xcff (high) server.fs.deny bypass on Windows alt paths + GHSA-v6wh-96g9-6wx3 (medium) launch-editor NTLMv2 hash disclosure, fixed >=6.4.3 (dev-only, stayed within the current 6.x major)",
+      "undici@6": "GHSA-58qx-3vcg-4xpx (medium) uninitialized memory disclosure, pulled in transitively by discord.js/@discordjs/rest which pins undici to a 6.x major - kept within major to avoid a breaking API jump for the bot client",
+      "undici@7": "GHSA-vxpw-j846-p89q (high) WebSocket DoS + GHSA-hm92-r4w5-c3mj (high) SOCKS5 proxy pool routing + GHSA-p88m-4jfj-68fv (medium) Set-Cookie header injection, pulled in transitively by jsdom (test-only), fixed >=7.28.0",
+      "@babel/core": "GHSA-4x5r-pxfx-6jf8 (low) arbitrary source-map file read via sourceMappingURL, fixed >=7.29.6 (stays on the 7.x line; 8.x is a breaking major)",
+      "form-data": "GHSA-hmw2-7cc7-3qxx (high) CRLF injection via unescaped multipart field names, pulled in by axios/superagent, fixed >=4.0.6"
     },
     "auditConfig": {
       "ignoreCves": ["CVE-2016-10538"]
