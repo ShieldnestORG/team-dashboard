@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { Agent, Issue, LiveEvent } from "@paperclipai/shared";
 import type { RunForIssue } from "../api/activity";
@@ -10,10 +10,22 @@ import { useToast } from "./ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { toCompanyRelativePath } from "../lib/company-routes";
 import { useLocation } from "../lib/router";
+import { classifyDisconnect, computeBackoffDelayMs, shouldProbeSession } from "../lib/liveReconnect";
 
 const TOAST_COOLDOWN_WINDOW_MS = 10_000;
 const TOAST_COOLDOWN_MAX = 3;
 const RECONNECT_SUPPRESS_MS = 2000;
+
+export interface LiveUpdatesStatus {
+  /** True once the client has given up reconnecting because the session looks invalid (401/403 on probe). */
+  stopped: boolean;
+}
+
+const LiveUpdatesStatusContext = createContext<LiveUpdatesStatus>({ stopped: false });
+
+export function useLiveUpdatesStatus(): LiveUpdatesStatus {
+  return useContext(LiveUpdatesStatusContext);
+}
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -699,6 +711,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const gateRef = useRef<ToastGate>({ cooldownHits: new Map(), suppressUntil: 0 });
   const pathnameRef = useRef(location.pathname);
+  const [stopped, setStopped] = useState(false);
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -711,6 +724,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   }, [location.pathname]);
 
   useEffect(() => {
+    setStopped(false);
     if (!selectedCompanyId) return;
     // Skip on public subdomains (affiliate / partner portals) — they don't
     // have board auth and the WS endpoint requires it.
@@ -721,9 +735,16 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     }
 
     let closed = false;
+    // Set once a REST session probe confirms the session is no longer valid
+    // (401/403) — distinct from `closed` (provider unmount/company switch)
+    // so cleanup logic can still run normally.
+    let stoppedForSession = false;
     let reconnectAttempt = 0;
+    let immediateFailureStreak = 0;
     let reconnectTimer: number | null = null;
     let socket: WebSocket | null = null;
+    let connectedAt: number | null = null;
+    let probingSession = false;
 
     const clearReconnect = () => {
       if (reconnectTimer !== null) {
@@ -733,17 +754,65 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     };
 
     const scheduleReconnect = () => {
-      if (closed) return;
+      if (closed || stoppedForSession) return;
       reconnectAttempt += 1;
-      const delayMs = Math.min(15000, 1000 * 2 ** Math.min(reconnectAttempt - 1, 4));
+      const delayMs = computeBackoffDelayMs(reconnectAttempt);
       reconnectTimer = window.setTimeout(() => {
         reconnectTimer = null;
         connect();
       }, delayMs);
     };
 
+    const stopReconnecting = () => {
+      stoppedForSession = true;
+      clearReconnect();
+      // Browsers log a failed WS upgrade to the console on their own and we
+      // can't suppress that per-attempt — but this stops the attempts (and
+      // therefore the spam) rather than adding noise of our own. One
+      // console.warn on the transition into the stopped state is enough.
+      console.warn(
+        "[LiveUpdatesProvider] live updates paused: session probe returned 401/403, will not keep reconnecting. Refresh to reconnect.",
+      );
+      setStopped(true);
+    };
+
+    const handleClose = () => {
+      if (closed || stoppedForSession) return;
+      const connectedDurationMs = connectedAt !== null ? Date.now() - connectedAt : 0;
+      connectedAt = null;
+      const classification = classifyDisconnect(connectedDurationMs);
+
+      if (classification === "healthy-drop") {
+        reconnectAttempt = 0;
+        immediateFailureStreak = 0;
+      } else if (classification === "immediate-failure") {
+        immediateFailureStreak += 1;
+      } else {
+        immediateFailureStreak = 0;
+      }
+
+      if (shouldProbeSession(immediateFailureStreak) && !probingSession) {
+        probingSession = true;
+        void authApi.probeSessionValid().then((result) => {
+          probingSession = false;
+          if (closed || stoppedForSession) return;
+          if (result === "invalid") {
+            stopReconnecting();
+            return;
+          }
+          // Session still looks valid (or the probe itself failed/errored) —
+          // give it a fresh run of attempts before probing again.
+          immediateFailureStreak = 0;
+          scheduleReconnect();
+        });
+        return;
+      }
+
+      scheduleReconnect();
+    };
+
     const connect = () => {
-      if (closed) return;
+      if (closed || stoppedForSession) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       const isProd = !window.location.hostname.includes("localhost");
       const wsBase = isProd
@@ -753,10 +822,10 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       socket = new WebSocket(url);
 
       socket.onopen = () => {
+        connectedAt = Date.now();
         if (reconnectAttempt > 0) {
           gateRef.current.suppressUntil = Date.now() + RECONNECT_SUPPRESS_MS;
         }
-        reconnectAttempt = 0;
       };
 
       socket.onmessage = (message) => {
@@ -779,8 +848,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       };
 
       socket.onclose = () => {
-        if (closed) return;
-        scheduleReconnect();
+        handleClose();
       };
     };
 
@@ -799,5 +867,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     };
   }, [queryClient, selectedCompanyId, pushToast, currentUserId]);
 
-  return <>{children}</>;
+  return (
+    <LiveUpdatesStatusContext.Provider value={{ stopped }}>{children}</LiveUpdatesStatusContext.Provider>
+  );
 }
