@@ -80,6 +80,15 @@ function universityAdminEmails(): Set<string> {
   );
 }
 
+// Member ids are Postgres uuids. Validate the `:id` param BEFORE it reaches a
+// query — a non-uuid otherwise throws a Postgres cast error that surfaces as a
+// generic 500. Cheap regex → a clean 400 for a malformed id.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(v: string): boolean {
+  return UUID_RE.test(v);
+}
+
 export function universityAdminRoutes(db: Db) {
   const router = Router();
   const boardAuth = boardAuthService(db);
@@ -193,6 +202,46 @@ export function universityAdminRoutes(db: Db) {
     return byMember;
   }
 
+  // ---- shared: live cancel-at-period-end state from Stripe ----
+  // The DB never stores cancel_at_period_end: a staff "Cancel" sets it at
+  // Stripe (status stays "active" through the paid period) and only the
+  // eventual customer.subscription.deleted webhook flips the DB to "cancelled".
+  // So the ONLY source of truth for "is a cancel pending?" is Stripe itself.
+  // Returns null (never throws) when Stripe is unconfigured, there is no
+  // subscription id, or the live subscription can't be read (e.g. it was fully
+  // deleted / the University key is unset) — a detail view must still render.
+  async function liveStripeCancelState(
+    stripeSubscriptionId: string | null | undefined,
+  ): Promise<{
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: Date | null;
+  } | null> {
+    if (!stripeConfigured() || !stripeSubscriptionId) return null;
+    try {
+      const live = await stripeRequest<{
+        cancel_at_period_end?: boolean;
+        current_period_end?: number;
+      }>(
+        "GET",
+        `/subscriptions/${stripeSubscriptionId}`,
+        undefined,
+        universityStripeKey(),
+      );
+      return {
+        cancelAtPeriodEnd: live.cancel_at_period_end === true,
+        currentPeriodEnd: live.current_period_end
+          ? new Date(live.current_period_end * 1000)
+          : null,
+      };
+    } catch (err) {
+      logger.warn(
+        { err, stripeSubscriptionId },
+        "university-admin: live Stripe subscription fetch failed (detail rendered without live cancel state)",
+      );
+      return null;
+    }
+  }
+
   // -------------------- GET /members?status=&q= --------------------
   router.get("/members", async (req, res) => {
     try {
@@ -219,7 +268,10 @@ export function universityAdminRoutes(db: Db) {
         );
       }
 
-      const members = await db
+      // Fetch one MORE than the cap so `truncated` is exact: if we got
+      // LIST_LIMIT+1 rows there is genuinely more, otherwise there isn't. The
+      // previous `>= LIST_LIMIT` check false-positived on an exact-500 result.
+      const fetched = await db
         .select({
           id: universityMembers.id,
           email: universityMembers.email,
@@ -231,7 +283,10 @@ export function universityAdminRoutes(db: Db) {
         .from(universityMembers)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(universityMembers.createdAt))
-        .limit(LIST_LIMIT);
+        .limit(LIST_LIMIT + 1);
+
+      const truncated = fetched.length > LIST_LIMIT;
+      const members = truncated ? fetched.slice(0, LIST_LIMIT) : fetched;
 
       const subsByMember = await latestSubsByMemberId(members.map((m) => m.id));
 
@@ -254,7 +309,7 @@ export function universityAdminRoutes(db: Db) {
         };
       });
 
-      res.json({ members: out, truncated: members.length >= LIST_LIMIT });
+      res.json({ members: out, truncated });
     } catch (err) {
       logger.error({ err }, "university-admin: listMembers failed");
       res.status(500).json({ error: "Failed to list members" });
@@ -264,6 +319,10 @@ export function universityAdminRoutes(db: Db) {
   // -------------------- GET /members/:id --------------------
   router.get("/members/:id", async (req, res) => {
     const memberId = req.params.id as string;
+    if (!isUuid(memberId)) {
+      res.status(400).json({ error: "Invalid member id" });
+      return;
+    }
     try {
       const [member] = await db
         .select({
@@ -288,6 +347,11 @@ export function universityAdminRoutes(db: Db) {
 
       const subsByMember = await latestSubsByMemberId([member.id]);
       const sub = subsByMember.get(member.id) ?? null;
+
+      // Live cancel-at-period-end state (see liveStripeCancelState): the DB
+      // alone can't tell a pending cancel from a healthy subscription, so the
+      // UI's undo affordance depends on this.
+      const liveState = await liveStripeCancelState(sub?.stripeSubscriptionId);
 
       // Recent community posts. Posts are joined by account_id (the canonical
       // key) with author_email kept as a durable fallback for members whose
@@ -371,10 +435,17 @@ export function universityAdminRoutes(db: Db) {
               id: sub.id,
               status: sub.status,
               plan: sub.plan,
-              currentPeriodEnd: sub.currentPeriodEnd,
+              // Prefer the live period end when Stripe answered; fall back to
+              // the last webhook-mirrored value otherwise.
+              currentPeriodEnd:
+                liveState?.currentPeriodEnd ?? sub.currentPeriodEnd,
               canceledAt: sub.canceledAt,
-              stripeCustomerId: sub.stripeCustomerId,
-              stripeSubscriptionId: sub.stripeSubscriptionId,
+              // null when Stripe is unconfigured / unreachable / the sub is
+              // gone; the UI treats null as "unknown", not "not cancelling".
+              cancelAtPeriodEnd: liveState?.cancelAtPeriodEnd ?? null,
+              // NOTE: raw stripeCustomerId / stripeSubscriptionId are
+              // deliberately NOT sent to the client — nothing in the UI needs
+              // them and they stay server-side.
             }
           : null,
         posts,
@@ -466,8 +537,23 @@ export function universityAdminRoutes(db: Db) {
   // Cancel-at-period-end on Stripe (member keeps access through the paid
   // period); the webhook mirrors status into the DB. Mirrors portal.ts
   // POST /university/cancel.
+  //
+  // AUDIT: every hit here is already logged by the logAdminAccess middleware
+  // mounted at the top of this router (admin_access_log row per request) — no
+  // per-handler audit call is needed.
+  //
+  // DUNNING INTERACTION (intentional, for now): scheduling cancel-at-period-end
+  // does NOT stop the day-3/day-7 dunning ladder. A member who is `past_due`
+  // AND has a pending cancel keeps receiving dunning emails until the
+  // subscription is actually deleted (customer.subscription.deleted). That is
+  // acceptable today — a past_due member with a scheduled cancel still owes the
+  // outstanding invoice and the nudge to pay it is not wrong.
   router.post("/members/:id/cancel", async (req, res) => {
     const memberId = req.params.id as string;
+    if (!isUuid(memberId)) {
+      res.status(400).json({ error: "Invalid member id" });
+      return;
+    }
     const reason =
       typeof req.body?.reason === "string" && req.body.reason.trim()
         ? req.body.reason.trim().slice(0, 2000)
@@ -517,22 +603,49 @@ export function universityAdminRoutes(db: Db) {
   });
 
   // -------------------- POST /members/:id/reactivate --------------------
-  // Undo a pending cancel and lift any pause on Stripe; the webhook mirrors
-  // status into the DB. Mirrors portal.ts POST /university/reactivate.
+  // Undo a pending cancel-at-period-end (and lift any pause) on Stripe; the
+  // webhook mirrors status into the DB. This is the UNDO for POST /cancel and
+  // only works while the subscription still exists at Stripe (i.e. before the
+  // paid period ends and customer.subscription.deleted fires). Once the sub is
+  // fully deleted there is nothing to reactivate — the member must re-subscribe
+  // via checkout. Mirrors portal.ts POST /university/reactivate.
+  //
+  // AUDIT: logged by the logAdminAccess middleware at the top of this router
+  // (admin_access_log row per request) — no per-handler audit call needed.
   router.post("/members/:id/reactivate", async (req, res) => {
     const memberId = req.params.id as string;
+    if (!isUuid(memberId)) {
+      res.status(400).json({ error: "Invalid member id" });
+      return;
+    }
     try {
       const resolved = await resolveMemberSubscription(memberId, res);
       if (!resolved) return;
       const { subId } = resolved;
 
-      await stripeRequest(
-        "POST",
-        `/subscriptions/${subId}`,
-        // Empty string clears pause_collection (Stripe's documented unset form).
-        { cancel_at_period_end: false, pause_collection: "" },
-        universityStripeKey(),
-      );
+      try {
+        await stripeRequest(
+          "POST",
+          `/subscriptions/${subId}`,
+          // Empty string clears pause_collection (Stripe's documented unset form).
+          { cancel_at_period_end: false, pause_collection: "" },
+          universityStripeKey(),
+        );
+      } catch (err) {
+        // A fully-cancelled subscription no longer exists at Stripe, so the
+        // POST fails with "No such subscription" / resource_missing. That is a
+        // terminal member state, not a server fault: return 409 with an
+        // actionable message instead of a generic 500.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/no such subscription|resource_missing/i.test(msg)) {
+          res.status(409).json({
+            error:
+              "Subscription fully cancelled — member must re-subscribe via checkout",
+          });
+          return;
+        }
+        throw err;
+      }
 
       const summary = await memberSummary(memberId);
       res.json({ ok: true, member: summary, message: "Reactivation applied" });

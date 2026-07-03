@@ -65,6 +65,10 @@ function statusBadgeVariant(
 
 // ── Stat cards ─────────────────────────────────────────────────────────────
 
+// Counts are computed from the CURRENT view (the filtered/searched member
+// list), not the whole membership — so every label says "in view" to avoid
+// reading as a global total. A true global count would need an unfiltered
+// fetch; deferred until there's a reason to pay for it.
 function StatCards({ rows }: { rows: UniversityAdminMemberRow[] }) {
   const total = rows.length;
   const active = rows.filter((r) => r.status === "active").length;
@@ -84,7 +88,7 @@ function StatCards({ rows }: { rows: UniversityAdminMemberRow[] }) {
               </span>
             </div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Members (active / total)
+              Active / total (in view)
             </div>
           </div>
         </CardContent>
@@ -95,7 +99,7 @@ function StatCards({ rows }: { rows: UniversityAdminMemberRow[] }) {
           <div>
             <div className="text-2xl font-bold leading-tight">{active}</div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Active members
+              Active (in view)
             </div>
           </div>
         </CardContent>
@@ -110,7 +114,7 @@ function StatCards({ rows }: { rows: UniversityAdminMemberRow[] }) {
           <div>
             <div className="text-2xl font-bold leading-tight">{pastDue}</div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Past due
+              Past due (in view)
             </div>
           </div>
         </CardContent>
@@ -121,7 +125,7 @@ function StatCards({ rows }: { rows: UniversityAdminMemberRow[] }) {
           <div>
             <div className="text-2xl font-bold leading-tight">{cancelled}</div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Cancelled
+              Cancelled (in view)
             </div>
           </div>
         </CardContent>
@@ -354,38 +358,43 @@ function MemberSheet({
                     No subscription on file.
                   </p>
                 ) : (
-                  <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
-                    <dt className="text-muted-foreground">Status</dt>
-                    <dd>
-                      <Badge
-                        variant={statusBadgeVariant(data.subscription.status)}
-                      >
-                        {data.subscription.status ?? "—"}
-                      </Badge>
-                    </dd>
-                    <dt className="text-muted-foreground">Plan</dt>
-                    <dd>
-                      <Badge variant="outline">
-                        {data.subscription.plan ?? "—"}
-                      </Badge>
-                    </dd>
-                    <dt className="text-muted-foreground">Period end</dt>
-                    <dd className="text-xs">
-                      {formatDateTime(data.subscription.currentPeriodEnd)}
-                    </dd>
-                    <dt className="text-muted-foreground">Cancelled at</dt>
-                    <dd className="text-xs">
-                      {formatDateTime(data.subscription.canceledAt)}
-                    </dd>
-                    <dt className="text-muted-foreground">Stripe cust</dt>
-                    <dd className="font-mono text-xs">
-                      {data.subscription.stripeCustomerId ?? "—"}
-                    </dd>
-                    <dt className="text-muted-foreground">Stripe sub</dt>
-                    <dd className="font-mono text-xs">
-                      {data.subscription.stripeSubscriptionId ?? "—"}
-                    </dd>
-                  </dl>
+                  <>
+                    {/* Pending-cancel banner: cancel_at_period_end is live from
+                        Stripe (the DB status stays "active" through the paid
+                        period), so this is the only visible cue that a cancel
+                        is scheduled — and that Reactivate will undo it. */}
+                    {data.subscription.cancelAtPeriodEnd === true && (
+                      <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+                        Cancellation scheduled — access ends{" "}
+                        {formatDateTime(data.subscription.currentPeriodEnd)}.
+                        Reactivate to undo.
+                      </div>
+                    )}
+                    <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
+                      <dt className="text-muted-foreground">Status</dt>
+                      <dd>
+                        <Badge
+                          variant={statusBadgeVariant(data.subscription.status)}
+                        >
+                          {data.subscription.status ?? "—"}
+                        </Badge>
+                      </dd>
+                      <dt className="text-muted-foreground">Plan</dt>
+                      <dd>
+                        <Badge variant="outline">
+                          {data.subscription.plan ?? "—"}
+                        </Badge>
+                      </dd>
+                      <dt className="text-muted-foreground">Period end</dt>
+                      <dd className="text-xs">
+                        {formatDateTime(data.subscription.currentPeriodEnd)}
+                      </dd>
+                      <dt className="text-muted-foreground">Cancelled at</dt>
+                      <dd className="text-xs">
+                        {formatDateTime(data.subscription.canceledAt)}
+                      </dd>
+                    </dl>
+                  </>
                 )}
               </section>
 
@@ -459,53 +468,87 @@ function MemberSheet({
                 {actionErr && (
                   <p className="mb-2 text-xs text-red-400">{actionErr}</p>
                 )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={
-                      pending !== null || data.member.status === "cancelled"
-                    }
-                    onClick={() => {
-                      const reason =
-                        window.prompt(
-                          "Cancellation reason (optional):",
-                          "",
-                        ) ?? undefined;
-                      void runAction("Cancel", () =>
-                        universityAdminApi
-                          .cancel(data.member.id, reason || undefined)
-                          .then((r) => ({
-                            message:
-                              r.message ?? "Cancellation scheduled at period end",
-                          })),
-                      );
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={
-                      pending !== null || data.member.status === "active"
-                    }
-                    onClick={() =>
-                      void runAction("Reactivate", () =>
-                        universityAdminApi
-                          .reactivate(data.member.id)
-                          .then((r) => ({
-                            message: r.message ?? "Reactivation applied",
-                          })),
-                      )
-                    }
-                  >
-                    Reactivate
-                  </Button>
-                  <Button variant="secondary" size="sm" onClick={onClose}>
-                    Close
-                  </Button>
-                </div>
+                {/* State machine (see server route header):
+                     - status "cancelled" = subscription fully deleted at
+                       Stripe → terminal. Neither Cancel nor Reactivate can
+                       act; the member must re-subscribe via checkout.
+                     - cancelAtPeriodEnd true = a cancel is scheduled but the
+                       sub is still live → Reactivate UNDOES it; Cancel is a
+                       no-op so it's disabled.
+                     - otherwise (active/past_due, no pending cancel) → Cancel
+                       is available; there's nothing to reactivate. */}
+                {(() => {
+                  const fullyCancelled = data.member.status === "cancelled";
+                  const cancelScheduled =
+                    data.subscription?.cancelAtPeriodEnd === true;
+                  const reactivateDisabledReason = fullyCancelled
+                    ? "Subscription fully cancelled — member must re-subscribe via checkout"
+                    : !cancelScheduled
+                      ? "No pending cancellation to undo"
+                      : undefined;
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={
+                          pending !== null || fullyCancelled || cancelScheduled
+                        }
+                        title={
+                          cancelScheduled
+                            ? "A cancellation is already scheduled"
+                            : undefined
+                        }
+                        onClick={() => {
+                          const reason =
+                            window.prompt(
+                              "Cancellation reason (optional):",
+                              "",
+                            ) ?? undefined;
+                          void runAction("Cancel", () =>
+                            universityAdminApi
+                              .cancel(data.member.id, reason || undefined)
+                              .then((r) => ({
+                                message:
+                                  r.message ??
+                                  "Cancellation scheduled at period end",
+                              })),
+                          );
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      {/* Wrap in a title-bearing span so the explanatory
+                          tooltip shows even while the button is disabled
+                          (native title on a disabled button is unreliable). */}
+                      <span title={reactivateDisabledReason}>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={
+                            pending !== null ||
+                            fullyCancelled ||
+                            !cancelScheduled
+                          }
+                          onClick={() =>
+                            void runAction("Reactivate", () =>
+                              universityAdminApi
+                                .reactivate(data.member.id)
+                                .then((r) => ({
+                                  message: r.message ?? "Reactivation applied",
+                                })),
+                            )
+                          }
+                        >
+                          Reactivate
+                        </Button>
+                      </span>
+                      <Button variant="secondary" size="sm" onClick={onClose}>
+                        Close
+                      </Button>
+                    </div>
+                  );
+                })()}
                 <p className="mt-3 text-[11px] text-muted-foreground">
                   Cancel / reactivate act on the member's Stripe subscription
                   (cancel-at-period-end); the resulting status syncs back via

@@ -28,8 +28,12 @@ export interface UniversityAdminSubscriptionDetail {
   plan: string | null;
   currentPeriodEnd: string | null;
   canceledAt: string | null;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
+  // Live cancel-at-period-end state read from Stripe server-side. true = a
+  // cancel is scheduled (undoable via reactivate); false = healthy; null =
+  // Stripe unconfigured / unreachable / subscription gone (unknown).
+  cancelAtPeriodEnd: boolean | null;
+  // NOTE: raw stripeCustomerId / stripeSubscriptionId are intentionally not
+  // exposed to the client — they stay server-side.
 }
 
 export interface UniversityAdminPostRow {
