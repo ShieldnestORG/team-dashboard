@@ -1191,6 +1191,15 @@ async function startLocalRuntimeService(input: {
         }
       });
     });
+    // Once the readiness race below has settled, nothing awaits this promise
+    // anymore. A late EADDRINUSE close (the child finally crashing after the
+    // race already resolved on a green readiness probe) would then reject an
+    // abandoned promise and surface as an unhandledRejection. Attach a no-op
+    // catch so that stray rejection is absorbed. This does not affect the
+    // abort flow: Promise.race consumes the original promise's rejection while
+    // the startup window is open, and portConflict is what the settle re-check
+    // below reads — the .catch only mops up rejections that arrive after.
+    void bindConflictAbort.catch(() => {});
 
     const urlTemplate =
       asString(expose.urlTemplate, "") ||
@@ -1206,6 +1215,16 @@ async function startLocalRuntimeService(input: {
       // before the child has even finished crashing on EADDRINUSE. Don't
       // trust a readiness that went green faster than the child could
       // fail-fast — hold until the startup window has passed, then re-check.
+      //
+      // This runs on the happy path (a green readiness) on EVERY attempt,
+      // including the very first start (attempt === 1). The steal window is
+      // inherent to allocatePort(): it always binds and releases the port
+      // before the child re-binds it, so a thief can slip in on a fresh
+      // allocation just as easily on the first attempt as after a prior
+      // conflict. Gating this settle behind attempt > 1 would let a
+      // first-start steal be trusted as "ready" and returned as a live
+      // service pointing at the thief's process — so the delay stays
+      // unconditional.
       const settleMs = 500 - (Date.now() - spawnedAt);
       if (settleMs > 0) await delay(settleMs);
       if (portConflict) {
