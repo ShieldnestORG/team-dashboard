@@ -29,7 +29,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `TEAM_DASHBOARD_COMPANY_ID` | Yes | VPS + Local | `8365d8c2-ea73-4c04-af78-a7db3ee7ecd4` (Coherence Daddy) |
 | **AI / LLM** | | | |
 | `ANTHROPIC_API_KEY` | Yes | VPS | Claude API for agent runtime |
-| `ANTHROPIC_MODEL` | Optional | VPS | Default model (default: claude-haiku-4-5-20251001) |
+| `ANTHROPIC_MODEL` | Optional | VPS | Default Claude model. Agent runtime defaults to `claude-haiku-4-5-20251001`; the content-LLM path (`anthropic-client.ts`, used when `contentLlmProvider=claude`) defaults to `claude-sonnet-5` when unset. |
 | `OLLAMA_URL` | Yes | VPS | Ollama API endpoint (default: `https://ollama.com/api`) |
 | `OLLAMA_MODEL` | Optional | VPS | Ollama model (default: gemma4:31b-cloud) |
 | `OLLAMA_API_KEY` | Yes | VPS | Ollama Cloud API bearer token |
@@ -162,3 +162,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Optional | VPS | Email alerting via Proton Mail SMTP (`smtp.protonmail.ch:587`). `SMTP_PASS` is a 16-char Proton SMTP token, NOT the account password. Rotate when `535 5.7.8 auth failed` appears (last rotated 2026-05-09). The host-level `egress-watch` cron on VPS1+VPS4 also reads from `/etc/egress-watch.env` — keep both in sync after rotation. |
 | `ALERT_EMAIL_TO` / `ALERT_EMAIL_FROM` | Optional | VPS | Alert recipient + sender (also receives new affiliate application notifications). Production: `nestd@pm.me` ← `info@coherencedaddy.com`. |
 | `AFFILIATE_SUPPORT_EMAIL` | Optional | VPS | Support email shown to affiliates on pending/approved screens (default: `SMTP_USER`) |
+
+## Content-LLM provider (instance setting, not an env var)
+
+> Which provider serves **content generation** (Ollama vs Claude) is chosen at runtime in the admin UI — **Paperclip → Instance Settings → General → `contentLlmProvider`** (`ollama` default; optional `contentLlmModel` overrides the model for the selected provider). It is deliberately **not** env-driven. The `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` and `OLLAMA_URL` / `OLLAMA_MODEL` / `OLLAMA_API_KEY` vars above only need to be *present* so the selected provider can authenticate; `server/src/services/llm-client.ts` auto-fails-over to the other provider when the primary errors. Voice snippets (`POST /api/voice-snippets`) additionally require `ELEVENLABS_VOICE_KEY` (see the Video Edit section — different account from the Scribe key, no fallback).
