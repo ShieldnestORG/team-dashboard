@@ -88,17 +88,22 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
   });
 
   let host = item.url;
+  let href = "#";
   try {
-    host = new URL(item.url).hostname.replace(/^www\./, "");
+    const parsed = new URL(item.url);
+    host = parsed.hostname.replace(/^www\./, "");
+    // Server validates http(s) at insert; re-check at render so a row written
+    // by any other path can never become a javascript: link.
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") href = item.url;
   } catch {
-    // Keep the raw url if it somehow isn't parseable (shouldn't happen — server validates).
+    // Keep the raw url as display text if it somehow isn't parseable.
   }
 
   return (
     <div className="flex flex-col gap-2 border-b px-4 py-3 last:border-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <a
-          href={item.url}
+          href={href}
           target="_blank"
           rel="noreferrer"
           className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:underline"

@@ -88,6 +88,18 @@ function BriefBody({ sections }: { sections: DailyBriefSections }) {
   const funnelSuggestions = sections.funnelSuggestions ?? [];
   const inspirationReview = sections.inspirationReview ?? [];
 
+  // Sections come from LLM output. The server drops non-http(s) urls before
+  // storing, but briefs are long-lived jsonb — re-check at render so a row
+  // written by any other path can never become a javascript: link.
+  const safeHref = (u: string): string => {
+    try {
+      const p = new URL(u);
+      return p.protocol === "http:" || p.protocol === "https:" ? u : "#";
+    } catch {
+      return "#";
+    }
+  };
+
   return (
     <div className="space-y-4">
       {summary.length > 0 && (
@@ -135,7 +147,7 @@ function BriefBody({ sections }: { sections: DailyBriefSections }) {
           <div className="space-y-2">
             {inspirationReview.map((r) => (
               <div key={r.url} className="text-sm">
-                <a href={r.url} target="_blank" rel="noreferrer" className="font-medium hover:underline">
+                <a href={safeHref(r.url)} target="_blank" rel="noreferrer" className="font-medium hover:underline">
                   {r.url}
                 </a>
                 <p className="text-muted-foreground">{r.comment}</p>
