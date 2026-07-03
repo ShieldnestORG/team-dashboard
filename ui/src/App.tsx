@@ -188,7 +188,7 @@ function CloudAccessGate() {
 function boardRoutes() {
   return (
     <>
-      <Route index element={<Navigate to="dashboard" replace />} />
+      <Route index element={<BoardIndexRedirect />} />
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
@@ -312,6 +312,26 @@ function boardRoutes() {
       <Route path="*" element={<NotFoundPage scope="board" />} />
     </>
   );
+}
+
+function BoardIndexRedirect() {
+  const { companies, loading } = useCompany();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+
+  // The board index redirect is relative, so it must only fire when the
+  // ":companyPrefix" segment is a real company. For a bare board path like
+  // /dashboard the segment is a route root, and redirecting relative to it
+  // would double the segment (/dashboard/dashboard) before Layout's
+  // auto-correct effect gets a chance to prepend the real prefix.
+  if (loading) return null;
+  if (
+    companyPrefix &&
+    !companies.some((company) => company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase())
+  ) {
+    return null;
+  }
+
+  return <Navigate to="dashboard" replace />;
 }
 
 function InboxRootRedirect() {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import {
   automationHealthApi,
