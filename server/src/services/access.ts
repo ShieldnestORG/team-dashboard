@@ -207,10 +207,23 @@ export function accessService(db: Db) {
   ) {
     const existing = await getMembership(companyId, principalType, principalId);
     if (existing) {
-      if (existing.status !== status || existing.membershipRole !== membershipRole) {
+      // Role semantics on re-call: "member" is the DEFAULT role most callers
+      // pass without meaning to change anything (e.g. setPrincipalPermission
+      // toggling a grant). A specific role already on the row ("marketing",
+      // "owner") must survive those default-role re-calls — only an explicit
+      // non-default role (or a null/"member" existing role) may change it.
+      // Status is always applied as requested.
+      const requestedIsDefaultRole = membershipRole === "member";
+      const existingHasSpecificRole =
+        existing.membershipRole != null && existing.membershipRole !== "member";
+      const nextRole =
+        requestedIsDefaultRole && existingHasSpecificRole
+          ? existing.membershipRole
+          : membershipRole;
+      if (existing.status !== status || existing.membershipRole !== nextRole) {
         const updated = await db
           .update(companyMemberships)
-          .set({ status, membershipRole, updatedAt: new Date() })
+          .set({ status, membershipRole: nextRole, updatedAt: new Date() })
           .where(eq(companyMemberships.id, existing.id))
           .returning()
           .then((rows) => rows[0] ?? null);

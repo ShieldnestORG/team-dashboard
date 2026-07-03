@@ -1,41 +1,4 @@
-import {
-  Inbox,
-  CircleDot,
-  Target,
-  LayoutDashboard,
-  DollarSign,
-  History,
-  Search,
-  SquarePen,
-  Network,
-  Boxes,
-  Repeat,
-  Settings,
-  Coins,
-  Hexagon,
-  HeartPulse,
-  Activity,
-  Radar,
-  GitBranch,
-  Database,
-  Clock,
-  Handshake,
-  UsersRound,
-  Globe,
-  MapPin,
-  GitPullRequest,
-  CheckSquare,
-  Gauge,
-  Share2,
-  Building2,
-  Eye,
-  CreditCard,
-  Film,
-  BarChart3,
-  Video,
-  Mail,
-  Filter,
-} from "lucide-react";
+import { Inbox, LayoutDashboard, Search, SquarePen } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
@@ -46,6 +9,7 @@ import { useCompany } from "../context/CompanyContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
+import { getSidebarConfig } from "../config/company-sidebars";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
@@ -69,6 +33,8 @@ export function Sidebar() {
     companyId: selectedCompanyId,
     companyPrefix: selectedCompany?.issuePrefix ?? null,
   };
+
+  const sections = getSidebarConfig(selectedCompany?.issuePrefix ?? "");
 
   return (
     <aside className="w-60 h-full min-h-0 border-r border-border bg-background flex flex-col">
@@ -121,62 +87,28 @@ export function Sidebar() {
           />
         </div>
 
-        <SidebarSection label="Work">
-          <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
-          <SidebarNavItem to="/routines" label="Routines" icon={Repeat} textBadge="Beta" textBadgeTone="amber" />
-          <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-        </SidebarSection>
-
-        <SidebarProjects />
-
-        <SidebarAgents />
-
-        <SidebarSection label="Agents & Org" accentClassName="text-amber-400">
-          <SidebarNavItem to="/activity" label="Activity" icon={History} />
-          <SidebarNavItem to="/agent-ops" label="Agent Ops" icon={Radar} />
-          <SidebarNavItem to="/org" label="Org" icon={Building2} />
-          <SidebarNavItem to="/structure" label="Structure" icon={GitBranch} />
-          <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-        </SidebarSection>
-
-        <SidebarSection label="Intel & Data" accentClassName="text-sky-400">
-          <SidebarNavItem to="/intel" label="Intel" icon={Database} />
-          <SidebarNavItem to="/knowledge-graph" label="Knowledge Graph" icon={Network} />
-          <SidebarNavItem to="/cities" label="City Collector" icon={MapPin} />
-          <SidebarNavItem to="/watchtower" label="Watchtower" icon={Eye} />
-          <SidebarNavItem to="/site-analytics" label="Site Analytics" icon={BarChart3} />
-        </SidebarSection>
-
-        <SidebarSection label="Content & Socials" accentClassName="text-violet-400">
-          <SidebarNavItem to="/socials" label="Socials & Content" icon={Share2} />
-          <SidebarNavItem to="/funnels" label="Funnels" icon={Filter} />
-        </SidebarSection>
-
-        <SidebarSection label="Products" accentClassName="text-emerald-400">
-          <SidebarNavItem to="/sessions" label="Sessions" icon={Video} />
-          <SidebarNavItem to="/university-emails" label="University Emails" icon={Mail} />
-          <SidebarNavItem to="/creditscore-review" label="CreditScore Review" icon={Gauge} />
-          <SidebarNavItem to="/video-edit" label="Video Edit" icon={Film} />
-          <SidebarNavItem to="/tokns" label="Tokns" icon={Hexagon} />
-          <SidebarNavItem to="/tx-ecosystem" label="TX Ecosystem" icon={Coins} />
-        </SidebarSection>
-
-        <SidebarSection label="Monetization" accentClassName="text-rose-400">
-          <SidebarNavItem to="/affiliates" label="Affiliates" icon={UsersRound} />
-          <SidebarNavItem to="/partners" label="Partners" icon={Handshake} />
-          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-          <SidebarNavItem to="/intel-billing" label="Intel Billing" icon={CreditCard} />
-        </SidebarSection>
-
-        <SidebarSection label="Ops & Admin" accentClassName="text-slate-400">
-          <SidebarNavItem to="/automation-health" label="Automation Health" icon={Activity} />
-          <SidebarNavItem to="/system-health" label="System Health" icon={HeartPulse} />
-          <SidebarNavItem to="/crons" label="Cron Jobs" icon={Clock} />
-          <SidebarNavItem to="/api-routes" label="API Routes" icon={Globe} />
-          <SidebarNavItem to="/approvals" label="Approvals" icon={CheckSquare} />
-          <SidebarNavItem to="/repo-updates" label="Repo Updates" icon={GitPullRequest} />
-          <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
-        </SidebarSection>
+        {sections.map((section, index) => {
+          if (section.kind === "projects") return <SidebarProjects key={`projects-${index}`} />;
+          if (section.kind === "agents") return <SidebarAgents key={`agents-${index}`} />;
+          return (
+            <SidebarSection
+              key={section.label}
+              label={section.label}
+              accentClassName={section.accentClassName}
+            >
+              {section.items.map((item) => (
+                <SidebarNavItem
+                  key={item.to}
+                  to={item.to}
+                  label={item.label}
+                  icon={item.icon}
+                  textBadge={item.textBadge}
+                  textBadgeTone={item.textBadgeTone}
+                />
+              ))}
+            </SidebarSection>
+          );
+        })}
 
         <PluginSlotOutlet
           slotTypes={["sidebarPanel"]}

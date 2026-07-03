@@ -63,7 +63,9 @@ describe("route walk: sidebar links", () => {
 
     const links = sidebarSources.flatMap((file) => {
       const source = fs.readFileSync(file, "utf8");
-      return [...source.matchAll(/to="(\/[^"]+)"/g)].map((match) => match[1]!);
+      // Matches both JSX attributes (to="/x" in Sidebar.tsx) and config object
+      // literals (to: "/x" in company-sidebars.tsx).
+      return [...source.matchAll(/to[=:]\s*"(\/[^"]+)"/g)].map((match) => match[1]!);
     });
     expect(links.length).toBeGreaterThan(10);
 

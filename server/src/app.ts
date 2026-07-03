@@ -10,6 +10,7 @@ import { httpLogger, errorHandler } from "./middleware/index.js";
 import { authRateLimit, globalRateLimit } from "./middleware/global-rate-limit.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
+import { marketingRoleGate } from "./middleware/marketing-role-gate.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
@@ -85,6 +86,7 @@ import { sitemapRoutes } from "./routes/sitemap.js";
 import { xOauthRoutes } from "./routes/x-oauth.js";
 import { canvaOauthRoutes } from "./routes/canva-oauth.js";
 import { socialsRoutes } from "./routes/socials.js";
+import { voiceSnippetsRouter } from "./routes/voice-snippets.js";
 import { launchMonitorRoutes } from "./routes/launch-monitor.js";
 import { watchtowerRoutes } from "./routes/watchtower.js";
 import { watchtowerExportRoutes } from "./routes/watchtower-export.js";
@@ -259,6 +261,10 @@ export async function createApp(
       resolveSession: opts.resolveSession,
     }),
   );
+  // Fail-closed path allowlist for marketing-role board users. Mounted right
+  // after the actor resolves and BEFORE any /api route mounts so it covers the
+  // whole board API surface; non-/api paths and non-board actors pass through.
+  app.use(marketingRoleGate(db));
   app.get("/api/auth/get-session", (req, res) => {
     if (req.actor.type !== "board" || !req.actor.userId) {
       res.status(401).json({ error: "Unauthorized" });
@@ -359,6 +365,9 @@ export async function createApp(
   api.use("/x/analytics", xAnalyticsRoutes(db));
   api.use("/canva/oauth", canvaOauthRoutes(db));
   api.use("/socials", socialsRoutes(db, opts.storageService));
+  // ElevenLabs voice-snippet factory (CONTRACT-1: router lives in
+  // routes/voice-snippets.ts; this is the only mount).
+  api.use("/voice-snippets", voiceSnippetsRouter(db, opts.storageService));
   api.use("/launch-monitor", launchMonitorRoutes(db));
   api.use("/watchtower", watchtowerRoutes(db));
   api.use("/watchtower", watchtowerExportRoutes(db));

@@ -55,6 +55,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `VIDEO_USE_BIN` | Optional | VPS | Absolute path to the `video-use` entry script on the host. Leave unset and jobs queue but won't run (UI shows "Engine not configured"). Used by `server/src/services/video-edit/engine.ts`. |
 | `VIDEO_EDIT_DATA_DIR` | Optional | VPS | Base dir for raw-input folders + outputs. Default: `/paperclip/video-edit`. |
 | `ELEVENLABS_API_KEY` | Optional | VPS | ElevenLabs Scribe key — required by video-use for word-level transcription. Sign up at <https://elevenlabs.io/app/settings/api-keys>. |
+| `ELEVENLABS_VOICE_KEY` | Optional | VPS | ElevenLabs key for Content Hub voice snippets (`POST /api/voice-snippets`). **Different account from `ELEVENLABS_API_KEY`** — the Scribe key's account has none of the 5 registry voices (Mark's clone + 4 personas), so there is deliberately NO fallback between the two vars: when this is unset the endpoint answers 503 ("voice generation isn't set up yet"). Mint a scoped key (`text_to_speech` + `voices_read`) in the voice-owning account. Verify with `GET /api/voice-snippets/health` (checks every registry voice exists on the account). |
 | **Platform Publishing** | | | |
 | `YOUTUBE_CLIENT_ID/SECRET` | Optional | VPS | YouTube Shorts auto-publishing |
 | `YOUTUBE_REFRESH_TOKEN` | Optional | VPS | YouTube OAuth refresh token |

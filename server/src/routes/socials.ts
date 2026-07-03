@@ -72,6 +72,122 @@ function loadFunnelCatalog(): FunnelCatalog {
   return funnelCatalogCache;
 }
 
+// ---------------------------------------------------------------------------
+// Green-light board read model (Content Hub). Mirror-backed ONLY — this
+// surface must never call Zernio itself (shared per-account rate limits with
+// Mark's crons + the team's Claude account). The explicit "Refresh from
+// Zernio" UI action uses GET /zernio/automations (live fetch + mirror refresh).
+// ---------------------------------------------------------------------------
+
+/** Mirror row fields the green-light derivation needs. */
+export interface GreenlightAutomationRow {
+  zernioAccountId: string;
+  name: string;
+  keywords: string[];
+  clickTag: string | null;
+  isActive: boolean;
+  stats: Record<string, unknown>;
+  lastSyncedAt: Date | string | null;
+}
+
+export interface GreenlightRow {
+  keyword: string;
+  automationName: string;
+  zernioAccountId: string;
+  /** Handle of the connected account ("@coherencedaddy") or the raw id. */
+  accountLabel: string;
+  clickTag: string | null;
+  isActive: boolean;
+  lastSyncedAt: string | null;
+  /**
+   * Zernio's stats JSONB is opaque (field names unverified) — values are
+   * probed defensively and null means "not reported", never zero.
+   */
+  stats: {
+    triggered: number | null;
+    dmsSent: number | null;
+    linkClicks: number | null;
+  };
+  tone: "green" | "amber" | "red";
+  addonMissing: boolean;
+}
+
+/** Mirror rows older than this are "stale" → amber, not green. */
+const GREENLIGHT_FRESH_MS = 2 * 60 * 60 * 1000; // 2h (sync cron is hourly)
+
+/** Probe an opaque stats object for the first numeric value under any candidate key. */
+export function probeStat(
+  stats: Record<string, unknown> | null | undefined,
+  candidates: string[],
+): number | null {
+  if (!stats || typeof stats !== "object") return null;
+  for (const key of candidates) {
+    const value = (stats as Record<string, unknown>)[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
+}
+
+/**
+ * Pure derivation: mirror rows → per-keyword green/amber/red rows.
+ * green = active + synced recently + at least one stat reported;
+ * amber = active but stale/no stats/addon-gated; red = inactive.
+ */
+export function deriveGreenlightRows(input: {
+  automations: GreenlightAutomationRow[];
+  handlesByZid: Map<string, string>;
+  addonGatedZids: Set<string>;
+  now?: Date;
+}): GreenlightRow[] {
+  const now = input.now ?? new Date();
+  const rows: GreenlightRow[] = [];
+  for (const automation of input.automations) {
+    const syncedAt = automation.lastSyncedAt ? new Date(automation.lastSyncedAt) : null;
+    const fresh =
+      syncedAt !== null && now.getTime() - syncedAt.getTime() <= GREENLIGHT_FRESH_MS;
+    const stats = {
+      triggered: probeStat(automation.stats, [
+        "triggered", "triggers", "triggerCount", "trigger_count", "totalTriggered", "comments", "commentCount",
+      ]),
+      dmsSent: probeStat(automation.stats, [
+        "dmsSent", "dms_sent", "dmCount", "dm_count", "messagesSent", "messages_sent", "sent", "dms",
+      ]),
+      linkClicks: probeStat(automation.stats, [
+        "linkClicks", "link_clicks", "clicks", "clickCount", "click_count", "linkClickCount",
+      ]),
+    };
+    const hasStats =
+      stats.triggered !== null || stats.dmsSent !== null || stats.linkClicks !== null;
+    const addonMissing = input.addonGatedZids.has(automation.zernioAccountId);
+    const tone: GreenlightRow["tone"] = !automation.isActive
+      ? "red"
+      : fresh && hasStats && !addonMissing
+        ? "green"
+        : "amber";
+    const handle = input.handlesByZid.get(automation.zernioAccountId);
+    const accountLabel = handle ? `@${handle.replace(/^@/, "")}` : automation.zernioAccountId;
+    const keywords = automation.keywords.length > 0 ? automation.keywords : [automation.name];
+    for (const keyword of keywords) {
+      rows.push({
+        keyword,
+        automationName: automation.name,
+        zernioAccountId: automation.zernioAccountId,
+        accountLabel,
+        clickTag: automation.clickTag,
+        isActive: automation.isActive,
+        lastSyncedAt: syncedAt ? syncedAt.toISOString() : null,
+        stats,
+        tone,
+        addonMissing,
+      });
+    }
+  }
+  return rows;
+}
+
 /** True when the actor is an authenticated instance admin. */
 function isAdminActor(req: Request): boolean {
   return req.actor.type === "board" && Boolean(req.actor.isInstanceAdmin);
@@ -553,6 +669,51 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
         logger.warn({ err }, "zernio automations mirror refresh failed"),
       );
       res.json({ automations, errors });
+    } catch (err) {
+      zernioErr(res, err);
+    }
+  });
+
+  // Green-light board (Content Hub): per-keyword green/amber/red + stats,
+  // composed from the DB mirror + latest analytics snapshots. Mirror-backed
+  // and fast — NO live Zernio call here (shared rate limits; the UI's
+  // explicit "Refresh from Zernio now" button hits GET /zernio/automations
+  // instead, which refreshes the mirror as a side effect). Board-actor read;
+  // exposes zero mutations.
+  router.get("/zernio/greenlight", async (_req, res) => {
+    try {
+      const automations = await db
+        .select()
+        .from(zernioCommentAutomations)
+        .orderBy(zernioCommentAutomations.name);
+      const accounts = await db
+        .select({ handle: socialAccounts.handle, oauthRef: socialAccounts.oauthRef })
+        .from(socialAccounts)
+        .where(and(eq(socialAccounts.companyId, COMPANY_ID), eq(socialAccounts.archived, false)));
+      const snapshots = await latestZernioSnapshots(db);
+
+      // oauthRef "zernio:<id>" → handle, for plain-English account labels.
+      const handlesByZid = new Map<string, string>();
+      for (const account of accounts) {
+        if (account.oauthRef?.startsWith("zernio:") && account.handle) {
+          handlesByZid.set(account.oauthRef.slice("zernio:".length), account.handle);
+        }
+      }
+      // Accounts whose latest analytics snapshots hit the 402 add-on gate —
+      // surfaced as addonMissing rows, never rendered as zeros.
+      const addonGatedZids = new Set<string>();
+      for (const snapshot of snapshots) {
+        if (snapshot.addonMissing && snapshot.zernioAccountId) {
+          addonGatedZids.add(snapshot.zernioAccountId);
+        }
+      }
+
+      const rows = deriveGreenlightRows({
+        automations,
+        handlesByZid,
+        addonGatedZids,
+      });
+      res.json({ rows, source: "mirror", generatedAt: new Date().toISOString() });
     } catch (err) {
       zernioErr(res, err);
     }

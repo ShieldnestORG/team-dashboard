@@ -248,8 +248,8 @@ function boardRoutes() {
       </Route>
       <Route path="twitter" element={<Navigate to="/socials/twitter" replace />} />
       <Route path="discord" element={<Navigate to="/socials/discord" replace />} />
-      <Route path="tx-ecosystem" element={<TxEcosystem />} />
-      <Route path="tokns" element={<Tokns />} />
+      <Route path="tx-ecosystem" element={<TokProductRoute page="tx-ecosystem" />} />
+      <Route path="tokns" element={<TokProductRoute page="tokns" />} />
       <Route path="auto-reply" element={<Navigate to="/socials/auto-reply" replace />} />
       <Route path="system-health" element={<SystemHealth />} />
       <Route path="api-routes" element={<ApiDashboard />} />
@@ -312,6 +312,32 @@ function boardRoutes() {
       <Route path="*" element={<NotFoundPage scope="board" />} />
     </>
   );
+}
+
+/**
+ * Tokns + TX Ecosystem live under the TOK (Tokns) project — see
+ * docs/tokns-project.md. Old links under other prefixes (/CD/tokns, bare
+ * /tokns via Layout's auto-correct) redirect to the TOK-prefixed path.
+ * Loop-proof: under /TOK the active prefix matches, so the page renders.
+ * If no TOK company exists yet (fresh instance), render the page in place
+ * instead of redirecting into an invalid-prefix 404.
+ *
+ * The redirect target carries an explicit known prefix, so the router
+ * wrapper's Navigate leaves it untouched (extractCompanyPrefixFromPath
+ * recognizes TOK once the company exists — and the redirect only fires then).
+ */
+function TokProductRoute({ page }: { page: "tokns" | "tx-ecosystem" }) {
+  const { companies } = useCompany();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+  const location = useLocation();
+
+  const tokExists = companies.some((company) => company.issuePrefix.toUpperCase() === "TOK");
+  const activePrefix = companyPrefix?.toUpperCase() ?? null;
+  if (tokExists && activePrefix !== "TOK") {
+    return <Navigate to={`/TOK/${page}${location.search}${location.hash}`} replace />;
+  }
+
+  return page === "tokns" ? <Tokns /> : <TxEcosystem />;
 }
 
 function BoardIndexRedirect() {

@@ -307,3 +307,5 @@ export type {
   ZernioPostAnalytics,
   NewZernioPostAnalytics,
 } from "./zernio_engagement.js";
+export { voiceSnippets } from "./voice_snippets.js";
+export type { VoiceSnippet, NewVoiceSnippet } from "./voice_snippets.js";
