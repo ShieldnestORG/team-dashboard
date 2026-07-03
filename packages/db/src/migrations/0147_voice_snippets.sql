@@ -1,4 +1,4 @@
--- 0146_voice_snippets.sql
+-- 0147_voice_snippets.sql
 -- Content Hub voice-snippet cache: metadata for ElevenLabs-generated audio
 -- lines (Mark's clone + the 4 persona voices). The audio BYTES live in the
 -- StorageService/assets pipeline (writable /paperclip volume or s3), NOT in
@@ -7,11 +7,12 @@
 -- marketing BUILD-PLAN Wave 2 / D-server.
 --
 -- NUMBERING NOTE: this is team-dashboard's OWN migration sequence continuing
--- after 0145_university_coherence_checks. Numeric prefixes shared with the
+-- after 0146_account_funnel_gate (0146 was claimed on master by PR #136
+-- mid-build; this file was renumbered from 0146). Numeric prefixes shared with the
 -- University app's parallel sequence are the established convention here
 -- (see the 0119_creditscore_audit_runs / 0119_watchtower_rank pair and the
 -- note in 0122_zernio_engagement). The journal tag for this file is
--- 0146_voice_snippets. Do not reuse the gap numbers 0059/0086/0135.
+-- 0147_voice_snippets. Do not reuse the gap numbers 0059/0086/0135.
 --
 -- Cache semantics: cache_key = sha256 of the canonical generation request
 -- (voice id + model + settings + output format + NFC-normalized trimmed

@@ -7,7 +7,7 @@ import { assetService } from "./assets.js";
 
 // ---------------------------------------------------------------------------
 // Content Hub voice-snippet factory: text → ElevenLabs TTS → mp3 bytes in the
-// StorageService/assets pipeline, metadata cached in voice_snippets (0146).
+// StorageService/assets pipeline, metadata cached in voice_snippets (0147).
 //
 // KEY DECISION (verified live 2026-07-02): the key in ELEVENLABS_API_KEY
 // belongs to a DIFFERENT ElevenLabs account (video-edit Scribe) with NONE of

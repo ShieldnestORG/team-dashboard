@@ -35,6 +35,10 @@ export function useCompanyPageMemory() {
   const location = useLocation();
   const navigate = useNavigate();
   const prevCompanyId = useRef<string | null>(selectedCompanyId);
+  const knownCompanyPrefixes = useMemo(
+    () => companies.map((company) => company.issuePrefix),
+    [companies],
+  );
   const rememberedPathOwnerCompanyId = useMemo(
     () =>
       getRememberedPathOwnerCompanyId({
@@ -51,11 +55,11 @@ export function useCompanyPageMemory() {
   const fullPath = location.pathname + location.search;
   useEffect(() => {
     const companyId = rememberedPathOwnerCompanyId;
-    const relativePath = toCompanyRelativePath(fullPath);
+    const relativePath = toCompanyRelativePath(fullPath, knownCompanyPrefixes);
     if (companyId && isRememberableCompanyPath(relativePath)) {
       saveCompanyPath(companyId, relativePath);
     }
-  }, [fullPath, rememberedPathOwnerCompanyId]);
+  }, [fullPath, rememberedPathOwnerCompanyId, knownCompanyPrefixes]);
 
   // Navigate to saved path when company changes
   useEffect(() => {
@@ -70,10 +74,11 @@ export function useCompanyPageMemory() {
         const targetPath = sanitizeRememberedPathForCompany({
           path: paths[selectedCompanyId],
           companyPrefix: selectedCompany.issuePrefix,
+          knownCompanyPrefixes,
         });
         navigate(`/${selectedCompany.issuePrefix}${targetPath}`, { replace: true });
       }
     }
     prevCompanyId.current = selectedCompanyId;
-  }, [selectedCompany, selectedCompanyId, selectionSource, navigate]);
+  }, [selectedCompany, selectedCompanyId, selectionSource, navigate, knownCompanyPrefixes]);
 }
