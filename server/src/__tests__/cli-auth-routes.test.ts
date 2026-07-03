@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockAccessService = vi.hoisted(() => ({
   isInstanceAdmin: vi.fn(),
@@ -58,6 +59,8 @@ function createApp(actor: any) {
   );
 }
 
+const local = useLocalServer();
+
 describe("cli auth routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,7 +77,7 @@ describe("cli auth routes", () => {
     });
 
     const app = await createApp({ type: "none", source: "none" });
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/cli-auth/challenges")
       .send({
         command: "paperclipai company import",
@@ -110,7 +113,7 @@ describe("cli auth routes", () => {
     });
 
     const app = await createApp({ type: "none", source: "none" });
-    const res = await request(app).get("/api/cli-auth/challenges/challenge-1?token=pcp_cli_auth_secret");
+    const res = await request(local.via(app)).get("/api/cli-auth/challenges/challenge-1?token=pcp_cli_auth_secret");
 
     expect(res.status).toBe(200);
     expect(res.body.requiresSignIn).toBe(true);
@@ -142,7 +145,7 @@ describe("cli auth routes", () => {
       isInstanceAdmin: false,
       companyIds: ["company-1"],
     });
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/cli-auth/challenges/challenge-1/approve")
       .send({ token: "pcp_cli_auth_secret" });
 
@@ -184,7 +187,7 @@ describe("cli auth routes", () => {
       isInstanceAdmin: true,
       companyIds: [],
     });
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/cli-auth/challenges/challenge-2/approve")
       .send({ token: "pcp_cli_auth_secret" });
 
@@ -212,7 +215,7 @@ describe("cli auth routes", () => {
       isInstanceAdmin: true,
       companyIds: [],
     });
-    const res = await request(app).post("/api/cli-auth/revoke-current").send({});
+    const res = await request(local.via(app)).post("/api/cli-auth/revoke-current").send({});
 
     expect(res.status).toBe(200);
     expect(mockBoardAuthService.resolveBoardActivityCompanyIds).toHaveBeenCalledWith({

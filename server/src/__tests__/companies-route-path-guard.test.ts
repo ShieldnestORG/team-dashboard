@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { companyRoutes } from "../routes/companies.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 vi.mock("../services/index.js", () => ({
   companyService: () => ({
@@ -32,6 +33,8 @@ vi.mock("../services/index.js", () => ({
   logActivity: vi.fn(),
 }));
 
+const local = useLocalServer();
+
 describe("company routes malformed issue path guard", () => {
   it("returns a clear error when companyId is missing for issues list path", async () => {
     const app = express();
@@ -46,7 +49,7 @@ describe("company routes malformed issue path guard", () => {
     });
     app.use("/api/companies", companyRoutes({} as any));
 
-    const res = await request(app).get("/api/companies/issues");
+    const res = await request(local.via(app)).get("/api/companies/issues");
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({

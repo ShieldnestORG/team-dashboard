@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { issueRoutes } from "../routes/issues.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -70,6 +71,8 @@ function createApp() {
   app.use(errorHandler);
   return app;
 }
+
+const local = useLocalServer();
 
 const legacyProjectLinkedIssue = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -156,7 +159,7 @@ describe("issue goal context routes", () => {
   });
 
   it("surfaces the project goal from GET /issues/:id when the issue has no direct goal", async () => {
-    const res = await request(createApp()).get("/api/issues/11111111-1111-4111-8111-111111111111");
+    const res = await request(local.via(createApp())).get("/api/issues/11111111-1111-4111-8111-111111111111");
 
     expect(res.status).toBe(200);
     expect(res.body.goalId).toBe(projectGoal.id);
@@ -170,7 +173,7 @@ describe("issue goal context routes", () => {
   });
 
   it("surfaces the project goal from GET /issues/:id/heartbeat-context", async () => {
-    const res = await request(createApp()).get(
+    const res = await request(local.via(createApp())).get(
       "/api/issues/11111111-1111-4111-8111-111111111111/heartbeat-context",
     );
 

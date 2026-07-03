@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { approvalRoutes } from "../routes/approvals.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockApprovalService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -57,6 +58,8 @@ function createApp() {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("approval routes idempotent retries", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,7 +81,7 @@ describe("approval routes idempotent retries", () => {
       applied: false,
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/approvals/approval-1/approve")
       .send({});
 
@@ -100,7 +103,7 @@ describe("approval routes idempotent retries", () => {
       applied: false,
     });
 
-    const res = await request(createApp())
+    const res = await request(local.via(createApp()))
       .post("/api/approvals/approval-1/reject")
       .send({});
 

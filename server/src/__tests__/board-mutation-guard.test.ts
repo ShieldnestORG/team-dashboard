@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { boardMutationGuard } from "../middleware/board-mutation-guard.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 function createApp(
   actorType: "board" | "agent",
@@ -25,10 +26,12 @@ function createApp(
   return app;
 }
 
+const local = useLocalServer();
+
 describe("boardMutationGuard", () => {
   it("allows safe methods for board actor", async () => {
     const app = createApp("board");
-    const res = await request(app).get("/read");
+    const res = await request(local.via(app)).get("/read");
     expect(res.status).toBe(204);
   });
 
@@ -56,19 +59,19 @@ describe("boardMutationGuard", () => {
 
   it("allows local implicit board mutations without origin", async () => {
     const app = createApp("board", "local_implicit");
-    const res = await request(app).post("/mutate").send({ ok: true });
+    const res = await request(local.via(app)).post("/mutate").send({ ok: true });
     expect(res.status).toBe(204);
   });
 
   it("allows board bearer-key mutations without origin", async () => {
     const app = createApp("board", "board_key");
-    const res = await request(app).post("/mutate").send({ ok: true });
+    const res = await request(local.via(app)).post("/mutate").send({ ok: true });
     expect(res.status).toBe(204);
   });
 
   it("allows board mutations from trusted origin", async () => {
     const app = createApp("board");
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/mutate")
       .set("Origin", "http://localhost:3100")
       .send({ ok: true });
@@ -77,7 +80,7 @@ describe("boardMutationGuard", () => {
 
   it("allows board mutations from trusted referer origin", async () => {
     const app = createApp("board");
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/mutate")
       .set("Referer", "http://localhost:3100/issues/abc")
       .send({ ok: true });

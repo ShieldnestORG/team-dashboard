@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { companyRoutes } from "../routes/companies.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const mockCompanyService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -76,6 +77,8 @@ function createApp(actor: Record<string, unknown>) {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("PATCH /api/companies/:companyId/branding", () => {
   beforeEach(() => {
     mockCompanyService.update.mockReset();
@@ -97,7 +100,7 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch("/api/companies/company-1/branding")
       .send({ logoAssetId: "11111111-1111-4111-8111-111111111111" });
 
@@ -122,7 +125,7 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch("/api/companies/company-1/branding")
       .send({
         logoAssetId: "11111111-1111-4111-8111-111111111111",
@@ -166,7 +169,7 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       source: "local_implicit",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch("/api/companies/company-1/branding")
       .send({ brandColor: null, logoAssetId: null });
 
@@ -182,7 +185,7 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       source: "local_implicit",
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .patch("/api/companies/company-1/branding")
       .send({
         logoAssetId: "11111111-1111-4111-8111-111111111111",

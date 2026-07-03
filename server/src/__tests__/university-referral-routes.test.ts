@@ -48,6 +48,7 @@ import {
   universityReferrals,
   universityCreditLedger,
 } from "@paperclipai/db";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 // ---------------------------------------------------------------------------
 // In-memory state + db stub
@@ -260,6 +261,8 @@ function freshState(): State {
 const ACCOUNT_ID = "00000000-0000-0000-0000-0000000000aa";
 const MEMBER_EMAIL = "member@test.dev";
 
+const local = useLocalServer();
+
 function seedActiveMember(state: State) {
   state.accounts.push({
     id: ACCOUNT_ID,
@@ -292,7 +295,7 @@ describe("GET /api/portal/university/referral", () => {
 
   it("401 without a session", async () => {
     const app = makeApp(state);
-    const res = await request(app).get("/api/portal/university/referral");
+    const res = await request(local.via(app)).get("/api/portal/university/referral");
     expect(res.status).toBe(401);
   });
 
@@ -306,7 +309,7 @@ describe("GET /api/portal/university/referral", () => {
       lastLoginAt: null,
     });
     const app = makeApp(state);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/referral")
       .set("Cookie", sessionCookie(ACCOUNT_ID));
     expect(res.status).toBe(403);
@@ -315,7 +318,7 @@ describe("GET /api/portal/university/referral", () => {
   it("lazily creates a code and returns the shareable url + zero balance", async () => {
     seedActiveMember(state);
     const app = makeApp(state);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/referral")
       .set("Cookie", sessionCookie(ACCOUNT_ID));
 
@@ -343,7 +346,7 @@ describe("GET /api/portal/university/referral", () => {
       status: "active",
     });
     const app = makeApp(state);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/referral")
       .set("Cookie", sessionCookie(ACCOUNT_ID));
     expect(res.status).toBe(200);
@@ -367,7 +370,7 @@ describe("GET /api/portal/university/referral", () => {
       { id: nextId(), email: MEMBER_EMAIL, amountCents: -500, kind: "credit_applied", source: "referral" },
     );
     const app = makeApp(state);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/referral")
       .set("Cookie", sessionCookie(ACCOUNT_ID));
     expect(res.status).toBe(200);
@@ -402,7 +405,7 @@ describe("GET /api/portal/university/referral", () => {
       },
     );
     const app = makeApp(state);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .get("/api/portal/university/referral")
       .set("Cookie", sessionCookie(ACCOUNT_ID));
 

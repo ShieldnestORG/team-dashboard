@@ -26,6 +26,7 @@ import request from "supertest";
 import { SQL } from "drizzle-orm";
 import { affiliateClawbacks } from "@paperclipai/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 vi.mock("../services/stripe-client.js", () => ({
   verifyStripeSignature: vi.fn(() => true),
@@ -216,6 +217,8 @@ function collectSqlStrings(node: unknown, acc: string[] = []): string[] {
   return acc;
 }
 
+const local = useLocalServer();
+
 describe("handlePartnerStripeEvent — commission ledger", () => {
   const ORIGINAL_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -272,7 +275,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       },
     };
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/stripe/webhook")
       .set(stripeSigHeaders())
       .send(event);
@@ -344,8 +347,8 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       },
     };
 
-    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
-    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+    await request(local.via(app)).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+    await request(local.via(app)).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
 
     // Each replay still calls insert once (handler is stateless); onConflict
     // guarantees the DB doesn't duplicate. We assert both inserts used the
@@ -393,7 +396,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       },
     };
 
-    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+    await request(local.via(app)).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
 
     // Only one update (partnerCompanies.is_paying). NO insert into commissions.
     expect(calls.inserts).toHaveLength(0);
@@ -441,7 +444,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       },
     };
 
-    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+    await request(local.via(app)).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
 
     expect(calls.inserts).toHaveLength(1);
     const v = calls.inserts[0].values as Record<string, unknown>;
@@ -473,7 +476,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       },
     };
 
-    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+    await request(local.via(app)).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
 
     expect(calls.updates).toHaveLength(1);
     const upd = calls.updates[0];
@@ -518,7 +521,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       },
     };
 
-    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+    await request(local.via(app)).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
 
     expect(calls.updates).toHaveLength(1);
     const statusExpr = (calls.updates[0].set as Record<string, unknown>).status as {
@@ -573,7 +576,7 @@ describe("handlePartnerStripeEvent — commission ledger", () => {
       },
     };
 
-    await request(app).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
+    await request(local.via(app)).post("/stripe/webhook").set(stripeSigHeaders()).send(event).expect(200);
 
     expect(calls.updates).toHaveLength(1);
     const strings = collectSqlStrings(calls.updates[0].where);

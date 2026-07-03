@@ -51,6 +51,7 @@ import {
   adminImpersonationNonces,
   customerAccounts,
 } from "@paperclipai/db";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 // ---------------------------------------------------------------------------
 // In-memory db stub. We model only the operations the impersonation service
@@ -262,6 +263,8 @@ function makeApp(stub: ReturnType<typeof makeDb>) {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("admin-impersonation service", () => {
   beforeEach(() => {
     loggedActivities.length = 0;
@@ -358,7 +361,7 @@ describe("admin-impersonation service", () => {
       targetAccountId: TARGET_ACCT,
       now: startedAt,
     });
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/admin-impersonate/end")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", `${ADMIN_IMPERSONATION_COOKIE}=${encodeURIComponent(value)}`);
@@ -387,7 +390,7 @@ describe("admin-impersonation service", () => {
       adminActorId: ADMIN_ID,
       targetAccountId: TARGET_ACCT,
     });
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/credentials")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", `${ADMIN_IMPERSONATION_COOKIE}=${encodeURIComponent(value)}`)

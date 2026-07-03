@@ -25,6 +25,7 @@ import {
 } from "../services/university-email-events.js";
 import { universityEmailEventsRouter } from "../routes/university-email-events.js";
 import { universityEmailEvents } from "@paperclipai/db";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const SECRET = "test-email-events-secret";
 
@@ -92,6 +93,8 @@ function makeInsertDb() {
 // ---------------------------------------------------------------------------
 // Signature verification
 // ---------------------------------------------------------------------------
+
+const local = useLocalServer();
 
 describe("verifyEmailEventsSignature", () => {
   const body = JSON.stringify({ email: "a@x.test", event: "opened" });
@@ -210,7 +213,7 @@ describe("POST /api/university/email-events", () => {
   it("500s (fail closed) when EMAIL_EVENTS_KEY is not configured", async () => {
     delete process.env.EMAIL_EVENTS_KEY;
     const { db, inserts } = makeInsertDb();
-    const res = await request(makeApp(db))
+    const res = await request(local.via(makeApp(db)))
       .post("/api/university/email-events")
       .set("Content-Type", "application/json")
       .set("X-Email-Events-Signature", sign(validPayload))
@@ -221,7 +224,7 @@ describe("POST /api/university/email-events", () => {
 
   it("401s on a missing signature header", async () => {
     const { db, inserts } = makeInsertDb();
-    const res = await request(makeApp(db))
+    const res = await request(local.via(makeApp(db)))
       .post("/api/university/email-events")
       .set("Content-Type", "application/json")
       .send(validPayload);
@@ -231,7 +234,7 @@ describe("POST /api/university/email-events", () => {
 
   it("401s on an invalid signature", async () => {
     const { db, inserts } = makeInsertDb();
-    const res = await request(makeApp(db))
+    const res = await request(local.via(makeApp(db)))
       .post("/api/university/email-events")
       .set("Content-Type", "application/json")
       .set("X-Email-Events-Signature", sign(validPayload, "wrong-secret"))
@@ -242,7 +245,7 @@ describe("POST /api/university/email-events", () => {
 
   it("accepts a validly signed event: 202 + insert with kind from tags", async () => {
     const { db, inserts } = makeInsertDb();
-    const res = await request(makeApp(db))
+    const res = await request(local.via(makeApp(db)))
       .post("/api/university/email-events")
       .set("Content-Type", "application/json")
       .set("X-Email-Events-Signature", sign(validPayload))
@@ -264,7 +267,7 @@ describe("POST /api/university/email-events", () => {
   it("400s on a signed but malformed payload (no insert)", async () => {
     const bad = JSON.stringify({ event: "opened", at: "2026-06-19T12:00:00Z" });
     const { db, inserts } = makeInsertDb();
-    const res = await request(makeApp(db))
+    const res = await request(local.via(makeApp(db)))
       .post("/api/university/email-events")
       .set("Content-Type", "application/json")
       .set("X-Email-Events-Signature", sign(bad))

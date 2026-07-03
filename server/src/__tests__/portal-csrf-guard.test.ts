@@ -16,6 +16,7 @@ import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { portalCsrfGuard } from "../middleware/portal-csrf.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const PORTAL_ORIGIN = "https://portal.test.local";
 const API_ORIGIN = "https://api.test.local";
@@ -37,6 +38,8 @@ function makeApp() {
   return app;
 }
 
+const local = useLocalServer();
+
 describe("portalCsrfGuard", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
@@ -54,43 +57,43 @@ describe("portalCsrfGuard", () => {
 
   it("lets safe methods through with no headers at all", async () => {
     const app = makeApp();
-    expect((await request(app).get("/x")).status).toBe(200);
-    expect((await request(app).head("/x")).status).toBe(200);
-    expect((await request(app).options("/x")).status).toBe(200);
+    expect((await request(local.via(app)).get("/x")).status).toBe(200);
+    expect((await request(local.via(app)).head("/x")).status).toBe(200);
+    expect((await request(local.via(app)).options("/x")).status).toBe(200);
   });
 
   it("allows an unsafe request from the portal app origin", async () => {
-    const res = await request(makeApp())
+    const res = await request(local.via(makeApp()))
       .post("/x")
       .set("Origin", PORTAL_ORIGIN);
     expect(res.status).toBe(200);
   });
 
   it("allows an unsafe request from the backend's own origin (magic-link consume)", async () => {
-    const res = await request(makeApp()).post("/x").set("Origin", API_ORIGIN);
+    const res = await request(local.via(makeApp())).post("/x").set("Origin", API_ORIGIN);
     expect(res.status).toBe(200);
   });
 
   it("rejects an unsafe request from an untrusted origin", async () => {
-    const res = await request(makeApp()).post("/x").set("Origin", EVIL_ORIGIN);
+    const res = await request(local.via(makeApp())).post("/x").set("Origin", EVIL_ORIGIN);
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/trusted origin/i);
   });
 
   it("falls back to the Referer origin when Origin is absent", async () => {
-    const trusted = await request(makeApp())
+    const trusted = await request(local.via(makeApp()))
       .post("/x")
       .set("Referer", `${PORTAL_ORIGIN}/some/page`);
     expect(trusted.status).toBe(200);
 
-    const untrusted = await request(makeApp())
+    const untrusted = await request(local.via(makeApp()))
       .post("/x")
       .set("Referer", `${EVIL_ORIGIN}/attack`);
     expect(untrusted.status).toBe(403);
   });
 
   it("does NOT let a trusted Referer rescue an untrusted Origin", async () => {
-    const res = await request(makeApp())
+    const res = await request(local.via(makeApp()))
       .post("/x")
       .set("Origin", EVIL_ORIGIN)
       .set("Referer", `${PORTAL_ORIGIN}/page`);
@@ -99,21 +102,21 @@ describe("portalCsrfGuard", () => {
 
   it("fail-closes when neither Origin nor Referer is present on an unsafe request", async () => {
     for (const method of ["post", "put", "patch", "delete"] as const) {
-      const res = await request(makeApp())[method]("/x");
+      const res = await request(local.via(makeApp()))[method]("/x");
       expect(res.status).toBe(403);
     }
   });
 
   it("honors PORTAL_TRUSTED_ORIGINS as extra allowlist entries", async () => {
     process.env.PORTAL_TRUSTED_ORIGINS = `https://staging.test.local, ${EVIL_ORIGIN}`;
-    const res = await request(makeApp())
+    const res = await request(local.via(makeApp()))
       .post("/x")
       .set("Origin", "https://staging.test.local");
     expect(res.status).toBe(200);
   });
 
   it("treats an unparseable Origin as untrusted", async () => {
-    const res = await request(makeApp())
+    const res = await request(local.via(makeApp()))
       .post("/x")
       .set("Origin", "not a url");
     expect(res.status).toBe(403);

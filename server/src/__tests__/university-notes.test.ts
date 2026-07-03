@@ -54,6 +54,7 @@ import { startNoPgvectorTestDatabase } from "./helpers/embedded-postgres-no-pgve
 import { portalRoutes } from "../routes/portal.js";
 import { errorHandler } from "../middleware/index.js";
 import { issueSession, PORTAL_SESSION_COOKIE } from "../services/customer-portal.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const PORTAL_SECRET = "test-test-test-test-test-test-test-test-secret"; // >= 32 chars
 // Browsers send an Origin header on every unsafe (non-GET) request; the portal
@@ -93,6 +94,7 @@ describeDb("university notes endpoints (integration)", () => {
   let db!: ReturnType<typeof createDb>;
   let cleanup: (() => Promise<void>) | null = null;
   let app!: express.Express;
+  const local = useLocalServer();
   let memberAccountId!: string;
   let nonMemberAccountId!: string;
 
@@ -156,24 +158,24 @@ describeDb("university notes endpoints (integration)", () => {
   }
 
   it("401 without a session cookie", async () => {
-    const res = await request(app).get("/api/portal/university/notes");
+    const res = await request(local.via(app)).get("/api/portal/university/notes");
     expect(res.status).toBe(401);
   });
 
   it("403 for a logged-in NON-member on GET / POST / DELETE (membership gate)", async () => {
-    const get = await request(app)
+    const get = await request(local.via(app))
       .get("/api/portal/university/notes")
       .set("Cookie", nonMemberCookie());
     expect(get.status).toBe(403);
 
-    const post = await request(app)
+    const post = await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "x" });
     expect(post.status).toBe(403);
 
-    const del = await request(app)
+    const del = await request(local.via(app))
       .delete("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", nonMemberCookie())
@@ -186,14 +188,14 @@ describeDb("university notes endpoints (integration)", () => {
   });
 
   it("400 on missing lessonSlug or noteKey", async () => {
-    const noLesson = await request(app)
+    const noLesson = await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ noteKey: "takeaway", body: "x" });
     expect(noLesson.status).toBe(400);
 
-    const noKey = await request(app)
+    const noKey = await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -202,7 +204,7 @@ describeDb("university notes endpoints (integration)", () => {
   });
 
   it("POST saves a note and returns it", async () => {
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -225,7 +227,7 @@ describeDb("university notes endpoints (integration)", () => {
   });
 
   it("SAME (lesson, noteKey) re-POST is idempotent: no duplicate row, body updated", async () => {
-    const first = await request(app)
+    const first = await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -233,7 +235,7 @@ describeDb("university notes endpoints (integration)", () => {
     expect(first.status).toBe(200);
     const firstUpdatedAt = first.body.note.updatedAt;
 
-    const second = await request(app)
+    const second = await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
@@ -251,23 +253,23 @@ describeDb("university notes endpoints (integration)", () => {
   });
 
   it("GET returns the member's notes, newest first, and filters by lesson", async () => {
-    await request(app)
+    await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "a" });
-    await request(app)
+    await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "question", body: "b" });
-    await request(app)
+    await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-102", noteKey: "takeaway", body: "c" });
 
-    const all = await request(app)
+    const all = await request(local.via(app))
       .get("/api/portal/university/notes")
       .set("Cookie", memberCookie());
     expect(all.status).toBe(200);
@@ -279,7 +281,7 @@ describeDb("university notes endpoints (integration)", () => {
     expect(all.body.notes[0]).toHaveProperty("body");
     expect(all.body.notes[0]).toHaveProperty("updatedAt");
 
-    const filtered = await request(app)
+    const filtered = await request(local.via(app))
       .get("/api/portal/university/notes?lessonSlug=coherence-101")
       .set("Cookie", memberCookie());
     expect(filtered.status).toBe(200);
@@ -292,13 +294,13 @@ describeDb("university notes endpoints (integration)", () => {
   });
 
   it("DELETE removes a note", async () => {
-    await request(app)
+    await request(local.via(app))
       .post("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())
       .send({ lessonSlug: "coherence-101", noteKey: "takeaway", body: "a" });
 
-    const del = await request(app)
+    const del = await request(local.via(app))
       .delete("/api/portal/university/notes")
       .set("Origin", TRUSTED_ORIGIN)
       .set("Cookie", memberCookie())

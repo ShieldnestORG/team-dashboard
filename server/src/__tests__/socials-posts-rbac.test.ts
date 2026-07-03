@@ -16,6 +16,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { socialsRoutes } from "../routes/socials.js";
 import { errorHandler } from "../middleware/index.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 const ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const POST_ID = "22222222-2222-4222-8222-222222222222";
@@ -56,10 +57,12 @@ function createDbForCreate() {
   return { db, captured };
 }
 
+const local = useLocalServer();
+
 describe("socials post routes — auth + draft/approve RBAC", () => {
   it("rejects an unauthenticated create with 401", async () => {
     const app = createApp(unauthenticated, {});
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/socials/posts")
       .send({ socialAccountId: ACCOUNT_ID, text: "hello" });
     expect(res.status).toBe(401);
@@ -68,7 +71,7 @@ describe("socials post routes — auth + draft/approve RBAC", () => {
   it("a non-admin employee's post is created as a pending_approval DRAFT, attributed", async () => {
     const { db, captured } = createDbForCreate();
     const app = createApp(boardMember, db);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/socials/posts")
       .send({ socialAccountId: ACCOUNT_ID, text: "draft me" });
 
@@ -82,7 +85,7 @@ describe("socials post routes — auth + draft/approve RBAC", () => {
   it("an admin's post is created as scheduled (publishes directly)", async () => {
     const { db, captured } = createDbForCreate();
     const app = createApp(boardAdmin, db);
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/socials/posts")
       .send({ socialAccountId: ACCOUNT_ID, text: "ship it" });
 
@@ -94,7 +97,7 @@ describe("socials post routes — auth + draft/approve RBAC", () => {
 
   it("a non-admin cannot approve a draft (403)", async () => {
     const app = createApp(boardMember, {});
-    const res = await request(app).post(`/api/socials/posts/${POST_ID}/approve`).send({});
+    const res = await request(local.via(app)).post(`/api/socials/posts/${POST_ID}/approve`).send({});
     expect(res.status).toBe(403);
   });
 
@@ -112,7 +115,7 @@ describe("socials post routes — auth + draft/approve RBAC", () => {
       }),
     };
     const app = createApp(boardAdmin, db);
-    const res = await request(app).post(`/api/socials/posts/${POST_ID}/approve`).send({});
+    const res = await request(local.via(app)).post(`/api/socials/posts/${POST_ID}/approve`).send({});
 
     expect(res.status).toBe(200);
     expect(res.body.post.status).toBe("scheduled");
@@ -120,7 +123,7 @@ describe("socials post routes — auth + draft/approve RBAC", () => {
 
   it("a non-admin cannot bypass approval via enqueue-from-content (403)", async () => {
     const app = createApp(boardMember, {});
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/socials/posts/enqueue-from-content")
       .send({ contentItemId: "c1" });
     expect(res.status).toBe(403);
@@ -128,7 +131,7 @@ describe("socials post routes — auth + draft/approve RBAC", () => {
 
   it("a non-admin cannot force-drain the queue via relay-now (403)", async () => {
     const app = createApp(boardMember, {});
-    const res = await request(app).post("/api/socials/posts/relay-now").send({});
+    const res = await request(local.via(app)).post("/api/socials/posts/relay-now").send({});
     expect(res.status).toBe(403);
   });
 });

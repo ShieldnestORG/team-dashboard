@@ -26,6 +26,7 @@ import {
   logAdminAccess,
   redactRequestSummary,
 } from "../middleware/log-admin-access.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 // ---------------------------------------------------------------------------
 // 1. Pure helper — runs in any env.
@@ -91,6 +92,7 @@ if (!support.supported) {
 describeDb("admin-access-log middleware (e2e)", () => {
   let testDb: EmbeddedPostgresTestDatabase;
   let db: ReturnType<typeof createDb>;
+  const local = useLocalServer();
 
   beforeAll(async () => {
     testDb = await startEmbeddedPostgresTestDatabase("admin-access-log-");
@@ -153,7 +155,7 @@ describeDb("admin-access-log middleware (e2e)", () => {
       actor: { type: "board", userId, isInstanceAdmin: true, source: "session" },
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post(`/customers/${subId}`)
       .send({ note: "x" });
     expect(res.status).toBe(200);
@@ -192,7 +194,7 @@ describeDb("admin-access-log middleware (e2e)", () => {
       },
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post(`/customers/${randomUUID()}`)
       .send({});
     expect(res.status).toBe(200);
@@ -210,13 +212,13 @@ describeDb("admin-access-log middleware (e2e)", () => {
     });
 
     const beforeCount = await countRows();
-    const getRes = await request(app).get("/customers");
+    const getRes = await request(local.via(app)).get("/customers");
     expect(getRes.status).toBe(200);
     // Wait a beat — the insert (if any) is fire-and-forget.
     await new Promise((r) => setTimeout(r, 100));
     expect(await countRows()).toBe(beforeCount);
 
-    const postRes = await request(app)
+    const postRes = await request(local.via(app))
       .post(`/customers/${randomUUID()}`)
       .send({});
     expect(postRes.status).toBe(200);
@@ -243,7 +245,7 @@ describeDb("admin-access-log middleware (e2e)", () => {
     });
     app.post("/customers", (_req, res) => res.status(200).json({ ok: true }));
 
-    const res = await request(app).post("/customers").send({});
+    const res = await request(local.via(app)).post("/customers").send({});
     expect(res.status).toBe(401);
 
     const row = await waitForLatestRow();
@@ -281,7 +283,7 @@ describeDb("admin-access-log middleware (e2e)", () => {
       res.status(201).json({ ok: true });
     });
 
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post(`/admin/users/${targetUserId}/promote-instance-admin`)
       .send({});
     expect(res.status).toBe(201);
@@ -312,7 +314,7 @@ describeDb("admin-access-log middleware (e2e)", () => {
     });
 
     const secretEmail = "secretive-customer@example.com";
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/comp-grant")
       .send({
         tier: "pro",

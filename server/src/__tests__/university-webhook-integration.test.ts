@@ -73,6 +73,7 @@ import { universityWebhookRouter } from "../routes/university-checkout.js";
 import { portalRoutes } from "../routes/portal.js";
 import { errorHandler } from "../middleware/index.js";
 import { issueSession, PORTAL_SESSION_COOKIE } from "../services/customer-portal.js";
+import { useLocalServer } from "./helpers/supertest-server.js";
 
 // The hard-coded company the handler logs activity against (see
 // university-stripe-handler.ts COMPANY_ID). Seed it so the activity_log FK
@@ -142,7 +143,7 @@ async function postSignedWebhook(
 ) {
   const rawBody = JSON.stringify(event);
   const signature = signStripePayload(rawBody, secret);
-  return request(app)
+  return request(local.via(app))
     .post("/api/university/webhook")
     .set("Content-Type", "application/json")
     .set("stripe-signature", signature)
@@ -182,6 +183,8 @@ if (dbMode === "skip") {
       `tables are created from real DDL). Reason: ${support.reason ?? "unknown"}`,
   );
 }
+
+const local = useLocalServer();
 
 describeDb("university webhook → member + subscription + portal entitlement (integration)", () => {
   let db!: ReturnType<typeof createDb>;
@@ -288,7 +291,7 @@ describeDb("university webhook → member + subscription + portal entitlement (i
     // surfaces over the REAL GET /api/portal/me route, authenticated with a
     // real session cookie (the same issueSession() the portal mints).
     const cookie = `${PORTAL_SESSION_COOKIE}=${issueSession(accounts[0].id)}`;
-    const me = await request(app).get("/api/portal/me").set("Cookie", cookie);
+    const me = await request(local.via(app)).get("/api/portal/me").set("Cookie", cookie);
     expect(me.status).toBe(200);
     expect(me.body.account.email).toBe(MEMBER_EMAIL);
     expect(me.body.account.stripeCustomerId).toBe(STRIPE_CUSTOMER);
@@ -374,7 +377,7 @@ describeDb("university webhook → member + subscription + portal entitlement (i
       .from(customerAccounts)
       .where(sql`LOWER(email) = ${MEMBER_EMAIL}`);
     const cookie = `${PORTAL_SESSION_COOKIE}=${issueSession(accounts[0].id)}`;
-    const me = await request(app).get("/api/portal/me").set("Cookie", cookie);
+    const me = await request(local.via(app)).get("/api/portal/me").set("Cookie", cookie);
     expect(me.status).toBe(200);
     expect(me.body.entitlements.university).toBeNull();
   });
@@ -384,7 +387,7 @@ describeDb("university webhook → member + subscription + portal entitlement (i
     const rawBody = JSON.stringify(event);
     // Sign with the WRONG secret → verifyStripeSignature must reject.
     const badSignature = signStripePayload(rawBody, "whsec_wrong_secret");
-    const res = await request(app)
+    const res = await request(local.via(app))
       .post("/api/university/webhook")
       .set("Content-Type", "application/json")
       .set("stripe-signature", badSignature)
