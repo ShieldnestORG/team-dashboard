@@ -7,6 +7,7 @@
 
 import { createTransport, type Transporter } from "nodemailer";
 import { logger } from "../middleware/logger.js";
+import { sendMailBrevoFirst, brevoConfigured } from "./brevo.js";
 
 // Lazy transporter — same env vars as alerting.ts
 let _transporter: Transporter | null = null;
@@ -990,8 +991,8 @@ export async function sendTransactional(
   vars: EmailVars,
 ): Promise<void> {
   const transport = getTransporter();
-  if (!transport) {
-    logger.warn({ template, to }, "email-templates: SMTP not configured — email skipped");
+  if (!transport && !brevoConfigured()) {
+    logger.warn({ template, to }, "email-templates: no transport (Brevo/SMTP) — email skipped");
     return;
   }
 
@@ -1073,14 +1074,13 @@ export async function sendTransactional(
   }
 
   try {
-    await transport.sendMail({
-      from,
-      to,
-      bcc,
-      subject,
-      html,
-    });
-    logger.info({ template, to }, "email-templates: sent");
+    // Brevo-first; falls back to Proton SMTP if Brevo is unconfigured or fails.
+    const sent = await sendMailBrevoFirst({ from, to, bcc, subject, html }, transport);
+    if (sent) {
+      logger.info({ template, to }, "email-templates: sent");
+    } else {
+      logger.warn({ template, to }, "email-templates: send dropped (Brevo unconfigured/failed and no SMTP fallback)");
+    }
   } catch (err) {
     logger.error({ err, template, to }, "email-templates: send failed");
   }

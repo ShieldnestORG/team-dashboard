@@ -30,6 +30,7 @@ import {
   Settings,
   Share2,
   Target,
+  Users,
   UsersRound,
   Video,
 } from "lucide-react";
@@ -142,6 +143,7 @@ const DEFAULT_SECTIONS: SidebarSection[] = [
     label: "Monetization",
     accentClassName: "text-rose-400",
     items: [
+      { to: "/members", label: "Members", icon: Users, adminOnly: true },
       { to: "/affiliates", label: "Affiliates", icon: UsersRound },
       { to: "/partners", label: "Partners", icon: Handshake },
       { to: "/costs", label: "Costs", icon: DollarSign },

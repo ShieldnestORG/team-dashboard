@@ -98,6 +98,12 @@ export const queryKeys = {
     list: (companyId: string) => ["secrets", companyId] as const,
     providers: (companyId: string) => ["secret-providers", companyId] as const,
   },
+  cockpit: {
+    emailHealth: (companyId: string) => ["cockpit", "email-health", companyId] as const,
+    revenue: (companyId: string) => ["cockpit", "revenue", companyId] as const,
+    members: (companyId: string, q?: string) =>
+      ["cockpit", "members", companyId, q ?? ""] as const,
+  },
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
   siteMetrics: (companyId: string, filters?: { siteId?: string; period?: string; limit?: number }) =>
     ["site-metrics", companyId, filters ?? {}] as const,

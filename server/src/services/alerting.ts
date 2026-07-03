@@ -1,5 +1,6 @@
 import { createTransport, type Transporter } from "nodemailer";
 import { logger } from "../middleware/logger.js";
+import { sendMailBrevoFirst, brevoConfigured } from "./brevo.js";
 
 // Alert types
 export type AlertType =
@@ -68,36 +69,38 @@ export async function sendAlert(type: AlertType, subject: string, body: string):
     emailSent: false,
   };
 
-  const smtp = getTransporter();
   const to = process.env.ALERT_EMAIL_TO;
   const from = process.env.ALERT_EMAIL_FROM || process.env.SMTP_USER;
-
-  if (smtp && to && from) {
-    try {
-      await smtp.sendMail({
-        from,
-        to,
-        subject: `[Team Dashboard] ${subject}`,
-        html: `<div style="font-family:system-ui,sans-serif;max-width:600px">
+  const html = `<div style="font-family:system-ui,sans-serif;max-width:600px">
           <h2 style="color:#ef4444">${subject}</h2>
           <p style="color:#666;font-size:12px">Alert type: ${type} | ${new Date().toISOString()}</p>
           <div style="background:#f8f8f8;padding:16px;border-radius:8px;margin:16px 0">
             <pre style="white-space:pre-wrap;font-size:14px">${body}</pre>
           </div>
           <p style="color:#999;font-size:11px">Sent by Team Dashboard alerting system</p>
-        </div>`,
-      });
+        </div>`;
 
-      record.emailSent = true;
-      lastSentByType.set(type, Date.now());
-      logger.info({ type, subject }, "Alert email sent");
+  if (to && from && (brevoConfigured() || getTransporter())) {
+    try {
+      // Brevo-first; falls back to Proton SMTP if Brevo is unconfigured or fails.
+      const sent = await sendMailBrevoFirst(
+        { from, to, subject: `[Team Dashboard] ${subject}`, html },
+        getTransporter(),
+      );
+      if (sent) {
+        record.emailSent = true;
+        lastSentByType.set(type, Date.now());
+        logger.info({ type, subject }, "Alert email sent (Brevo-first)");
+      } else {
+        record.error = "no transport (Brevo + SMTP both unavailable)";
+      }
     } catch (err) {
-      record.error = `SMTP error: ${err instanceof Error ? err.message : String(err)}`;
+      record.error = `send error: ${err instanceof Error ? err.message : String(err)}`;
       logger.warn({ err, type }, "Alert email send error");
     }
   } else {
-    record.error = "SMTP not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS, ALERT_EMAIL_TO)";
-    logger.debug({ type, subject }, "Alert recorded (no SMTP config)");
+    record.error = "no email transport (set BREVO_API_KEY, or SMTP_HOST/USER/PASS + ALERT_EMAIL_TO)";
+    logger.debug({ type, subject }, "Alert recorded (no transport)");
   }
 
   // Always store in memory regardless of email success

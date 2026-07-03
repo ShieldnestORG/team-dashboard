@@ -50,7 +50,9 @@ import {
 } from "@paperclipai/db";
 import { linkStripeCustomerToAccount } from "./customer-account-linker.js";
 import { logActivity } from "./activity-log.js";
+import { issueService } from "./issues.js";
 import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
+import { sendBrevoEmail } from "./brevo.js";
 import {
   UNIVERSITY_LOGIN_URL,
   UNIVERSITY_LESSON_URL,
@@ -347,6 +349,66 @@ export async function handleUniversityCheckout(
       logger.error(
         { err, email, kind: "university_receipt" },
         "university-stripe-handler: receipt email failed (non-fatal)",
+      );
+    }
+
+    // Owner alert — notify the business inbox of every NEW paying member (Brevo).
+    // Non-fatal: a mail failure must never break the webhook.
+    try {
+      const ownerTo = process.env.OWNER_ALERT_EMAIL || "info@coherencedaddy.com";
+      const fromAddr = process.env.ALERT_EMAIL_FROM || "info@coherencedaddy.com";
+      await sendBrevoEmail({
+        from: `Coherence Daddy <${fromAddr}>`,
+        to: ownerTo,
+        subject: `💸 New $50 member: ${email}`,
+        html: `<div style="font-family:system-ui,sans-serif;font-size:15px;color:#111">
+          <h2 style="margin:0 0 12px">💸 New paying member</h2>
+          <table style="border-collapse:collapse">
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td><strong>${escapeHtml(email)}</strong></td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Name</td><td>${displayName ? escapeHtml(displayName) : "—"}</td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">Plan</td><td>${planLabel(plan)}</td></tr>
+            <tr><td style="padding:2px 12px 2px 0;color:#666">When</td><td>${now.toISOString()}</td></tr>
+          </table>
+        </div>`,
+      });
+    } catch (err) {
+      logger.error({ err, email }, "university-stripe-handler: owner alert failed (non-fatal)");
+    }
+
+    // Owner-legible dashboard feed line (separate from the audit log below, which
+    // also covers the replay path). logUniversityActivity is itself non-fatal.
+    await logUniversityActivity(db, "university.member.joined", subscriptionId, {
+      email,
+      displayName,
+      plan,
+      founding,
+      memberId,
+    });
+
+    // Owner Inbox alert — surface every NEW paying member as a low-priority
+    // issue in the cockpit Inbox. originKind/originId dedupe per member: the
+    // issues table has no UNIQUE on (companyId, signup_alert, originId), so we
+    // check for an existing row first (idempotent across webhook replays — note
+    // this whole block is already gated on `created`). Non-fatal: an Inbox
+    // failure must never break the webhook.
+    try {
+      const originId = `member:${memberId}`;
+      const existingAlerts = await issueService(db).list(COMPANY_ID, {
+        originKind: "signup_alert",
+        originId,
+      });
+      if (existingAlerts.length === 0) {
+        await issueService(db).create(COMPANY_ID, {
+          title: `New $50 member: ${email}`,
+          priority: "low",
+          originKind: "signup_alert",
+          originId,
+        });
+      }
+    } catch (err) {
+      logger.error(
+        { err, email, memberId },
+        "university-stripe-handler: inbox signup alert failed (non-fatal)",
       );
     }
   }
@@ -863,4 +925,15 @@ export async function handleVoiceAddonSubscriptionDeleted(
     }
   }
   return { matched: updated.length };
+}
+
+// Escape untrusted values (member displayName/email) before interpolating them
+// into owner-alert email HTML. Matches the local per-file escapeHtml convention
+// used across services (partner-reports.ts, partner-deployment.ts).
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
