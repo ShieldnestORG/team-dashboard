@@ -11,6 +11,7 @@ import { runSocialRelayerTick, runLeadRelayerTick } from "./social-relayer.js";
 import { runZernioEngagementSyncTick } from "./socials/zernio-sync.js";
 import { runZernioAnalyticsIngestTick } from "./socials/zernio-analytics.js";
 import { runFunnelTopupTick } from "./socials/funnels-service.js";
+import { runDailyBriefTick } from "./socials/daily-brief.js";
 import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 
@@ -70,7 +71,18 @@ export function startSocialCrons(db: Db, storageService: StorageService): void {
     handler: () => runFunnelTopupTick(db),
   });
 
+  // Daily AI Brief (Phase 3) — 07:15, after socials:zernio-analytics (06:40)
+  // so the same day's Zernio snapshots are already fresh. Gathers the last 7
+  // days across every channel + reviews new Inspiration board links.
+  registerCronJob({
+    jobName: "socials:daily-brief",
+    schedule: "15 7 * * *",
+    ownerAgent: "system",
+    sourceFile: "social-crons.ts",
+    handler: () => runDailyBriefTick(db),
+  });
+
   logger.info(
-    "Social crons registered (socials:relay, socials:lead-sync, socials:zernio-sync, socials:zernio-analytics, socials:funnel-topup)",
+    "Social crons registered (socials:relay, socials:lead-sync, socials:zernio-sync, socials:zernio-analytics, socials:funnel-topup, socials:daily-brief)",
   );
 }

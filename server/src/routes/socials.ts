@@ -13,6 +13,8 @@ import {
   zernioCommentAutomations,
   zernioPostAnalytics,
   funnels,
+  inspirationItems,
+  dailyBriefs,
 } from "@paperclipai/db";
 import { loadCalendar } from "../services/socials/calendar.js";
 import { syncSocialAutomations } from "../services/socials/cron-introspect.js";
@@ -51,6 +53,10 @@ import {
   FunnelGuardError,
   type FunnelStyle,
 } from "../services/socials/funnels-service.js";
+import {
+  runDailyBriefTick,
+  validateInspirationUrl,
+} from "../services/socials/daily-brief.js";
 import { logger } from "../middleware/logger.js";
 import { CAPTION_STYLES, CAPTION_STYLE_SYNC_META } from "../data/caption-styles.generated.js";
 import type { StorageService } from "../storage/types.js";
@@ -1227,6 +1233,131 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
       res.json(result);
     } catch (err) {
       zernioErr(res, err);
+    }
+  });
+
+  // ----- Inspiration board (Phase 3) -----
+  // Paste-a-link board: any marketing user can add/read; only the item's
+  // creator or an admin can delete/archive it. The daily-brief cron reviews
+  // every 'new' row once a day and writes ai_comment (see services/socials/daily-brief.ts).
+
+  router.get("/inspiration", async (req, res) => {
+    const status = req.query.status as string | undefined;
+    const where = [eq(inspirationItems.companyId, COMPANY_ID)];
+    if (status) where.push(eq(inspirationItems.status, status));
+    const rows = await db
+      .select()
+      .from(inspirationItems)
+      .where(and(...where))
+      .orderBy(desc(inspirationItems.createdAt));
+    res.json({ items: rows });
+  });
+
+  router.post("/inspiration", async (req, res) => {
+    const body = req.body ?? {};
+    if (!validateInspirationUrl(body.url)) {
+      return res.status(400).json({ error: "a valid http(s) url is required" });
+    }
+    const inserted = await db
+      .insert(inspirationItems)
+      .values({
+        companyId: COMPANY_ID,
+        url: String(body.url).trim(),
+        note: typeof body.note === "string" && body.note.trim() ? body.note.trim() : null,
+        addedByUserId: actorUserId(req),
+      })
+      .returning();
+    res.status(201).json({ item: inserted[0] });
+  });
+
+  router.delete("/inspiration/:id", async (req, res) => {
+    const id = req.params.id as string;
+    const found = await db
+      .select()
+      .from(inspirationItems)
+      .where(and(eq(inspirationItems.id, id), eq(inspirationItems.companyId, COMPANY_ID)))
+      .limit(1);
+    const item = found[0];
+    if (!item) return res.status(404).json({ error: "not found" });
+    if (!isAdminActor(req) && item.addedByUserId !== actorUserId(req)) {
+      return res.status(403).json({ error: "only the item's creator or an admin can delete it" });
+    }
+    await db.delete(inspirationItems).where(eq(inspirationItems.id, id));
+    res.json({ ok: true });
+  });
+
+  router.post("/inspiration/:id/archive", async (req, res) => {
+    const id = req.params.id as string;
+    const found = await db
+      .select()
+      .from(inspirationItems)
+      .where(and(eq(inspirationItems.id, id), eq(inspirationItems.companyId, COMPANY_ID)))
+      .limit(1);
+    const item = found[0];
+    if (!item) return res.status(404).json({ error: "not found" });
+    if (!isAdminActor(req) && item.addedByUserId !== actorUserId(req)) {
+      return res.status(403).json({ error: "only the item's creator or an admin can archive it" });
+    }
+    const updated = await db
+      .update(inspirationItems)
+      .set({ status: "archived" })
+      .where(eq(inspirationItems.id, id))
+      .returning();
+    res.json({ item: updated[0] });
+  });
+
+  // ----- Daily AI Brief (Phase 3) -----
+  // See services/socials/daily-brief.ts for the cron that writes these rows
+  // (socials:daily-brief, daily 07:15, after socials:zernio-analytics 06:40).
+
+  router.get("/briefs", async (req, res) => {
+    const limit = Math.min(Number(req.query.limit) || 30, 90);
+    const rows = await db
+      .select({
+        briefDate: dailyBriefs.briefDate,
+        model: dailyBriefs.model,
+        createdAt: dailyBriefs.createdAt,
+      })
+      .from(dailyBriefs)
+      .where(eq(dailyBriefs.companyId, COMPANY_ID))
+      .orderBy(desc(dailyBriefs.briefDate))
+      .limit(limit);
+    res.json({ briefs: rows });
+  });
+
+  router.get("/briefs/latest", async (_req, res) => {
+    const rows = await db
+      .select()
+      .from(dailyBriefs)
+      .where(eq(dailyBriefs.companyId, COMPANY_ID))
+      .orderBy(desc(dailyBriefs.briefDate))
+      .limit(1);
+    if (!rows[0]) return res.status(404).json({ error: "no brief yet" });
+    res.json({ brief: rows[0] });
+  });
+
+  router.get("/briefs/:date", async (req, res) => {
+    const date = req.params.date as string;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+    }
+    const rows = await db
+      .select()
+      .from(dailyBriefs)
+      .where(and(eq(dailyBriefs.companyId, COMPANY_ID), eq(dailyBriefs.briefDate, date)))
+      .limit(1);
+    if (!rows[0]) return res.status(404).json({ error: "no brief for that date" });
+    res.json({ brief: rows[0] });
+  });
+
+  // Force a brief run now (same tick the socials:daily-brief cron runs).
+  router.post("/briefs/run-now", requireAdmin, async (_req, res) => {
+    try {
+      const result = await runDailyBriefTick(db);
+      res.json(result);
+    } catch (err) {
+      logger.error({ err }, "daily-brief run-now failed");
+      res.status(500).json({ error: "brief run failed" });
     }
   });
 
