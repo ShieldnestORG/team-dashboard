@@ -34,6 +34,11 @@ import {
 import { universitySessionsService } from "../services/university-sessions.js";
 import { voiceBudgetService } from "../services/voice-budget.js";
 import { coherenceService } from "../services/coherence.js";
+import { createCheckoutSession } from "../services/stripe-checkout.js";
+import {
+  VOICE_ADDON_TIERS,
+  type VoiceAddonTier,
+} from "../services/university-stripe-handler.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
 import {
   UNIVERSITY_SESSIONS_URL,
@@ -1222,6 +1227,81 @@ export function portalRoutes(db: Db): Router {
           "portal/university/coherence-check: failed",
         );
         res.status(500).json({ error: "Failed to record coherence check" });
+      }
+    },
+  );
+
+  // -- University voice ADD-ON checkout (Phase 2 paid upgrades) ----------------
+  //
+  // Starts a Stripe Checkout (subscription) on the Starwise account for a paid
+  // Rex voice-minute add-on. Same member gate as the meter routes; blocked under
+  // impersonation (a purchase is a mutation). The webhook
+  // (university-stripe-handler.ts) upserts the add-on row keyed by the member id
+  // we pass in metadata + client_reference_id.
+  //
+  // POST /university/voice/addon-checkout { tier: "1hr" | "2p5hr" } → { url }
+  router.post(
+    "/university/voice/addon-checkout",
+    async (req: Request, res: Response) => {
+      if (!requireNonImpersonating(req, res)) return;
+      const memberId = await requireVoiceMember(req, res);
+      if (!memberId) return;
+
+      const body = (req.body ?? {}) as { tier?: unknown };
+      const tier = typeof body.tier === "string" ? body.tier : "";
+      if (tier !== "1hr" && tier !== "2p5hr") {
+        res.status(400).json({ error: "tier must be '1hr' or '2p5hr'" });
+        return;
+      }
+      const addonTier = tier as VoiceAddonTier;
+
+      try {
+        // University bills on the Starwise account — use the University key so the
+        // session is created where the add-on prices live. Throws in production if
+        // UNIVERSITY_STRIPE_SECRET_KEY is unset (never falls back to the shared key).
+        const secretKey = universityStripeKey();
+        if (!secretKey && !stripeConfigured()) {
+          res.status(503).json({ error: "STRIPE_SECRET_KEY not configured" });
+          return;
+        }
+
+        const email = await voiceSvc.getMemberEmail(memberId);
+        if (!email) {
+          res.status(500).json({ error: "Failed to resolve member email" });
+          return;
+        }
+
+        const priceId = VOICE_ADDON_TIERS[addonTier].priceId;
+        // Return to the portal Rex surface on success/cancel. Env-overridable.
+        const base =
+          process.env.VOICE_ADDON_RETURN_URL
+          || "https://app.coherencedaddy.com/university";
+        const sep = base.includes("?") ? "&" : "?";
+        const successUrl = `${base}${sep}status=addon_success&session_id={CHECKOUT_SESSION_ID}&product=university_voice_addon`;
+        const cancelUrl = `${base}${sep}status=addon_cancelled`;
+
+        const { checkoutUrl } = await createCheckoutSession({
+          email,
+          priceId,
+          successUrl,
+          cancelUrl,
+          // memberId is the webhook's mapping key (metadata + client_reference_id).
+          metadata: {
+            product: "university_voice_addon",
+            memberId,
+            tier: addonTier,
+          },
+          secretKey,
+          clientReferenceId: memberId,
+        });
+
+        res.status(200).json({ url: checkoutUrl });
+      } catch (err) {
+        logger.error(
+          { err, memberId, tier },
+          "portal/university/voice/addon-checkout: failed",
+        );
+        res.status(500).json({ error: "Failed to start add-on checkout" });
       }
     },
   );

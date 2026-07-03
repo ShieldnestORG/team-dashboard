@@ -35,6 +35,13 @@ import {
   handleUniversityCheckout,
   handleUniversitySubscriptionUpdated,
   handleUniversitySubscriptionDeleted,
+  handleVoiceAddonCheckout,
+  handleVoiceAddonSubscriptionUpdated,
+  handleVoiceAddonSubscriptionDeleted,
+  isVoiceAddonSubscription,
+  invoiceLinesAreVoiceAddon,
+  VOICE_ADDON_PRODUCT,
+  type InvoiceLineForAddonCheck,
 } from "../services/university-stripe-handler.js";
 import {
   handleReferralAttribution,
@@ -343,6 +350,40 @@ export function universityWebhookRouter(db: Db): Router {
 }
 
 /**
+ * Invoice line items for the add-on check. Stripe embeds them inline in the
+ * invoice.paid webhook payload (`invoice.lines.data`, each with its `price`), so
+ * the common path reads them straight off the event. Defensively — only when the
+ * payload omits them (a truncated/minimal event) — retrieve the invoice with
+ * price-expanded lines so the add-on line-item check never silently sees nothing.
+ */
+async function resolveInvoiceLines(invoice: {
+  id: string;
+  lines?: { data?: InvoiceLineForAddonCheck[] } | null;
+}): Promise<InvoiceLineForAddonCheck[]> {
+  const inline = invoice.lines?.data;
+  if (Array.isArray(inline) && inline.length > 0) return inline;
+  const key = universityStripeKey();
+  if (!key || !invoice.id) return [];
+  try {
+    const full = await stripeRequest<{
+      lines?: { data?: InvoiceLineForAddonCheck[] } | null;
+    }>(
+      "GET",
+      `/invoices/${encodeURIComponent(invoice.id)}?expand[]=lines.data.price`,
+      undefined,
+      key,
+    );
+    return full.lines?.data ?? [];
+  } catch (err) {
+    logger.warn(
+      { err, invoiceId: invoice.id },
+      "university-webhook: could not retrieve invoice lines for add-on check — falling back to DB check only",
+    );
+    return [];
+  }
+}
+
+/**
  * Dispatches a verified Stripe event to the right University handler.
  *
  * Exported for unit testing without spinning up a full Express app /
@@ -362,6 +403,12 @@ export async function dispatchUniversityEvent(
       subscription?: string | null;
       client_reference_id?: string | null;
     };
+    // Paid Rex voice add-on checkout (Phase 2) — a distinct product on the same
+    // Starwise account. Routed before the membership guard by metadata.product.
+    if (session.metadata?.product === VOICE_ADDON_PRODUCT) {
+      await handleVoiceAddonCheckout(db, session);
+      return;
+    }
     if (session.metadata?.product !== "university") return;
     // Referral attribution runs BEFORE the member/subscription upsert so the
     // "can't refer an existing member" check sees the pre-checkout state (the
@@ -392,7 +439,36 @@ export async function dispatchUniversityEvent(
       subscription?: string | null;
       customer?: string | null;
       customer_email?: string | null;
+      lines?: { data?: InvoiceLineForAddonCheck[] } | null;
     };
+    // Add-on-first fall-through (mirrors subscription.updated/.deleted): a paid
+    // voice add-on invoice ($10/$20) must NOT flow to the referral engine, which
+    // keys off the payer and assumes a flat $50/mo membership bill — it would
+    // drain the member's standing referral credit against the wrong headroom.
+    // Only membership invoices reach handleReferralInvoicePaid, exactly as before.
+    //
+    // ORDER-INDEPENDENT: Stripe events can race — an add-on's FIRST
+    // invoice.payment_succeeded can arrive BEFORE checkout.session.completed
+    // writes the university_voice_addons row, so the DB check alone would return
+    // false and misapply referral credit against the add-on invoice. Decide
+    // add-on-ness from the invoice's OWN line items first (embedded inline in the
+    // webhook payload), then fall back to the DB row (belt and suspenders): it's
+    // an add-on iff EITHER source says so.
+    const invoiceSubId =
+      typeof invoice.subscription === "string" ? invoice.subscription : null;
+    const invoiceLines = await resolveInvoiceLines(invoice);
+    const isAddonInvoice =
+      invoiceLinesAreVoiceAddon(invoiceLines)
+      || (invoiceSubId
+        ? await isVoiceAddonSubscription(db, invoiceSubId)
+        : false);
+    if (isAddonInvoice) {
+      logger.debug(
+        { invoiceId: invoice.id, stripeSubscriptionId: invoiceSubId },
+        "university-webhook: invoice.paid for voice add-on — skipping referral engine",
+      );
+      return;
+    }
     await handleReferralInvoicePaid(db, invoice);
     return;
   }
@@ -410,13 +486,27 @@ export async function dispatchUniversityEvent(
   }
 
   if (event.type === "customer.subscription.updated") {
-    const sub = event.data.object as { id: string; status: string };
+    const sub = event.data.object as {
+      id: string;
+      status: string;
+      current_period_end?: number | null;
+    };
+    // Try the add-on row first; if it matched, this is a voice-add-on sub and
+    // the membership handler would only log a spurious "no matching row".
+    const addon = await handleVoiceAddonSubscriptionUpdated(db, sub);
+    if (addon.matched > 0) return;
     await handleUniversitySubscriptionUpdated(db, sub);
     return;
   }
 
   if (event.type === "customer.subscription.deleted") {
-    const sub = event.data.object as { id: string; status: string };
+    const sub = event.data.object as {
+      id: string;
+      status: string;
+      current_period_end?: number | null;
+    };
+    const addon = await handleVoiceAddonSubscriptionDeleted(db, sub);
+    if (addon.matched > 0) return;
     await handleUniversitySubscriptionDeleted(db, sub);
     return;
   }

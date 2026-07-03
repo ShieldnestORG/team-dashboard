@@ -123,6 +123,35 @@ function invoicePaidEvent(): unknown {
   };
 }
 
+// An out-of-order voice add-on invoice.paid: it carries the SAME subscription id
+// as the referred membership (so a pending referral exists for it) and NO
+// university_voice_addons row has been written yet — but its LINE ITEMS bill the
+// $10 "1hr" add-on price. The line-item check must identify it as an add-on and
+// skip the referral engine regardless of the (missing) DB row. The price id
+// mirrors VOICE_ADDON_TIERS["1hr"] in services/university-stripe-handler.ts.
+const VOICE_ADDON_1HR_PRICE_ID = "price_1ToG6HAf8PjDIzDYmjHp5WqU";
+
+function addonInvoicePaidEvent(): unknown {
+  return {
+    id: "evt_invoice_paid_addon",
+    type: "invoice.paid",
+    data: {
+      object: {
+        id: "in_wh_addon_1",
+        object: "invoice",
+        subscription: REFERRED_SUB,
+        customer: REFERRED_CUSTOMER,
+        customer_email: REFERRED_EMAIL,
+        amount_paid: 1000,
+        billing_reason: "subscription_cycle",
+        lines: {
+          data: [{ price: { id: VOICE_ADDON_1HR_PRICE_ID } }],
+        },
+      },
+    },
+  };
+}
+
 function chargeRefundedEvent(): unknown {
   return {
     id: "evt_charge_refunded",
@@ -274,6 +303,29 @@ describeDb("university referral webhook wiring (integration)", () => {
     // Replay — Stripe re-delivers. No double credit.
     await postSignedWebhook(app, invoicePaidEvent());
     expect(await balanceFor(REFERRER_EMAIL)).toBe(REFERRAL_REWARD_CENTS);
+  });
+
+  it("out-of-order add-on invoice.paid (line items say add-on, no add-on row yet) does NOT accrue referral credit", async () => {
+    const code = await seedActiveReferrer();
+    // Membership checkout creates a PENDING referral on REFERRED_SUB — so a plain
+    // membership invoice.paid on that sub WOULD earn the referrer (see the test
+    // above). No university_voice_addons row exists yet: the add-on's
+    // checkout.session.completed hasn't been processed (events raced).
+    await postSignedWebhook(app, checkoutEvent(code));
+
+    // The ONLY add-on signal is the invoice's own line items.
+    const paid = await postSignedWebhook(app, addonInvoicePaidEvent());
+    expect(paid.status).toBe(200);
+
+    // Referral engine skipped → the referrer earned nothing, and the referral
+    // stays pending (never converted against the add-on invoice).
+    expect(await balanceFor(REFERRER_EMAIL)).toBe(0);
+    const refs = await db
+      .select()
+      .from(universityReferrals)
+      .where(sql`LOWER(referred_email) = ${REFERRED_EMAIL}`);
+    expect(refs).toHaveLength(1);
+    expect(refs[0].status).toBe("pending");
   });
 
   it("signed charge.refunded reverses the referral credit", async () => {
