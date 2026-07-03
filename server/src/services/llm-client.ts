@@ -63,6 +63,18 @@ export function configureLlmSettingsProvider(getter: SettingsGetter | null): voi
   cachedAt = 0;
 }
 
+/**
+ * Drop the cached instance settings so the next content call re-reads them from
+ * the DB. Call this whenever the content-LLM settings are written, so an admin's
+ * provider/model flip takes effect immediately instead of up to
+ * SETTINGS_CACHE_TTL_MS later. instance-settings.updateGeneral() invokes this;
+ * the dependency runs one way (instance-settings → llm-client), no cycle.
+ */
+export function invalidateLlmSettingsCache(): void {
+  cachedSettings = null;
+  cachedAt = 0;
+}
+
 async function getContentLlmSettings(): Promise<ContentLlmSettings> {
   if (!settingsGetter) return {};
   const now = Date.now();

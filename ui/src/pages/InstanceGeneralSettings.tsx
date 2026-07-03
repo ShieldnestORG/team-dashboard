@@ -97,7 +97,8 @@ export function InstanceGeneralSettings() {
           <h1 className="text-lg font-semibold">General</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Configure instance-wide defaults that affect how operator-visible logs are displayed.
+          Configure instance-wide defaults: how operator-visible logs are displayed, and which
+          provider (Ollama or Claude) powers content generation.
         </p>
       </div>
 

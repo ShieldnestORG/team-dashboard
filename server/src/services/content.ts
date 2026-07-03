@@ -103,9 +103,21 @@ import { OLLAMA_MODEL } from "./ollama-client.js";
 import { callLlmGenerate } from "./llm-client.js";
 import { enforceCharLimit, smartTruncate } from "./char-limit.js";
 
-// Keeps the historical (prompt) => text shape used throughout this pipeline.
-const callOllama = async (prompt: string): Promise<string> =>
+// Adapts the provider-routed generator to the historical (prompt) => text
+// shape this pipeline's char-limit enforcer expects. (Named for the LLM router,
+// not Ollama — the provider is resolved per instance setting.)
+const callLlm = async (prompt: string): Promise<string> =>
   (await callLlmGenerate(prompt)).text;
+
+/**
+ * Provider-attributed model id for the content_items.model column, e.g.
+ * "claude:claude-sonnet-5" or "ollama:gemma4:31b". Nothing parses this column
+ * (routes/UI only display it), so the provider prefix is display-only metadata
+ * that makes it obvious which side actually served each row.
+ */
+function attributedModel(generated: { provider: string; model: string }): string {
+  return `${generated.provider}:${generated.model}`;
+}
 
 // ---------------------------------------------------------------------------
 // Context fetcher — query intel_reports via pgvector similarity
@@ -336,7 +348,7 @@ export function contentService(db: Db) {
     const enforced = await enforceCharLimit(
       rawGeneratedText,
       charLimit,
-      callOllama,
+      callLlm,
       (attempt) =>
         `${fullPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The output MUST be ${charLimit} characters or fewer, including spaces, line breaks, and emojis. Count carefully. Output ONLY the post text — no preamble, no quotes, no explanation.`,
       { personalityId: opts.personalityId, contentType: opts.contentType },
@@ -370,7 +382,7 @@ export function contentService(db: Db) {
       generatedText = smartTruncate(generatedText, charLimit);
     }
 
-    return { text: generatedText, charLimit, platform, companyId, model: generated.model };
+    return { text: generatedText, charLimit, platform, companyId, model: attributedModel(generated) };
   }
 
   async function generate(opts: GenerateOpts): Promise<GeneratedContent> {
@@ -592,7 +604,7 @@ export function contentService(db: Db) {
     const generatedText = await enforceCharLimit(
       rawGeneratedText,
       charLimit,
-      callOllama,
+      callLlm,
       (attempt) =>
         `${fullPrompt}\n\nSTRICT REQUIREMENT (attempt ${attempt}): The output MUST be ${charLimit} characters or fewer, including spaces, line breaks, and emojis. Count carefully. Output ONLY the post text — no preamble, no quotes, no explanation.`,
       { personalityId: opts.personalityId, contentType: opts.contentType },
@@ -604,7 +616,7 @@ export function contentService(db: Db) {
     const metadata: ContentItem["metadata"] = {
       topic: opts.topic,
       contextQuery: opts.contextQuery,
-      model: generated.model,
+      model: attributedModel(generated),
       charCount,
       charLimit,
       withinLimit,

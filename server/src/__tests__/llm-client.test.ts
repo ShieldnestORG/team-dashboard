@@ -3,6 +3,7 @@ import {
   callLlmChat,
   callLlmGenerate,
   configureLlmSettingsProvider,
+  invalidateLlmSettingsCache,
 } from "../services/llm-client.js";
 
 const mockOllama = vi.hoisted(() => ({
@@ -152,6 +153,29 @@ describe("llm-client provider routing", () => {
     await callLlmGenerate("one");
     await callLlmGenerate("two");
     expect(getter).toHaveBeenCalledOnce();
+  });
+
+  it("invalidateLlmSettingsCache forces a re-read so an admin provider flip takes effect at once", async () => {
+    // Simulates the admin writing Instance Settings → General: the write path
+    // (instance-settings.updateGeneral) calls invalidateLlmSettingsCache(), and
+    // the very next content call must see the new provider, not the 30s-stale one.
+    const getter = vi
+      .fn()
+      .mockResolvedValueOnce({ contentLlmProvider: "ollama" as const })
+      .mockResolvedValueOnce({ contentLlmProvider: "claude" as const });
+    configureLlmSettingsProvider(getter);
+
+    const first = await callLlmGenerate("before");
+    expect(first.provider).toBe("ollama");
+    expect(getter).toHaveBeenCalledOnce();
+
+    // Without this, the cached ollama setting would still serve for up to 30s.
+    invalidateLlmSettingsCache();
+
+    const second = await callLlmGenerate("after");
+    expect(getter).toHaveBeenCalledTimes(2);
+    expect(second.provider).toBe("claude");
+    expect(mockAnthropic.callAnthropicGenerate).toHaveBeenCalledOnce();
   });
 
   describe("callLlmChat", () => {
