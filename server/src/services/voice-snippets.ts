@@ -136,8 +136,17 @@ export function normalizeSnippetText(text: string): string {
   return text.normalize("NFC").trim();
 }
 
-export function buildCacheKey(voice: RegistryVoice, normalizedText: string): string {
+export function buildCacheKey(
+  voice: RegistryVoice,
+  normalizedText: string,
+  companyId: string,
+): string {
+  // companyId is part of the cache identity: assets/asset_ids are per-company,
+  // so a future multi-company enablement must never serve one company's asset
+  // to another off a shared text+voice hash. (Single-company today; cheap to
+  // be correct now — a changed key just re-generates on the next miss.)
   const canonical = stableStringify({
+    companyId,
     modelId: VOICE_MODEL_ID,
     outputFormat: VOICE_OUTPUT_FORMAT,
     settings: voice.settings,
@@ -173,7 +182,12 @@ export function voiceSnippetService(
   // Paid generations per user per UTC day (see VoiceQuotaExceededError above).
   const generationsToday = new Map<string, { day: string; count: number }>();
 
-  /** Count a paid generation against the user's daily cap; throw at the cap. */
+  /**
+   * Reserve one paid-generation slot against the user's daily cap; throw at
+   * the cap. The check + increment is synchronous on purpose: it's what keeps
+   * the cap race-safe, so two concurrent distinct-text requests can't both
+   * pass the check and overshoot the limit.
+   */
   function consumeDailyQuota(createdByUserId: string | null): void {
     // The local_trusted implicit dev principal has no user row — keyed
     // under one shared bucket so even dev/agent traffic stays bounded.
@@ -184,6 +198,18 @@ export function voiceSnippetService(
     const count = entry && entry.day === day ? entry.count : 0;
     if (count >= limit) throw new VoiceQuotaExceededError(limit);
     generationsToday.set(key, { day, count: count + 1 });
+  }
+
+  /** Give back a slot reserved for a generation ElevenLabs never billed. */
+  function refundDailyQuota(createdByUserId: string | null): void {
+    const key = createdByUserId ?? "(no-user)";
+    const day = new Date().toISOString().slice(0, 10);
+    const entry = generationsToday.get(key);
+    // Only refund inside the same UTC day the slot was reserved: after a
+    // rollover the counter has already reset, so there is nothing to return.
+    if (entry && entry.day === day && entry.count > 0) {
+      generationsToday.set(key, { day, count: entry.count - 1 });
+    }
   }
 
   async function findByCacheKey(cacheKey: string): Promise<VoiceSnippet | null> {
@@ -286,7 +312,7 @@ export function voiceSnippetService(
         throw new Error(`unknown voice key: ${input.voiceKey}`);
       }
       const normalizedText = normalizeSnippetText(input.text);
-      const cacheKey = buildCacheKey(voice, normalizedText);
+      const cacheKey = buildCacheKey(voice, normalizedText, input.companyId);
 
       const existing = await findByCacheKey(cacheKey);
       if (existing) {
@@ -296,7 +322,11 @@ export function voiceSnippetService(
       let promise = inflight.get(cacheKey);
       if (!promise) {
         // Only a NEW paid generation consumes quota — cache hits (above) and
-        // piggy-backing on an in-flight twin never do.
+        // piggy-backing on an in-flight twin never do. Reserve the slot up
+        // front (synchronous → race-safe cap), then refund it if — and only
+        // if — the ElevenLabs call itself fails, i.e. nothing was billed. A
+        // failure AFTER a successful TTS call (storage/DB) keeps the slot
+        // spent, because the paid generation already happened upstream.
         consumeDailyQuota(input.createdByUserId);
         promise = generateAndPersist(
           input.voiceKey,
@@ -305,7 +335,12 @@ export function voiceSnippetService(
           cacheKey,
           input.companyId,
           input.createdByUserId,
-        ).finally(() => inflight.delete(cacheKey));
+        )
+          .catch((err) => {
+            if (err instanceof ElevenLabsError) refundDailyQuota(input.createdByUserId);
+            throw err;
+          })
+          .finally(() => inflight.delete(cacheKey));
         inflight.set(cacheKey, promise);
       }
       const snippet = await promise;

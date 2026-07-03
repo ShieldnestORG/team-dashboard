@@ -139,9 +139,22 @@ export function voiceSnippetsRouter(
   // Does the configured key's account expose every registry voice? This is the
   // exact check that caught the wrong-account Scribe key. Click-triggered from
   // an admin surface or curl — never auto-polled.
+  //
+  // Each call is a live ElevenLabs voices-list request (a paid-account API hit)
+  // and this endpoint is board-reachable, so cache a successful result for 60s
+  // — the same in-process cooldown system-health.ts uses for its route pings.
+  // That caps upstream calls at one per minute no matter how often it's hit.
+  const HEALTH_CACHE_TTL = 60_000;
+  let healthCache: { result: { ok: boolean; missingVoices: string[] }; at: number } | null = null;
+
   router.get("/health", async (req, res, next) => {
+    if (healthCache && Date.now() - healthCache.at < HEALTH_CACHE_TTL) {
+      res.json(healthCache.result);
+      return;
+    }
     try {
       const result = await svc.health();
+      healthCache = { result, at: Date.now() };
       res.json(result);
     } catch (err) {
       if (err instanceof VoiceNotConfiguredError) {

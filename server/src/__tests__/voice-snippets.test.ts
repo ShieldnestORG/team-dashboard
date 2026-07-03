@@ -312,6 +312,62 @@ describe("voice-snippet routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("a failed generation does not consume a daily slot (refund on ElevenLabs error)", async () => {
+    // Quota fairness: a transient ElevenLabs 5xx bills nothing, so it must not
+    // cost the user one of their limited daily slots.
+    process.env.VOICE_SNIPPETS_DAILY_LIMIT = "1";
+    const { db } = createDbStub();
+    const { storage } = createStorageStub();
+    let ttsCalls = 0;
+    const fetchMock = vi.fn(async () => {
+      ttsCalls += 1;
+      if (ttsCalls === 1) {
+        // First call: transient upstream failure.
+        return { ok: false, status: 503, arrayBuffer: async () => new ArrayBuffer(0) } as unknown as Response;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () =>
+          AUDIO_BYTES.buffer.slice(AUDIO_BYTES.byteOffset, AUDIO_BYTES.byteOffset + AUDIO_BYTES.byteLength),
+      } as unknown as Response;
+    });
+    const app = createApp(boardMember, db, storage, fetchMock as unknown as typeof fetch);
+
+    const failed = await (await ipv4Request(app))
+      .post("/api/voice-snippets")
+      .send({ voiceKey: "mark", text: "Transient blip." });
+    expect(failed.status).toBe(502);
+
+    // The one daily slot was refunded, so this distinct-text line still generates.
+    const ok = await (await ipv4Request(app))
+      .post("/api/voice-snippets")
+      .send({ voiceKey: "mark", text: "Now it works." });
+    expect(ok.status).toBe(200);
+    expect(ok.body.cached).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("concurrent distinct-text requests never overshoot the daily cap", async () => {
+    // Race safety: two distinct texts both miss the cache, but the synchronous
+    // reserve-before-generate cap means exactly one wins the single slot.
+    process.env.VOICE_SNIPPETS_DAILY_LIMIT = "1";
+    const { db } = createDbStub();
+    const { storage } = createStorageStub();
+    const fetchMock = createFetchMock();
+    const app = createApp(boardMember, db, storage, fetchMock);
+
+    const [a, b] = await Promise.all([
+      (await ipv4Request(app)).post("/api/voice-snippets").send({ voiceKey: "mark", text: "Distinct A." }),
+      (await ipv4Request(app)).post("/api/voice-snippets").send({ voiceKey: "mark", text: "Distinct B." }),
+    ]);
+
+    expect([a.status, b.status].sort()).toEqual([200, 429]);
+    // Only the winner ever reaches ElevenLabs — no double-spend.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("maps an ElevenLabs failure to a plain 502 without leaking the response", async () => {
     const { db } = createDbStub();
     const { storage } = createStorageStub();
@@ -348,6 +404,25 @@ describe("voice-snippet routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(false);
       expect(res.body.missingVoices).toEqual(["mark", "brianna", "mami", "remy", "solene"]);
+    });
+
+    it("caches a healthy result for the cooldown window — one upstream call", async () => {
+      // /health is board-reachable and each miss is a live ElevenLabs call, so
+      // a successful result is cached briefly (mirrors system-health's ping cache).
+      const { db } = createDbStub();
+      const { storage } = createStorageStub();
+      const fetchMock = createFetchMock(ALL_VOICE_IDS);
+      const app = createApp(boardMember, db, storage, fetchMock);
+
+      const first = await (await ipv4Request(app)).get("/api/voice-snippets/health");
+      expect(first.status).toBe(200);
+      expect(first.body).toEqual({ ok: true, missingVoices: [] });
+
+      const second = await (await ipv4Request(app)).get("/api/voice-snippets/health");
+      expect(second.status).toBe(200);
+      expect(second.body).toEqual({ ok: true, missingVoices: [] });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("returns 503 when the voice key is unset", async () => {

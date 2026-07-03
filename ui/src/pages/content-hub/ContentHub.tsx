@@ -11,7 +11,9 @@ const GREENLIGHT_KEY = ["socials", "zernio", "greenlight"];
  * The Content Hub: everything a marketing teammate needs to make and post
  * content, with zero training. Kits come from the committed md-synced module
  * (no server round-trip); the green-light strip reads the fast DB mirror.
- * This page changes nothing live — every control is copy, play, or read.
+ * This page posts and publishes nothing on its own — the only write is the
+ * optional "Generate audio" button, which spends a little text-to-speech
+ * credit to make a voice line.
  */
 export function ContentHub() {
   const queryClient = useQueryClient();
@@ -47,7 +49,8 @@ export function ContentHub() {
         <h1 className="text-xl font-semibold">Content Hub</h1>
         <p className="text-base text-muted-foreground">
           Every content kit in one place. Check a keyword's light, copy what you need, and post.
-          Nothing on this page changes anything live.
+          Nothing here posts or publishes anywhere — the one thing that costs anything is
+          "Generate audio," which uses a little text-to-speech credit.
         </p>
       </header>
 

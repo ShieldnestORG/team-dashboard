@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AudioLines, Download, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CD } from "@/lib/cdDesign";
 import { ApiError } from "@/api/client";
 import { voiceSnippetsApi, type VoiceSnippetResult } from "@/api/voice-snippets";
 import type { KitSpokenLine } from "@/content/marketing-kits";
@@ -53,7 +54,7 @@ export function VoiceChip({ line, kitId }: { line: KitSpokenLine; kitId: number 
     return (
       <div className="flex items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={generate}>
-          <AudioLines className="h-4 w-4 text-[#FF6B4A]" />
+          <AudioLines className="h-4 w-4" style={{ color: CD.accent }} />
           Generate audio
         </Button>
         <span className="text-sm text-muted-foreground">{voice}'s voice</span>
@@ -65,7 +66,7 @@ export function VoiceChip({ line, kitId }: { line: KitSpokenLine; kitId: number 
     return (
       <div className="flex items-center gap-2">
         <Button type="button" variant="outline" size="sm" disabled>
-          <AudioLines className="h-4 w-4 animate-pulse text-[#FF6B4A]" />
+          <AudioLines className="h-4 w-4 animate-pulse" style={{ color: CD.accent }} />
           Making the audio…
         </Button>
         <span className="text-sm text-muted-foreground">{voice}'s voice</span>
