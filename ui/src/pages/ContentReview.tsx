@@ -24,6 +24,13 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Newspaper,
   ThumbsUp,
   ThumbsDown,
@@ -205,34 +212,36 @@ function GeneratePreviewPanel() {
             <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Personality
             </label>
-            <select
-              value={personalityId}
-              onChange={(e) => setPersonalityId(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              {PERSONALITY_OPTIONS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <Select value={personalityId} onValueChange={setPersonalityId}>
+              <SelectTrigger className="w-full" aria-label="Pick which AI personality writes it">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PERSONALITY_OPTIONS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Platform
             </label>
-            <select
-              value={contentType}
-              onChange={(e) => setContentType(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              {CONTENT_TYPE_OPTIONS.map((ct) => (
-                <option key={ct.value} value={ct.value}>
-                  {ct.label}
-                </option>
-              ))}
-            </select>
+            <Select value={contentType} onValueChange={setContentType}>
+              <SelectTrigger className="w-full" aria-label="Pick which platform this is for">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTENT_TYPE_OPTIONS.map((ct) => (
+                  <SelectItem key={ct.value} value={ct.value}>
+                    {ct.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -378,6 +387,8 @@ function FeedbackButtons({ itemId, contentType }: { itemId: string; contentType:
       </button>
       <button
         onClick={() => setShowFeedbackComment(!showFeedbackComment)}
+        title="Add a note about why — it trains future content"
+        aria-label="Add a note about why"
         className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium bg-muted/30 text-muted-foreground hover:bg-muted border border-border/50 transition-colors"
       >
         <MessageSquare className="h-3 w-3" />
@@ -406,10 +417,10 @@ function FeedbackButtons({ itemId, contentType }: { itemId: string; contentType:
 //   failure  → red with error tooltip, "retry" button armed
 //   missing  → gray (target not attempted in the original publish fan-out)
 
-const TARGETS: { slug: PublishTargetSlug; key: "cd" | "sn" | "toknsApp"; label: string }[] = [
-  { slug: "cd", key: "cd", label: "CD" },
-  { slug: "sn", key: "sn", label: "SN" },
-  { slug: "tokns-app", key: "toknsApp", label: "tokns" },
+const TARGETS: { slug: PublishTargetSlug; key: "cd" | "sn" | "toknsApp"; label: string; name: string }[] = [
+  { slug: "cd", key: "cd", label: "CD", name: "CoherenceDaddy blog" },
+  { slug: "sn", key: "sn", label: "SN", name: "ShieldNest" },
+  { slug: "tokns-app", key: "toknsApp", label: "tokns", name: "Tokns app" },
 ];
 
 function PublishTargetChips({ item }: { item: ContentQueueItem }) {
@@ -451,7 +462,11 @@ function PublishTargetChips({ item }: { item: ContentQueueItem }) {
         const isRetrying = retrying === t.slug;
 
         return (
-          <span key={t.slug} className={`${baseClass} ${stateClass}`} title={r?.error ?? undefined}>
+          <span
+            key={t.slug}
+            className={`${baseClass} ${stateClass}`}
+            title={r?.error ? `${t.name}: ${r.error}` : t.name}
+          >
             {status === "success" && <CheckCircle2 className="h-3 w-3" />}
             {status === "failure" && <XCircle className="h-3 w-3" />}
             <span>{t.label}</span>
@@ -461,7 +476,7 @@ function PublishTargetChips({ item }: { item: ContentQueueItem }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ml-0.5 hover:opacity-80"
-                aria-label={`Open ${t.label} live post`}
+                aria-label={`Open the live post on ${t.name}`}
                 onClick={(e) => e.stopPropagation()}
               >
                 <ExternalLink className="h-3 w-3" />
@@ -472,7 +487,8 @@ function PublishTargetChips({ item }: { item: ContentQueueItem }) {
                 onClick={() => doRetry(t.slug)}
                 disabled={isRetrying}
                 className="ml-0.5 hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label={`Retry ${t.label} publish`}
+                aria-label={`Try publishing to ${t.name} again`}
+                title={`Try publishing to ${t.name} again`}
               >
                 {isRetrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
               </button>
@@ -482,12 +498,23 @@ function PublishTargetChips({ item }: { item: ContentQueueItem }) {
                 onClick={() => doRetry(t.slug)}
                 disabled={isRetrying}
                 className="ml-0.5 hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label={`Publish to ${t.label}`}
+                aria-label={`Publish to ${t.name}`}
+                title={`Publish to ${t.name}`}
               >
                 {isRetrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
               </button>
             )}
           </span>
+        );
+      })}
+      {/* Failures spelled out in plain text — the error must not hide in a hover title. */}
+      {TARGETS.map((t) => {
+        const r: PublishTargetResult | undefined = results[t.key];
+        if (!r || r.success || !r.error) return null;
+        return (
+          <p key={`${t.slug}-error`} className="w-full text-xs text-red-400">
+            {t.name} failed: {r.error} — press the retry arrow on its chip to try again.
+          </p>
         );
       })}
     </div>
@@ -569,10 +596,13 @@ function ContentCard({
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
+          {/* Approve is the one primary action on the card — solid fill (same
+              treatment as the Generate panel's "Save to Queue"); Flag/Comment
+              stay visually quieter. */}
           <button
             onClick={() => onReview(item.id, "approved")}
             disabled={isReviewing || item.reviewStatus === "approved"}
-            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 border border-transparent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isReviewing ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -601,23 +631,25 @@ function ContentCard({
             )}
             Flag
           </button>
+          {/* The note box flags on Enter — the name must say so, or a "comment"
+              silently rejects the content. */}
           <button
             onClick={() => setShowComment(!showComment)}
             className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-muted/50 text-muted-foreground hover:bg-muted border border-border transition-colors"
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            Comment
+            Flag with a note
           </button>
         </div>
 
-        {/* Comment input */}
+        {/* Flag-note input */}
         {showComment && (
           <div className="flex gap-2">
             <input
               type="text"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Add a review comment..."
+              placeholder="Why are you flagging this? Press Enter to flag."
               className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && comment.trim()) {
@@ -687,11 +719,11 @@ function VisualContentCard({ item, onReview, isReviewing }: { item: VisualConten
         <div className="rounded-md border border-border bg-muted/20 px-3 py-2"><p className="text-xs text-muted-foreground mb-1 font-medium">Prompt</p><p className="text-xs text-foreground leading-relaxed line-clamp-3">{item.prompt}</p></div>
         {asset && <div className="flex items-center gap-3 text-xs text-muted-foreground">{asset.type === "image" ? <Image className="h-3 w-3" /> : <Video className="h-3 w-3" />}<span>{asset.width}x{asset.height}</span>{asset.durationMs && <span>{(asset.durationMs / 1000).toFixed(1)}s</span>}<span>{formatBytes(asset.byteSize)}</span><span className="uppercase">{asset.contentType.split("/")[1]}</span></div>}
         {item.status === "ready" && <div className="flex items-center gap-2">
-          <button onClick={() => onReview(item.id, "approved")} disabled={isReviewing || item.reviewStatus === "approved"} className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">{isReviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />} Approve</button>
+          <button onClick={() => onReview(item.id, "approved")} disabled={isReviewing || item.reviewStatus === "approved"} className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 border border-transparent transition-colors disabled:opacity-40 disabled:cursor-not-allowed">{isReviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />} Approve</button>
           <button onClick={() => { if (showComment && comment.trim()) { onReview(item.id, "flagged", comment.trim()); setShowComment(false); setComment(""); } else { onReview(item.id, "flagged"); } }} disabled={isReviewing || item.reviewStatus === "flagged"} className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">{isReviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsDown className="h-3.5 w-3.5" />} Flag</button>
-          <button onClick={() => setShowComment(!showComment)} className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-muted/50 text-muted-foreground hover:bg-muted border border-border transition-colors"><MessageSquare className="h-3.5 w-3.5" /> Comment</button>
+          <button onClick={() => setShowComment(!showComment)} className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-muted/50 text-muted-foreground hover:bg-muted border border-border transition-colors"><MessageSquare className="h-3.5 w-3.5" /> Flag with a note</button>
         </div>}
-        {showComment && <div className="flex gap-2"><input type="text" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add a review comment..." className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" onKeyDown={(e) => { if (e.key === "Enter" && comment.trim()) { onReview(item.id, "flagged", comment.trim()); setShowComment(false); setComment(""); } }} /></div>}
+        {showComment && <div className="flex gap-2"><input type="text" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Why are you flagging this? Press Enter to flag." className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" onKeyDown={(e) => { if (e.key === "Enter" && comment.trim()) { onReview(item.id, "flagged", comment.trim()); setShowComment(false); setComment(""); } }} /></div>}
         <FeedbackButtons itemId={item.id} contentType="visual" />
       </CardContent>
     </Card>

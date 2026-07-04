@@ -17,7 +17,9 @@ export function SocialsLayout() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const initialTab: Tab = TABS.includes(requestedTab as Tab) ? (requestedTab as Tab) : "accounts";
+  // Default landing tab is Compose (owner call 2026-07-04): a first-timer's
+  // job here is "post something", not account admin. ?tab= deep links win.
+  const initialTab: Tab = TABS.includes(requestedTab as Tab) ? (requestedTab as Tab) : "compose";
   const [tab, setTab] = useState<Tab>(initialTab);
 
   // Follow ?tab= changes after mount too — the FlowStepper's Queue step links
@@ -51,13 +53,16 @@ export function SocialsLayout() {
       </div>
       <FlowStepper />
       <Tabs value={tab} onValueChange={onTabChange} className="w-full">
+        {/* Visual order puts the two tabs a first-timer needs (Compose, Queue)
+            first, matching the Compose default landing tab. Tab values are
+            unchanged so ?tab= deep links keep working. */}
         <TabsList>
+          <TabsTrigger value="compose">Compose</TabsTrigger>
+          <TabsTrigger value="queue">Queue</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
           <TabsTrigger value="automation">Automation</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="compose">Compose</TabsTrigger>
-          <TabsTrigger value="queue">Queue</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts" className="mt-4">
           <SocialsAccounts />

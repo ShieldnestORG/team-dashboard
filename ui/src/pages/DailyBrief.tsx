@@ -8,7 +8,15 @@ import { safeHref } from "../lib/safe-href";
 import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { HelpTip } from "@/components/HelpTip";
+import { useToast } from "../context/ToastContext";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { ApiError } from "../api/client";
@@ -161,6 +169,7 @@ function BriefBody({ sections }: { sections: DailyBriefSections }) {
 export function DailyBrief() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { isInstanceAdmin } = useBoardAccess();
+  const { pushToast } = useToast();
   const qc = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -200,6 +209,11 @@ export function DailyBrief() {
       qc.invalidateQueries({ queryKey: queryKeys.dailyBrief.latest });
       qc.invalidateQueries({ queryKey: queryKeys.dailyBrief.list() });
       setSelectedDate(null);
+      pushToast({
+        title: "Fresh brief ready",
+        body: "The AI just re-read the last 7 days — today's brief will appear in a moment.",
+        tone: "success",
+      });
     },
     onError: (err) => setRunError(err instanceof ApiError ? err.message : "Run failed"),
   });
@@ -221,18 +235,25 @@ export function DailyBrief() {
         </div>
         <div className="flex items-center gap-2">
           {dates.length > 0 && (
-            <select
-              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-              value={selectedDate ?? ""}
-              onChange={(e) => setSelectedDate(e.target.value || null)}
-            >
-              <option value="">Latest</option>
-              {dates.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-muted-foreground">Day</span>
+              <Select
+                value={selectedDate ?? "latest"}
+                onValueChange={(v) => setSelectedDate(v === "latest" ? null : v)}
+              >
+                <SelectTrigger size="sm" aria-label="Pick which day's brief to read">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="latest">Latest</SelectItem>
+                  {dates.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
           {isInstanceAdmin && (
             <Button
@@ -240,9 +261,10 @@ export function DailyBrief() {
               size="sm"
               onClick={() => runMut.mutate()}
               disabled={runMut.isPending}
+              title="Makes the AI re-read the last 7 days and rewrite today's brief."
             >
               <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", runMut.isPending && "animate-spin")} />
-              {runMut.isPending ? "Running…" : "Run now"}
+              {runMut.isPending ? "Writing…" : "Write a fresh brief"}
             </Button>
           )}
         </div>

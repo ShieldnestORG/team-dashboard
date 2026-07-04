@@ -73,6 +73,27 @@ function toLocalInputValue(d: Date): string {
   return new Date(d.getTime() - tz).toISOString().slice(0, 16);
 }
 
+/**
+ * Numbered step heading for the Compose form — same numbered-circle language
+ * as FlowStepper/FunnelLifecycleStepper, so "what do I do, in what order" is
+ * explicit for a first-time user.
+ */
+function StepHeader({ n, title, sub }: { n: number; title: string; sub?: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+        {n}
+      </span>
+      <div>
+        <div className="text-sm font-medium">
+          Step {n} of 4 — {title}
+        </div>
+        {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
 interface ComposeLocationState {
   /** Generic prefill entry point — any caller can hand off caption text this way. */
   prefillText?: string;
@@ -378,10 +399,10 @@ export function SocialsCompose() {
         <h2 className="text-sm font-semibold">Compose</h2>
         <HelpTip label="What is Compose?">
           Write a post, pick one or more accounts, and submit. If you're an admin it queues right
-          away; otherwise it waits for an admin to approve it before going out. Instagram and
-          TikTok accounts need a photo or video attached — attach one below and their chips
-          unlock. A kit sent from Content Hub pre-selects its account below — its production notes
-          show up in the "Kit details" panel, not in the post text.
+          away; otherwise it waits for an admin to approve it before going out. Instagram needs a
+          photo or video and TikTok needs a video — attach one in Step 3 and their chips unlock.
+          A kit sent from Content Hub pre-selects its account below — its production notes show up
+          in the "Kit details" panel, not in the "Write your post" box.
         </HelpTip>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -403,7 +424,11 @@ export function SocialsCompose() {
               </div>
             )}
             <div className="space-y-2">
-              <div className="text-xs text-muted-foreground">Accounts</div>
+              <StepHeader
+                n={1}
+                title="Pick which accounts this posts from"
+                sub="Tap one or more account chips below. Instagram needs a photo or video and TikTok needs a video — add one in Step 3 to unlock those chips."
+              />
               {nonRoutedMediaAccounts.length > 0 && (
                 <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/20 dark:text-amber-200">
                   {nonRoutedMediaAccounts
@@ -495,9 +520,9 @@ export function SocialsCompose() {
             </div>
 
             <label className="block space-y-1">
-              <div className="text-xs text-muted-foreground flex justify-between">
-                <span>Text</span>
-                <span className={tooLong ? "text-destructive" : ""}>
+              <div className="flex items-end justify-between gap-2">
+                <StepHeader n={2} title="Write your post" sub="This exact text is what goes out." />
+                <span className={cn("text-xs", tooLong ? "text-destructive" : "text-muted-foreground")}>
                   {charCount}
                   {captionLimit !== null ? ` / ${captionLimit}` : ""}
                 </span>
@@ -512,9 +537,11 @@ export function SocialsCompose() {
             </label>
 
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">
-                Media ({readyMediaCount}/{MAX_COMPOSE_MEDIA_ITEMS})
-              </div>
+              <StepHeader
+                n={3}
+                title="Add photos or videos (optional)"
+                sub={`Instagram needs a photo or video, TikTok needs a video, optional everywhere else. ${readyMediaCount} of ${MAX_COMPOSE_MEDIA_ITEMS} added.`}
+              />
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -578,48 +605,59 @@ export function SocialsCompose() {
                   ))}
                 </div>
               )}
+
+              {/* Part of Step 3 — an alternative to uploading. */}
+              <label className="block space-y-1 pt-1">
+                <div className="text-xs text-muted-foreground">
+                  Or paste a link to a photo or video that's already online (one per line, optional)
+                </div>
+                <textarea
+                  rows={2}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
+                  value={mediaUrlsText}
+                  placeholder="https://example.com/image.jpg"
+                  onChange={(e) => setMediaUrlsText(e.target.value)}
+                />
+              </label>
             </div>
 
-            <label className="block space-y-1">
-              <div className="text-xs text-muted-foreground">
-                Or paste already-public media URLs (one per line, optional)
-              </div>
-              <textarea
-                rows={2}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
-                value={mediaUrlsText}
-                placeholder="https://example.com/image.jpg"
-                onChange={(e) => setMediaUrlsText(e.target.value)}
+            <div className="space-y-2">
+              <StepHeader
+                n={4}
+                title="Choose when it goes out"
+                sub="Leave the box ticked to send it right away, or untick it to pick a day and time."
               />
-            </label>
-
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={postNow} onChange={(e) => setPostNow(e.target.checked)} />
-                Post as soon as possible
-              </label>
-              {!postNow && (
+              <div className="flex items-center gap-3 flex-wrap">
                 <label className="flex items-center gap-2 text-sm">
-                  <span className="text-xs text-muted-foreground">Schedule for later:</span>
-                  <Input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={(e) => setScheduledAt(e.target.value)}
-                    className="max-w-xs"
-                  />
+                  <input type="checkbox" checked={postNow} onChange={(e) => setPostNow(e.target.checked)} />
+                  Post as soon as possible
                 </label>
-              )}
+                {!postNow && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <span className="text-xs text-muted-foreground">Schedule for later:</span>
+                    <Input
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(e) => setScheduledAt(e.target.value)}
+                      className="max-w-xs"
+                    />
+                  </label>
+                )}
+              </div>
             </div>
 
             <Button
               onClick={submit}
               disabled={createMut.isPending || tooLong || selectedIds.size === 0 || anyUploading}
+              title={tooLong ? "Your post is over the character limit — shorten it." : undefined}
             >
               {createMut.isPending
                 ? "Sending…"
                 : anyUploading
                   ? "Uploading media…"
-                  : `Queue to ${selectedIds.size} account${selectedIds.size === 1 ? "" : "s"}`}
+                  : selectedIds.size === 0
+                    ? "Pick an account first (Step 1)"
+                    : `Queue to ${selectedIds.size} account${selectedIds.size === 1 ? "" : "s"}`}
             </Button>
 
             {formError && <div className="text-sm text-destructive">{formError}</div>}
@@ -706,7 +744,7 @@ export function SocialsCompose() {
               {kitDetailsOpen && (
                 <CardContent className="space-y-2 text-sm">
                   <p className="text-xs text-muted-foreground">
-                    Reference only — write your own caption in the Text box above. This is the
+                    Reference only — write your own caption in the "Write your post" box (Step 2). This is the
                     kit's full production brief (script, DM copy, Zernio settings), not something
                     to post as-is.
                   </p>
