@@ -211,7 +211,7 @@ export function DailyBrief() {
       setSelectedDate(null);
       pushToast({
         title: "Fresh brief ready",
-        body: "The AI just re-read the last 7 days — today's brief is showing below.",
+        body: "The AI just re-read the last 7 days — today's brief will appear in a moment.",
         tone: "success",
       });
     },
@@ -261,9 +261,10 @@ export function DailyBrief() {
               size="sm"
               onClick={() => runMut.mutate()}
               disabled={runMut.isPending}
+              title="Makes the AI re-read the last 7 days and rewrite today's brief."
             >
               <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", runMut.isPending && "animate-spin")} />
-              {runMut.isPending ? "Running…" : "Run now"}
+              {runMut.isPending ? "Writing…" : "Write a fresh brief"}
             </Button>
           )}
         </div>

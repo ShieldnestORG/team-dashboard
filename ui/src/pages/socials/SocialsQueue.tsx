@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
 import { socialsApi, type SocialPost } from "../../api/socials";
 import { useBoardAccess } from "../../hooks/useBoardAccess";
+import { useNavigate } from "@/lib/router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ function formatWhen(iso: string): string {
 export function SocialsQueue() {
   const qc = useQueryClient();
   const { pushToast } = useToast();
+  const navigate = useNavigate();
   const [status, setStatus] = useState<StatusFilter>("all");
   const [accountId, setAccountId] = useState<string>(ALL_ACCOUNTS);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -204,11 +206,26 @@ export function SocialsQueue() {
                     {p.mediaUrls.length} media attachment{p.mediaUrls.length === 1 ? "" : "s"}
                   </div>
                 )}
-                {p.error && (
+                {p.error && p.status === "failed" ? (
+                  <div className="text-xs text-destructive">
+                    This post didn't go out: {p.error}
+                    {p.attempts > 0 && <> (tried {p.attempts} of {p.maxAttempts} times)</>}.{" "}
+                    <button
+                      type="button"
+                      className="underline underline-offset-2"
+                      onClick={() =>
+                        navigate("/socials?tab=compose", { state: { prefillText: p.text } })
+                      }
+                    >
+                      Try again in Compose
+                    </button>{" "}
+                    — the text comes with you — or check the account in the Accounts tab.
+                  </div>
+                ) : p.error ? (
                   <div className="text-xs text-destructive">
                     error: {p.error} {p.attempts > 0 && <>· attempts {p.attempts}/{p.maxAttempts}</>}
                   </div>
-                )}
+                ) : null}
                 <div className="flex justify-between items-center gap-2 pt-1">
                   {p.postedUrl ? (
                     <a

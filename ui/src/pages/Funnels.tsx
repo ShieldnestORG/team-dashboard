@@ -285,7 +285,7 @@ function KpiTiles({
       tint: "bg-purple-500/10",
     },
     {
-      label: "Awaiting Brevo sync",
+      label: "Waiting to join the email list",
       value: awaitingSync,
       icon: <Send className="h-5 w-5 text-amber-500" />,
       tint: "bg-amber-500/10",
@@ -960,6 +960,7 @@ function FunnelLibraryRow({
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [confirmArm, setConfirmArm] = useState(false);
+  const [confirmRetire, setConfirmRetire] = useState(false);
   const [hookDialogOpen, setHookDialogOpen] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
@@ -991,8 +992,14 @@ function FunnelLibraryRow({
   });
   const retireMut = useMutation({
     mutationFn: () => socialsApi.retireLibraryFunnel(funnel.id),
-    onSuccess: invalidate,
-    onError: (err) => setRowError(err instanceof Error ? err.message : "Retire failed"),
+    onSuccess: () => {
+      invalidate();
+      setConfirmRetire(false);
+    },
+    onError: (err) => {
+      setRowError(err instanceof Error ? err.message : "Retire failed");
+      setConfirmRetire(false);
+    },
   });
 
   const anyPending =
@@ -1147,7 +1154,17 @@ function FunnelLibraryRow({
                 />
               )}
               {canRetireStatus(funnel.status) && (
-                <Button size="xs" variant="ghost" disabled={anyPending} onClick={() => retireMut.mutate()}>
+                // Retiring a LIVE funnel deletes the Zernio automation on the
+                // spot — that needs a confirm (parity with Turn on). Shelving a
+                // merely-ready funnel changes nothing live, so it stays instant.
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={anyPending}
+                  onClick={() =>
+                    funnel.status === "live" ? setConfirmRetire(true) : retireMut.mutate()
+                  }
+                >
                   <Archive className="h-3.5 w-3.5" />
                   Retire
                 </Button>
@@ -1195,6 +1212,25 @@ function FunnelLibraryRow({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => armMut.mutate()} disabled={armMut.isPending}>
               Turn on
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmRetire} onOpenChange={setConfirmRetire}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retire "{funnel.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This takes it off the air immediately — commenting{" "}
+              {funnel.keywords.join(" or ") || "the keyword"} on @{funnel.accountHandle}'s posts
+              will stop triggering DMs, and a retired funnel can't be turned back on from here.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it live</AlertDialogCancel>
+            <AlertDialogAction onClick={() => retireMut.mutate()} disabled={retireMut.isPending}>
+              Retire it
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
