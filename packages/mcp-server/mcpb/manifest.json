@@ -1,0 +1,39 @@
+{
+  "manifest_version": "0.3",
+  "name": "team-dashboard-marketing",
+  "display_name": "Team Dashboard — Marketing Tools",
+  "version": "1.0.0",
+  "description": "Read the team's funnel library, caption styles, inspiration board and daily briefs, generate voice clips in the team voices, and hand draft posts to Mark for approval.",
+  "author": {
+    "name": "Coherence Daddy",
+    "email": "nestd@pm.me"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.cjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.cjs"],
+      "env": {
+        "PAPERCLIP_API_TOKEN": "${user_config.api_key}",
+        "PAPERCLIP_API_URL": "${user_config.server_url}"
+      }
+    }
+  },
+  "user_config": {
+    "api_key": {
+      "type": "string",
+      "title": "Dashboard access key",
+      "description": "Paste the access key Mark gave you (it starts with pcp_board_). It is stored securely in your computer's keychain.",
+      "sensitive": true,
+      "required": true
+    },
+    "server_url": {
+      "type": "string",
+      "title": "Dashboard server address",
+      "description": "Leave this as-is unless Mark tells you otherwise.",
+      "default": "https://api.coherencedaddy.com",
+      "required": true
+    }
+  }
+}

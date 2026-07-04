@@ -19,6 +19,7 @@ import {
 } from "@paperclipai/db";
 import {
   acceptInviteSchema,
+  approveCliAuthChallengeSchema,
   createCliAuthChallengeSchema,
   claimJoinRequestApiKeySchema,
   createCompanyInviteSchema,
@@ -1703,7 +1704,7 @@ export function accessRoutes(
 
   router.post(
     "/cli-auth/challenges/:id/approve",
-    validate(resolveCliAuthChallengeSchema),
+    validate(approveCliAuthChallengeSchema),
     async (req, res) => {
       const id = (req.params.id as string).trim();
       if (
@@ -1718,6 +1719,9 @@ export function accessRoutes(
         id,
         req.body.token,
         userId,
+        // Optional lifetime override (days, capped at 90 by the schema).
+        // Default stays the 30-day TTL.
+        { keyTtlDays: req.body.keyTtlDays ?? null },
       );
 
       if (approved.status === "approved") {
@@ -1750,6 +1754,8 @@ export function accessRoutes(
         userId,
         keyId: approved.challenge.boardApiKeyId ?? null,
         expiresAt: approved.challenge.expiresAt.toISOString(),
+        // The minted BOARD KEY's expiry (expiresAt above is the CHALLENGE's).
+        keyExpiresAt: approved.keyExpiresAt?.toISOString() ?? null,
       });
     },
   );
@@ -1781,6 +1787,40 @@ export function accessRoutes(
       memberships: accessSnapshot.memberships,
       source: req.actor.source ?? "none",
       keyId: req.actor.source === "board_key" ? req.actor.keyId ?? null : null,
+    });
+  });
+
+  // Key self-inspection for board-key callers (e.g. the marketing MCP
+  // extension's whoami/expiry countdown). Reports the CALLING key's expiry +
+  // the caller's role surface. Sits inside the /api/cli-auth allowlist, so
+  // marketing-scoped keys can reach it; reveals nothing beyond the caller's
+  // own key row + memberships (same data /cli-auth/me already exposes).
+  router.get("/cli-auth/key-info", async (req, res) => {
+    if (req.actor.type !== "board" || req.actor.source !== "board_key") {
+      throw badRequest(
+        "This endpoint reports on the board API key that calls it — authenticate with a pcp_board_ bearer key.",
+      );
+    }
+    const key = await boardAuth.assertCurrentBoardKey(
+      req.actor.keyId,
+      req.actor.userId,
+    );
+    const access = await boardAuth.resolveBoardAccess(key.userId);
+    const expiresAt = key.expiresAt ?? null;
+    const daysRemaining = expiresAt
+      ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000))
+      : null;
+    res.json({
+      keyId: key.id,
+      name: key.name,
+      createdAt: key.createdAt.toISOString(),
+      lastUsedAt: key.lastUsedAt?.toISOString() ?? null,
+      expiresAt: expiresAt?.toISOString() ?? null,
+      daysRemaining,
+      userId: key.userId,
+      user: access.user,
+      isInstanceAdmin: access.isInstanceAdmin,
+      memberships: access.memberships,
     });
   });
 

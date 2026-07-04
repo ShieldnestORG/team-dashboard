@@ -34,8 +34,17 @@ export function createCliAuthSecret() {
   return `pcp_cli_auth_${randomBytes(24).toString("hex")}`;
 }
 
-export function boardApiKeyExpiresAt(nowMs: number = Date.now()) {
-  return new Date(nowMs + BOARD_API_KEY_TTL_MS);
+/**
+ * Key expiry at mint time. `ttlMs` defaults to the standard 30-day TTL;
+ * the CLI-auth approve flow can override it (capped at 90 days by
+ * `approveCliAuthChallengeSchema`) for explicitly long-lived keys such as
+ * the external marketing key.
+ */
+export function boardApiKeyExpiresAt(
+  nowMs: number = Date.now(),
+  ttlMs: number = BOARD_API_KEY_TTL_MS,
+) {
+  return new Date(nowMs + ttlMs);
 }
 
 export function cliAuthChallengeExpiresAt(nowMs: number = Date.now()) {
@@ -257,7 +266,12 @@ export function boardAuthService(db: Db) {
     };
   }
 
-  async function approveCliAuthChallenge(id: string, token: string, userId: string) {
+  async function approveCliAuthChallenge(
+    id: string,
+    token: string,
+    userId: string,
+    opts: { keyTtlDays?: number | null } = {},
+  ) {
     const access = await resolveBoardAccess(userId);
     return db.transaction(async (tx) => {
       await tx.execute(
@@ -274,26 +288,56 @@ export function boardAuthService(db: Db) {
       }
 
       const status = challengeStatusForRow(challenge);
-      if (status === "expired") return { status, challenge };
-      if (status === "cancelled") return { status, challenge };
+      if (status === "expired") return { status, challenge, keyExpiresAt: null };
+      if (status === "cancelled") return { status, challenge, keyExpiresAt: null };
 
       if (challenge.requestedAccess === "instance_admin_required" && !access.isInstanceAdmin) {
         throw forbidden("Instance admin required");
       }
 
+      // HIGH-1: never let a long-lived key bind to an instance-admin identity.
+      // The key inherits the APPROVER's memberships per request, so a 90-day
+      // key approved by an admin would be a 90-day admin credential. Long-lived
+      // (>30d) mints must come from the key's own non-admin session — that is
+      // exactly the runbook's two-step bootstrap (a marketing key approves the
+      // 90-day challenge). The 30-day default is unaffected for any approver.
+      const defaultTtlDays = Math.round(BOARD_API_KEY_TTL_MS / 86_400_000);
+      if (
+        opts.keyTtlDays &&
+        opts.keyTtlDays > defaultTtlDays &&
+        access.isInstanceAdmin
+      ) {
+        throw forbidden(
+          "Long-lived keys must be approved by the key's own (non-admin) session, not an admin — see the runbook two-step flow.",
+        );
+      }
+
       let boardKeyId = challenge.boardApiKeyId;
+      let keyExpiresAt: Date | null = null;
       if (!boardKeyId) {
+        const ttlMs = opts.keyTtlDays
+          ? opts.keyTtlDays * 24 * 60 * 60 * 1000
+          : BOARD_API_KEY_TTL_MS;
         const createdKey = await tx
           .insert(boardApiKeys)
           .values({
             userId,
             name: challenge.pendingKeyName,
             keyHash: challenge.pendingKeyHash,
-            expiresAt: boardApiKeyExpiresAt(),
+            expiresAt: boardApiKeyExpiresAt(Date.now(), ttlMs),
           })
           .returning()
           .then((rows) => rows[0]);
         boardKeyId = createdKey.id;
+        keyExpiresAt = createdKey.expiresAt;
+      } else {
+        // Idempotent re-approve: the key already exists (keyTtlDays cannot
+        // retro-extend it) — report its stored expiry.
+        keyExpiresAt = await tx
+          .select({ expiresAt: boardApiKeys.expiresAt })
+          .from(boardApiKeys)
+          .where(eq(boardApiKeys.id, boardKeyId))
+          .then((rows) => rows[0]?.expiresAt ?? null);
       }
 
       const approvedAt = challenge.approvedAt ?? new Date();
@@ -309,7 +353,7 @@ export function boardAuthService(db: Db) {
         .returning()
         .then((rows) => rows[0] ?? challenge);
 
-      return { status: "approved" as const, challenge: updated };
+      return { status: "approved" as const, challenge: updated, keyExpiresAt };
     });
   }
 

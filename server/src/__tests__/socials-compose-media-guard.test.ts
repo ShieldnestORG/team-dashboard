@@ -37,6 +37,10 @@ function createApp(db: unknown, storage: unknown = storageStub) {
 
 /** Stub supporting the create path for a given account platform. */
 function createDbFor(platform: string) {
+  // Keep the FIRST insert only: the route's post insert. The router-level
+  // logAdminAccess middleware fires a second, fire-and-forget insert (the
+  // admin_access_log row) after the response is sent — it must not clobber
+  // the captured post row these assertions inspect.
   const captured: { values?: Record<string, unknown> } = {};
   const db = {
     select: () => ({
@@ -44,7 +48,7 @@ function createDbFor(platform: string) {
     }),
     insert: () => ({
       values: (v: Record<string, unknown>) => {
-        captured.values = v;
+        captured.values ??= v;
         return { returning: async () => [{ id: POST_ID, ...v }] };
       },
     }),
