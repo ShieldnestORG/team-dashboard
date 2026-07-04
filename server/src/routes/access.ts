@@ -22,6 +22,7 @@ import {
   approveCliAuthChallengeSchema,
   createCliAuthChallengeSchema,
   claimJoinRequestApiKeySchema,
+  createCollaboratorKeySchema,
   createCompanyInviteSchema,
   createOpenClawInvitePromptSchema,
   listJoinRequestsQuerySchema,
@@ -60,6 +61,13 @@ import {
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
+
+// Coherence Daddy primary company — the default home for external marketing
+// collaborator keys. Matches the env-with-fallback convention in
+// server/scripts/*. Callers may override via the request body's companyId.
+const TEAM_DASHBOARD_COMPANY_ID =
+  process.env.TEAM_DASHBOARD_COMPANY_ID ??
+  "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
 const INVITE_TOKEN_PREFIX = "pcp_invite_";
 const INVITE_TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -2964,6 +2972,51 @@ export function accessRoutes(
       );
       res.json(memberships);
     }
+  );
+
+  // Admin-only: mint a 90-day board key for an external marketing collaborator
+  // bound to a dedicated marketing-only identity (never the admin). Replaces
+  // the two-step curl bootstrap. Instance-admin gated via assertInstanceAdmin;
+  // the marketing-only-binding invariant lives in
+  // boardAuth.createCollaboratorBoardKey. `audit` logs the hit to
+  // admin_access_log (body values are never recorded).
+  router.post(
+    "/admin/collaborator-keys",
+    audit,
+    validate(createCollaboratorKeySchema),
+    async (req, res) => {
+      await assertInstanceAdmin(req);
+      const companyId = (req.body.companyId as string | undefined) ?? TEAM_DASHBOARD_COMPANY_ID;
+      const result = await boardAuth.createCollaboratorBoardKey({
+        name: req.body.name,
+        email: req.body.email,
+        ttlDays: req.body.ttlDays,
+        companyId,
+      });
+
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: req.actor.userId ?? "board",
+        action: "board_api_key.collaborator_created",
+        entityType: "user",
+        entityId: result.userId,
+        details: {
+          boardApiKeyId: result.keyId,
+          collaboratorEmail: result.email,
+          ttlDays: req.body.ttlDays,
+          reusedIdentity: result.reused,
+        },
+      });
+
+      res.status(201).json({
+        boardApiToken: result.boardApiToken,
+        keyId: result.keyId,
+        userId: result.userId,
+        expiresAt: result.expiresAt.toISOString(),
+        memberships: result.memberships,
+      });
+    },
   );
 
   return router;
