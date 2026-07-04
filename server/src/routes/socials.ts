@@ -62,6 +62,7 @@ import {
   validateInspirationUrl,
 } from "../services/socials/daily-brief.js";
 import { logger } from "../middleware/logger.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { CAPTION_STYLES, CAPTION_STYLE_SYNC_META } from "../data/caption-styles.generated.js";
 import type { StorageService } from "../storage/types.js";
 import {
@@ -239,6 +240,13 @@ async function resolveIsVideoRef(storageService: StorageService, value: string):
 
 export function socialsRoutes(db: Db, storageService: StorageService) {
   const router = Router();
+
+  // Audit every hit on this surface (board-key callers included) with actor
+  // identity + redacted request shape. Mounted BEFORE the board gate so 401
+  // probes are captured too — mirrors admin-access-log.test.ts's unauth gate.
+  // Reads are logged on purpose (the audit doc wants read events; revisit with
+  // { skipGet: true } only if GET volume becomes a problem).
+  router.use(logAdminAccess(db));
 
   // Socials is a logged-in dashboard surface — only the authenticated UI calls
   // these endpoints. Require a board actor: this rejects unauthenticated

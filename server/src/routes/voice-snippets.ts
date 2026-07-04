@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 import type { Db } from "@paperclipai/db";
 import type { StorageService } from "../storage/types.js";
+import { logAdminAccess } from "../middleware/log-admin-access.js";
 import { assertCompanyAccess } from "./authz.js";
 import {
   ElevenLabsError,
@@ -51,6 +52,11 @@ export function voiceSnippetsRouter(
 ): Router {
   const router = Router();
   const svc = voiceSnippetService(db, storageService, fetchImpl);
+
+  // Audit every hit (generation is a paid ElevenLabs call and this surface is
+  // board-key reachable). Mounted BEFORE the board gate so 401 probes are
+  // captured too — mirrors socials.ts.
+  router.use(logAdminAccess(db));
 
   // Voice snippets are a logged-in dashboard surface — only the authenticated
   // UI calls these endpoints. Require a board actor: rejects unauthenticated
