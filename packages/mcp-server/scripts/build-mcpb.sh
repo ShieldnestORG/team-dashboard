@@ -49,3 +49,15 @@ fi
 rm -rf "$STAGING"
 echo "Built $(pwd)/$OUT"
 unzip -l "$OUT"
+
+# 4. Self-test the PACKED artifact: unzip it fresh and drive a real stdio
+#    initialize + tools/list against the bundled server. Fails the build if
+#    the bundle is broken (esbuild/SDK drift) or the tool count changed
+#    unexpectedly. Keeps the shipped .mcpb verifiable, not just built.
+echo "Self-testing the bundle…"
+VERIFY_DIR="tmp-mcpb-verify"   # tmp-* is gitignored repo-wide
+rm -rf "$VERIFY_DIR"
+mkdir -p "$VERIFY_DIR"
+unzip -qo "$OUT" -d "$VERIFY_DIR"
+node scripts/mcpb-selftest.mjs "$VERIFY_DIR/server/index.cjs"
+rm -rf "$VERIFY_DIR"
