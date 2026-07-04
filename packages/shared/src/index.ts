@@ -582,3 +582,17 @@ export {
   type SecretsLocalEncryptedConfig,
   type ConfigMeta,
 } from "./config-schema.js";
+
+export {
+  COMPOSABLE_PLATFORMS,
+  MEDIA_REQUIRED_PLATFORMS,
+  VIDEO_REQUIRED_PLATFORMS,
+  PLATFORM_CAPTION_LIMITS,
+  MAX_COMPOSE_MEDIA_ITEMS,
+  VIDEO_FILENAME_RE,
+  isVideoRef,
+  composePlatformLabel,
+  checkComposeForPlatform,
+  type ComposeMediaRef,
+  type ComposePlatformCheckInput,
+} from "./socials-compose.js";

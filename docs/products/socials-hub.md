@@ -79,6 +79,8 @@ enabled, last_run_at, next_run_at, notes
 - `server/src/services/socials/zernio-lead-capture.ts` — event → lead extraction + upserts
 - `server/src/services/socials/zernio-sync.ts` — automation mirror + tagged-contact poll
 - `server/src/services/socials/zernio-analytics.ts` — analytics ingest + summary/recommendations read models
+- `server/src/services/socials/media-upload.ts` — Compose media-upload sniffing (magic bytes) + size caps; `POST /socials/media` route lives in `routes/socials.ts`
+- `packages/shared/src/socials-compose.ts` — pure compose-time platform guard (`checkComposeForPlatform`), shared by the UI and `routes/socials.ts` POST /posts
 
 ### Frontend
 - `ui/src/api/socials.ts`
@@ -86,6 +88,8 @@ enabled, last_run_at, next_run_at, notes
 - `ui/src/pages/socials/SocialsAccounts.tsx`
 - `ui/src/pages/socials/SocialsAutomation.tsx`
 - `ui/src/pages/socials/SocialsCalendar.tsx`
+- `ui/src/pages/socials/SocialsCompose.tsx` — drag-drop/file-picker media upload + per-account guard
+- `ui/src/pages/socials/compose-eligibility.ts` — pure `isAccountComposable()` (platform + Zernio-routing gate)
 - `ui/src/App.tsx` — `<Route path="socials" element={<SocialsLayout />} />`
 - `ui/src/components/Sidebar.tsx` — `<SidebarNavItem to="/socials" label="Socials" icon={Share2} />`
 
@@ -172,9 +176,10 @@ endpoint**; each call independently gets the server's per-actor
 `pending_approval`/`scheduled` split (`server/src/routes/socials.ts` line
 ~487), and a partial failure (e.g. 3 of 5 queued) is surfaced per-account
 with the failed accounts left selected so a retry is one click. Grouping by
-platform is real infrastructure even though `TEXT_PLATFORMS` currently only
-has `bluesky` — it activates automatically as more text publishers are
-registered (see "Adding a new text publisher" below).
+platform is real infrastructure that scales automatically as more publishers
+are registered (see "Adding a new text publisher" below) — today it shows
+Bluesky, plus Instagram/TikTok for accounts routed through Zernio (see
+"Posting with media" below).
 
 Content Hub's "Send to Compose" (`KitCard.sendToCompose`) no longer dumps the
 kit's raw production brief into the post text box — that block is an
@@ -183,6 +188,90 @@ was routinely 5-8x Bluesky's 300-char limit. It now only pre-selects the
 kit's target account (parsed from the `ACCOUNT:` line) and shows the raw
 brief in a collapsible, read-only "Kit details" reference panel; the
 marketer writes their own caption in the Text box.
+
+### Posting with media (Instagram/TikTok, 2026-07-03)
+
+Compose can now attach a photo or video and post directly to Instagram/TikTok
+accounts that are **routed through Zernio** (`GET /socials/accounts` returns
+`routing: "zernio"` when the account's `oauthRef` starts with `"zernio:"`).
+Non-Zernio Instagram/TikTok accounts are deliberately left out of the account
+chip grid — this app has no working native publisher for either platform
+(`platform-publishers/instagram.ts` and `tiktok.ts` don't implement
+`publishText`), so showing them would only fail later, at relay time against
+Zernio, instead of never being selectable at all. Since that exclusion is
+otherwise silent, an active but non-Zernio-routed IG/TikTok account is
+surfaced as an inline amber note under the Accounts list (e.g. *"@handle
+(Instagram) isn't connected for posting yet — connect through Zernio to use
+it in Compose."*) — see `compose-eligibility.ts`'s
+`isExcludedForNonZernioRouting`.
+
+**Upload.** `POST /api/socials/media` (multipart `file` field, one file per
+call) sits behind the same board-actor gate as the rest of `/api/socials` —
+any authenticated marketing user can reach it, not just an admin. It sniffs
+the actual bytes (magic numbers, not the declared MIME type or filename) via
+`server/src/services/socials/media-upload.ts`, classifies image (jpg/png/webp)
+vs. video (mp4/mov), enforces a size cap per kind (`SOCIALS_MEDIA_IMAGE_MAX_BYTES`,
+default 10MB / `SOCIALS_MEDIA_VIDEO_MAX_BYTES`, default 200MB), and stores the
+file via the existing company-scoped `StorageService` under namespace
+`socials/compose`. Both the client-side precheck (`SocialsCompose.tsx`) and
+this route's own cap give an actionable, next-step message rather than a bare
+"Exceeds NMB" — e.g. *"This video is over the 200MB limit — trim it or
+export at a lower resolution in CapCut and try again."* (CapCut being the
+target users' actual video source). The response's `objectKey` goes straight into a post's
+`mediaUrls` — exactly the same shape `services/socials/content-bridge.ts`'s
+`mediaObjectKeys` already produces, and the relayer's `resolveMediaUrls`
+(`social-relayer.ts`) stages any non-public entry to the public R2 bucket at
+publish time. No new public-serving route was needed: nothing renders these
+objectKeys as an `<img>`/`<video>` src before then (the Queue tab only shows
+an attachment count).
+
+**Guard parity.** `packages/shared/src/socials-compose.ts` exports a single
+pure function, `checkComposeForPlatform()`, run on **both** sides:
+- Client: `SocialsCompose.tsx`'s `submit()` runs it per selected account
+  before calling the API. Instagram (media-required) chips disable with
+  "needs a photo or video" until at least one attachment is present;
+  TikTok (video-required) chips separately gate on an actual **video**
+  attachment (`readyVideoCount`, not just any media) and show "needs a
+  video", so the chip's enabled state always matches what submit will
+  accept. The Queue button is disabled while any upload is still in flight.
+- Server: `POST /socials/posts` (`server/src/routes/socials.ts`) re-runs the
+  identical check — this is the real trust boundary, since the UI check is
+  only a courtesy. A violation returns `400` with a plain-English message
+  (e.g. *"Instagram needs a photo or video attached before you can post."*,
+  *"TikTok posts need a video — none of the attached files are recognized as
+  one (.mp4/.mov/.webm/.m4v)."*, *"Bluesky captions are limited to 300
+  characters (this one is 344)."*).
+
+  A media item's `isVideo` for this server-side check is **not** derived
+  solely from the objectKey's filename extension (`isVideoRef`) — an
+  objectKey's extension comes from the client-supplied `originalname` and
+  can disagree with the bytes (e.g. a JPEG renamed `clip.mp4`). The route
+  first tries `storageService.headObject()`'s stored `contentType` (the
+  magic-byte sniff `POST /media` already performed) and only falls back to
+  the filename-extension guess when that metadata isn't available (pasted
+  public URLs, or a storage backend/test stub that doesn't return
+  `contentType`) — see `resolveIsVideoRef()` in `routes/socials.ts`.
+
+Current rules (see `socials-compose.ts` for the source of truth):
+
+| Platform | Media required | Video required | Caption limit |
+|---|---|---|---|
+| Bluesky | no | no | 300 |
+| Instagram | yes | no | 2200 |
+| TikTok | yes | yes | 2200 |
+
+Every platform shares a 4-attachment cap (`MAX_COMPOSE_MEDIA_ITEMS`) —
+previously a cosmetic label only, now enforced both client- and server-side.
+YouTube was deliberately left out of Compose: nothing in this app has
+verified Zernio text+media publishing there end-to-end, and YouTube's
+metadata model (title vs. description, required video) doesn't fit the
+caption-only compose form.
+
+**Relay-time failures still surface.** If Zernio itself rejects a
+compose-time-clean post (a format quirk on Zernio's end), the row lands
+`status='failed'` with `error` set (`social-relayer.ts`) and the Queue tab
+already renders that `error` string directly on the post card — no
+tooltip/detail view needed, it was never hidden.
 
 ### Status + platform colors
 
@@ -270,8 +359,13 @@ and the ROOM funnel content itself (create via
 1. Implement `publishText(opts)` on a new file in
    `services/platform-publishers/<name>.ts` returning `PublishResult`.
 2. Register it in `platform-publishers/index.ts`.
-3. Add the platform string to the `TEXT_PLATFORMS` set in
-   `ui/src/pages/socials/SocialsCompose.tsx` so the composer surfaces it.
+3. Add the platform string to `COMPOSABLE_PLATFORMS` in
+   `packages/shared/src/socials-compose.ts` so the composer surfaces it (and,
+   if it needs media/a caption limit, add it to `MEDIA_REQUIRED_PLATFORMS` /
+   `VIDEO_REQUIRED_PLATFORMS` / `PLATFORM_CAPTION_LIMITS` there too — see
+   "Posting with media" above). If it's Zernio-only like Instagram/TikTok,
+   also gate it on `routing === "zernio"` in
+   `ui/src/pages/socials/compose-eligibility.ts`.
 
 ## Verification
 

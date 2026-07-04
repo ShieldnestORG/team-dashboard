@@ -78,6 +78,17 @@ export interface NewSocialPost {
   payload?: Record<string, unknown>;
 }
 
+// Result of POST /socials/media — an uploaded file's internal storage
+// objectKey (goes straight into NewSocialPost.mediaUrls; the relayer stages
+// it to a public URL at publish time).
+export interface UploadedSocialMedia {
+  objectKey: string;
+  contentType: string;
+  byteSize: number;
+  isVideo: boolean;
+  originalFilename: string | null;
+}
+
 export interface RelayerTickResult {
   picked: number;
   posted: number;
@@ -419,6 +430,16 @@ export const socialsApi = {
   },
   createPost: (data: NewSocialPost) =>
     api.post<{ post: SocialPost; pendingApproval: boolean }>("/socials/posts", data),
+  // Upload one Compose media attachment (image or video). Mirrors
+  // assetsApi.uploadImage's eager-buffer-read pattern so a clipboard-paste
+  // File isn't discarded before fetch() streams the FormData body.
+  uploadMedia: async (file: File) => {
+    const buffer = await file.arrayBuffer();
+    const safeFile = new File([buffer], file.name, { type: file.type });
+    const form = new FormData();
+    form.append("file", safeFile);
+    return api.postForm<UploadedSocialMedia>("/socials/media", form);
+  },
   approvePost: (id: string, body?: { scheduledAt?: string }) =>
     api.post<{ post: SocialPost }>(`/socials/posts/${id}/approve`, body ?? {}),
   cancelPost: (id: string) => api.delete<{ ok: true }>(`/socials/posts/${id}`),

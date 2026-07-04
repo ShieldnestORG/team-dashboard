@@ -1,7 +1,9 @@
 import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
+import multer from "multer";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { checkComposeForPlatform, isVideoRef, type ComposeMediaRef } from "@paperclipai/shared";
 import {
   socialAccounts,
   socialAutomations,
@@ -61,6 +63,12 @@ import {
 import { logger } from "../middleware/logger.js";
 import { CAPTION_STYLES, CAPTION_STYLE_SYNC_META } from "../data/caption-styles.generated.js";
 import type { StorageService } from "../storage/types.js";
+import {
+  sniffSocialMedia,
+  maxBytesFor,
+  SOCIAL_MEDIA_MAX_VIDEO_BYTES,
+} from "../services/socials/media-upload.js";
+import { isAlreadyPublicUrl } from "../storage/r2-staging.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
@@ -202,6 +210,30 @@ function actorUserId(req: Request): string | null {
   if (req.actor.type !== "board") return null;
   if (req.actor.source === "local_implicit") return null;
   return req.actor.userId ?? null;
+}
+
+/**
+ * Classify one POST /posts media entry as video or not, trusting the
+ * magic-byte sniff POST /media already performed over the objectKey's
+ * client-supplied filename extension. A public URL (already staged, or
+ * pasted by hand) has no stored sniff result to check, so it falls back to
+ * the extension heuristic — same as before. An internal objectKey is
+ * resolved against the StorageService's own contentType metadata; only
+ * when that's unavailable (e.g. local_disk dev storage doesn't persist
+ * contentType, or the key can't be resolved at all) do we fall back to the
+ * extension heuristic too, so this never turns a valid post into a 500.
+ */
+async function resolveIsVideoRef(storageService: StorageService, value: string): Promise<boolean> {
+  if (isAlreadyPublicUrl(value)) return isVideoRef(value);
+  try {
+    const head = await storageService.headObject(COMPANY_ID, value);
+    if (head.exists && head.contentType) return head.contentType.startsWith("video/");
+  } catch {
+    // Unresolvable/foreign objectKey — fall through to the extension guess;
+    // the relayer's own resolveMediaUrls is the authoritative gate that will
+    // fail loud on a truly bad objectKey before anything publishes.
+  }
+  return isVideoRef(value);
 }
 
 export function socialsRoutes(db: Db, storageService: StorageService) {
@@ -413,6 +445,80 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     }
   });
 
+  // ----- Compose media upload -----
+  // Stores the file via the company-scoped StorageService and hands back its
+  // internal objectKey — Compose puts that straight into a post's mediaUrls,
+  // and the relayer stages it to a public R2 URL at publish time (see
+  // services/socials/media-upload.ts header for the full rationale). Sits
+  // behind this router's board-actor gate above, so a marketing user (not
+  // just an admin) can reach it.
+  const mediaUpload = multer({
+    storage: multer.memoryStorage(),
+    // The real per-kind cap (image vs video) is enforced after sniffing the
+    // bytes below; this is just multer's outer ceiling.
+    limits: { fileSize: SOCIAL_MEDIA_MAX_VIDEO_BYTES, files: 1 },
+  });
+
+  router.post("/media", async (req, res) => {
+    await new Promise<void>((resolve, reject) => {
+      mediaUpload.single("file")(req, res, (err: unknown) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    }).catch((err) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          res.status(422).json({ error: `File exceeds ${SOCIAL_MEDIA_MAX_VIDEO_BYTES} bytes` });
+          return;
+        }
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    });
+    if (res.headersSent) return;
+
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      return res.status(400).json({ error: "Missing file field 'file'" });
+    }
+    if (file.buffer.length <= 0) {
+      return res.status(422).json({ error: "File is empty" });
+    }
+
+    const sniffed = sniffSocialMedia(file.buffer, file.originalname || "");
+    if ("error" in sniffed) {
+      return res.status(422).json({ error: sniffed.error });
+    }
+    const maxBytes = maxBytesFor(sniffed.kind);
+    if (file.buffer.length > maxBytes) {
+      const limitMb = Math.floor(maxBytes / (1024 * 1024));
+      const nextStep =
+        sniffed.kind === "video"
+          ? `trim it or export at a lower resolution in CapCut and try again`
+          : `resize or compress it and try again`;
+      return res.status(422).json({
+        error: `This ${sniffed.kind === "video" ? "video" : "photo"} is over the ${limitMb}MB limit — ${nextStep}.`,
+      });
+    }
+
+    const stored = await storageService.putFile({
+      companyId: COMPANY_ID,
+      namespace: "socials/compose",
+      originalFilename: file.originalname || null,
+      contentType: sniffed.contentType,
+      body: file.buffer,
+    });
+
+    res.status(201).json({
+      objectKey: stored.objectKey,
+      contentType: stored.contentType,
+      byteSize: stored.byteSize,
+      isVideo: sniffed.kind === "video",
+      originalFilename: stored.originalFilename,
+    });
+  });
+
   // ----- Posts queue (relayer) -----
 
   // List queued/posted/failed posts. Supports ?accountId=, ?status=, ?limit=
@@ -466,7 +572,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     }
     // Verify the account belongs to this company before scheduling.
     const account = await db
-      .select({ id: socialAccounts.id, status: socialAccounts.status })
+      .select({ id: socialAccounts.id, status: socialAccounts.status, platform: socialAccounts.platform })
       .from(socialAccounts)
       .where(
         and(
@@ -480,6 +586,24 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     const scheduledAt = body.scheduledAt ? new Date(String(body.scheduledAt)) : new Date();
     if (Number.isNaN(scheduledAt.getTime())) {
       return res.status(400).json({ error: "scheduledAt is invalid" });
+    }
+
+    // Platform-requirement guard (media presence, video-required, caption
+    // length, attachment count) — the SAME pure check Compose runs client-side
+    // (@paperclipai/shared) before enabling submit. This is the real trust
+    // boundary: it must reject here too, in plain English, so a bad post never
+    // reaches the relayer only to fail later against Zernio.
+    const mediaUrls: string[] = Array.isArray(body.mediaUrls) ? body.mediaUrls.map(String) : [];
+    const media: ComposeMediaRef[] = await Promise.all(
+      mediaUrls.map(async (value) => ({ value, isVideo: await resolveIsVideoRef(storageService, value) })),
+    );
+    const guardProblem = checkComposeForPlatform({
+      platform: account[0].platform,
+      textLength: String(body.text).length,
+      media,
+    });
+    if (guardProblem) {
+      return res.status(400).json({ error: guardProblem });
     }
 
     // Two-tier publishing: non-admin employees create DRAFTS that wait for an
