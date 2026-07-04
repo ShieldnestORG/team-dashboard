@@ -37,6 +37,13 @@ interface ComposeLocationState {
   prefillAccountHandle?: string;
   /** Normalized platform key (see normalizePlatform) parsed from the kit's account line, e.g. "instagram". */
   prefillAccountPlatform?: string;
+  /**
+   * "Post the hook" handoff from the Funnels library (see Funnels.tsx
+   * PostHookDialog) — forwarded to POST /posts as payload.funnelId so the
+   * funnel's hook-post status can find this post. Server-side validated
+   * (uuid format + belongs to this company) — never trust it silently.
+   */
+  prefillFunnelId?: string;
 }
 
 
@@ -131,7 +138,13 @@ export function SocialsCompose() {
   }
 
   const createMut = useMutation({
-    mutationFn: (payload: { ids: string[]; text: string; mediaUrls?: string[]; scheduledAt: string }) =>
+    mutationFn: (payload: {
+      ids: string[];
+      text: string;
+      mediaUrls?: string[];
+      scheduledAt: string;
+      funnelId?: string;
+    }) =>
       // N client-side inserts over the existing single-account POST /posts —
       // no bulk endpoint. The server derives pending_approval/scheduled per
       // request from the actor (server/src/routes/socials.ts), so N calls
@@ -143,6 +156,7 @@ export function SocialsCompose() {
           text: payload.text,
           mediaUrls: payload.mediaUrls,
           scheduledAt: payload.scheduledAt,
+          payload: payload.funnelId ? { funnelId: payload.funnelId } : undefined,
         }),
       ),
     onSuccess: (settledResults) => {
@@ -198,6 +212,7 @@ export function SocialsCompose() {
       text,
       mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
       scheduledAt: postNow ? new Date().toISOString() : new Date(scheduledAt).toISOString(),
+      funnelId: state?.prefillFunnelId,
     });
   }
 
@@ -218,6 +233,12 @@ export function SocialsCompose() {
             <CardTitle className="text-base">Schedule a post</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {state?.prefillFunnelId && (
+              <div className="rounded-md border border-blue-300/60 bg-blue-50 p-2.5 text-xs text-blue-900 dark:border-blue-500/40 dark:bg-blue-900/20 dark:text-blue-200">
+                This post is linked to a funnel — once queued it'll show up as that funnel's hook
+                post back on the Funnels page.
+              </div>
+            )}
             {prefillPlatformUnsupported && (
               <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/20 dark:text-amber-200">
                 This kit targets {prefillPlatformUnsupported}, which Compose can't post to yet —

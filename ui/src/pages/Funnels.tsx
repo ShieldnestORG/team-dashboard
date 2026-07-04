@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToast } from "../context/ToastContext";
+import { useNavigate } from "@/lib/router";
 import {
   socialsApi,
   type SocialAccount,
@@ -15,9 +16,11 @@ import {
   type FunnelStatus,
   type FunnelStyle,
   type NewLibraryFunnel,
+  type FunnelHookPost,
 } from "../api/socials";
 import { queryKeys } from "../lib/queryKeys";
-import { relativeTime } from "../lib/utils";
+import { relativeTime, cn } from "../lib/utils";
+import { normalizePlatform } from "@/lib/status-colors";
 import { useBoardAccess } from "../hooks/useBoardAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +69,10 @@ import {
   Rocket,
   Archive,
   Target,
+  AlertTriangle,
+  Megaphone,
+  PenLine,
+  type LucideIcon,
 } from "lucide-react";
 import { ApiError } from "../api/client";
 
@@ -319,6 +326,39 @@ function canRetireStatus(status: FunnelStatus): boolean {
   return status === "ready" || status === "live";
 }
 
+// Mirrors hasDmMessage() in funnels-service.ts — the "empty-DM ready trap"
+// guard. Catalog-imported 'ready'/'built' rows land with dmMessage: "".
+function needsDmText(dmMessage: string): boolean {
+  return dmMessage.trim().length === 0;
+}
+
+/** Plain-English reason the Approve button is disabled, or null when it's clickable. */
+function approveDisabledReason(funnel: LibraryFunnel): string | null {
+  if (needsDmText(funnel.dmMessage)) return "Add the DM message first";
+  return null;
+}
+
+/** Plain-English reason the Turn on button is disabled, or null when it's clickable. */
+function armDisabledReason(
+  funnel: LibraryFunnel,
+  funnelsEnabled: boolean,
+  zernioConnected: boolean,
+): string | null {
+  // Mirrors the server's armFunnel guards (canArm + the zernioAccountId
+  // precondition) so the button is never clickable when the server would 409.
+  if (!zernioConnected) return "Connect this account to Zernio first";
+  if (!funnelsEnabled) return "Funnels are switched off for this account";
+  if (needsDmText(funnel.dmMessage)) return "Add the DM message first";
+  if (!funnel.keywords.some((k) => k.trim().length > 0)) return "Add a keyword first";
+  return null;
+}
+
+// A hook post "counts" toward the funnel's hook-post status once it's queued
+// or actually posted — a failed/canceled post never told anyone to comment.
+function isLiveHookPost(post: FunnelHookPost): boolean {
+  return post.status === "scheduled" || post.status === "pending_approval" || post.status === "publishing" || post.status === "posted";
+}
+
 function CoverageChips({ coverage }: { coverage: FunnelCoverageRow[] }) {
   if (coverage.length === 0) {
     return (
@@ -502,7 +542,331 @@ function EditFunnelDialog({
   );
 }
 
-function FunnelDetail({ funnel }: { funnel: LibraryFunnel }) {
+// ---------------------------------------------------------------------------
+// Small shared button that renders a plain-English tooltip explaining why an
+// action is disabled instead of just greying it out — the "surface it BEFORE
+// the click" requirement for Turn on / Approve.
+// ---------------------------------------------------------------------------
+
+function GuardedActionButton({
+  label,
+  icon: Icon,
+  onClick,
+  disabledReason,
+  pending,
+  variant = "ghost",
+  className,
+}: {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  disabledReason?: string | null;
+  pending?: boolean;
+  variant?: "ghost" | "outline";
+  className?: string;
+}) {
+  const disabled = Boolean(pending) || Boolean(disabledReason);
+  const button = (
+    <Button size="xs" variant={variant} className={className} disabled={disabled} onClick={onClick}>
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </Button>
+  );
+  if (!disabledReason) return button;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>{button}</span>
+        </TooltipTrigger>
+        <TooltipContent>{disabledReason}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// "Post the hook" — a small picker over the funnel's up-to-3 post-hook
+// captions (plus "write my own"), then hands off to Compose exactly like
+// Content Hub's "Send to Compose" seam (KitCard.sendToCompose): prefillText +
+// the account pre-selected by matching handle+platform, plus prefillFunnelId
+// so the queued post links back to this funnel (payload.funnelId,
+// server-validated in POST /posts).
+// ---------------------------------------------------------------------------
+
+function PostHookDialog({
+  funnel,
+  account,
+  open,
+  onOpenChange,
+}: {
+  funnel: LibraryFunnel;
+  account: SocialAccount | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const navigate = useNavigate();
+  const { pushToast } = useToast();
+
+  function sendToCompose(text: string) {
+    onOpenChange(false);
+    pushToast({ title: "Loaded into Compose", tone: "success" });
+    navigate("/socials?tab=compose", {
+      state: {
+        prefillText: text,
+        prefillAccountHandle: funnel.accountHandle,
+        prefillAccountPlatform: account ? normalizePlatform(account.platform) : undefined,
+        prefillFunnelId: funnel.id,
+      },
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Post the hook for "{funnel.name}"</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          Pick a caption that tells people to comment{" "}
+          <strong>{funnel.keywords.join(" or ") || "the keyword"}</strong> — it opens in Compose,
+          pre-loaded and pointed at @{funnel.accountHandle}.
+        </p>
+        <div className="space-y-2">
+          {funnel.postHooks.length > 0 ? (
+            funnel.postHooks.map((hook, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => sendToCompose(hook)}
+                className="w-full rounded-md border p-2.5 text-left text-sm hover:bg-accent"
+              >
+                {hook}
+              </button>
+            ))
+          ) : (
+            <p className="text-xs text-muted-foreground">This funnel has no pre-written hooks.</p>
+          )}
+          <button
+            type="button"
+            onClick={() => sendToCompose("")}
+            className="flex w-full items-center gap-2 rounded-md border border-dashed p-2.5 text-left text-sm text-muted-foreground hover:bg-accent"
+          >
+            <PenLine className="h-3.5 w-3.5 shrink-0" />
+            Write my own caption
+          </button>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline "Enable funnels for @handle" — calls the same PATCH
+// /accounts/:id/funnels the Accounts table's master switch uses. Its own
+// confirm dialog (mirroring the AccountsTable pattern below) so flipping a
+// whole account's funnels on from deep inside one funnel row never feels
+// like an accident.
+// ---------------------------------------------------------------------------
+
+function EnableAccountFunnelsButton({ account }: { account: SocialAccount }) {
+  const qc = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const enableMut = useMutation({
+    mutationFn: () => socialsApi.setAccountFunnels(account.id, { enabled: true }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.funnels.accounts });
+      qc.invalidateQueries({ queryKey: queryKeys.funnels.coverage });
+      setConfirmOpen(false);
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Enable failed");
+      setConfirmOpen(false);
+    },
+  });
+
+  return (
+    <>
+      <Button size="xs" variant="outline" onClick={() => setConfirmOpen(true)}>
+        Enable funnels for @{account.handle}
+      </Button>
+      {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn on funnels for @{account.handle}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This flips the account-wide funnels switch on. It doesn't arm anything by itself —
+              you'll still hit Turn on for each funnel you want live.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => enableMut.mutate()} disabled={enableMut.isPending}>
+              Enable funnels
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle stepper — the plain-English "what happens next" map for one
+// funnel. Visual language mirrors FlowStepper.tsx (numbered circles + arrow
+// separators) but adds a per-step primary action button, since here the
+// steps are gated one at a time rather than always all clickable.
+// Only rendered for draft/ready/live funnels — rejected/retired are exits
+// from this lifecycle, not steps within it.
+// ---------------------------------------------------------------------------
+
+interface LifecycleStepDef {
+  label: string;
+  description: string;
+}
+
+const LIFECYCLE_STEPS: LifecycleStepDef[] = [
+  { label: "Draft", description: "AI wrote it — waiting for a human to review it." },
+  { label: "Ready", description: "Approved — waiting to be turned on." },
+  { label: "Turned on", description: "The robot is watching comments for the keyword right now." },
+  { label: "Hook posted", description: "A post is telling people to comment the keyword." },
+  { label: "Collecting leads", description: "People are commenting and getting the DM." },
+];
+
+/** 0-indexed current step. hasHookPost/hasLeads only matter once status is 'live'. */
+function lifecycleStepIndex(funnel: LibraryFunnel, hasHookPost: boolean, hasLeads: boolean): number {
+  if (funnel.status === "draft") return 0;
+  if (funnel.status === "ready") return 1;
+  // live
+  if (!hasHookPost) return 2;
+  if (!hasLeads) return 3;
+  return 4;
+}
+
+function FunnelLifecycleStepper({
+  funnel,
+  account,
+  isAdmin,
+  hasHookPost,
+  hookPostsLoading,
+  hasLeads,
+  onApprove,
+  approvePending,
+  onTurnOnRequest,
+  armPending,
+  onPostHook,
+}: {
+  funnel: LibraryFunnel;
+  account: SocialAccount | undefined;
+  isAdmin: boolean;
+  hasHookPost: boolean;
+  hookPostsLoading: boolean;
+  hasLeads: boolean;
+  onApprove: () => void;
+  approvePending: boolean;
+  onTurnOnRequest: () => void;
+  armPending: boolean;
+  onPostHook: () => void;
+}) {
+  const current = lifecycleStepIndex(funnel, hasHookPost, hasLeads);
+  const funnelsEnabled = account?.funnelsEnabled === true;
+  const approveReason = approveDisabledReason(funnel);
+  const armReason = armDisabledReason(funnel, funnelsEnabled, Boolean(account?.zernioAccountId));
+
+  return (
+    <div className="border-t bg-muted/10 p-3">
+      <div className="flex flex-wrap items-start gap-x-1 gap-y-3">
+        {LIFECYCLE_STEPS.map((step, i) => {
+          const isCurrent = i === current;
+          const isDone = i < current;
+          return (
+            <div key={step.label} className="flex items-start">
+              <div
+                className={cn(
+                  "flex max-w-[11.5rem] flex-col gap-1 rounded-md px-2 py-1",
+                  isCurrent && "bg-muted/60",
+                )}
+              >
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                      isDone
+                        ? "bg-emerald-500 text-white"
+                        : isCurrent
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted-foreground/15 text-muted-foreground",
+                    )}
+                  >
+                    {isDone ? <Check className="h-3 w-3" /> : i + 1}
+                  </span>
+                  {step.label}
+                </span>
+                <span className="text-xs text-muted-foreground">{step.description}</span>
+                {isCurrent && isAdmin && (
+                  <div className="mt-1 flex flex-col items-start gap-1.5">
+                    {i === 0 && (
+                      <GuardedActionButton
+                        label="Approve"
+                        icon={Check}
+                        variant="outline"
+                        onClick={onApprove}
+                        pending={approvePending}
+                        disabledReason={approveReason}
+                      />
+                    )}
+                    {i === 1 && (
+                      <>
+                        <GuardedActionButton
+                          label="Turn on"
+                          icon={Rocket}
+                          variant="outline"
+                          onClick={onTurnOnRequest}
+                          pending={armPending}
+                          disabledReason={armReason}
+                        />
+                        {!funnelsEnabled && account && <EnableAccountFunnelsButton account={account} />}
+                      </>
+                    )}
+                    {i === 2 && !hookPostsLoading && (
+                      <Button size="xs" variant="outline" onClick={onPostHook}>
+                        <Megaphone className="h-3.5 w-3.5" />
+                        Post the hook
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {i < LIFECYCLE_STEPS.length - 1 && (
+                <span className="mx-1 mt-1.5 text-muted-foreground/40" aria-hidden="true">
+                  &rarr;
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FunnelDetail({
+  funnel,
+  hookPosts,
+  hookPostsLoading,
+}: {
+  funnel: LibraryFunnel;
+  hookPosts: FunnelHookPost[];
+  hookPostsLoading: boolean;
+}) {
   return (
     <div className="grid gap-2 border-t bg-muted/10 p-3 text-xs sm:grid-cols-2">
       <div>
@@ -529,22 +893,42 @@ function FunnelDetail({ funnel }: { funnel: LibraryFunnel }) {
         <p className="mb-1 font-medium text-muted-foreground">Notes</p>
         <p>{funnel.notes ?? "—"}</p>
       </div>
+      <div className="sm:col-span-2">
+        <p className="mb-1 font-medium text-muted-foreground">Hook posts</p>
+        {hookPostsLoading ? (
+          <p>Loading…</p>
+        ) : hookPosts.length > 0 ? (
+          <ul className="space-y-1">
+            {hookPosts.map((p) => (
+              <li key={p.id} className="flex items-center gap-2">
+                <StatusBadge status={p.status} />
+                <span className="truncate">{p.text}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No posts linked to this funnel yet.</p>
+        )}
+      </div>
     </div>
   );
 }
 
 function FunnelLibraryRow({
   funnel,
+  account,
   isAdmin,
   onEdit,
 }: {
   funnel: LibraryFunnel;
+  account: SocialAccount | undefined;
   isAdmin: boolean;
   onEdit: (f: LibraryFunnel) => void;
 }) {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [confirmArm, setConfirmArm] = useState(false);
+  const [hookDialogOpen, setHookDialogOpen] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
   const invalidate = () => {
@@ -582,6 +966,43 @@ function FunnelLibraryRow({
   const anyPending =
     approveMut.isPending || rejectMut.isPending || armMut.isPending || retireMut.isPending;
 
+  // "Post the hook" status — always fetched for ready/live funnels (not just
+  // when expanded) so the amber "nothing is telling people to comment yet"
+  // callout is visible without opening the row. Cheap: bounded by the ~5
+  // ready + few live funnels the coverage target keeps per account.
+  const hookPostsQ = useQuery({
+    queryKey: queryKeys.funnels.hookPosts(funnel.id),
+    queryFn: () => socialsApi.funnelPosts(funnel.id, { limit: 20 }),
+    enabled: funnel.status === "ready" || funnel.status === "live",
+  });
+  const hookPosts = hookPostsQ.data?.posts ?? [];
+  const hasLiveHookPost = hookPosts.some(isLiveHookPost);
+
+  // Step 5 ("Collecting leads") only needs to resolve while the row is
+  // expanded (it drives the full stepper, not the always-visible callout).
+  const zernioAccountId = account?.zernioAccountId ?? undefined;
+  const leadsQ = useQuery({
+    queryKey: queryKeys.funnels.leads({ zernioAccountId, scope: "lifecycle-stepper" }),
+    queryFn: () => socialsApi.funnelLeads({ zernioAccountId, limit: 50 }),
+    enabled: expanded && funnel.status === "live" && Boolean(zernioAccountId),
+  });
+  const keywordSet = useMemo(
+    () => new Set(funnel.keywords.map((k) => k.toUpperCase())),
+    [funnel.keywords],
+  );
+  const hasLeads = (leadsQ.data?.leads ?? []).some(
+    (l) => l.keyword && keywordSet.has(l.keyword.toUpperCase()),
+  );
+
+  const needsDm = needsDmText(funnel.dmMessage);
+  const approveReason = approveDisabledReason(funnel);
+  const armReason = armDisabledReason(
+    funnel,
+    account?.funnelsEnabled === true,
+    Boolean(account?.zernioAccountId),
+  );
+  const showLifecycleStepper = funnel.status === "draft" || funnel.status === "ready" || funnel.status === "live";
+
   return (
     <Fragment>
       <tr className="border-b last:border-0 hover:bg-muted/30 align-top">
@@ -605,6 +1026,13 @@ function FunnelLibraryRow({
               </Badge>
             ))}
           </div>
+          {funnel.status === "live" && !hookPostsQ.isLoading && !hasLiveHookPost && (
+            <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-3 w-3 shrink-0 translate-y-0.5" />
+              Nothing is telling people to comment {funnel.keywords.join(" or ") || "the keyword"} yet
+              — post the hook.
+            </p>
+          )}
           {rowError && <p className="mt-1 text-[11px] text-destructive">{rowError}</p>}
         </td>
         <td className="px-2 py-2">
@@ -620,64 +1048,72 @@ function FunnelLibraryRow({
           )}
         </td>
         <td className="px-2 py-2">
-          <StatusBadge status={funnel.status} />
+          <div className="flex flex-col items-start gap-1">
+            <StatusBadge status={funnel.status} />
+            {needsDm && (funnel.status === "draft" || funnel.status === "ready") && (
+              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                <AlertTriangle className="h-3 w-3" />
+                Needs DM text
+              </span>
+            )}
+          </div>
         </td>
         <td className="px-4 py-2">
           {isAdmin ? (
             <div className="flex flex-wrap items-center justify-end gap-1">
               {canApproveStatus(funnel.status) && (
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title="Approve"
-                  disabled={anyPending}
+                <GuardedActionButton
+                  label="Approve"
+                  icon={Check}
+                  className="text-emerald-600"
+                  pending={anyPending}
+                  disabledReason={approveReason}
                   onClick={() => approveMut.mutate()}
-                >
-                  <Check className="h-3.5 w-3.5 text-emerald-600" />
-                </Button>
+                />
               )}
               {canRejectStatus(funnel.status) && (
                 <Button
-                  size="icon-xs"
+                  size="xs"
                   variant="ghost"
-                  title="Reject"
+                  className="text-destructive"
                   disabled={anyPending}
                   onClick={() => rejectMut.mutate()}
                 >
-                  <XIcon className="h-3.5 w-3.5 text-destructive" />
+                  <XIcon className="h-3.5 w-3.5" />
+                  Reject
                 </Button>
               )}
               {funnel.status !== "live" && funnel.status !== "retired" && (
                 <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title="Edit"
+                  size="xs"
+                  variant={needsDm ? "outline" : "ghost"}
                   disabled={anyPending}
                   onClick={() => onEdit(funnel)}
                 >
                   <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              )}
+              {(funnel.status === "ready" || funnel.status === "live") && (
+                <Button size="xs" variant="outline" disabled={anyPending} onClick={() => setHookDialogOpen(true)}>
+                  <Megaphone className="h-3.5 w-3.5" />
+                  Post the hook
                 </Button>
               )}
               {funnel.status === "ready" && (
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title="Turn on"
-                  disabled={anyPending}
+                <GuardedActionButton
+                  label="Turn on"
+                  icon={Rocket}
+                  className="text-blue-600"
+                  pending={anyPending}
+                  disabledReason={armReason}
                   onClick={() => setConfirmArm(true)}
-                >
-                  <Rocket className="h-3.5 w-3.5 text-blue-600" />
-                </Button>
+                />
               )}
               {canRetireStatus(funnel.status) && (
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title="Retire"
-                  disabled={anyPending}
-                  onClick={() => retireMut.mutate()}
-                >
+                <Button size="xs" variant="ghost" disabled={anyPending} onClick={() => retireMut.mutate()}>
                   <Archive className="h-3.5 w-3.5" />
+                  Retire
                 </Button>
               )}
             </div>
@@ -689,7 +1125,22 @@ function FunnelLibraryRow({
       {expanded && (
         <tr className="border-b last:border-0">
           <td colSpan={6} className="p-0">
-            <FunnelDetail funnel={funnel} />
+            {showLifecycleStepper && (
+              <FunnelLifecycleStepper
+                funnel={funnel}
+                account={account}
+                isAdmin={isAdmin}
+                hasHookPost={hasLiveHookPost}
+                hookPostsLoading={hookPostsQ.isLoading}
+                hasLeads={hasLeads}
+                onApprove={() => approveMut.mutate()}
+                approvePending={anyPending}
+                onTurnOnRequest={() => setConfirmArm(true)}
+                armPending={anyPending}
+                onPostHook={() => setHookDialogOpen(true)}
+              />
+            )}
+            <FunnelDetail funnel={funnel} hookPosts={hookPosts} hookPostsLoading={hookPostsQ.isLoading} />
           </td>
         </tr>
       )}
@@ -712,6 +1163,13 @@ function FunnelLibraryRow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PostHookDialog
+        funnel={funnel}
+        account={account}
+        open={hookDialogOpen}
+        onOpenChange={setHookDialogOpen}
+      />
     </Fragment>
   );
 }
@@ -745,7 +1203,7 @@ function GenerateDraftsButton({ accountHandle }: { accountHandle: string }) {
   );
 }
 
-function FunnelLibrarySection() {
+function FunnelLibrarySection({ accounts }: { accounts: SocialAccount[] }) {
   const { isInstanceAdmin: isAdmin } = useBoardAccess();
   const [editing, setEditing] = useState<LibraryFunnel | null>(null);
 
@@ -761,6 +1219,12 @@ function FunnelLibrarySection() {
   const coverage = coverageQ.data?.coverage ?? [];
   const library = libraryQ.data?.funnels ?? [];
 
+  const accountByHandle = useMemo(() => {
+    const m = new Map<string, SocialAccount>();
+    for (const a of accounts) m.set(a.handle, a);
+    return m;
+  }, [accounts]);
+
   const grouped = useMemo(() => {
     const by = new Map<string, LibraryFunnel[]>();
     for (const f of library) {
@@ -775,11 +1239,19 @@ function FunnelLibrarySection() {
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-1.5">
           <CardTitle className="text-sm font-medium">Funnel library</CardTitle>
-          <HelpTip label="What is the funnel library?">
-            A funnel = a keyword people comment + the DM they get + where it
-            sends them. Ready = approved and waiting. Live = running on
-            Instagram right now. Every account keeps at least 5 funnels
-            ready to go so there's always something to arm next.
+          <HelpTip label="How does a funnel work?">
+            <div className="space-y-2">
+              <p>
+                A funnel works in three steps: a post tells people to comment a keyword, the
+                robot DMs everyone who does with your link, and they land on your free page and
+                become leads.
+              </p>
+              <p>
+                <strong>Draft</strong> = AI wrote it, waiting for approval.{" "}
+                <strong>Ready</strong> = approved, waiting to be turned on.{" "}
+                <strong>Live</strong> = robot is watching right now.
+              </p>
+            </div>
           </HelpTip>
         </div>
       </CardHeader>
@@ -824,7 +1296,13 @@ function FunnelLibrarySection() {
                   </thead>
                   <tbody>
                     {funnelsForAccount.map((f) => (
-                      <FunnelLibraryRow key={f.id} funnel={f} isAdmin={isAdmin} onEdit={setEditing} />
+                      <FunnelLibraryRow
+                        key={f.id}
+                        funnel={f}
+                        account={accountByHandle.get(f.accountHandle)}
+                        isAdmin={isAdmin}
+                        onEdit={setEditing}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -1782,7 +2260,7 @@ export function Funnels() {
             accountsCoverageTotal={coverage.length}
           />
 
-          <FunnelLibrarySection />
+          <FunnelLibrarySection accounts={accounts} />
 
           {accounts.length === 0 ? (
             <Card>

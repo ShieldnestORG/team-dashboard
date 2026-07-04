@@ -50,6 +50,7 @@ import {
   rejectFunnel,
   armFunnel,
   retireFunnel,
+  isValidFunnelIdFormat,
   FunnelGuardError,
   type FunnelStyle,
 } from "../services/socials/funnels-service.js";
@@ -485,6 +486,32 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     // admin to approve (status 'pending_approval' — the relayer only drains
     // 'scheduled'). Admins publish directly. Either way we attribute the author.
     const status = isAdminActor(req) ? "scheduled" : "pending_approval";
+
+    // Optional funnel linkage (the "post the hook" flow — Funnels.tsx sends
+    // this when a hook caption is queued from a funnel's post-hook picker).
+    // Never let a bad/foreign id reject the whole post — validate format,
+    // confirm the funnel exists AND belongs to this company, and silently
+    // drop it otherwise (matches the rest of this route's tolerant parsing).
+    const payload: Record<string, unknown> =
+      body.payload && typeof body.payload === "object" ? { ...body.payload } : {};
+    if ("funnelId" in payload) {
+      const funnelId = payload.funnelId;
+      let ok = false;
+      if (isValidFunnelIdFormat(funnelId)) {
+        const funnelRows = await db
+          .select({ id: funnels.id })
+          .from(funnels)
+          .where(and(eq(funnels.id, funnelId), eq(funnels.companyId, COMPANY_ID)))
+          .limit(1);
+        ok = Boolean(funnelRows[0]);
+      }
+      if (ok) {
+        payload.funnelId = funnelId;
+      } else {
+        delete payload.funnelId;
+      }
+    }
+
     const inserted = await db
       .insert(socialPosts)
       .values({
@@ -496,7 +523,7 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
         scheduledAt,
         status,
         maxAttempts: typeof body.maxAttempts === "number" ? body.maxAttempts : 3,
-        payload: body.payload && typeof body.payload === "object" ? body.payload : {},
+        payload,
         createdByUserId: actorUserId(req),
       })
       .returning();
@@ -918,6 +945,41 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
       logger.error({ err }, "funnels coverage failed");
       res.status(500).json({ error: "coverage failed" });
     }
+  });
+
+  // "Post the hook" status — every social_posts row linked to this funnel via
+  // payload.funnelId (see POST /posts above), newest first. Powers the
+  // library row's hook-post StatusBadges + the "nothing is telling people to
+  // comment KEYWORD yet" amber callout on live funnels with none.
+  router.get("/funnels/:id/posts", async (req, res) => {
+    const id = req.params.id as string;
+    const funnelRows = await db
+      .select({ id: funnels.id })
+      .from(funnels)
+      .where(and(eq(funnels.id, id), eq(funnels.companyId, COMPANY_ID)))
+      .limit(1);
+    if (!funnelRows[0]) return res.status(404).json({ error: "funnel not found" });
+
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const rows = await db
+      .select({
+        id: socialPosts.id,
+        socialAccountId: socialPosts.socialAccountId,
+        text: socialPosts.text,
+        status: socialPosts.status,
+        scheduledAt: socialPosts.scheduledAt,
+        postedAt: socialPosts.postedAt,
+        postedUrl: socialPosts.postedUrl,
+        createdAt: socialPosts.createdAt,
+        platform: socialAccounts.platform,
+        handle: socialAccounts.handle,
+      })
+      .from(socialPosts)
+      .innerJoin(socialAccounts, eq(socialAccounts.id, socialPosts.socialAccountId))
+      .where(sql`${socialPosts.payload} ->> 'funnelId' = ${id}`)
+      .orderBy(desc(socialPosts.createdAt))
+      .limit(limit);
+    res.json({ posts: rows });
   });
 
   // Admin-authored funnel (draft by default) — distinct from AI drafting

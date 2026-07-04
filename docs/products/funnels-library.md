@@ -47,6 +47,84 @@ path), then `status -> retired`.
 Writes are admin-only (`requireAdmin` — owner + instance admins). Marketing
 employees see the same page but every action is read-only.
 
+### The full lifecycle a non-technical user sees (2026-07-03)
+
+`live` isn't the end of the story — a comment→DM funnel does nothing until a
+post actually tells people to comment the keyword. The library UI walks every
+draft/ready/live funnel through five numbered steps so it's always obvious
+what happens next, and renders the one available action as a labeled button
+right on the current step:
+
+1. **Draft** — AI wrote it, waiting for approval. *Action: Approve.*
+2. **Ready** — approved, waiting to be turned on. *Action: Turn on.*
+3. **Turned on** — the robot is watching comments right now. *Action: Post
+   the hook.*
+4. **Hook posted** — a post is telling people to comment the keyword.
+   (No action — waiting for comments.)
+5. **Collecting leads** — people are commenting and getting the DM.
+
+Steps 4-5 are derived from data, not a stored status: step 4 requires at
+least one `social_posts` row linked to the funnel (queued or posted, see
+below); step 5 additionally requires at least one captured lead whose
+keyword matches the funnel (reusing the same `GET /leads` query the
+per-automation drill-down already uses, scoped to the funnel's account and
+filtered client-side by keyword). `rejected`/`retired` funnels are exits from
+this lifecycle and don't render the stepper.
+
+### "Post the hook" — the missing piece
+
+Arming a funnel only turns on the *listener*. Nobody comments the keyword
+until a real post asks them to — that's what `post_hooks[]` (3 AI-written
+caption ideas per funnel) are for, and until now nothing used them after
+arming. Fixed 2026-07-03:
+
+- **Ready and live** funnels get a "Post the hook" button that opens a small
+  picker over the funnel's `post_hooks` (plus "write my own"), then hands
+  off to Compose using the exact same seam as Content Hub's "Send to
+  Compose" (`prefillText` + the account pre-selected by matching
+  handle+platform) — plus a `prefillFunnelId` that Compose forwards to
+  `POST /posts` as `payload.funnelId`.
+- `POST /posts` validates that `funnelId`: syntactic uuid check
+  (`isValidFunnelIdFormat`), then confirms the funnel exists and belongs to
+  this company. An invalid/foreign id is silently dropped from the payload —
+  it never rejects the post itself, matching this route's existing tolerant
+  parsing.
+- `GET /funnels/:id/posts` (board-readable, no new migration — `payload`
+  jsonb already exists on `social_posts`) returns every post linked to a
+  funnel (`payload->>'funnelId' = id`), newest first. The library row
+  queries this for every `ready`/`live` funnel (not just when expanded) and
+  shows a `StatusBadge` per linked post in the expanded detail.
+- A **live** funnel with zero queued-or-posted hook posts shows an amber
+  callout right on the collapsed row: *"Nothing is telling people to comment
+  KEYWORD yet — post the hook."* — the whole point of the stepper is that
+  this is visible without opening anything.
+
+### Killing the empty-DM "ready" trap
+
+Catalog-imported rows (`mapCatalogEntryToFunnelInsert`) always land with
+`dmMessage: ""` — a catalog entry mapped to `ready`/`built` was technically
+"ready" in the DB while `canArm` would still reject it (empty DM). That
+inflated the coverage target without anything actually being armable.
+Decided 2026-07-03: blank-DM funnels are now excluded from `readyCount` (the
+number that has to hit `READY_TARGET`) even though they still show up in
+`counts.ready` for the raw status tooltip — see `tallyFunnelCoverage()` in
+`funnels-service.ts`. They also get a **"Needs DM text"** amber badge and
+Edit becomes their emphasized action; **Approve** is now blocked
+server-side too (`approveFunnel` → 409 `"Add the DM message first"`) and
+disabled client-side with a tooltip before the click. The same
+before-the-click treatment applies to **Turn on** — `canArm`'s existing
+DM/keyword/funnels-off checks are now surfaced as a disabled-button tooltip
+instead of only failing after the confirm dialog.
+
+### Account funnels-off, handled inline
+
+If an account's `funnels_enabled` is off, **Turn on** is disabled with
+"Funnels are switched off for this account" right there in the row/stepper,
+and an admin sees an inline **"Enable funnels for @handle"** button (with
+its own confirm dialog) that calls the existing
+`PATCH /accounts/:id/funnels` — no need to leave the funnel row to find the
+Accounts table.
+
 ## Data model
 
 `funnels` (migration `0149_funnels.sql`, schema
@@ -150,16 +228,28 @@ arms** — drafts always await a human. See
 | POST | `/api/socials/funnels/:id/retire` | `ready`/`live -> retired`; deletes the Zernio automation if live (admin) |
 | POST | `/api/socials/funnels/generate` | AI-draft `{accountHandle, count?, styles?}` (admin) |
 | GET | `/api/socials/funnels/catalog` | Read-only strategy catalog (unchanged, pre-existing) |
+| GET | `/api/socials/funnels/:id/posts` | Posts linked to this funnel (`payload.funnelId`), newest first — board-readable |
+
+`POST /socials/posts` additionally accepts an optional `payload.funnelId` —
+validated (uuid format, funnel exists + belongs to this company) and
+silently dropped otherwise; see "Post the hook" above.
 
 ## UI
 
 `ui/src/pages/Funnels.tsx` — "Funnel library" section, directly under the KPI
-tiles: per-account coverage chips (`@handle 3/5 ready`, green at ≥5, amber
-below), funnels grouped by account with style/status badges, an expandable
-detail row (DM message, post hooks, notes, ToS risk), and admin actions
-(Approve, Reject, Edit, Arm — confirm dialog: "This goes live on Instagram
-immediately", Retire, "Generate 5 drafts" per account). Non-admins see the
-same view read-only. KPI tile: "Accounts at 5+ ready".
+tiles. The card header's help tip is the plain-English "how a funnel works"
+explainer (post → DM → landing page → lead) plus the draft/ready/live
+one-liner. Per-account coverage chips (`@handle 3/5 ready`, green at ≥5,
+amber below — blank-DM rows excluded from the count) sit above a table of
+funnels grouped by account with style/status badges, a "Needs DM text" amber
+badge, and a live-with-no-hook-post amber callout. Expanding a row shows the
+5-step lifecycle stepper (with the current step's action button inline) plus
+DM message/post hooks/notes/ToS risk/linked hook posts. Admin actions are
+labeled buttons (icon + text): Approve, Reject, Edit, Post the hook, Turn on
+(confirm dialog: "This goes live on Instagram immediately"), Retire — each
+guard (blank DM, blank keyword, account funnels-off) surfaces as a
+disabled-button tooltip before the click, not just a post-click error.
+Non-admins see the same view read-only. KPI tile: "Accounts at 5+ ready".
 
 ## Files
 
@@ -167,22 +257,30 @@ same view read-only. KPI tile: "Accounts at 5+ ready".
 - `packages/db/src/schema/funnels.ts`
 - `packages/db/src/migrations/0149_funnels.sql`
 - `server/src/services/socials/funnels-service.ts` — catalog import, AI
-  drafting + defensive parser, status-transition guards, coverage, arm/retire
-  orchestration, the top-up cron
-- `server/src/routes/socials.ts` — `/api/socials/funnels/*`
+  drafting + defensive parser, status-transition guards, `tallyFunnelCoverage`
+  (blank-DM exclusion), `hasDmMessage`/`isValidFunnelIdFormat` guards,
+  arm/retire orchestration, the top-up cron
+- `server/src/routes/socials.ts` — `/api/socials/funnels/*` incl.
+  `GET /funnels/:id/posts`; `POST /posts`' `payload.funnelId` validation
 - `server/src/services/social-crons.ts` — `socials:funnel-topup` registration
-- `server/src/__tests__/funnels-service.test.ts` — parser + guard unit tests
+- `server/src/__tests__/funnels-service.test.ts` — parser + guard +
+  coverage-tally unit tests
 
 ### Frontend
-- `ui/src/api/socials.ts` — `LibraryFunnel`, `FunnelCoverageRow` types + the
-  `socialsApi.*LibraryFunnel*` / `funnelCoverage` / `generateLibraryFunnels`
-  methods
-- `ui/src/pages/Funnels.tsx` — Funnel Library section
-- `ui/src/lib/queryKeys.ts` — `queryKeys.funnels.library` / `.coverage`
+- `ui/src/api/socials.ts` — `LibraryFunnel`, `FunnelCoverageRow`,
+  `FunnelHookPost` types + the `socialsApi.*LibraryFunnel*` / `funnelCoverage`
+  / `generateLibraryFunnels` / `funnelPosts` methods
+- `ui/src/pages/Funnels.tsx` — Funnel Library section, lifecycle stepper,
+  "Post the hook" picker, inline "Enable funnels" action
+- `ui/src/pages/socials/SocialsCompose.tsx` — forwards `prefillFunnelId` as
+  `payload.funnelId` on submit
+- `ui/src/lib/queryKeys.ts` — `queryKeys.funnels.library` / `.coverage` /
+  `.hookPosts`
 
 ## Verification
 
 1. `npx tsc --noEmit --project server/tsconfig.json` and `cd ui && npx tsc --noEmit` — zero errors.
-2. `npx vitest run server/src/__tests__/funnels-service.test.ts` — parser + guard tests pass.
-3. `GET /api/socials/funnels/coverage` — one row per `zernio_account_id`-bearing account, catalog-seeded on first call.
-4. UI **Funnels → Funnel library** — coverage chips render, admin actions gated correctly for a non-admin session.
+2. `npx vitest run server/src/__tests__/funnels-service.test.ts` — parser + guard + coverage-tally tests pass.
+3. `GET /api/socials/funnels/coverage` — one row per `zernio_account_id`-bearing account, catalog-seeded on first call, blank-DM `ready` rows excluded from `readyCount`.
+4. UI **Funnels → Funnel library** — coverage chips render, lifecycle stepper shows the right step + action per funnel, admin actions gated correctly for a non-admin session.
+5. "Post the hook" on a live funnel → Compose pre-filled and account pre-selected → queue it → the funnel's expanded detail shows the new post's `StatusBadge` and the amber callout clears.

@@ -306,6 +306,22 @@ export interface GenerateFunnelsResult {
   model: string;
 }
 
+// One row of GET /socials/funnels/:id/posts — a social_posts row linked to a
+// funnel via payload.funnelId. Narrower than SocialPost (no mediaUrls/attempts/
+// error — those aren't needed for the hook-post status list).
+export interface FunnelHookPost {
+  id: string;
+  socialAccountId: string;
+  text: string;
+  status: "scheduled" | "pending_approval" | "publishing" | "posted" | "failed" | "canceled";
+  scheduledAt: string;
+  postedAt: string | null;
+  postedUrl: string | null;
+  createdAt: string;
+  platform: string;
+  handle: string;
+}
+
 // ---------------------------------------------------------------------------
 // Inspiration board — paste-a-link (GET/POST /socials/inspiration).
 // ---------------------------------------------------------------------------
@@ -513,6 +529,11 @@ export const socialsApi = {
     api.post<{ funnel: LibraryFunnel }>(`/socials/funnels/${id}/retire`, {}),
   generateLibraryFunnels: (data: { accountHandle: string; count?: number; styles?: FunnelStyle[] }) =>
     api.post<GenerateFunnelsResult>("/socials/funnels/generate", data),
+  // "Post the hook" status — posts already queued/sent that carry this funnel's id.
+  funnelPosts: (id: string, params?: { limit?: number }) => {
+    const qs = params?.limit ? `?limit=${params.limit}` : "";
+    return api.get<{ posts: FunnelHookPost[] }>(`/socials/funnels/${id}/posts${qs}`);
+  },
   // ── Inspiration board ────────────────────────────────────────────────────
   listInspiration: (status?: string) => {
     const qs = status ? `?status=${status}` : "";

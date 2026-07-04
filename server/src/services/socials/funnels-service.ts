@@ -152,6 +152,30 @@ export function canRetire(status: FunnelStatus): boolean {
   return status === "ready" || status === "live";
 }
 
+/**
+ * True when a funnel actually carries DM copy. Catalog-imported 'ready'/'built'
+ * rows land with `dmMessage: ""` (mapCatalogEntryToFunnelInsert) — technically
+ * 'ready' in the DB but not really armable (canArm blocks an empty DM), so
+ * they'd silently inflate coverage/approve without being usable. Used both to
+ * gate approve (draft -> ready requires real DM copy) and to exclude blank-dm
+ * 'ready' rows from the coverage target.
+ */
+export function hasDmMessage(dmMessage: string): boolean {
+  return dmMessage.trim().length > 0;
+}
+
+const FUNNEL_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Syntactic check only (uuid shape) — does NOT confirm the funnel exists or
+ * belongs to this company; callers must still look it up. Used by
+ * POST /posts to decide whether an incoming `payload.funnelId` is even worth
+ * a DB round-trip before silently dropping it.
+ */
+export function isValidFunnelIdFormat(value: unknown): value is string {
+  return typeof value === "string" && FUNNEL_ID_RE.test(value);
+}
+
 // ---------------------------------------------------------------------------
 // Catalog import — idempotent, lazy on first read.
 // ---------------------------------------------------------------------------
@@ -500,19 +524,49 @@ export function emptyStatusCounts(): Record<FunnelStatus, number> {
   return { draft: 0, ready: 0, live: 0, rejected: 0, retired: 0 };
 }
 
-async function statusCountsByAccount(db: Db): Promise<Map<string, Record<FunnelStatus, number>>> {
-  const rows = await db
-    .select({ accountHandle: funnels.accountHandle, status: funnels.status, n: sql<number>`count(*)::int` })
-    .from(funnels)
-    .where(eq(funnels.companyId, COMPANY_ID))
-    .groupBy(funnels.accountHandle, funnels.status);
-  const map = new Map<string, Record<FunnelStatus, number>>();
+export interface FunnelRowForCoverage {
+  accountHandle: string;
+  status: string;
+  dmMessage: string;
+}
+
+export interface AccountTally {
+  counts: Record<FunnelStatus, number>;
+  /** 'ready' rows that also have real DM copy — see hasDmMessage(). */
+  readyCount: number;
+}
+
+/**
+ * Pure tally: raw funnel rows -> per-account status counts + coverage-eligible
+ * ready count. Blank-dm 'ready' rows are still counted in `counts.ready` (the
+ * status badge/tooltip should reflect the real DB status) but excluded from
+ * `readyCount` (the number that has to hit READY_TARGET) — see hasDmMessage().
+ * Unit-tested directly in funnels-service.test.ts.
+ */
+export function tallyFunnelCoverage(rows: FunnelRowForCoverage[]): Map<string, AccountTally> {
+  const map = new Map<string, AccountTally>();
   for (const row of rows) {
-    if (!map.has(row.accountHandle)) map.set(row.accountHandle, emptyStatusCounts());
+    if (!map.has(row.accountHandle)) {
+      map.set(row.accountHandle, { counts: emptyStatusCounts(), readyCount: 0 });
+    }
+    const tally = map.get(row.accountHandle)!;
     const status = FUNNEL_STATUSES.includes(row.status as FunnelStatus) ? (row.status as FunnelStatus) : "draft";
-    map.get(row.accountHandle)![status] = row.n;
+    tally.counts[status] += 1;
+    if (status === "ready" && hasDmMessage(row.dmMessage)) tally.readyCount += 1;
   }
   return map;
+}
+
+async function computeAccountTallies(db: Db): Promise<Map<string, AccountTally>> {
+  const rows = await db
+    .select({
+      accountHandle: funnels.accountHandle,
+      status: funnels.status,
+      dmMessage: funnels.dmMessage,
+    })
+    .from(funnels)
+    .where(eq(funnels.companyId, COMPANY_ID));
+  return tallyFunnelCoverage(rows);
 }
 
 export interface FunnelAccountCoverage {
@@ -544,19 +598,19 @@ export async function computeFunnelCoverage(db: Db): Promise<FunnelAccountCovera
         isNotNull(socialAccounts.zernioAccountId),
       ),
     );
-  const countsByAccount = await statusCountsByAccount(db);
+  const tallies = await computeAccountTallies(db);
 
   return accounts.map((a) => {
-    const counts = countsByAccount.get(a.handle) ?? emptyStatusCounts();
+    const tally = tallies.get(a.handle) ?? { counts: emptyStatusCounts(), readyCount: 0 };
     return {
       accountId: a.id,
       handle: a.handle,
       zernioAccountId: a.zernioAccountId!,
       funnelsEnabled: a.funnelsEnabled === true,
-      counts,
-      readyCount: counts.ready,
+      counts: tally.counts,
+      readyCount: tally.readyCount,
       readyTarget: READY_TARGET,
-      atTarget: counts.ready >= READY_TARGET,
+      atTarget: tally.readyCount >= READY_TARGET,
     };
   });
 }
@@ -580,6 +634,9 @@ export async function approveFunnel(db: Db, id: string, approvedByUserId: string
   const funnel = await getFunnelOrThrow(db, id);
   if (!canApprove(funnel.status as FunnelStatus)) {
     throw new FunnelGuardError(409, `funnel must be 'draft' to approve (current status: '${funnel.status}')`);
+  }
+  if (!hasDmMessage(funnel.dmMessage)) {
+    throw new FunnelGuardError(409, "Add the DM message first");
   }
   const updated = await db
     .update(funnels)
@@ -774,7 +831,7 @@ export async function runFunnelTopupTick(db: Db): Promise<FunnelTopupResult> {
         isNotNull(socialAccounts.zernioAccountId),
       ),
     );
-  const countsByAccount = await statusCountsByAccount(db);
+  const tallies = await computeAccountTallies(db);
 
   let drafted = 0;
   const details: FunnelTopupResult["details"] = [];
@@ -784,7 +841,10 @@ export async function runFunnelTopupTick(db: Db): Promise<FunnelTopupResult> {
       details.push({ accountHandle: account.handle, drafted: 0, error: "per-run draft cap reached" });
       continue;
     }
-    const counts = countsByAccount.get(account.handle) ?? emptyStatusCounts();
+    // Backlog counts every draft/ready row regardless of DM copy — the cron's
+    // job is topping up the raw pipeline, not the coverage target (that
+    // distinction belongs to computeFunnelCoverage's readyCount).
+    const counts = tallies.get(account.handle)?.counts ?? emptyStatusCounts();
     const backlog = counts.draft + counts.ready;
     if (backlog >= READY_TARGET) {
       details.push({ accountHandle: account.handle, drafted: 0 });

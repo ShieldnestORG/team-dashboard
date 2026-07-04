@@ -179,6 +179,8 @@ export const queryKeys = {
     // Funnel Library (working table — drafts/ready/live/rejected/retired).
     library: (filters: Record<string, unknown>) => ["funnels", "library", filters] as const,
     coverage: ["funnels", "coverage"] as const,
+    // "Post the hook" status — social_posts linked to a funnel via payload.funnelId.
+    hookPosts: (funnelId: string) => ["funnels", "hook-posts", funnelId] as const,
   },
   inspiration: {
     list: (status?: string) => ["inspiration", status ?? "all"] as const,
