@@ -49,6 +49,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -443,6 +450,9 @@ function EditFunnelDialog({
           </label>
           <label className="block space-y-1">
             <div className="text-xs text-muted-foreground">Keywords (comma-separated)</div>
+            <p className="text-[11px] text-muted-foreground/80">
+              The word people comment on the post to get the DM — e.g. GUIDE.
+            </p>
             <Input
               value={(form.keywords ?? []).join(", ")}
               onChange={(e) =>
@@ -458,6 +468,9 @@ function EditFunnelDialog({
           </label>
           <label className="block space-y-1">
             <div className="text-xs text-muted-foreground">DM message (2-step opener)</div>
+            <p className="text-[11px] text-muted-foreground/80">
+              What the robot sends, word for word, to everyone who comments the keyword.
+            </p>
             <Textarea
               rows={3}
               value={form.dmMessage ?? ""}
@@ -466,6 +479,9 @@ function EditFunnelDialog({
           </label>
           <label className="block space-y-1">
             <div className="text-xs text-muted-foreground">Destination URL</div>
+            <p className="text-[11px] text-muted-foreground/80">
+              Where the link inside the DM sends people.
+            </p>
             <Input
               value={form.destinationUrl ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, destinationUrl: e.target.value }))}
@@ -473,6 +489,9 @@ function EditFunnelDialog({
           </label>
           <label className="block space-y-1">
             <div className="text-xs text-muted-foreground">Post hooks (one per line)</div>
+            <p className="text-[11px] text-muted-foreground/80">
+              Ready-made captions for the post that tells people to comment the keyword.
+            </p>
             <Textarea
               rows={3}
               value={(form.postHooks ?? []).join("\n")}
@@ -485,31 +504,44 @@ function EditFunnelDialog({
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="block space-y-1">
+            <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Style</div>
-              <select
-                className="w-full rounded border px-2 py-1 text-sm"
+              <p className="text-[11px] text-muted-foreground/80">The tone of the hook posts.</p>
+              <Select
                 value={form.style ?? "standard"}
-                onChange={(e) => setForm((f) => ({ ...f, style: e.target.value as FunnelStyle }))}
+                onValueChange={(v) => setForm((f) => ({ ...f, style: v as FunnelStyle }))}
               >
-                <option value="standard">standard</option>
-                <option value="controversial">controversial</option>
-                <option value="weird">weird</option>
-              </select>
-            </label>
-            <label className="block space-y-1">
+                <SelectTrigger className="w-full" aria-label="Style">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard">Standard</SelectItem>
+                  <SelectItem value="controversial">Controversial</SelectItem>
+                  <SelectItem value="weird">Weird</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
               <div className="text-xs text-muted-foreground">ToS risk</div>
-              <select
-                className="w-full rounded border px-2 py-1 text-sm"
-                value={form.tosRisk ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, tosRisk: e.target.value }))}
+              <p className="text-[11px] text-muted-foreground/80">
+                How likely this pattern is to upset Instagram's rules.
+              </p>
+              {/* Radix Select can't use "" as an item value — "unset" maps back to "". */}
+              <Select
+                value={form.tosRisk ? form.tosRisk : "unset"}
+                onValueChange={(v) => setForm((f) => ({ ...f, tosRisk: v === "unset" ? "" : v }))}
               >
-                <option value="">—</option>
-                <option value="low">low</option>
-                <option value="medium">medium</option>
-                <option value="high">high</option>
-              </select>
-            </label>
+                <SelectTrigger className="w-full" aria-label="ToS risk">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unset">Not set</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <label className="block space-y-1">
             <div className="text-xs text-muted-foreground">Notes</div>
@@ -1062,9 +1094,12 @@ function FunnelLibraryRow({
           {isAdmin ? (
             <div className="flex flex-wrap items-center justify-end gap-1">
               {canApproveStatus(funnel.status) && (
+                // The action that moves the funnel forward gets outline weight
+                // so it reads as THE button in the row; secondary actions stay ghost.
                 <GuardedActionButton
                   label="Approve"
                   icon={Check}
+                  variant="outline"
                   className="text-emerald-600"
                   pending={anyPending}
                   disabledReason={approveReason}
@@ -1104,6 +1139,7 @@ function FunnelLibraryRow({
                 <GuardedActionButton
                   label="Turn on"
                   icon={Rocket}
+                  variant="outline"
                   className="text-blue-600"
                   pending={anyPending}
                   disabledReason={armReason}

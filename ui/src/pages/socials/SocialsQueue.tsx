@@ -6,7 +6,15 @@ import { useBoardAccess } from "../../hooks/useBoardAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { HelpTip } from "@/components/HelpTip";
+import { useToast } from "../../context/ToastContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PlatformBadge } from "@/components/PlatformBadge";
 import { statusBadge, statusBadgeDefault } from "@/lib/status-colors";
@@ -51,6 +59,7 @@ function formatWhen(iso: string): string {
 
 export function SocialsQueue() {
   const qc = useQueryClient();
+  const { pushToast } = useToast();
   const [status, setStatus] = useState<StatusFilter>("all");
   const [accountId, setAccountId] = useState<string>(ALL_ACCOUNTS);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -90,6 +99,11 @@ export function SocialsQueue() {
     onSuccess: () => {
       setActionError(null);
       qc.invalidateQueries({ queryKey: ["socials", "posts"] });
+      pushToast({
+        title: "Approved — it goes out within a minute",
+        body: "No other clicks needed. It'll flip to \"Posted\" here once it's live.",
+        tone: "success",
+      });
     },
     onError: (err) => setActionError(err instanceof Error ? err.message : String(err)),
   });
@@ -128,21 +142,28 @@ export function SocialsQueue() {
             </button>
           ))}
           <span className="ml-2 text-sm text-muted-foreground">Account:</span>
-          <select
-            className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-          >
-            <option value={ALL_ACCOUNTS}>All accounts</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.brand} · {a.platform} · @{a.handle}
-              </option>
-            ))}
-          </select>
+          <Select value={accountId} onValueChange={setAccountId}>
+            <SelectTrigger aria-label="Filter by account">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_ACCOUNTS}>All accounts</SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.brand} · {a.platform} · @{a.handle}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => relayMut.mutate()} disabled={relayMut.isPending}>
-          {relayMut.isPending ? "Running…" : "Run relayer now"}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => relayMut.mutate()}
+          disabled={relayMut.isPending}
+          title="Approved posts leave on their own every minute — this just sends anything due right now instead of waiting."
+        >
+          {relayMut.isPending ? "Sending…" : "Send due posts now"}
         </Button>
       </div>
 
