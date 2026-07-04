@@ -130,6 +130,7 @@ describe("cli auth routes", () => {
         requestedCompanyId: "company-1",
         expiresAt: new Date("2026-03-23T13:00:00.000Z"),
       },
+      keyExpiresAt: new Date("2026-04-22T13:00:00.000Z"),
     });
     mockBoardAuthService.resolveBoardAccess.mockResolvedValue({
       user: { id: "user-1", name: "User One", email: "user@example.com" },
@@ -156,6 +157,7 @@ describe("cli auth routes", () => {
       userId: "user-1",
       keyId: "board-key-1",
       expiresAt: "2026-03-23T13:00:00.000Z",
+      keyExpiresAt: "2026-04-22T13:00:00.000Z",
     });
     expect(mockLogActivity).toHaveBeenCalledTimes(1);
     expect(mockLogActivity).toHaveBeenCalledWith(
@@ -229,5 +231,107 @@ describe("cli auth routes", () => {
         action: "board_api_key.revoked",
       }),
     );
+  });
+  it("threads keyTtlDays through to the service (90-day marketing key mint)", async () => {
+    mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
+      status: "approved",
+      challenge: {
+        id: "challenge-90",
+        boardApiKeyId: "board-key-90",
+        requestedAccess: "board",
+        requestedCompanyId: null,
+        expiresAt: new Date("2026-03-23T13:00:00.000Z"),
+      },
+      keyExpiresAt: new Date("2026-10-02T13:00:00.000Z"),
+    });
+    mockBoardAuthService.resolveBoardActivityCompanyIds.mockResolvedValue([]);
+
+    const app = await createApp({
+      type: "board",
+      userId: "admin-1",
+      source: "session",
+      isInstanceAdmin: true,
+      companyIds: [],
+    });
+    const res = await request(local.via(app))
+      .post("/api/cli-auth/challenges/challenge-90/approve")
+      .send({ token: "pcp_cli_auth_secret", keyTtlDays: 90 });
+
+    expect(res.status).toBe(200);
+    expect(mockBoardAuthService.approveCliAuthChallenge).toHaveBeenCalledWith(
+      "challenge-90",
+      "pcp_cli_auth_secret",
+      "admin-1",
+      { keyTtlDays: 90 },
+    );
+    expect(res.body.keyExpiresAt).toBe("2026-10-02T13:00:00.000Z");
+  });
+
+  it("rejects keyTtlDays above the 90-day cap", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "admin-1",
+      source: "session",
+      isInstanceAdmin: true,
+      companyIds: [],
+    });
+    const res = await request(local.via(app))
+      .post("/api/cli-auth/challenges/challenge-x/approve")
+      .send({ token: "pcp_cli_auth_secret", keyTtlDays: 91 });
+
+    expect(res.status).toBe(400);
+    expect(mockBoardAuthService.approveCliAuthChallenge).not.toHaveBeenCalled();
+  });
+
+  it("key-info reports the calling key's expiry and days remaining", async () => {
+    const expiresAt = new Date(Date.now() + 14 * 86_400_000);
+    mockBoardAuthService.assertCurrentBoardKey.mockResolvedValue({
+      id: "board-key-info",
+      userId: "user-mkt",
+      name: "eagan-claude (board)",
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      lastUsedAt: null,
+      expiresAt,
+    });
+    mockBoardAuthService.resolveBoardAccess.mockResolvedValue({
+      user: { id: "user-mkt", name: "Eagan", email: "eagan@example.com" },
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", role: "marketing" }],
+      isInstanceAdmin: false,
+    });
+
+    const app = await createApp({
+      type: "board",
+      userId: "user-mkt",
+      keyId: "board-key-info",
+      source: "board_key",
+      isInstanceAdmin: false,
+      companyIds: ["company-1"],
+    });
+    const res = await request(local.via(app)).get("/api/cli-auth/key-info");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      keyId: "board-key-info",
+      name: "eagan-claude (board)",
+      expiresAt: expiresAt.toISOString(),
+      daysRemaining: 14,
+      userId: "user-mkt",
+      isInstanceAdmin: false,
+      memberships: [{ companyId: "company-1", role: "marketing" }],
+    });
+  });
+
+  it("key-info rejects callers that are not using a board API key", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: [],
+    });
+    const res = await request(local.via(app)).get("/api/cli-auth/key-info");
+    expect(res.status).toBe(400);
+    expect(mockBoardAuthService.assertCurrentBoardKey).not.toHaveBeenCalled();
   });
 });

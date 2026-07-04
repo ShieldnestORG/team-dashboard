@@ -74,6 +74,16 @@ export const resolveCliAuthChallengeSchema = z.object({
 
 export type ResolveCliAuthChallenge = z.infer<typeof resolveCliAuthChallengeSchema>;
 
+// Approve accepts an optional key lifetime override (in days). The default
+// stays the server's 30-day TTL; the cap is 90 so a long-lived key (e.g. the
+// external marketing key) is an explicit approver decision, never a client
+// default.
+export const approveCliAuthChallengeSchema = resolveCliAuthChallengeSchema.extend({
+  keyTtlDays: z.number().int().min(1).max(90).optional(),
+});
+
+export type ApproveCliAuthChallenge = z.infer<typeof approveCliAuthChallengeSchema>;
+
 export const updateMemberPermissionsSchema = z.object({
   grants: z.array(
     z.object({
