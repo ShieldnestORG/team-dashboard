@@ -1,3 +1,15 @@
+import {
+  Instagram,
+  Music2,
+  Youtube,
+  Twitter,
+  Cloud,
+  MessageCircle,
+  Hash,
+  Linkedin,
+  type LucideIcon,
+} from "lucide-react";
+
 /**
  * Canonical status & priority color definitions.
  *
@@ -77,6 +89,31 @@ export const statusBadge: Record<string, string> = {
   blocked: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
   done: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
   cancelled: "bg-muted text-muted-foreground",
+
+  // Social post statuses (SocialPost.status)
+  draft: "bg-slate-200 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200",
+  scheduled: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  publishing: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300",
+  posted: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+  published: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+  // One-L "canceled" is what socials post status + funnel status actually use
+  // (server: api/socials.ts). Two-L "cancelled" above is the issue-status
+  // spelling — both point at the same neutral treatment so neither falls
+  // through to a bare default.
+  canceled: "bg-muted text-muted-foreground",
+
+  // Funnel Library statuses (draft/rejected already covered above)
+  ready: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  live: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+  retired: "bg-neutral-200 text-neutral-600 dark:bg-neutral-700/50 dark:text-neutral-300",
+
+  // Social account statuses (SocialAccount.status — active/paused covered above)
+  dormant: "bg-slate-200 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200",
+  deprecated: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
+
+  // Inspiration item statuses (archived already covered above)
+  new: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  reviewed: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
 };
 
 export const statusBadgeDefault = "bg-muted text-muted-foreground";
@@ -114,3 +151,59 @@ export const priorityColor: Record<string, string> = {
 };
 
 export const priorityColorDefault = "text-yellow-600 dark:text-yellow-400";
+
+// ---------------------------------------------------------------------------
+// Platform colors — used by PlatformBadge everywhere a social platform
+// renders (Compose, Queue, Funnels, ContentReview). Promotes the palette
+// ContentReview already used ad-hoc (platformColor/visualPlatformColor) to
+// the one canonical map, instead of leaving three parallel definitions.
+// ---------------------------------------------------------------------------
+
+export const platformBadge: Record<string, string> = {
+  instagram: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/50 dark:text-fuchsia-300",
+  tiktok: "bg-pink-100 text-pink-700 dark:bg-pink-900/50 dark:text-pink-300",
+  youtube: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
+  // Legacy Twitter blue — see docs/products/socials-hub.md for the X-brand-black risk note.
+  x: "bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300",
+  bluesky: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300",
+  discord: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300",
+  reddit: "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300",
+  linkedin: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+};
+
+export const platformBadgeDefault = "bg-muted text-muted-foreground";
+
+// Icon + display name + canonical ordering for platform chip groups.
+// lucide has no true TikTok/Bluesky/Discord brand marks — Music2/Cloud/
+// MessageCircle are stand-ins, matching the choices already made in
+// ContentReview's icon usage.
+export const PLATFORM_META: Record<string, { label: string; icon: LucideIcon }> = {
+  instagram: { label: "Instagram", icon: Instagram },
+  tiktok: { label: "TikTok", icon: Music2 },
+  youtube: { label: "YouTube", icon: Youtube },
+  x: { label: "X", icon: Twitter },
+  bluesky: { label: "Bluesky", icon: Cloud },
+  discord: { label: "Discord", icon: MessageCircle },
+  reddit: { label: "Reddit", icon: Hash },
+  linkedin: { label: "LinkedIn", icon: Linkedin },
+};
+
+export const PLATFORM_ORDER = [
+  "instagram",
+  "tiktok",
+  "youtube",
+  "x",
+  "bluesky",
+  "discord",
+  "reddit",
+  "linkedin",
+];
+
+/** Normalize free-string platform spellings so e.g. "twitter" and "x" collapse to one color/icon. */
+export function normalizePlatform(p: string): string {
+  const k = p.toLowerCase();
+  if (k === "twitter" || k === "twitter_video") return "x";
+  if (k === "instagram_reels" || k === "ig") return "instagram";
+  if (k === "youtube_shorts") return "youtube";
+  return k;
+}

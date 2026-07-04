@@ -11,12 +11,24 @@ import { KitCard } from "./KitCard";
 // createRoot-based rendering (no provider tree) working, and lets the
 // new test below assert on the navigation call directly. (vi.mock calls
 // are hoisted above imports by vitest, so this is safe despite the order.)
-const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
+const { navigateMock, pushToastMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+  pushToastMock: vi.fn(),
+}));
 vi.mock("@/lib/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/router")>();
   return {
     ...actual,
     useNavigate: () => navigateMock,
+  };
+});
+// KitCard's "Send to Compose" also fires a confirmation toast — mocked for
+// the same reason as useNavigate above (no ToastProvider ancestor here).
+vi.mock("@/context/ToastContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/context/ToastContext")>();
+  return {
+    ...actual,
+    useToast: () => ({ pushToast: pushToastMock, toasts: [], dismissToast: vi.fn(), clearToasts: vi.fn() }),
   };
 });
 
@@ -102,16 +114,25 @@ describe("KitCard clickTag conflict (KIT 1)", () => {
 });
 
 describe("KitCard send to compose", () => {
-  it("navigates to Socials Compose with the kit's raw text prefilled", async () => {
+  it("navigates to Socials Compose with the kit's raw text as a reference panel, plus parsed account handle and platform", async () => {
     navigateMock.mockClear();
+    pushToastMock.mockClear();
     const kit1 = KITS.find((kit) => kit.id === 1)!;
     render(<KitCard kit={kit1} greenlightRows={[]} />);
 
     await click(buttonByText("Send to Compose"));
 
     expect(navigateMock).toHaveBeenCalledWith("/socials?tab=compose", {
-      state: { prefillText: kit1.raw },
+      state: {
+        prefillKitTitle: kit1.title,
+        prefillKitRaw: kit1.raw,
+        prefillAccountHandle: "coherencedaddy",
+        prefillAccountPlatform: "instagram",
+      },
     });
+    expect(pushToastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Kit loaded into Compose" }),
+    );
   });
 });
 

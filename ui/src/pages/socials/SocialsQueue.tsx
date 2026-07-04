@@ -7,17 +7,34 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HelpTip } from "@/components/HelpTip";
+import { StatusBadge } from "@/components/StatusBadge";
+import { PlatformBadge } from "@/components/PlatformBadge";
+import { statusBadge, statusBadgeDefault } from "@/lib/status-colors";
+import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const STATUS_OPTIONS = ["all", "pending_approval", "scheduled", "publishing", "posted", "failed", "canceled"] as const;
 type StatusFilter = typeof STATUS_OPTIONS[number];
 const ALL_ACCOUNTS = "all";
 
-function statusVariant(s: string): "default" | "secondary" | "outline" | "destructive" {
-  if (s === "posted") return "default";
-  if (s === "failed") return "destructive";
-  if (s === "scheduled" || s === "publishing") return "secondary";
-  return "outline";
-}
+const STATUS_LABELS: Record<StatusFilter, string> = {
+  all: "All",
+  pending_approval: "Pending approval",
+  scheduled: "Scheduled",
+  publishing: "Publishing",
+  posted: "Posted",
+  failed: "Failed",
+  canceled: "Canceled",
+};
 
 function authorLabel(p: SocialPost): string {
   return p.authorName || p.authorEmail || p.createdByUserId || "—";
@@ -36,6 +53,7 @@ export function SocialsQueue() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [accountId, setAccountId] = useState<string>(ALL_ACCOUNTS);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<SocialPost | null>(null);
 
   const { data: accountsData } = useQuery({
     queryKey: ["socials", "accounts"],
@@ -59,7 +77,10 @@ export function SocialsQueue() {
 
   const cancelMut = useMutation({
     mutationFn: (id: string) => socialsApi.cancelPost(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["socials", "posts"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["socials", "posts"] });
+      setCancelTarget(null);
+    },
     onError: (err) => setActionError(err instanceof Error ? err.message : String(err)),
   });
 
@@ -92,14 +113,18 @@ export function SocialsQueue() {
         <div className="flex gap-2 items-center flex-wrap">
           <span className="text-sm text-muted-foreground">Status:</span>
           {STATUS_OPTIONS.map((s) => (
-            <Button
+            <button
               key={s}
-              size="sm"
-              variant={status === s ? "default" : "outline"}
+              type="button"
               onClick={() => setStatus(s)}
+              className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-opacity",
+                s === "all" ? statusBadgeDefault : statusBadge[s] ?? statusBadgeDefault,
+                status === s ? "ring-2 ring-offset-1 ring-foreground/50" : "opacity-60 hover:opacity-100",
+              )}
             >
-              {s}
-            </Button>
+              {STATUS_LABELS[s]}
+            </button>
           ))}
           <span className="ml-2 text-sm text-muted-foreground">Account:</span>
           <select
@@ -115,7 +140,7 @@ export function SocialsQueue() {
             ))}
           </select>
         </div>
-        <Button size="sm" variant="secondary" onClick={() => relayMut.mutate()} disabled={relayMut.isPending}>
+        <Button size="sm" variant="ghost" onClick={() => relayMut.mutate()} disabled={relayMut.isPending}>
           {relayMut.isPending ? "Running…" : "Run relayer now"}
         </Button>
       </div>
@@ -136,8 +161,8 @@ export function SocialsQueue() {
             <Card key={p.id}>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
-                  <Badge variant={statusVariant(p.status)}>{p.status}</Badge>
-                  <Badge variant="outline">{p.platform}</Badge>
+                  <StatusBadge status={p.status} />
+                  <PlatformBadge platform={p.platform} />
                   <span className="text-muted-foreground">{p.brand} · @{p.handle}</span>
                   <span className="ml-auto text-xs font-normal text-muted-foreground">
                     {p.status === "posted" && p.postedAt
@@ -189,7 +214,7 @@ export function SocialsQueue() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => cancelMut.mutate(p.id)}
+                        onClick={() => setCancelTarget(p)}
                         disabled={cancelMut.isPending}
                       >
                         Cancel
@@ -202,6 +227,31 @@ export function SocialsQueue() {
           ))}
         </div>
       )}
+
+      <AlertDialog open={cancelTarget !== null} onOpenChange={(open) => !open && setCancelTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel this post?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cancelTarget && (
+                <>
+                  This cancels the {STATUS_LABELS[cancelTarget.status as StatusFilter] ?? cancelTarget.status}{" "}
+                  post to @{cancelTarget.handle}. It stays in the queue marked "Canceled" — this can't be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => cancelTarget && cancelMut.mutate(cancelTarget.id)}
+              disabled={cancelMut.isPending}
+            >
+              {cancelMut.isPending ? "Canceling…" : "Cancel post"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

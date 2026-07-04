@@ -275,9 +275,7 @@ export function DailyBrief() {
         </Card>
       ) : (
         <>
-          <p className="text-xs text-muted-foreground">
-            {brief.briefDate} · {brief.model ?? "unknown model"}
-          </p>
+          <p className="text-xs text-muted-foreground">{brief.briefDate}</p>
           <BriefBody sections={brief.sections} />
         </>
       )}

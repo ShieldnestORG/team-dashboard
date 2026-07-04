@@ -8,18 +8,16 @@ import { relativeTime, cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { HelpTip } from "@/components/HelpTip";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { StatusBadge } from "../components/StatusBadge";
+import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { ApiError } from "../api/client";
 import { Lightbulb, Trash2, Archive, ExternalLink } from "lucide-react";
 
-function statusVariant(status: string): "default" | "secondary" | "outline" {
-  if (status === "new") return "default";
-  if (status === "reviewed") return "secondary";
-  return "outline";
-}
+const STATUS_FILTERS = ["all", "new", "reviewed", "archived"] as const;
+type InspirationStatusFilter = typeof STATUS_FILTERS[number];
 
 function AddInspirationForm() {
   const qc = useQueryClient();
@@ -33,7 +31,7 @@ function AddInspirationForm() {
       setUrl("");
       setNote("");
       setError(null);
-      qc.invalidateQueries({ queryKey: queryKeys.inspiration.list() });
+      qc.invalidateQueries({ queryKey: ["inspiration"] });
     },
     onError: (err) => {
       setError(err instanceof ApiError ? err.message : "Failed to add link");
@@ -77,7 +75,7 @@ function AddInspirationForm() {
 
 function InspirationRow({ item, canManage }: { item: InspirationItem; canManage: boolean }) {
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: queryKeys.inspiration.list() });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["inspiration"] });
   const archiveMut = useMutation({
     mutationFn: () => socialsApi.archiveInspiration(item.id),
     onSuccess: invalidate,
@@ -112,7 +110,7 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
           <ExternalLink className="h-3 w-3 text-muted-foreground" />
         </a>
         <div className="flex items-center gap-2">
-          <Badge variant={statusVariant(item.status)}>{item.status}</Badge>
+          <StatusBadge status={item.status} />
           <span className="text-xs text-muted-foreground">{relativeTime(item.createdAt)}</span>
           {canManage && item.status !== "archived" && (
             <Button
@@ -152,6 +150,7 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
 export function Inspiration() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { isInstanceAdmin, access } = useBoardAccess();
+  const [statusFilter, setStatusFilter] = useState<InspirationStatusFilter>("all");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Inspiration" }]);
@@ -159,8 +158,8 @@ export function Inspiration() {
   }, [setBreadcrumbs]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.inspiration.list(),
-    queryFn: () => socialsApi.listInspiration(),
+    queryKey: queryKeys.inspiration.list(statusFilter === "all" ? undefined : statusFilter),
+    queryFn: () => socialsApi.listInspiration(statusFilter === "all" ? undefined : statusFilter),
   });
 
   const items = data?.items ?? [];
@@ -184,6 +183,24 @@ export function Inspiration() {
 
       <AddInspirationForm />
 
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm text-muted-foreground">Status:</span>
+        {STATUS_FILTERS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setStatusFilter(s)}
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize whitespace-nowrap transition-opacity",
+              s === "all" ? statusBadgeDefault : statusBadge[s] ?? statusBadgeDefault,
+              statusFilter === s ? "ring-2 ring-offset-1 ring-foreground/50" : "opacity-60 hover:opacity-100",
+            )}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
       {isLoading ? (
         <PageSkeleton variant="list" />
       ) : error ? (
@@ -193,7 +210,14 @@ export function Inspiration() {
       ) : items.length === 0 ? (
         <Card>
           <CardContent>
-            <EmptyState icon={Lightbulb} message="No links saved yet — paste one above to get started." />
+            <EmptyState
+              icon={Lightbulb}
+              message={
+                statusFilter === "all"
+                  ? "No links saved yet — paste one above to get started."
+                  : `No ${statusFilter} links.`
+              }
+            />
           </CardContent>
         </Card>
       ) : (

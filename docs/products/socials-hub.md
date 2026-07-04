@@ -162,6 +162,38 @@ via `services/platform-publishers/`, and writes back `posted_url`,
 `/api/socials/posts` every 5s and lets the user cancel scheduled rows or
 trigger a manual relayer tick (`POST /api/socials/posts/relay-now`).
 
+### Compose UX — multi-account + kit handoff (2026-07-03 UX completion pass)
+
+`SocialsCompose.tsx` selects accounts via a **multi-select chip grid**
+(grouped by platform, "Select all" per group) instead of a single-account
+`<select>`. Submit fans the existing `POST /api/socials/posts` out over every
+selected account with `Promise.allSettled` — there is still **no bulk
+endpoint**; each call independently gets the server's per-actor
+`pending_approval`/`scheduled` split (`server/src/routes/socials.ts` line
+~487), and a partial failure (e.g. 3 of 5 queued) is surfaced per-account
+with the failed accounts left selected so a retry is one click. Grouping by
+platform is real infrastructure even though `TEXT_PLATFORMS` currently only
+has `bluesky` — it activates automatically as more text publishers are
+registered (see "Adding a new text publisher" below).
+
+Content Hub's "Send to Compose" (`KitCard.sendToCompose`) no longer dumps the
+kit's raw production brief into the post text box — that block is an
+internal script/thumbnail/DM-copy/Zernio-settings brief, not a caption, and
+was routinely 5-8x Bluesky's 300-char limit. It now only pre-selects the
+kit's target account (parsed from the `ACCOUNT:` line) and shows the raw
+brief in a collapsible, read-only "Kit details" reference panel; the
+marketer writes their own caption in the Text box.
+
+### Status + platform colors
+
+Every status pill (`StatusBadge`, `ui/src/components/StatusBadge.tsx`) and
+platform pill (`PlatformBadge`, `ui/src/components/PlatformBadge.tsx`) reads
+from one canonical map in `ui/src/lib/status-colors.ts`
+(`statusBadge` / `platformBadge` / `PLATFORM_META` / `normalizePlatform`).
+Queue, Funnels, Inspiration, and ContentReview all render through these two
+components — adding a new status or platform means adding one key to
+`status-colors.ts`, not another ad-hoc color function.
+
 ### Bluesky configuration
 
 The Bluesky adapter (`services/platform-publishers/bluesky.ts`) currently

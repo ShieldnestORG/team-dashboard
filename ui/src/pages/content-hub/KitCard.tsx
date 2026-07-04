@@ -4,8 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "@/lib/router";
+import { useToast } from "@/context/ToastContext";
 import type { MarketingKit } from "@/content/marketing-kits";
 import type { ZernioGreenlightRow } from "@/api/socials";
+import { normalizePlatform } from "@/lib/status-colors";
 import { CopyButton } from "./CopyButton";
 import { VoiceChip } from "./VoiceChip";
 import {
@@ -49,10 +51,29 @@ function StatusLine({ kit, rows }: { kit: MarketingKit; rows: ZernioGreenlightRo
 export function KitCard({ kit, greenlightRows }: { kit: MarketingKit; greenlightRows: ZernioGreenlightRow[] }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const hasConflictingClickTags = (kit.clickTags?.length ?? 0) > 1;
 
   function sendToCompose() {
-    navigate("/socials?tab=compose", { state: { prefillText: kit.raw } });
+    // The kit's raw block is an internal production brief (script, thumbnail
+    // spec, DM copy, Zernio settings) — not a caption. Compose shows it in a
+    // read-only "Kit details" panel instead of dumping it into the post
+    // text; only the account (parsed from "@handle (IG)") comes across.
+    // The platform marker (e.g. "IG") comes across too, normalized, so
+    // Compose can match handle+platform instead of handle alone — and can
+    // tell the user when the kit's platform has no text adapter yet.
+    const accountHandle = kit.account?.match(/^@?([\w.]+)/)?.[1];
+    const accountPlatformRaw = kit.account?.match(/\(([A-Za-z]+)/)?.[1];
+    const accountPlatform = accountPlatformRaw ? normalizePlatform(accountPlatformRaw) : undefined;
+    pushToast({ title: "Kit loaded into Compose", tone: "success" });
+    navigate("/socials?tab=compose", {
+      state: {
+        prefillKitTitle: kit.title,
+        prefillKitRaw: kit.raw,
+        prefillAccountHandle: accountHandle,
+        prefillAccountPlatform: accountPlatform,
+      },
+    });
   }
 
   return (

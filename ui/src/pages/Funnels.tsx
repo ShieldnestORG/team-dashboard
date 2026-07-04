@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useToast } from "../context/ToastContext";
 import {
   socialsApi,
   type SocialAccount,
@@ -26,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { HelpTip } from "@/components/HelpTip";
+import { StatusBadge } from "@/components/StatusBadge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,15 +78,6 @@ import { ApiError } from "../api/client";
 const LEADS_FETCH_LIMIT = 100;
 const LEADS_TABLE_LIMIT = 10;
 const EVENTS_LIMIT = 10;
-
-function statusVariant(
-  status: string,
-): "default" | "secondary" | "outline" | "destructive" {
-  const s = status.toLowerCase();
-  if (s === "active") return "default";
-  if (s === "paused" || s === "dormant") return "secondary";
-  return "outline";
-}
 
 // Strategy-catalog status ordering, most-active first.
 const CATALOG_STATUS_ORDER = [
@@ -266,7 +259,7 @@ function KpiTiles({
       tint: "bg-blue-500/10",
     },
     {
-      label: `Accounts at 5+ ready${accountsCoverageTotal > 0 ? ` / ${accountsCoverageTotal}` : ""}`,
+      label: `Accounts fully stocked (5+ ready)${accountsCoverageTotal > 0 ? ` / ${accountsCoverageTotal}` : ""}`,
       value: accountsAtTarget,
       icon: <Target className="h-5 w-5 text-teal-500" />,
       tint: "bg-teal-500/10",
@@ -309,23 +302,6 @@ function KpiTiles({
 // funnels behind the strategy catalog. AI drafts, an admin approves, "arm"
 // creates the real Zernio comment automation.
 // ---------------------------------------------------------------------------
-
-const FUNNEL_STATUS_LABELS: Record<FunnelStatus, string> = {
-  draft: "Draft",
-  ready: "Ready",
-  live: "Live",
-  rejected: "Rejected",
-  retired: "Retired",
-};
-
-function funnelStatusVariant(
-  status: FunnelStatus,
-): "default" | "secondary" | "outline" | "destructive" {
-  if (status === "live") return "default";
-  if (status === "ready") return "secondary";
-  if (status === "rejected") return "destructive";
-  return "outline"; // draft, retired
-}
 
 // Mirrors the pure guard functions in server/src/services/socials/funnels-service.ts
 // (canApprove/canReject/canArm/canRetire) — cosmetic only; the routes are the
@@ -644,9 +620,7 @@ function FunnelLibraryRow({
           )}
         </td>
         <td className="px-2 py-2">
-          <Badge variant={funnelStatusVariant(funnel.status)}>
-            {FUNNEL_STATUS_LABELS[funnel.status]}
-          </Badge>
+          <StatusBadge status={funnel.status} />
         </td>
         <td className="px-4 py-2">
           {isAdmin ? (
@@ -744,13 +718,19 @@ function FunnelLibraryRow({
 
 function GenerateDraftsButton({ accountHandle }: { accountHandle: string }) {
   const qc = useQueryClient();
+  const { pushToast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const genMut = useMutation({
     mutationFn: () => socialsApi.generateLibraryFunnels({ accountHandle, count: 5 }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       setError(null);
       qc.invalidateQueries({ queryKey: queryKeys.funnels.library({}) });
       qc.invalidateQueries({ queryKey: queryKeys.funnels.coverage });
+      pushToast({
+        title: `${result.inserted.length} draft${result.inserted.length === 1 ? "" : "s"} created for @${accountHandle}`,
+        body: "Scroll down to review — they start as Draft.",
+        tone: "success",
+      });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Generation failed"),
   });
@@ -817,7 +797,10 @@ function FunnelLibrarySection() {
             {libraryQ.error instanceof Error ? libraryQ.error.message : "Failed to load funnels"}
           </p>
         ) : grouped.length === 0 ? (
-          <EmptyState icon={Sparkles} message="No funnels drafted yet — generate a batch below." />
+          <EmptyState
+            icon={Sparkles}
+            message="No funnels drafted yet — AI drafts arrive daily at 5:30am, or press Generate now below."
+          />
         ) : (
           grouped.map(([handle, funnelsForAccount]) => (
             <div key={handle} className="rounded-md border">
@@ -998,9 +981,7 @@ function AccountsTable({
                       )}
                     </td>
                     <td className="px-2 py-2 hidden sm:table-cell">
-                      <Badge variant={statusVariant(a.status)}>
-                        {a.status}
-                      </Badge>
+                      <StatusBadge status={a.status} />
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums">
                       {connected ? liveCountForAccount(a) : "—"}
@@ -1511,9 +1492,7 @@ function CatalogSection({
         {grouped.map(([status, entries]) => (
           <div key={status}>
             <div className="mb-2 flex items-center gap-2">
-              <Badge variant={statusVariant(status)}>
-                {CATALOG_STATUS_LABELS[status] ?? status}
-              </Badge>
+              <StatusBadge status={status} label={CATALOG_STATUS_LABELS[status] ?? status} />
               <span className="text-[11px] text-muted-foreground">
                 {entries.length}
               </span>
@@ -1570,7 +1549,7 @@ function RecentLeadsTable({ leads }: { leads: FunnelLead[] }) {
       <CardContent className="p-0">
         {leads.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No leads captured yet.
+            No leads captured yet — they show up here after the hourly Zernio sync.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1661,7 +1640,7 @@ function RecentEventsTable({ events }: { events: ZernioEvent[] }) {
       <CardContent className="p-0">
         {events.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No webhook events yet.
+            No webhook events yet — they show up here after the hourly Zernio sync.
           </div>
         ) : (
           <div className="overflow-x-auto">
