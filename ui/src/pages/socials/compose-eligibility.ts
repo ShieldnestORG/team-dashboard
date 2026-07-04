@@ -18,3 +18,19 @@ export function isAccountComposable(a: Pick<SocialAccount, "status" | "platform"
   if (a.platform === "bluesky") return true;
   return a.routing === "zernio";
 }
+
+/**
+ * An active Instagram/TikTok account that isAccountComposable excludes SOLELY
+ * because it isn't Zernio-routed. Compose has no working publisher for it
+ * (see isAccountComposable's doc comment), so it never appears among the
+ * selectable accounts — this lets the UI surface an explicit "why isn't my
+ * account here" note instead of a silent drop.
+ */
+export function isExcludedForNonZernioRouting(
+  a: Pick<SocialAccount, "status" | "platform" | "routing">,
+): boolean {
+  if (a.status !== "active") return false;
+  if (!COMPOSABLE_PLATFORMS.has(a.platform)) return false;
+  if (a.platform === "bluesky") return false;
+  return a.routing !== "zernio";
+}

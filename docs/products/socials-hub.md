@@ -198,7 +198,12 @@ Non-Zernio Instagram/TikTok accounts are deliberately left out of the account
 chip grid — this app has no working native publisher for either platform
 (`platform-publishers/instagram.ts` and `tiktok.ts` don't implement
 `publishText`), so showing them would only fail later, at relay time against
-Zernio, instead of never being selectable at all.
+Zernio, instead of never being selectable at all. Since that exclusion is
+otherwise silent, an active but non-Zernio-routed IG/TikTok account is
+surfaced as an inline amber note under the Accounts list (e.g. *"@handle
+(Instagram) isn't connected for posting yet — connect through Zernio to use
+it in Compose."*) — see `compose-eligibility.ts`'s
+`isExcludedForNonZernioRouting`.
 
 **Upload.** `POST /api/socials/media` (multipart `file` field, one file per
 call) sits behind the same board-actor gate as the rest of `/api/socials` —
@@ -208,7 +213,11 @@ the actual bytes (magic numbers, not the declared MIME type or filename) via
 vs. video (mp4/mov), enforces a size cap per kind (`SOCIALS_MEDIA_IMAGE_MAX_BYTES`,
 default 10MB / `SOCIALS_MEDIA_VIDEO_MAX_BYTES`, default 200MB), and stores the
 file via the existing company-scoped `StorageService` under namespace
-`socials/compose`. The response's `objectKey` goes straight into a post's
+`socials/compose`. Both the client-side precheck (`SocialsCompose.tsx`) and
+this route's own cap give an actionable, next-step message rather than a bare
+"Exceeds NMB" — e.g. *"This video is over the 200MB limit — trim it or
+export at a lower resolution in CapCut and try again."* (CapCut being the
+target users' actual video source). The response's `objectKey` goes straight into a post's
 `mediaUrls` — exactly the same shape `services/socials/content-bridge.ts`'s
 `mediaObjectKeys` already produces, and the relayer's `resolveMediaUrls`
 (`social-relayer.ts`) stages any non-public entry to the public R2 bucket at
@@ -219,9 +228,12 @@ an attachment count).
 **Guard parity.** `packages/shared/src/socials-compose.ts` exports a single
 pure function, `checkComposeForPlatform()`, run on **both** sides:
 - Client: `SocialsCompose.tsx`'s `submit()` runs it per selected account
-  before calling the API — Instagram/TikTok chips render disabled with
-  "needs a photo or video" until at least one attachment is present, and the
-  Queue button is disabled while any upload is still in flight.
+  before calling the API. Instagram (media-required) chips disable with
+  "needs a photo or video" until at least one attachment is present;
+  TikTok (video-required) chips separately gate on an actual **video**
+  attachment (`readyVideoCount`, not just any media) and show "needs a
+  video", so the chip's enabled state always matches what submit will
+  accept. The Queue button is disabled while any upload is still in flight.
 - Server: `POST /socials/posts` (`server/src/routes/socials.ts`) re-runs the
   identical check — this is the real trust boundary, since the UI check is
   only a courtesy. A violation returns `400` with a plain-English message
@@ -229,6 +241,16 @@ pure function, `checkComposeForPlatform()`, run on **both** sides:
   *"TikTok posts need a video — none of the attached files are recognized as
   one (.mp4/.mov/.webm/.m4v)."*, *"Bluesky captions are limited to 300
   characters (this one is 344)."*).
+
+  A media item's `isVideo` for this server-side check is **not** derived
+  solely from the objectKey's filename extension (`isVideoRef`) — an
+  objectKey's extension comes from the client-supplied `originalname` and
+  can disagree with the bytes (e.g. a JPEG renamed `clip.mp4`). The route
+  first tries `storageService.headObject()`'s stored `contentType` (the
+  magic-byte sniff `POST /media` already performed) and only falls back to
+  the filename-extension guess when that metadata isn't available (pasted
+  public URLs, or a storage backend/test stub that doesn't return
+  `contentType`) — see `resolveIsVideoRef()` in `routes/socials.ts`.
 
 Current rules (see `socials-compose.ts` for the source of truth):
 

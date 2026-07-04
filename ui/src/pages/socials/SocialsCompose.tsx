@@ -10,12 +10,14 @@ import { HelpTip } from "@/components/HelpTip";
 import { PlatformBadge } from "@/components/PlatformBadge";
 import { useToast } from "@/context/ToastContext";
 import { submitToAccounts, type SubmitResult } from "./multi-account-submit";
-import { isAccountComposable } from "./compose-eligibility";
+import { isAccountComposable, isExcludedForNonZernioRouting } from "./compose-eligibility";
 import {
   MEDIA_REQUIRED_PLATFORMS,
+  VIDEO_REQUIRED_PLATFORMS,
   PLATFORM_CAPTION_LIMITS,
   MAX_COMPOSE_MEDIA_ITEMS,
   checkComposeForPlatform,
+  composePlatformLabel,
   isVideoRef,
   type ComposeMediaRef,
 } from "@paperclipai/shared";
@@ -48,7 +50,10 @@ function precheckFile(file: File): string | null {
   }
   const max = video ? CLIENT_MAX_VIDEO_BYTES : CLIENT_MAX_IMAGE_BYTES;
   if (file.size > max) {
-    return `Exceeds ${Math.floor(max / (1024 * 1024))}MB`;
+    const limitMb = Math.floor(max / (1024 * 1024));
+    return video
+      ? `This video is over the ${limitMb}MB limit — trim it or export at a lower resolution in CapCut and try again.`
+      : `This photo is over the ${limitMb}MB limit — resize or compress it and try again.`;
   }
   return null;
 }
@@ -103,6 +108,13 @@ export function SocialsCompose() {
 
   const composableAccounts = useMemo(() => {
     return (accountsData?.accounts ?? []).filter(isAccountComposable);
+  }, [accountsData]);
+
+  // Active IG/TikTok accounts isAccountComposable silently drops for not
+  // being Zernio-routed — surfaced as an inline note (see
+  // compose-eligibility.ts) instead of a "where did my account go" dead end.
+  const nonRoutedMediaAccounts = useMemo(() => {
+    return (accountsData?.accounts ?? []).filter(isExcludedForNonZernioRouting);
   }, [accountsData]);
 
   // Grouped by platform, ordered by PLATFORM_ORDER.
@@ -191,6 +203,9 @@ export function SocialsCompose() {
   );
   const uploadedDoneCount = mediaItems.filter((m) => m.status === "done").length;
   const readyMediaCount = uploadedDoneCount + pastedMediaUrls.length;
+  const readyVideoCount =
+    mediaItems.filter((m) => m.status === "done" && m.isVideo).length +
+    pastedMediaUrls.filter((url) => isVideoRef(url)).length;
   const anyUploading = mediaItems.some((m) => m.status === "uploading");
 
   function addFiles(files: FileList | File[]) {
@@ -389,6 +404,16 @@ export function SocialsCompose() {
             )}
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground">Accounts</div>
+              {nonRoutedMediaAccounts.length > 0 && (
+                <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/20 dark:text-amber-200">
+                  {nonRoutedMediaAccounts
+                    .map((a) => `@${a.handle} (${composePlatformLabel(a.platform)})`)
+                    .join(", ")}{" "}
+                  {nonRoutedMediaAccounts.length === 1 ? "isn't" : "aren't"} connected for posting yet —
+                  connect through Zernio to use{" "}
+                  {nonRoutedMediaAccounts.length === 1 ? "it" : "them"} in Compose.
+                </div>
+              )}
               {groupedAccounts.length === 0 ? (
                 <div className="text-xs text-muted-foreground">
                   No active composable accounts. Add a Bluesky account in the <strong>Accounts</strong> tab
@@ -401,7 +426,11 @@ export function SocialsCompose() {
                     const ids = accountsForPlatform.map((a) => a.id);
                     const selectedCount = ids.filter((id) => selectedIds.has(id)).length;
                     const meta = PLATFORM_META[platform];
-                    const needsMedia = MEDIA_REQUIRED_PLATFORMS.has(platform) && readyMediaCount === 0;
+                    const needsVideo = VIDEO_REQUIRED_PLATFORMS.has(platform) && readyVideoCount === 0;
+                    const needsMedia =
+                      !needsVideo && MEDIA_REQUIRED_PLATFORMS.has(platform) && readyMediaCount === 0;
+                    const needsAttachment = needsMedia || needsVideo;
+                    const attachmentHint = needsVideo ? "needs a video" : "needs a photo or video";
                     return (
                       <div key={platform} className="rounded-md border p-2 space-y-2">
                         <div className="flex items-center justify-between gap-2">
@@ -411,15 +440,15 @@ export function SocialsCompose() {
                             <span className="text-muted-foreground font-normal">
                               {selectedCount}/{ids.length} selected
                             </span>
-                            {needsMedia && (
+                            {needsAttachment && (
                               <span className="text-amber-600 dark:text-amber-400 font-normal">
-                                — needs a photo or video
+                                — {attachmentHint}
                               </span>
                             )}
                           </div>
                           <button
                             type="button"
-                            disabled={needsMedia}
+                            disabled={needsAttachment}
                             onClick={() => toggleGroup(ids)}
                             className="text-xs text-primary underline underline-offset-2 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
                           >
@@ -435,15 +464,21 @@ export function SocialsCompose() {
                                 type="button"
                                 role="checkbox"
                                 aria-checked={isSelected}
-                                disabled={needsMedia && !isSelected}
-                                title={needsMedia && !isSelected ? "Needs a photo or video" : undefined}
+                                disabled={needsAttachment && !isSelected}
+                                title={
+                                  needsAttachment && !isSelected
+                                    ? needsVideo
+                                      ? "Needs a video"
+                                      : "Needs a photo or video"
+                                    : undefined
+                                }
                                 onClick={() => toggleAccount(a.id)}
                                 className={cn(
                                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                                   isSelected
                                     ? cn(platformBadge[platform] ?? platformBadgeDefault, "border-transparent")
                                     : "border-border bg-transparent text-foreground hover:bg-accent",
-                                  needsMedia && !isSelected && "opacity-40 cursor-not-allowed hover:bg-transparent",
+                                  needsAttachment && !isSelected && "opacity-40 cursor-not-allowed hover:bg-transparent",
                                 )}
                               >
                                 {isSelected && <Check className="h-3 w-3" />}@{a.handle}

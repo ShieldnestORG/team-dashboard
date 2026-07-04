@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkComposeForPlatform } from "@paperclipai/shared";
-import { isAccountComposable } from "./compose-eligibility";
+import { isAccountComposable, isExcludedForNonZernioRouting } from "./compose-eligibility";
 import type { SocialAccount } from "../../api/socials";
 
 function account(overrides: Partial<SocialAccount> = {}): Pick<SocialAccount, "status" | "platform" | "routing"> {
@@ -30,6 +30,34 @@ describe("isAccountComposable", () => {
 
   it("allows a Zernio-routed TikTok account", () => {
     expect(isAccountComposable(account({ platform: "tiktok", routing: "zernio" }))).toBe(true);
+  });
+});
+
+describe("isExcludedForNonZernioRouting", () => {
+  it("flags an active, non-Zernio-routed Instagram account", () => {
+    expect(isExcludedForNonZernioRouting(account({ platform: "instagram", routing: "native" }))).toBe(true);
+  });
+
+  it("flags an active TikTok account with no routing info at all", () => {
+    expect(isExcludedForNonZernioRouting(account({ platform: "tiktok", routing: undefined }))).toBe(true);
+  });
+
+  it("does not flag a Zernio-routed Instagram account (it's already composable)", () => {
+    expect(isExcludedForNonZernioRouting(account({ platform: "instagram", routing: "zernio" }))).toBe(false);
+  });
+
+  it("does not flag a paused non-Zernio Instagram account", () => {
+    expect(
+      isExcludedForNonZernioRouting(account({ platform: "instagram", status: "paused", routing: "native" })),
+    ).toBe(false);
+  });
+
+  it("does not flag Bluesky (routing is irrelevant there)", () => {
+    expect(isExcludedForNonZernioRouting(account({ platform: "bluesky", routing: "native" }))).toBe(false);
+  });
+
+  it("does not flag a platform Compose doesn't know", () => {
+    expect(isExcludedForNonZernioRouting(account({ platform: "youtube", routing: "native" }))).toBe(false);
   });
 });
 

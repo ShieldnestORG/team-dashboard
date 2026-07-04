@@ -23,14 +23,14 @@ const USER_ID = "user_abc123";
 const storageStub = {} as never;
 const boardAdmin = { type: "board", userId: USER_ID, source: "session", isInstanceAdmin: true };
 
-function createApp(db: unknown) {
+function createApp(db: unknown, storage: unknown = storageStub) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     (req as unknown as { actor: unknown }).actor = boardAdmin;
     next();
   });
-  app.use("/api/socials", socialsRoutes(db as never, storageStub));
+  app.use("/api/socials", socialsRoutes(db as never, storage as never));
   app.use(errorHandler);
   return app;
 }
@@ -94,6 +94,25 @@ describe("POST /socials/posts — platform-requirement guard", () => {
       .send({ socialAccountId: ACCOUNT_ID, text: "dance", mediaUrls: ["companyId/socials/compose/2026/07/03/abc-clip.mp4"] });
     expect(res.status).toBe(201);
     expect(captured.values?.mediaUrls).toHaveLength(1);
+  });
+
+  it("rejects a TikTok post whose attachment is really a photo renamed with a .mp4 extension", async () => {
+    // The objectKey's extension comes from the client-supplied originalname —
+    // untrustworthy on its own. The guard must trust the magic-byte sniff
+    // POST /media stored (surfaced here via storageService.headObject's
+    // contentType), not just isVideoRef's filename regex.
+    const { db } = createDbFor("tiktok");
+    const storage = { headObject: async () => ({ exists: true, contentType: "image/jpeg" }) };
+    const app = createApp(db, storage);
+    const res = await request(local.via(app))
+      .post("/api/socials/posts")
+      .send({
+        socialAccountId: ACCOUNT_ID,
+        text: "dance",
+        mediaUrls: ["companyId/socials/compose/2026/07/03/abc-clip.mp4"],
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/video/i);
   });
 
   it("rejects a Bluesky caption over the 300-character limit", async () => {

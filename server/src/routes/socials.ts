@@ -68,6 +68,7 @@ import {
   maxBytesFor,
   SOCIAL_MEDIA_MAX_VIDEO_BYTES,
 } from "../services/socials/media-upload.js";
+import { isAlreadyPublicUrl } from "../storage/r2-staging.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
@@ -209,6 +210,30 @@ function actorUserId(req: Request): string | null {
   if (req.actor.type !== "board") return null;
   if (req.actor.source === "local_implicit") return null;
   return req.actor.userId ?? null;
+}
+
+/**
+ * Classify one POST /posts media entry as video or not, trusting the
+ * magic-byte sniff POST /media already performed over the objectKey's
+ * client-supplied filename extension. A public URL (already staged, or
+ * pasted by hand) has no stored sniff result to check, so it falls back to
+ * the extension heuristic — same as before. An internal objectKey is
+ * resolved against the StorageService's own contentType metadata; only
+ * when that's unavailable (e.g. local_disk dev storage doesn't persist
+ * contentType, or the key can't be resolved at all) do we fall back to the
+ * extension heuristic too, so this never turns a valid post into a 500.
+ */
+async function resolveIsVideoRef(storageService: StorageService, value: string): Promise<boolean> {
+  if (isAlreadyPublicUrl(value)) return isVideoRef(value);
+  try {
+    const head = await storageService.headObject(COMPANY_ID, value);
+    if (head.exists && head.contentType) return head.contentType.startsWith("video/");
+  } catch {
+    // Unresolvable/foreign objectKey — fall through to the extension guess;
+    // the relayer's own resolveMediaUrls is the authoritative gate that will
+    // fail loud on a truly bad objectKey before anything publishes.
+  }
+  return isVideoRef(value);
 }
 
 export function socialsRoutes(db: Db, storageService: StorageService) {
@@ -467,8 +492,13 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     }
     const maxBytes = maxBytesFor(sniffed.kind);
     if (file.buffer.length > maxBytes) {
+      const limitMb = Math.floor(maxBytes / (1024 * 1024));
+      const nextStep =
+        sniffed.kind === "video"
+          ? `trim it or export at a lower resolution in CapCut and try again`
+          : `resize or compress it and try again`;
       return res.status(422).json({
-        error: `${sniffed.kind === "video" ? "Video" : "Image"} exceeds ${Math.floor(maxBytes / (1024 * 1024))}MB`,
+        error: `This ${sniffed.kind === "video" ? "video" : "photo"} is over the ${limitMb}MB limit — ${nextStep}.`,
       });
     }
 
@@ -564,7 +594,9 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
     // boundary: it must reject here too, in plain English, so a bad post never
     // reaches the relayer only to fail later against Zernio.
     const mediaUrls: string[] = Array.isArray(body.mediaUrls) ? body.mediaUrls.map(String) : [];
-    const media: ComposeMediaRef[] = mediaUrls.map((value) => ({ value, isVideo: isVideoRef(value) }));
+    const media: ComposeMediaRef[] = await Promise.all(
+      mediaUrls.map(async (value) => ({ value, isVideo: await resolveIsVideoRef(storageService, value) })),
+    );
     const guardProblem = checkComposeForPlatform({
       platform: account[0].platform,
       textLength: String(body.text).length,
