@@ -339,7 +339,14 @@ function approveDisabledReason(funnel: LibraryFunnel): string | null {
 }
 
 /** Plain-English reason the Turn on button is disabled, or null when it's clickable. */
-function armDisabledReason(funnel: LibraryFunnel, funnelsEnabled: boolean): string | null {
+function armDisabledReason(
+  funnel: LibraryFunnel,
+  funnelsEnabled: boolean,
+  zernioConnected: boolean,
+): string | null {
+  // Mirrors the server's armFunnel guards (canArm + the zernioAccountId
+  // precondition) so the button is never clickable when the server would 409.
+  if (!zernioConnected) return "Connect this account to Zernio first";
   if (!funnelsEnabled) return "Funnels are switched off for this account";
   if (needsDmText(funnel.dmMessage)) return "Add the DM message first";
   if (!funnel.keywords.some((k) => k.trim().length > 0)) return "Add a keyword first";
@@ -772,7 +779,7 @@ function FunnelLifecycleStepper({
   const current = lifecycleStepIndex(funnel, hasHookPost, hasLeads);
   const funnelsEnabled = account?.funnelsEnabled === true;
   const approveReason = approveDisabledReason(funnel);
-  const armReason = armDisabledReason(funnel, funnelsEnabled);
+  const armReason = armDisabledReason(funnel, funnelsEnabled, Boolean(account?.zernioAccountId));
 
   return (
     <div className="border-t bg-muted/10 p-3">
@@ -989,7 +996,11 @@ function FunnelLibraryRow({
 
   const needsDm = needsDmText(funnel.dmMessage);
   const approveReason = approveDisabledReason(funnel);
-  const armReason = armDisabledReason(funnel, account?.funnelsEnabled === true);
+  const armReason = armDisabledReason(
+    funnel,
+    account?.funnelsEnabled === true,
+    Boolean(account?.zernioAccountId),
+  );
   const showLifecycleStepper = funnel.status === "draft" || funnel.status === "ready" || funnel.status === "live";
 
   return (
