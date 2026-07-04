@@ -109,8 +109,23 @@ export type BoardAccessSnapshot = {
   keyId: string | null;
 };
 
+export type CollaboratorKeyCreated = {
+  boardApiToken: string;
+  keyId: string;
+  userId: string;
+  expiresAt: string;
+  memberships: BoardMembership[];
+};
+
 export const accessApi = {
   getBoardAccess: () => api.get<BoardAccessSnapshot>("/cli-auth/me"),
+
+  createCollaboratorKey: (input: {
+    name: string;
+    email: string;
+    ttlDays?: number;
+    companyId?: string;
+  }) => api.post<CollaboratorKeyCreated>("/admin/collaborator-keys", input),
 
   createCompanyInvite: (
     companyId: string,
