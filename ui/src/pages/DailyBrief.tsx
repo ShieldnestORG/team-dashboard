@@ -4,6 +4,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useBoardAccess } from "../hooks/useBoardAccess";
 import { socialsApi, type DailyBriefSections } from "../api/socials";
 import { queryKeys } from "../lib/queryKeys";
+import { safeHref } from "../lib/safe-href";
 import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,17 +90,8 @@ function BriefBody({ sections }: { sections: DailyBriefSections }) {
   const inspirationReview = sections.inspirationReview ?? [];
 
   // Sections come from LLM output. The server drops non-http(s) urls before
-  // storing, but briefs are long-lived jsonb — re-check at render so a row
-  // written by any other path can never become a javascript: link.
-  const safeHref = (u: string): string => {
-    try {
-      const p = new URL(u);
-      return p.protocol === "http:" || p.protocol === "https:" ? u : "#";
-    } catch {
-      return "#";
-    }
-  };
-
+  // storing, but briefs are long-lived jsonb — safeHref re-checks at render
+  // so a row written by any other path can never become a javascript: link.
   return (
     <div className="space-y-4">
       {summary.length > 0 && (

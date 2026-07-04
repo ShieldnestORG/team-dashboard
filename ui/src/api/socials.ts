@@ -27,6 +27,9 @@ export interface SocialAccount {
   // rows; absent on create/update responses, hence optional.
   zernioAccountId?: string | null;
   funnelsEnabled?: boolean;
+  // Latest follower-stats snapshot count. null when no snapshot exists yet
+  // (never 0). Present on GET /socials/accounts rows only.
+  latestFollowerCount?: number | null;
 }
 
 export interface SocialAutomation {

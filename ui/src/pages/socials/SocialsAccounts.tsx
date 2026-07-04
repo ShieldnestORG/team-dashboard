@@ -179,6 +179,12 @@ export function SocialsAccounts() {
                   {a.automationNotes && (
                     <div className="text-xs text-muted-foreground">{a.automationNotes}</div>
                   )}
+                  {a.latestFollowerCount != null && (
+                    <div className="text-xs text-muted-foreground">
+                      {a.latestFollowerCount.toLocaleString()}{" "}
+                      {a.latestFollowerCount === 1 ? "follower" : "followers"}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={routingVariant(a.routing ?? "native")}>
