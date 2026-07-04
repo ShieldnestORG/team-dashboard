@@ -8,6 +8,10 @@ import {
   mapCatalogStatus,
   catalogAccountHandle,
   catalogKeywords,
+  hasDmMessage,
+  isValidFunnelIdFormat,
+  tallyFunnelCoverage,
+  emptyStatusCounts,
 } from "../services/socials/funnels-service.js";
 
 // ---------------------------------------------------------------------------
@@ -249,5 +253,84 @@ describe("catalogKeywords", () => {
   it("returns [] when there is nothing quoted", () => {
     expect(catalogKeywords("operator-driven (comments/threads)")).toEqual([]);
     expect(catalogKeywords(undefined)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasDmMessage — the "empty-DM ready trap" guard (catalog-imported 'ready'/
+// 'built' rows land with dmMessage: "").
+// ---------------------------------------------------------------------------
+
+describe("hasDmMessage", () => {
+  it("is false for empty or whitespace-only DM text", () => {
+    expect(hasDmMessage("")).toBe(false);
+    expect(hasDmMessage("   ")).toBe(false);
+    expect(hasDmMessage("\n\t")).toBe(false);
+  });
+  it("is true for real DM copy", () => {
+    expect(hasDmMessage("Hey! Reply YES and I'll send the link.")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isValidFunnelIdFormat — syntactic uuid check used by POST /posts before it
+// bothers looking up an incoming payload.funnelId.
+// ---------------------------------------------------------------------------
+
+describe("isValidFunnelIdFormat", () => {
+  it("accepts a well-formed uuid", () => {
+    expect(isValidFunnelIdFormat("3fa85f64-5717-4562-b3fc-2c963f66afa6")).toBe(true);
+  });
+  it("rejects non-uuid strings, non-strings, and garbage", () => {
+    expect(isValidFunnelIdFormat("not-a-uuid")).toBe(false);
+    expect(isValidFunnelIdFormat("3fa85f64-5717-4562-b3fc")).toBe(false);
+    expect(isValidFunnelIdFormat(123)).toBe(false);
+    expect(isValidFunnelIdFormat(null)).toBe(false);
+    expect(isValidFunnelIdFormat(undefined)).toBe(false);
+    expect(isValidFunnelIdFormat({})).toBe(false);
+    expect(isValidFunnelIdFormat("'; DROP TABLE funnels; --")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tallyFunnelCoverage — pure tally behind computeFunnelCoverage. Blank-dm
+// 'ready' rows (the catalog-import trap) must count in `counts.ready` (the
+// real DB status) but NOT in `readyCount` (the coverage target).
+// ---------------------------------------------------------------------------
+
+describe("tallyFunnelCoverage", () => {
+  it("excludes blank-dm 'ready' rows from readyCount but keeps them in counts.ready", () => {
+    const tallies = tallyFunnelCoverage([
+      { accountHandle: "coherencedaddy", status: "ready", dmMessage: "Hey! Reply YES." },
+      { accountHandle: "coherencedaddy", status: "ready", dmMessage: "" },
+      { accountHandle: "coherencedaddy", status: "ready", dmMessage: "   " },
+      { accountHandle: "coherencedaddy", status: "draft", dmMessage: "" },
+    ]);
+    const tally = tallies.get("coherencedaddy")!;
+    expect(tally.counts.ready).toBe(3);
+    expect(tally.counts.draft).toBe(1);
+    expect(tally.readyCount).toBe(1);
+  });
+
+  it("groups by account and defaults an unrecognized status to draft", () => {
+    const tallies = tallyFunnelCoverage([
+      { accountHandle: "a", status: "live", dmMessage: "hi" },
+      { accountHandle: "b", status: "bogus-status", dmMessage: "hi" },
+    ]);
+    expect(tallies.get("a")!.counts.live).toBe(1);
+    expect(tallies.get("b")!.counts.draft).toBe(1);
+  });
+
+  it("returns an empty map for no rows", () => {
+    expect(tallyFunnelCoverage([]).size).toBe(0);
+  });
+
+  it("never mutates the shared empty-counts shape across accounts", () => {
+    const tallies = tallyFunnelCoverage([
+      { accountHandle: "a", status: "ready", dmMessage: "hi" },
+      { accountHandle: "b", status: "draft", dmMessage: "" },
+    ]);
+    expect(tallies.get("a")).toEqual({ counts: { ...emptyStatusCounts(), ready: 1 }, readyCount: 1 });
+    expect(tallies.get("b")).toEqual({ counts: { ...emptyStatusCounts(), draft: 1 }, readyCount: 0 });
   });
 });
