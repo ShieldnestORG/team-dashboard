@@ -32,9 +32,19 @@ The CLI-auth challenge flow, approved with the `keyTtlDays` override
 
 **Key fact that shapes this flow:** approval binds the key to the
 **approving** user — the key inherits the APPROVER's memberships on every
-request. So the 90-day key must be approved by EAGAN's identity, not
-yours. The UI approval page doesn't send `keyTtlDays` (it mints the
-30-day default), so the 90-day mint is a two-step bootstrap you can run
+request. So the 90-day key must be approved by EAGAN's (non-admin,
+marketing) identity, not yours.
+
+> **This is enforced, not just advised (HIGH-1).** The server **rejects**
+> any `keyTtlDays > 30` when the approver is an instance admin, with:
+> *"Long-lived keys must be approved by the key's own (non-admin) session,
+> not an admin."* If you (an admin) try to approve the 90-day challenge
+> directly, you'll get a 403 — that's expected. The bootstrap below routes
+> approval through Eagan's own non-admin key, which is exactly why it works.
+> (The 30-day default path is unaffected for any approver, admin included.)
+
+The UI approval page doesn't send `keyTtlDays` (it mints the 30-day
+default), so the 90-day mint is a two-step bootstrap you can run
 end-to-end yourself:
 
 ```bash
@@ -74,18 +84,36 @@ not email/Slack paste), together with the `.mcpb` file (§5).
 
 ## 3. Revoke / rotate / extend
 
-Four independent kill switches, no deploy needed:
+> **⚠️ To FULLY cut off access, REMOVE THE MARKETING MEMBERSHIP — do not
+> just revoke a key id.** Revoking one key id is **insufficient**: while the
+> `marketing` membership exists, any live key Eagan (or a leaker) still holds
+> can mint a fresh replacement key through the challenge flow (the same
+> mechanism the two-step bootstrap in §2 uses — a non-admin key can approve a
+> new non-admin key). So key-id revocation is whack-a-mole against a
+> determined/compromised holder. The **true kill switch** is removing the
+> membership: memberships are re-resolved on every request, so the instant
+> the `marketing` membership is gone, every existing key — current and any
+> freshly-minted one — is de-scoped and dead. Deleting the user does the
+> same. (Long-lived keys can never carry admin power — HIGH-1 blocks an admin
+> from approving a >30-day key — so the blast radius stays marketing-only
+> regardless, but membership removal is what ends it.)
+
+The kill switches, weakest → strongest:
 
 ```bash
-# Revoke the key itself (as the key — e.g. if it leaked and you hold it):
+# (weak) Revoke ONE key id — as the key itself, e.g. if it leaked and you
+# hold it. Stops THAT key only; does NOT prevent re-minting. Use for routine
+# rotation, NOT for cutting off a compromised holder.
 curl -s -X POST "$API/api/cli-auth/revoke-current" -H "Authorization: Bearer <the key>"
 ```
 
-- Admin revoke: `revokeBoardApiKey` by key id (staff admin surface / DB).
-- Remove his `marketing` membership (or the user) — memberships are
-  re-resolved per request, so every existing key is re-scoped/dead
-  instantly.
-- Do nothing: the key self-expires (`expiresAt`, checked on every lookup).
+- (weak) Admin revoke a specific key id: `revokeBoardApiKey` (staff admin
+  surface / DB). Same limitation — one key only.
+- **(strong — the real cut-off) Remove his `marketing` membership** (or
+  delete the user). Re-resolved per request → every key dead instantly, and
+  no new key can be minted. **This is what you do to actually revoke Eagan.**
+- (passive) Do nothing: the key self-expires (`expiresAt`, every lookup) in
+  ≤90 days — a backstop, not a response to a leak.
 
 **Rotate** = mint a new key (§2) → Eagan swaps it in
 Settings → Extensions → settings form → revoke the old one.
