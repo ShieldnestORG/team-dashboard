@@ -1443,7 +1443,8 @@ function AccountsTable({
                       </p>
                       {a.latestFollowerCount != null && (
                         <p className="text-[11px] text-muted-foreground">
-                          {a.latestFollowerCount.toLocaleString()} followers
+                          {a.latestFollowerCount.toLocaleString()}{" "}
+                          {a.latestFollowerCount === 1 ? "follower" : "followers"}
                         </p>
                       )}
                       {killed && killed.length > 0 && (

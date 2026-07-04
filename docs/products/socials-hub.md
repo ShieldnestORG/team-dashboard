@@ -166,7 +166,12 @@ via `services/platform-publishers/`, and writes back `posted_url`,
 doesn't reliably carry a permalink (see the TODO in
 `platform-publishers/zernio.ts`), only its `/v1/analytics` posts list does —
 so the daily `socials:zernio-analytics` ingest backfills `posted_url` by
-correlating `platform_post_id`, and the Queue tab's "Open post" link lights up
+correlating `platform_post_id` **scoped to the ingesting account** (no unique
+constraint on `platform_post_id`, so cross-account id collisions must not
+cross-wire posts). Because the value comes from a third-party API and lands in
+an `<a href>`, only plain http(s) URLs are ever stored (`sanitizePostedUrl`),
+and the render side re-guards via the shared `ui/src/lib/safe-href` helper.
+The Queue tab's "Open post" link lights up
 once that backfill lands. Below `max_attempts` the row stays
 `scheduled` for retry; at/over → `failed`. The Queue tab polls
 `/api/socials/posts` every 5s and lets the user cancel scheduled rows or

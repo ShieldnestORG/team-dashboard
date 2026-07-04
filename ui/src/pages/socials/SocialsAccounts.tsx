@@ -181,7 +181,8 @@ export function SocialsAccounts() {
                   )}
                   {a.latestFollowerCount != null && (
                     <div className="text-xs text-muted-foreground">
-                      {a.latestFollowerCount.toLocaleString()} followers
+                      {a.latestFollowerCount.toLocaleString()}{" "}
+                      {a.latestFollowerCount === 1 ? "follower" : "followers"}
                     </div>
                   )}
                 </div>

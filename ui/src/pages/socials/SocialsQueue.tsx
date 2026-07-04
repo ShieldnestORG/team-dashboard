@@ -10,6 +10,7 @@ import { HelpTip } from "@/components/HelpTip";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PlatformBadge } from "@/components/PlatformBadge";
 import { statusBadge, statusBadgeDefault } from "@/lib/status-colors";
+import { safeHref } from "@/lib/safe-href";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -190,7 +191,7 @@ export function SocialsQueue() {
                 <div className="flex justify-between items-center gap-2 pt-1">
                   {p.postedUrl ? (
                     <a
-                      href={p.postedUrl}
+                      href={safeHref(p.postedUrl)}
                       target="_blank"
                       rel="noreferrer"
                       className="text-primary underline text-xs"

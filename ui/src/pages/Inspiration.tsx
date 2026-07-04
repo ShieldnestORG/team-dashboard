@@ -4,6 +4,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useBoardAccess } from "../hooks/useBoardAccess";
 import { socialsApi, type InspirationItem } from "../api/socials";
 import { queryKeys } from "../lib/queryKeys";
+import { safeHref } from "../lib/safe-href";
 import { relativeTime, cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,16 +87,14 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
   });
 
   let host = item.url;
-  let href = "#";
   try {
-    const parsed = new URL(item.url);
-    host = parsed.hostname.replace(/^www\./, "");
-    // Server validates http(s) at insert; re-check at render so a row written
-    // by any other path can never become a javascript: link.
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") href = item.url;
+    host = new URL(item.url).hostname.replace(/^www\./, "");
   } catch {
     // Keep the raw url as display text if it somehow isn't parseable.
   }
+  // Server validates http(s) at insert; safeHref re-checks at render so a row
+  // written by any other path can never become a javascript: link.
+  const href = safeHref(item.url);
 
   return (
     <div className="flex flex-col gap-2 border-b px-4 py-3 last:border-0">

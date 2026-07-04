@@ -16,10 +16,38 @@ import {
   extractPlatformPostIds,
   latestFollowerCounts,
   probeFollowerCount,
+  sanitizePostedUrl,
+  upsertPostAnalytics,
 } from "../services/socials/zernio-analytics.js";
 
 function fakeDb(rows: Array<Record<string, unknown>>): Db {
   return { execute: async () => rows } as unknown as Db;
+}
+
+/** Flatten a drizzle sql`` object (static chunks + bound params) to one string. */
+function sqlToText(q: unknown): string {
+  const chunks = (q as { queryChunks?: unknown[] }).queryChunks ?? [];
+  return chunks
+    .map((c) => {
+      if (c === null || typeof c !== "object") {
+        return typeof c === "string" || typeof c === "number" ? String(c) : "";
+      }
+      const v = (c as { value?: unknown }).value;
+      if (Array.isArray(v)) return v.join("");
+      return typeof v === "string" || typeof v === "number" ? String(v) : "";
+    })
+    .join("");
+}
+
+function capturingDb(): { db: Db; queries: string[] } {
+  const queries: string[] = [];
+  const db = {
+    execute: async (q: unknown) => {
+      queries.push(sqlToText(q));
+      return [];
+    },
+  } as unknown as Db;
+  return { db, queries };
 }
 
 describe("buildPlatformEntries", () => {
@@ -83,6 +111,54 @@ describe("probeFollowerCount", () => {
 
   it("ignores non-numeric-looking string values", () => {
     expect(probeFollowerCount({ followers: "n/a" })).toBeNull();
+  });
+});
+
+describe("sanitizePostedUrl", () => {
+  it("passes through plain http/https URLs", () => {
+    expect(sanitizePostedUrl("https://instagram.com/p/abc")).toBe("https://instagram.com/p/abc");
+    expect(sanitizePostedUrl("http://example.com/x")).toBe("http://example.com/x");
+  });
+
+  it("rejects javascript:/data:/other schemes and junk", () => {
+    expect(sanitizePostedUrl("javascript:alert(1)")).toBeNull();
+    expect(sanitizePostedUrl("JavaScript:alert(1)")).toBeNull();
+    expect(sanitizePostedUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
+    expect(sanitizePostedUrl("vbscript:msgbox(1)")).toBeNull();
+    expect(sanitizePostedUrl("not a url")).toBeNull();
+    expect(sanitizePostedUrl("")).toBeNull();
+    expect(sanitizePostedUrl(null)).toBeNull();
+  });
+});
+
+describe("upsertPostAnalytics posted_url backfill guard", () => {
+  const post = (url: string): Record<string, unknown> => ({
+    _id: "ext_1",
+    platforms: [{ platform: "instagram", platformPostId: "pid_1", platformPostUrl: url }],
+  });
+
+  it("backfills posted_url from a plain https permalink, scoped to the ingesting account", async () => {
+    const { db, queries } = capturingDb();
+    await upsertPostAnalytics(db, "zid_1", post("https://instagram.com/p/abc"));
+    const update = queries.find((q) => q.includes("UPDATE social_posts"));
+    expect(update).toBeDefined();
+    expect(update).toContain("https://instagram.com/p/abc");
+    expect(update).toContain("posted_url IS NULL"); // never clobbers an existing value
+    // account-scoped: joins social_accounts on the ingesting zernio account id,
+    // so a platform_post_id collision across accounts can't cross-wire posts.
+    expect(update).toContain("zernio_account_id");
+    expect(update).toContain("zid_1");
+  });
+
+  it("never lands a hostile URL in posted_url (no UPDATE issued)", async () => {
+    for (const hostile of ["javascript:alert(1)", "data:text/html,x", "not a url"]) {
+      const { db, queries } = capturingDb();
+      await upsertPostAnalytics(db, "zid_1", post(hostile));
+      expect(queries.some((q) => q.includes("UPDATE social_posts"))).toBe(false);
+      // the analytics upsert itself still happens — only the href-bound
+      // social_posts.posted_url write is suppressed.
+      expect(queries.some((q) => q.includes("INSERT INTO zernio_post_analytics"))).toBe(true);
+    }
   });
 });
 

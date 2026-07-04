@@ -120,28 +120,53 @@ export function extractPlatformPostIds(entry: Record<string, unknown>): {
 }
 
 /**
+ * posted_url ends up in an <a href> in the Queue UI, and platformPostUrl
+ * comes from a third-party API — only ever store a value that parses as
+ * plain http(s), so a hostile javascript:/data: value can never become a
+ * clickable link (render side is double-guarded by ui/src/lib/safe-href).
+ * Exported for the backfill unit test.
+ */
+export function sanitizePostedUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Backfill social_posts.posted_url from the analytics ingest once we have a
  * verified platformPostUrl (Zernio's publish response doesn't reliably carry
  * one — see the TODO in platform-publishers/zernio.ts — but the /v1/analytics
  * posts list does). Matches on platform_post_id, the field the relayer always
- * sets at publish time; never clobbers a posted_url that's already set.
+ * sets at publish time, scoped to the ingesting account's own posts via
+ * social_accounts.zernio_account_id (platform_post_id has no unique
+ * constraint, so an id collision across accounts must never cross-wire
+ * posts); never clobbers a posted_url that's already set.
  */
 async function backfillPostedUrl(
   db: Db,
+  zernioAccountId: string,
   platformPostId: string,
   platformPostUrl: string,
 ): Promise<void> {
   await db.execute(sql`
-    UPDATE social_posts
+    UPDATE social_posts sp
        SET posted_url = ${platformPostUrl},
            updated_at = now()
-     WHERE platform_post_id = ${platformPostId}
-       AND posted_url IS NULL
+      FROM social_accounts sa
+     WHERE sa.id = sp.social_account_id
+       AND sa.zernio_account_id = ${zernioAccountId}
+       AND sp.platform_post_id = ${platformPostId}
+       AND sp.posted_url IS NULL
   `);
 }
 
-/** Flatten one /v1/analytics list item into per-platform rows and upsert. */
-async function upsertPostAnalytics(
+/** Flatten one /v1/analytics list item into per-platform rows and upsert.
+ *  Exported for the hostile-URL backfill unit test. */
+export async function upsertPostAnalytics(
   db: Db,
   zernioAccountId: string,
   post: Record<string, unknown>,
@@ -193,8 +218,9 @@ async function upsertPostAnalytics(
         fetched_at = now()
     `);
     upserted += 1;
-    if (platformPostId && platformPostUrl) {
-      await backfillPostedUrl(db, platformPostId, platformPostUrl);
+    const safePostedUrl = sanitizePostedUrl(platformPostUrl);
+    if (platformPostId && safePostedUrl) {
+      await backfillPostedUrl(db, zernioAccountId, platformPostId, safePostedUrl);
     }
   }
   return upserted;
