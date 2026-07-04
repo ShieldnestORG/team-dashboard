@@ -161,7 +161,13 @@ The Compose tab writes rows to `social_posts`. A 1-minute cron job
 `status='scheduled' AND scheduled_at <= now()` using `FOR UPDATE SKIP LOCKED`,
 dispatches each row to the publisher resolved from `social_accounts.platform`
 via `services/platform-publishers/`, and writes back `posted_url`,
-`platform_post_id`, `error`, `attempts`. Below `max_attempts` the row stays
+`platform_post_id`, `error`, `attempts`. **For Zernio-routed posts,
+`posted_url` usually stays null at publish time** — Zernio's publish response
+doesn't reliably carry a permalink (see the TODO in
+`platform-publishers/zernio.ts`), only its `/v1/analytics` posts list does —
+so the daily `socials:zernio-analytics` ingest backfills `posted_url` by
+correlating `platform_post_id`, and the Queue tab's "Open post" link lights up
+once that backfill lands. Below `max_attempts` the row stays
 `scheduled` for retry; at/over → `failed`. The Queue tab polls
 `/api/socials/posts` every 5s and lets the user cancel scheduled rows or
 trigger a manual relayer tick (`POST /api/socials/posts/relay-now`).
@@ -334,7 +340,19 @@ matching `social_accounts` row.
 **Crons.** `socials:lead-sync` (every 5 min), `socials:zernio-sync` (hourly —
 automation mirror + tagged-contact poll), `socials:zernio-analytics` (daily
 06:40 — snapshots + per-post analytics with External-Post-ID correlation back
-to `social_posts`). All three no-op quietly when no `ZERNIO_KEY_*` is set.
+to `social_posts`, plus the `posted_url` backfill above). All three no-op
+quietly when no `ZERNIO_KEY_*` is set.
+
+**Follower counts.** The daily `follower-stats` snapshot
+(`zernio_analytics_snapshots`) is opaque Zernio JSON — the absolute
+follower-count field name is unverified, so it's probed defensively
+(`probeFollowerCount`, candidate keys `followers`/`followerCount`/
+`follower_count`/`totalFollowers`/`total_followers`) the same way
+`GreenlightRow.stats` is probed elsewhere. `GET /api/socials/accounts` joins
+in the latest snapshot per account (`latestFollowerCounts`, one query, no
+N+1) as `latestFollowerCount`; accounts with no snapshot omit the field
+entirely rather than showing `0`. Rendered as a small muted "N followers"
+line in the Accounts tab and the Funnels accounts table.
 
 **Env.** `ZERNIO_KEY_<accountId>` (per-account Bearer keys — each key only
 sees its own account), `ZERNIO_WEBHOOK_SECRET`, `BREVO_API_KEY`,

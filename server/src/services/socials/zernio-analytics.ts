@@ -90,6 +90,56 @@ async function insertSnapshot(
   `);
 }
 
+// Posts with no platforms[] breakdown still carry top-level platform data —
+// synthesize a single-entry list from the top-level fields in that case.
+// Exported for the backfill-matching unit test.
+export function buildPlatformEntries(post: Record<string, unknown>): Array<Record<string, unknown>> {
+  const platformEntries = Array.isArray(post.platforms)
+    ? (post.platforms as Array<Record<string, unknown>>)
+    : [];
+  return platformEntries.length
+    ? platformEntries
+    : [
+        {
+          platform: post.platform,
+          platformPostUrl: post.platformPostUrl,
+          analytics: post.analytics,
+        } as Record<string, unknown>,
+      ];
+}
+
+// Exported for the backfill-matching unit test.
+export function extractPlatformPostIds(entry: Record<string, unknown>): {
+  platformPostId: string | null;
+  platformPostUrl: string | null;
+} {
+  return {
+    platformPostId: typeof entry.platformPostId === "string" ? entry.platformPostId : null,
+    platformPostUrl: typeof entry.platformPostUrl === "string" ? entry.platformPostUrl : null,
+  };
+}
+
+/**
+ * Backfill social_posts.posted_url from the analytics ingest once we have a
+ * verified platformPostUrl (Zernio's publish response doesn't reliably carry
+ * one — see the TODO in platform-publishers/zernio.ts — but the /v1/analytics
+ * posts list does). Matches on platform_post_id, the field the relayer always
+ * sets at publish time; never clobbers a posted_url that's already set.
+ */
+async function backfillPostedUrl(
+  db: Db,
+  platformPostId: string,
+  platformPostUrl: string,
+): Promise<void> {
+  await db.execute(sql`
+    UPDATE social_posts
+       SET posted_url = ${platformPostUrl},
+           updated_at = now()
+     WHERE platform_post_id = ${platformPostId}
+       AND posted_url IS NULL
+  `);
+}
+
 /** Flatten one /v1/analytics list item into per-platform rows and upsert. */
 async function upsertPostAnalytics(
   db: Db,
@@ -101,27 +151,12 @@ async function upsertPostAnalytics(
   const zernioPostId = typeof post.latePostId === "string" ? post.latePostId : null;
   const content = typeof post.content === "string" ? post.content.slice(0, 500) : null;
   const publishedAt = typeof post.publishedAt === "string" ? post.publishedAt : null;
-  const platformEntries = Array.isArray(post.platforms)
-    ? (post.platforms as Array<Record<string, unknown>>)
-    : [];
-  // Posts with no platforms[] breakdown still carry top-level platform data.
-  const entries = platformEntries.length
-    ? platformEntries
-    : [
-        {
-          platform: post.platform,
-          platformPostUrl: post.platformPostUrl,
-          analytics: post.analytics,
-        } as Record<string, unknown>,
-      ];
+  const entries = buildPlatformEntries(post);
   let upserted = 0;
   for (const entry of entries) {
     const platform = typeof entry.platform === "string" ? entry.platform : null;
     if (!platform) continue;
-    const platformPostId =
-      typeof entry.platformPostId === "string" ? entry.platformPostId : null;
-    const platformPostUrl =
-      typeof entry.platformPostUrl === "string" ? entry.platformPostUrl : null;
+    const { platformPostId, platformPostUrl } = extractPlatformPostIds(entry);
     const metrics = (entry.analytics ?? post.analytics ?? {}) as Record<string, unknown>;
     await db.execute(sql`
       INSERT INTO zernio_post_analytics (
@@ -158,6 +193,9 @@ async function upsertPostAnalytics(
         fetched_at = now()
     `);
     upserted += 1;
+    if (platformPostId && platformPostUrl) {
+      await backfillPostedUrl(db, platformPostId, platformPostUrl);
+    }
   }
   return upserted;
 }
@@ -268,6 +306,54 @@ export async function latestZernioSnapshots(
     ORDER BY metric, zernio_account_id, fetched_at DESC
   `);
   return rows as unknown as LatestSnapshotRow[];
+}
+
+// Zernio's follower-stats JSONB is opaque (field name unverified) — probed
+// defensively like GreenlightRow.stats in routes/socials.ts. Null means "not
+// reported", never zero. Exported for the serializer unit test.
+const FOLLOWER_COUNT_KEYS = [
+  "followers",
+  "followerCount",
+  "follower_count",
+  "totalFollowers",
+  "total_followers",
+];
+
+export function probeFollowerCount(entry: Record<string, unknown> | null | undefined): number | null {
+  if (!entry || typeof entry !== "object") return null;
+  for (const key of FOLLOWER_COUNT_KEYS) {
+    const value = entry[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
+}
+
+/**
+ * Latest follower count per zernio account, keyed by zernio_account_id.
+ * Reuses latestZernioSnapshots' single DISTINCT ON query (no N+1) filtered to
+ * the follower-stats metric. Accounts with no snapshot are simply absent from
+ * the map — never backfilled with 0.
+ */
+export async function latestFollowerCounts(db: Db): Promise<Map<string, number>> {
+  const snapshots = await latestZernioSnapshots(db, { metric: "follower-stats" });
+  const out = new Map<string, number>();
+  for (const snap of snapshots) {
+    if (!snap.zernioAccountId) continue;
+    const accounts = Array.isArray(snap.data.accounts)
+      ? (snap.data.accounts as Array<Record<string, unknown>>)
+      : [];
+    for (const a of accounts) {
+      const count = probeFollowerCount(a);
+      if (count !== null) {
+        out.set(snap.zernioAccountId, count);
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 export interface ZernioRecommendation {

@@ -1441,6 +1441,11 @@ function AccountsTable({
                       <p className="text-[11px] text-muted-foreground">
                         {a.platform}
                       </p>
+                      {a.latestFollowerCount != null && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {a.latestFollowerCount.toLocaleString()} followers
+                        </p>
+                      )}
                       {killed && killed.length > 0 && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
                           Deactivated:{" "}

@@ -39,6 +39,7 @@ import { runZernioEngagementSyncTick, syncZernioAutomationsMirror } from "../ser
 import {
   buildZernioRecommendations,
   latestZernioSnapshots,
+  latestFollowerCounts,
   runZernioAnalyticsIngestTick,
 } from "../services/socials/zernio-analytics.js";
 import { enqueueApprovedContent } from "../services/socials/content-bridge.js";
@@ -275,12 +276,16 @@ export function socialsRoutes(db: Db, storageService: StorageService) {
       .from(socialAccounts)
       .where(and(...where))
       .orderBy(socialAccounts.brand, socialAccounts.platform);
+    // Latest follower-stats snapshot per account (cheap single query, no N+1).
+    const followerCounts = await latestFollowerCounts(db);
     // Derive the publish-routing signal and avoid leaking the raw oauthRef.
     // An account posts via Zernio exactly when its oauthRef begins with
     // "zernio:" (see services/platform-publishers/zernio.ts parseZernioAccountId).
     const accounts = rows.map(({ oauthRef, ...rest }) => ({
       ...rest,
       routing: (oauthRef?.startsWith("zernio:") ? "zernio" : "native") as "zernio" | "native",
+      // Absent (null) when no follower-stats snapshot exists yet — never 0.
+      latestFollowerCount: rest.zernioAccountId ? followerCounts.get(rest.zernioAccountId) ?? null : null,
     }));
     res.json({ accounts });
   });
