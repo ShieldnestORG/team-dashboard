@@ -295,6 +295,23 @@ export function boardAuthService(db: Db) {
         throw forbidden("Instance admin required");
       }
 
+      // HIGH-1: never let a long-lived key bind to an instance-admin identity.
+      // The key inherits the APPROVER's memberships per request, so a 90-day
+      // key approved by an admin would be a 90-day admin credential. Long-lived
+      // (>30d) mints must come from the key's own non-admin session — that is
+      // exactly the runbook's two-step bootstrap (a marketing key approves the
+      // 90-day challenge). The 30-day default is unaffected for any approver.
+      const defaultTtlDays = Math.round(BOARD_API_KEY_TTL_MS / 86_400_000);
+      if (
+        opts.keyTtlDays &&
+        opts.keyTtlDays > defaultTtlDays &&
+        access.isInstanceAdmin
+      ) {
+        throw forbidden(
+          "Long-lived keys must be approved by the key's own (non-admin) session, not an admin — see the runbook two-step flow.",
+        );
+      }
+
       let boardKeyId = challenge.boardApiKeyId;
       let keyExpiresAt: Date | null = null;
       if (!boardKeyId) {
