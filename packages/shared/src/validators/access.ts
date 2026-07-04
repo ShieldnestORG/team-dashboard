@@ -100,3 +100,18 @@ export const updateUserCompanyAccessSchema = z.object({
 });
 
 export type UpdateUserCompanyAccess = z.infer<typeof updateUserCompanyAccessSchema>;
+
+// Admin-only mint of a long-lived board key for an external marketing
+// collaborator. Safe at 90 days ONLY because the endpoint binds the key to a
+// dedicated non-admin, marketing-only identity it creates/uses — never to the
+// admin clicking the button (see server/src/services/board-auth.ts
+// createCollaboratorBoardKey). ttlDays mirrors the approve-flow cap (1..90),
+// defaulting to 90 for the standard collaborator lifetime.
+export const createCollaboratorKeySchema = z.object({
+  name: z.string().min(1).max(120),
+  email: z.string().email().max(240),
+  ttlDays: z.number().int().min(1).max(90).default(90),
+  companyId: z.string().uuid().optional(),
+});
+
+export type CreateCollaboratorKey = z.infer<typeof createCollaboratorKeySchema>;

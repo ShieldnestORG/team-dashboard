@@ -4,11 +4,12 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToast } from "../context/ToastContext";
 import { companiesApi } from "../api/companies";
-import { accessApi } from "../api/access";
+import { accessApi, type CollaboratorKeyCreated } from "../api/access";
 import { assetsApi } from "../api/assets";
+import { useBoardAccess } from "../hooks/useBoardAccess";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Settings, Check, Download, Upload, Copy, UserPlus } from "lucide-react";
+import { Settings, Check, Download, Upload, Copy, UserPlus, KeyRound } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import {
   Field,
@@ -32,6 +33,7 @@ export function CompanySettings() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
+  const { isInstanceAdmin } = useBoardAccess();
   // General settings local state
   const [companyName, setCompanyName] = useState("");
   const [description, setDescription] = useState("");
@@ -56,6 +58,15 @@ export function CompanySettings() {
   const [humanInviteUrl, setHumanInviteUrl] = useState<string | null>(null);
   const [humanInviteCopied, setHumanInviteCopied] = useState(false);
   const [humanInviteError, setHumanInviteError] = useState<string | null>(null);
+
+  // Marketing access key (admin-only). Mints a 90-day board key bound to a
+  // marketing-only identity — the collaborator never logs in.
+  const [collabName, setCollabName] = useState("");
+  const [collabEmail, setCollabEmail] = useState("");
+  const [collabDays, setCollabDays] = useState("90");
+  const [collabResult, setCollabResult] = useState<CollaboratorKeyCreated | null>(null);
+  const [collabError, setCollabError] = useState<string | null>(null);
+  const [collabCopied, setCollabCopied] = useState(false);
 
   const generalDirty =
     !!selectedCompany &&
@@ -154,6 +165,28 @@ export function CompanySettings() {
     },
   });
 
+  const collabKeyMutation = useMutation({
+    mutationFn: () => {
+      const days = Number.parseInt(collabDays, 10);
+      return accessApi.createCollaboratorKey({
+        name: collabName.trim(),
+        email: collabEmail.trim(),
+        ttlDays: Number.isFinite(days) ? days : 90,
+      });
+    },
+    onSuccess: (result) => {
+      setCollabError(null);
+      setCollabCopied(false);
+      setCollabResult(result);
+    },
+    onError: (err) => {
+      setCollabResult(null);
+      setCollabError(
+        err instanceof Error ? err.message : "Failed to create access key"
+      );
+    },
+  });
+
   const syncLogoState = (nextLogoUrl: string | null) => {
     setLogoUrl(nextLogoUrl ?? "");
     void queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
@@ -198,6 +231,9 @@ export function CompanySettings() {
     setHumanInviteUrl(null);
     setHumanInviteCopied(false);
     setHumanInviteError(null);
+    setCollabResult(null);
+    setCollabError(null);
+    setCollabCopied(false);
   }, [selectedCompanyId]);
 
   const archiveMutation = useMutation({
@@ -545,6 +581,116 @@ export function CompanySettings() {
             </div>
           )}
         </div>
+
+        {/* Marketing access key — instance-admin only */}
+        {isInstanceAdmin && (
+          <div className="space-y-3 rounded-md border border-border px-4 py-4">
+            <div className="flex items-center gap-1.5">
+              <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-sm font-medium">Create marketing access key</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Generates a ready-to-use key for an outside marketing helper (like
+              Eagan). They don't sign up, set a password, or approve anything —
+              you create the key here and hand it to them privately. It works for
+              marketing only and expires on its own.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Field label="Name" hint="Who this key is for.">
+                <input
+                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                  type="text"
+                  value={collabName}
+                  placeholder="Eagan"
+                  onChange={(e) => setCollabName(e.target.value)}
+                />
+              </Field>
+              <Field label="Email" hint="Their email — used to label the key.">
+                <input
+                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                  type="email"
+                  value={collabEmail}
+                  placeholder="eagan@example.com"
+                  onChange={(e) => setCollabEmail(e.target.value)}
+                />
+              </Field>
+              <Field label="Expires in (days)" hint="Up to 90 days. Defaults to 90.">
+                <input
+                  className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                  type="number"
+                  min={1}
+                  max={90}
+                  value={collabDays}
+                  onChange={(e) => setCollabDays(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => collabKeyMutation.mutate()}
+                disabled={
+                  collabKeyMutation.isPending ||
+                  !collabName.trim() ||
+                  !collabEmail.trim()
+                }
+              >
+                <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+                {collabKeyMutation.isPending ? "Creating..." : "Create access key"}
+              </Button>
+            </div>
+            {collabError && (
+              <p className="text-sm text-destructive">{collabError}</p>
+            )}
+            {collabResult && (
+              <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+                <div className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Shown once — copy it now and hand it over privately. You won't
+                  be able to see this key again.
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none"
+                    value={collabResult.boardApiToken}
+                    readOnly
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(
+                          collabResult.boardApiToken
+                        );
+                        setCollabCopied(true);
+                        setTimeout(() => setCollabCopied(false), 2000);
+                      } catch {
+                        /* clipboard may not be available */
+                      }
+                    }}
+                  >
+                    {collabCopied ? (
+                      <><Check className="mr-1 h-3 w-3" /> Copied</>
+                    ) : (
+                      <><Copy className="mr-1 h-3 w-3" /> Copy</>
+                    )}
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Expires{" "}
+                  {new Date(collabResult.expiresAt).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                  . Scoped to marketing only — this person does not need a
+                  dashboard login.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Import / Export */}

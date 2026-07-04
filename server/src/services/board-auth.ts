@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -379,6 +379,189 @@ export function boardAuthService(db: Db) {
     return { status: "cancelled" as const, challenge: updated };
   }
 
+  /**
+   * Admin-only mint of a long-lived board key for an external marketing
+   * collaborator (e.g. Eagan). SECURITY INVARIANT — this is the twin of the
+   * HIGH-1 guard in `approveCliAuthChallenge`:
+   *
+   *   The approve path binds the key to the APPROVER, so an admin approving a
+   *   90-day key would mint a 90-day ADMIN credential — that path caps admins
+   *   at 30 days. THIS path is safe at 90 days ONLY because it binds the key to
+   *   a dedicated NON-ADMIN, MARKETING-ONLY identity it finds-or-creates for the
+   *   collaborator's email — never to the admin clicking the button. Two guards
+   *   keep that true and MUST NOT be relaxed:
+   *     (1) if the resolved email is an instance admin, we reject (no 90-day
+   *         admin key can ever be minted here); and
+   *     (2) after establishing the marketing membership we re-read EVERY active
+   *         membership and assert they are all 'marketing' (>=1) — a mixed role
+   *         would lift the marketing-role-gate, so we roll back instead.
+   *
+   * The identity gets no `account` (credential) row, so it can never log in.
+   * Idempotent on the identity: re-running with the same email reuses the user
+   * + marketing membership and mints an ADDITIONAL key (existing keys keep their
+   * own expiry; revoke them explicitly if you are rotating).
+   */
+  async function createCollaboratorBoardKey(input: {
+    name: string;
+    email: string;
+    ttlDays: number;
+    companyId: string;
+  }) {
+    const name = input.name.trim();
+    const email = input.email.trim().toLowerCase();
+    const companyId = input.companyId;
+    const ttlMs = input.ttlDays * 24 * 60 * 60 * 1000;
+
+    return db.transaction(async (tx) => {
+      const existingUser = await tx
+        .select({ id: authUsers.id })
+        .from(authUsers)
+        .where(eq(authUsers.email, email))
+        .then((rows) => rows[0] ?? null);
+
+      const userId = existingUser?.id ?? randomUUID();
+      const reused = Boolean(existingUser);
+
+      if (existingUser) {
+        // GUARD (1): the resolved email must NOT be an instance admin, or we
+        // would be minting a long-lived admin-scoped credential.
+        const adminRole = await tx
+          .select({ id: instanceUserRoles.id })
+          .from(instanceUserRoles)
+          .where(
+            and(
+              eq(instanceUserRoles.userId, userId),
+              eq(instanceUserRoles.role, "instance_admin"),
+            ),
+          )
+          .then((rows) => rows[0] ?? null);
+        if (adminRole) {
+          throw conflict(
+            "That email belongs to an admin; collaborator keys must be non-admin.",
+          );
+        }
+
+        // Reject BEFORE minting if the existing identity already carries any
+        // non-marketing active membership — mixing roles would lift the gate.
+        const priorMemberships = await tx
+          .select({ membershipRole: companyMemberships.membershipRole })
+          .from(companyMemberships)
+          .where(
+            and(
+              eq(companyMemberships.principalType, "user"),
+              eq(companyMemberships.principalId, userId),
+              eq(companyMemberships.status, "active"),
+            ),
+          );
+        const hasNonMarketing = priorMemberships.some(
+          (row) => row.membershipRole !== "marketing",
+        );
+        if (hasNonMarketing) {
+          throw conflict(
+            "That email already has non-marketing access; collaborator keys must be marketing-only.",
+          );
+        }
+      } else {
+        const now = new Date();
+        await tx.insert(authUsers).values({
+          id: userId,
+          name,
+          email,
+          emailVerified: true,
+          image: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      // Establish the marketing membership (find-or-create, active). The
+      // find-or-create is keyed on the (company, principal) unique index, so a
+      // re-run stays idempotent instead of duplicating rows.
+      const existingMembership = await tx
+        .select({
+          id: companyMemberships.id,
+          membershipRole: companyMemberships.membershipRole,
+          status: companyMemberships.status,
+        })
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.companyId, companyId),
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.principalId, userId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!existingMembership) {
+        await tx.insert(companyMemberships).values({
+          companyId,
+          principalType: "user",
+          principalId: userId,
+          status: "active",
+          membershipRole: "marketing",
+        });
+      } else if (
+        existingMembership.membershipRole !== "marketing" ||
+        existingMembership.status !== "active"
+      ) {
+        await tx
+          .update(companyMemberships)
+          .set({ membershipRole: "marketing", status: "active", updatedAt: new Date() })
+          .where(eq(companyMemberships.id, existingMembership.id));
+      }
+
+      // GUARD (2): re-read EVERY active membership and assert marketing-only.
+      const memberships = await tx
+        .select({
+          companyId: companyMemberships.companyId,
+          membershipRole: companyMemberships.membershipRole,
+        })
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.principalId, userId),
+            eq(companyMemberships.status, "active"),
+          ),
+        );
+      const marketingOnly =
+        memberships.length > 0 &&
+        memberships.every((row) => row.membershipRole === "marketing");
+      if (!marketingOnly) {
+        // Rolls back the transaction — never hand out a key on a mixed identity.
+        throw conflict(
+          "Collaborator identity is not marketing-only; refusing to mint a key.",
+        );
+      }
+
+      // Mint the board key bound to the marketing-only identity.
+      const boardApiToken = createBoardApiToken();
+      const createdKey = await tx
+        .insert(boardApiKeys)
+        .values({
+          userId,
+          name: `collab: ${email}`,
+          keyHash: hashBearerToken(boardApiToken),
+          expiresAt: boardApiKeyExpiresAt(Date.now(), ttlMs),
+        })
+        .returning()
+        .then((rows) => rows[0]);
+
+      return {
+        boardApiToken,
+        keyId: createdKey.id,
+        userId,
+        email,
+        reused,
+        expiresAt: createdKey.expiresAt as Date,
+        memberships: memberships.map((row) => ({
+          companyId: row.companyId,
+          role: row.membershipRole,
+        })),
+      };
+    });
+  }
+
   async function assertCurrentBoardKey(keyId: string | undefined, userId: string | undefined) {
     if (!keyId || !userId) throw conflict("Board API key context is required");
     const key = await db
@@ -402,5 +585,6 @@ export function boardAuthService(db: Db) {
     cancelCliAuthChallenge,
     assertCurrentBoardKey,
     resolveBoardActivityCompanyIds,
+    createCollaboratorBoardKey,
   };
 }

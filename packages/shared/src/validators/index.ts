@@ -233,6 +233,7 @@ export {
   approveCliAuthChallengeSchema,
   updateMemberPermissionsSchema,
   updateUserCompanyAccessSchema,
+  createCollaboratorKeySchema,
   type CreateCompanyInvite,
   type CreateOpenClawInvitePrompt,
   type AcceptInvite,
@@ -244,6 +245,7 @@ export {
   type ResolveCliAuthChallenge,
   type UpdateMemberPermissions,
   type UpdateUserCompanyAccess,
+  type CreateCollaboratorKey,
 } from "./access.js";
 
 export {
