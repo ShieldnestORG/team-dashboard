@@ -1,6 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, extname, join, resolve, sep } from "node:path";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { KeyInfo, MarketingClient } from "../marketing-client.js";
@@ -22,6 +22,34 @@ const EXPIRY_WARN_DAYS = 14;
 const KEY_INFO_CACHE_MS = 6 * 60 * 60 * 1000; // re-check twice a working day
 
 const VOICE_KEYS = ["mark", "brianna", "mami", "remy", "solene"] as const;
+
+// Media guardrails (defense-in-depth for upload_media). These MIRROR the
+// server's own sniff+cap (services/socials/media-upload.ts) so a
+// prompt-injected filePath can't turn this tool into an arbitrary local-file
+// reader. The server remains the authoritative trust boundary (magic-byte
+// sniff + per-kind cap); this just refuses obviously-wrong paths before any
+// bytes are read off disk.
+const ALLOWED_IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const ALLOWED_VIDEO_EXTS = new Set([".mp4", ".m4v", ".mov"]);
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB — SOCIAL_MEDIA_MAX_IMAGE_BYTES default
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200MB — SOCIAL_MEDIA_MAX_VIDEO_BYTES default
+
+/** True if any path segment is hidden (dotfile/dotdir) — blocks ~/.ssh etc. */
+function hasHiddenSegment(absPath: string): boolean {
+  return absPath.split(sep).some((seg) => seg.startsWith(".") && seg !== "." && seg !== "..");
+}
+
+/**
+ * Whole days until the key expires, computed CLIENT-SIDE from the key's
+ * expiresAt (not the server's snapshot number). Ceil to match the server's
+ * key-info arithmetic. null when we have no expiry.
+ */
+function daysLeft(info: KeyInfo | null): number | null {
+  if (!info?.expiresAt) return null;
+  const ms = new Date(info.expiresAt).getTime() - Date.now();
+  if (Number.isNaN(ms)) return null;
+  return Math.max(0, Math.ceil(ms / 86_400_000));
+}
 
 type ToolResult = { content: Array<{ type: "text"; text: string }> };
 
@@ -60,8 +88,12 @@ export function registerMarketingTools(server: McpServer, client: MarketingClien
   /** One-line warning appended to every tool response when ≤14 days remain. */
   async function expiryNotice(): Promise<string> {
     const info = await cachedKeyInfo();
-    const days = info?.daysRemaining;
-    if (typeof days !== "number" || days > EXPIRY_WARN_DAYS) return "";
+    // SUGGEST-2: derive days from the cached expiresAt on EVERY call, not from
+    // the (possibly hours-stale) server-computed daysRemaining. This keeps the
+    // ≤14-day threshold exact per call and lets a just-extended key stop
+    // warning the instant its new expiry is cached — no extra request.
+    const days = daysLeft(info);
+    if (days === null || days > EXPIRY_WARN_DAYS) return "";
     const when = days <= 0 ? "today" : days === 1 ? "in 1 day" : `in ${days} days`;
     return `\n\nHeads up: your dashboard access key expires ${when} — ask Mark to extend it.`;
   }
@@ -91,13 +123,15 @@ export function registerMarketingTools(server: McpServer, client: MarketingClien
           ],
         };
       }
-      const days = info.daysRemaining;
+      // Computed client-side from expiresAt (SUGGEST-2) — exact even against a
+      // cached KeyInfo.
+      const days = daysLeft(info);
       const expiryLine =
-        typeof days === "number"
-          ? days <= 0
+        days === null
+          ? "Your key has no expiry date set."
+          : days <= 0
             ? "Your key expires TODAY — ask Mark to extend it now."
-            : `Your key expires on ${info.expiresAt?.slice(0, 10)} (${days} day${days === 1 ? "" : "s"} remaining).${days <= EXPIRY_WARN_DAYS ? " Ask Mark to extend it soon." : ""}`
-          : "Your key has no expiry date set.";
+            : `Your key expires on ${info.expiresAt?.slice(0, 10)} (${days} day${days === 1 ? "" : "s"} remaining).${days <= EXPIRY_WARN_DAYS ? " Ask Mark to extend it soon." : ""}`;
       return {
         content: [
           {
@@ -259,10 +293,18 @@ export function registerMarketingTools(server: McpServer, client: MarketingClien
       directory: z.string().optional().describe("Folder to save into (default: your Downloads folder)"),
     },
     async ({ contentPath, fileName, directory }) => {
+      // LOW-1: a fileName must be a bare name, never a path — reject
+      // separators and "..", so it can't escape the target folder into
+      // arbitrary locations. contentPath is already locked to /api/assets/.
+      const name = fileName?.trim() || `voice-clip-${Date.now()}.mp3`;
+      if (/[\\/]/.test(name) || name.includes("..")) {
+        return respond({
+          error: "The file name can't contain folders or '..' — pass a plain name like clip.mp3 and use the directory field for the folder.",
+        });
+      }
       const bytes = await client.downloadAsset(contentPath);
       const dir = resolve(directory ?? join(homedir(), "Downloads"));
       await mkdir(dir, { recursive: true });
-      const name = fileName?.trim() || `voice-clip-${Date.now()}.mp3`;
       const target = join(dir, name.endsWith(".mp3") ? name : `${name}.mp3`);
       await writeFile(target, bytes);
       return respond({ saved: true, path: target, byteSize: bytes.byteLength });
@@ -293,14 +335,50 @@ export function registerMarketingTools(server: McpServer, client: MarketingClien
 
   server.tool(
     "upload_media",
-    "Upload a photo or video from this computer into the dashboard's staging area, for use in a draft post. Returns an objectKey to pass to create_draft_post.",
+    "Upload a real photo or video file (.jpg .jpeg .png .webp .mp4 .m4v .mov) from a normal folder on this computer into the dashboard staging area, for use in a draft post. Only genuine media files in visible folders work — it cannot read documents, hidden/system files, or anything outside a media file. Returns an objectKey to pass to create_draft_post.",
     {
-      filePath: z.string().describe("Path to the image/video file on this computer"),
+      filePath: z.string().describe("Path to a real image/video file in a normal (non-hidden) folder"),
     },
     async ({ filePath }) => {
-      const { readFile } = await import("node:fs/promises");
-      const { basename } = await import("node:path");
       const abs = resolve(filePath);
+      const ext = extname(abs).toLowerCase();
+      const isImage = ALLOWED_IMAGE_EXTS.has(ext);
+      const isVideo = ALLOWED_VIDEO_EXTS.has(ext);
+
+      // Defense-in-depth against a prompt-injected path: only real media
+      // extensions, never a hidden/system path. The server still sniffs the
+      // bytes — this just refuses obvious non-media before reading them.
+      if (!isImage && !isVideo) {
+        return respond({
+          error: `That isn't a supported media file. Allowed: ${[...ALLOWED_IMAGE_EXTS, ...ALLOWED_VIDEO_EXTS].join(", ")}.`,
+        });
+      }
+      if (hasHiddenSegment(abs)) {
+        return respond({
+          error: "That path is inside a hidden or system folder — only pick media files from normal, visible folders (e.g. Downloads, Desktop, Movies).",
+        });
+      }
+
+      // Size pre-check so a huge/booby-trapped path can't be slurped into
+      // memory before the server rejects it. Mirrors the server's per-kind cap.
+      let size: number;
+      try {
+        const info = await stat(abs);
+        if (!info.isFile()) {
+          return respond({ error: "That path isn't a file." });
+        }
+        size = info.size;
+      } catch {
+        return respond({ error: "Couldn't find a file at that path." });
+      }
+      const cap = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+      if (size > cap) {
+        const capMb = Math.floor(cap / (1024 * 1024));
+        return respond({
+          error: `That ${isVideo ? "video" : "image"} is too big (${Math.round(size / (1024 * 1024))}MB — limit is ${capMb}MB).`,
+        });
+      }
+
       const bytes = new Uint8Array(await readFile(abs));
       return respond(await client.uploadMedia(basename(abs), bytes));
     },
