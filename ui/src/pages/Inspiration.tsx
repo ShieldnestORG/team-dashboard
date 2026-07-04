@@ -15,6 +15,17 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { StatusBadge } from "../components/StatusBadge";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { ApiError } from "../api/client";
+import { useToast } from "../context/ToastContext";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Lightbulb, Trash2, Archive, ExternalLink } from "lucide-react";
 
 const STATUS_FILTERS = ["all", "new", "reviewed", "archived"] as const;
@@ -22,6 +33,7 @@ type InspirationStatusFilter = typeof STATUS_FILTERS[number];
 
 function AddInspirationForm() {
   const qc = useQueryClient();
+  const { pushToast } = useToast();
   const [url, setUrl] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +45,11 @@ function AddInspirationForm() {
       setNote("");
       setError(null);
       qc.invalidateQueries({ queryKey: ["inspiration"] });
+      pushToast({
+        title: "Link saved",
+        body: "The AI reads the whole list tomorrow morning and mines it for ideas.",
+        tone: "success",
+      });
     },
     onError: (err) => {
       setError(err instanceof ApiError ? err.message : "Failed to add link");
@@ -76,6 +93,7 @@ function AddInspirationForm() {
 
 function InspirationRow({ item, canManage }: { item: InspirationItem; canManage: boolean }) {
   const qc = useQueryClient();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["inspiration"] });
   const archiveMut = useMutation({
     mutationFn: () => socialsApi.archiveInspiration(item.id),
@@ -83,7 +101,10 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
   });
   const deleteMut = useMutation({
     mutationFn: () => socialsApi.deleteInspiration(item.id),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setConfirmDelete(false);
+      invalidate();
+    },
   });
 
   let host = item.url;
@@ -116,6 +137,7 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
               variant="ghost"
               size="icon-xs"
               aria-label="Archive"
+              title="Archive — tuck it away without deleting"
               onClick={() => archiveMut.mutate()}
               disabled={archiveMut.isPending}
             >
@@ -127,7 +149,8 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
               variant="ghost"
               size="icon-xs"
               aria-label="Delete"
-              onClick={() => deleteMut.mutate()}
+              title="Delete forever"
+              onClick={() => setConfirmDelete(true)}
               disabled={deleteMut.isPending}
             >
               <Trash2 className="h-3.5 w-3.5 text-destructive" />
@@ -135,6 +158,23 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
           )}
         </div>
       </div>
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this link?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {host} goes away for everyone and can't be brought back. If you just want it out of
+              the way, Archive instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}>
+              {deleteMut.isPending ? "Deleting…" : "Delete forever"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {item.note && <p className="text-sm text-muted-foreground">{item.note}</p>}
       {item.aiComment && (
         <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
