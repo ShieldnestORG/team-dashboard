@@ -84,36 +84,61 @@ not email/Slack paste), together with the `.mcpb` file (§5).
 
 ## 3. Revoke / rotate / extend
 
-> **⚠️ To FULLY cut off access, REMOVE THE MARKETING MEMBERSHIP — do not
-> just revoke a key id.** Revoking one key id is **insufficient**: while the
-> `marketing` membership exists, any live key Eagan (or a leaker) still holds
-> can mint a fresh replacement key through the challenge flow (the same
-> mechanism the two-step bootstrap in §2 uses — a non-admin key can approve a
-> new non-admin key). So key-id revocation is whack-a-mole against a
-> determined/compromised holder. The **true kill switch** is removing the
-> membership: memberships are re-resolved on every request, so the instant
-> the `marketing` membership is gone, every existing key — current and any
-> freshly-minted one — is de-scoped and dead. Deleting the user does the
-> same. (Long-lived keys can never carry admin power — HIGH-1 blocks an admin
-> from approving a >30-day key — so the blast radius stays marketing-only
-> regardless, but membership removal is what ends it.)
+> **⚠️ A COMPLETE cutoff needs BOTH actions: (1) revoke the key id AND
+> (2) remove the `marketing` membership** (or wait for expiry). Neither alone
+> is sufficient, for two different reasons:
+>
+> - **Revoke-only is not enough.** While the `marketing` membership exists,
+>   any *other* live key Eagan (or a leaker) still holds can mint a fresh
+>   replacement key through the challenge flow (the same non-admin-approves-
+>   non-admin mechanism the §2 bootstrap uses). Revoking one key id is
+>   whack-a-mole against a determined/compromised holder.
+> - **Membership-removal-only is not enough.** Removing the membership
+>   instantly kills every *company-scoped* operation — voice generation
+>   (`POST /api/voice-snippets` calls `assertCompanyAccess`), the media-bytes
+>   asset endpoint, and any per-company read — AND it stops new keys being
+>   minted. BUT a still-valid (un-revoked, un-expired) key keeps **read**
+>   access to the socials hub: `/api/socials/*` and `/api/voice-snippets/health`
+>   gate only on `actor.type === "board"` + the hardcoded
+>   `TEAM_DASHBOARD_COMPANY_ID`, with **no per-caller company-scope check**, so
+>   a membership-less board key can still read accounts, funnels, drafts,
+>   daily briefs, and inspiration. (This is a **pre-existing property of those
+>   routes** — the socials surface was built as a single-company board-level
+>   read surface; this feature did not introduce it. It's why you must also
+>   revoke the key, not a bug in this branch.)
+>
+> **So the definitive lockout is: revoke the key id, then remove the
+> membership.** Revoke closes the open socials-read door on the key you know
+> about; membership-removal closes company-scoped ops and blocks re-minting a
+> new key. (Long-lived keys can never carry admin power — HIGH-1 blocks an
+> admin from approving a >30-day key — so the blast radius stays
+> marketing-only throughout.)
 
-The kill switches, weakest → strongest:
+The kill switches:
 
 ```bash
-# (weak) Revoke ONE key id — as the key itself, e.g. if it leaked and you
-# hold it. Stops THAT key only; does NOT prevent re-minting. Use for routine
-# rotation, NOT for cutting off a compromised holder.
+# EMERGENCY / compromised holder — do BOTH, in this order:
+# 1) Revoke the key id (closes the still-open socials-read surface on it).
 curl -s -X POST "$API/api/cli-auth/revoke-current" -H "Authorization: Bearer <the key>"
+#    (or admin-revoke by key id via revokeBoardApiKey — staff admin surface / DB —
+#     if you don't hold the raw key.)
+# 2) Remove his `marketing` membership (or delete the user) — kills
+#    company-scoped ops instantly and prevents re-minting a new key.
+#    Done via the staff-admin UI / membership table.
 ```
 
-- (weak) Admin revoke a specific key id: `revokeBoardApiKey` (staff admin
-  surface / DB). Same limitation — one key only.
-- **(strong — the real cut-off) Remove his `marketing` membership** (or
-  delete the user). Re-resolved per request → every key dead instantly, and
-  no new key can be minted. **This is what you do to actually revoke Eagan.**
-- (passive) Do nothing: the key self-expires (`expiresAt`, every lookup) in
-  ≤90 days — a backstop, not a response to a leak.
+Ordering rationale, weak → strong:
+
+- **(weak, alone) Revoke ONE key id** (`revoke-current` / admin
+  `revokeBoardApiKey`): stops THAT key entirely, but a live membership can
+  re-mint. Fine for routine rotation; NOT a full cutoff by itself.
+- **(weak, alone) Remove the `marketing` membership**: kills company-scoped
+  ops + blocks re-minting instantly, but leaves any un-revoked key reading the
+  socials hub until it expires. NOT a full cutoff by itself.
+- **(definitive) BOTH — revoke the key id AND remove the membership**: no
+  socials read, no company-scoped op, no re-mint. This is the real lockout.
+- **(passive backstop) Do nothing**: the key self-expires (`expiresAt`,
+  checked every lookup) in ≤90 days — a backstop, never a response to a leak.
 
 **Rotate** = mint a new key (§2) → Eagan swaps it in
 Settings → Extensions → settings form → revoke the old one.
