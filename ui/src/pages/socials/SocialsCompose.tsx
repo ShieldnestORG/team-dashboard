@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Upload, X } from "lucide-react";
 import { socialsApi, type SocialAccount } from "../../api/socials";
 import { useLocation } from "@/lib/router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,14 +10,58 @@ import { HelpTip } from "@/components/HelpTip";
 import { PlatformBadge } from "@/components/PlatformBadge";
 import { useToast } from "@/context/ToastContext";
 import { submitToAccounts, type SubmitResult } from "./multi-account-submit";
+import { isAccountComposable } from "./compose-eligibility";
+import {
+  MEDIA_REQUIRED_PLATFORMS,
+  PLATFORM_CAPTION_LIMITS,
+  MAX_COMPOSE_MEDIA_ITEMS,
+  checkComposeForPlatform,
+  isVideoRef,
+  type ComposeMediaRef,
+} from "@paperclipai/shared";
 
 type CreatePostResult = Awaited<ReturnType<typeof socialsApi.createPost>>;
 import { PLATFORM_META, PLATFORM_ORDER, normalizePlatform, platformBadge, platformBadgeDefault } from "@/lib/status-colors";
 import { cn } from "@/lib/utils";
 
-// Platforms whose text relayer pipeline is wired up. IG-feed/X/LinkedIn
-// will appear once their adapters land.
-const TEXT_PLATFORMS = new Set(["bluesky"]);
+// Client-side preflight only — the server (POST /socials/media) re-sniffs the
+// actual bytes and is the authoritative gate. This just avoids a round-trip
+// for an obviously wrong file.
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_VIDEO_TYPES = new Set(["video/mp4", "video/quicktime"]);
+const CLIENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB — matches server default
+const CLIENT_MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200MB — matches server default
+
+function looksLikeVideoFile(file: File): boolean {
+  return ALLOWED_VIDEO_TYPES.has(file.type) || /\.(mp4|mov)$/i.test(file.name);
+}
+function looksLikeImageFile(file: File): boolean {
+  return ALLOWED_IMAGE_TYPES.has(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
+}
+
+/** Plain-English rejection, or null if the file is worth uploading. */
+function precheckFile(file: File): string | null {
+  const video = looksLikeVideoFile(file);
+  const image = !video && looksLikeImageFile(file);
+  if (!video && !image) {
+    return "Unsupported file — use jpg/png/webp for photos or mp4/mov for video.";
+  }
+  const max = video ? CLIENT_MAX_VIDEO_BYTES : CLIENT_MAX_IMAGE_BYTES;
+  if (file.size > max) {
+    return `Exceeds ${Math.floor(max / (1024 * 1024))}MB`;
+  }
+  return null;
+}
+
+interface MediaItem {
+  id: string;
+  file: File;
+  previewUrl: string;
+  isVideo: boolean;
+  status: "uploading" | "done" | "error";
+  objectKey?: string;
+  error?: string;
+}
 
 function toLocalInputValue(d: Date): string {
   const tz = d.getTimezoneOffset() * 60000;
@@ -46,7 +90,6 @@ interface ComposeLocationState {
   prefillFunnelId?: string;
 }
 
-
 export function SocialsCompose() {
   const qc = useQueryClient();
   const { pushToast } = useToast();
@@ -59,14 +102,10 @@ export function SocialsCompose() {
   });
 
   const composableAccounts = useMemo(() => {
-    return (accountsData?.accounts ?? []).filter(
-      (a) => TEXT_PLATFORMS.has(a.platform) && a.status === "active",
-    );
+    return (accountsData?.accounts ?? []).filter(isAccountComposable);
   }, [accountsData]);
 
-  // Grouped by platform, ordered by PLATFORM_ORDER — today that's usually a
-  // single Bluesky group since TEXT_PLATFORMS only has one entry, but this
-  // future-proofs the moment another adapter lands.
+  // Grouped by platform, ordered by PLATFORM_ORDER.
   const groupedAccounts = useMemo(() => {
     const by = new Map<string, SocialAccount[]>();
     for (const a of composableAccounts) {
@@ -82,6 +121,9 @@ export function SocialsCompose() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [text, setText] = useState<string>(state?.prefillText ?? "");
   const [mediaUrlsText, setMediaUrlsText] = useState<string>("");
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [scheduledAt, setScheduledAt] = useState<string>(toLocalInputValue(new Date(Date.now() + 60_000)));
   const [postNow, setPostNow] = useState<boolean>(true);
   const [formError, setFormError] = useState<string | null>(null);
@@ -91,9 +133,7 @@ export function SocialsCompose() {
   // Pre-select the kit's account once accounts load — a ref (not state) so a
   // later manual deselect doesn't get silently re-applied on refetch. Match on
   // platform + handle, not handle alone: handles aren't unique across
-  // platforms (an IG handle can coincidentally collide with an unrelated
-  // Bluesky handle) and today's only composable platform (Bluesky) uses
-  // full-domain handles that would never equal an IG handle anyway.
+  // platforms.
   const didPrefillAccount = useRef(false);
   useEffect(() => {
     if (didPrefillAccount.current) return;
@@ -109,10 +149,12 @@ export function SocialsCompose() {
     }
   }, [state?.prefillAccountHandle, state?.prefillAccountPlatform, composableAccounts]);
 
-  // The kit's target platform has no text adapter yet (e.g. Instagram) — say
-  // so instead of silently failing to pre-select anything.
+  // The kit's target platform has no composable account yet (no active
+  // account on that platform, or an Instagram/TikTok account that isn't
+  // Zernio-routed) — say so instead of silently failing to pre-select anything.
   const prefillPlatformUnsupported =
-    state?.prefillAccountPlatform && !TEXT_PLATFORMS.has(state.prefillAccountPlatform)
+    state?.prefillAccountPlatform &&
+    !composableAccounts.some((a) => normalizePlatform(a.platform) === state.prefillAccountPlatform)
       ? (PLATFORM_META[state.prefillAccountPlatform]?.label ?? state.prefillAccountPlatform)
       : null;
 
@@ -137,6 +179,74 @@ export function SocialsCompose() {
     });
   }
 
+  // ---- Media upload (drag-drop + file picker) ----
+
+  const pastedMediaUrls = useMemo(
+    () =>
+      mediaUrlsText
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [mediaUrlsText],
+  );
+  const uploadedDoneCount = mediaItems.filter((m) => m.status === "done").length;
+  const readyMediaCount = uploadedDoneCount + pastedMediaUrls.length;
+  const anyUploading = mediaItems.some((m) => m.status === "uploading");
+
+  function addFiles(files: FileList | File[]) {
+    const room = Math.max(0, MAX_COMPOSE_MEDIA_ITEMS - mediaItems.length);
+    const list = Array.from(files).slice(0, room);
+    for (const file of list) {
+      const id = crypto.randomUUID();
+      const previewUrl = URL.createObjectURL(file);
+      const isVideo = looksLikeVideoFile(file);
+      const problem = precheckFile(file);
+      if (problem) {
+        setMediaItems((prev) => [...prev, { id, file, previewUrl, isVideo, status: "error", error: problem }]);
+        continue;
+      }
+      setMediaItems((prev) => [...prev, { id, file, previewUrl, isVideo, status: "uploading" }]);
+      socialsApi
+        .uploadMedia(file)
+        .then((uploaded) => {
+          setMediaItems((prev) =>
+            prev.map((m) =>
+              m.id === id ? { ...m, status: "done", objectKey: uploaded.objectKey, isVideo: uploaded.isVideo } : m,
+            ),
+          );
+        })
+        .catch((err) => {
+          setMediaItems((prev) =>
+            prev.map((m) =>
+              m.id === id ? { ...m, status: "error", error: err instanceof Error ? err.message : String(err) } : m,
+            ),
+          );
+        });
+    }
+  }
+
+  function removeMedia(id: string) {
+    setMediaItems((prev) => {
+      const found = prev.find((m) => m.id === id);
+      if (found) URL.revokeObjectURL(found.previewUrl);
+      return prev.filter((m) => m.id !== id);
+    });
+  }
+
+  function resetMedia() {
+    setMediaItems((prev) => {
+      for (const m of prev) URL.revokeObjectURL(m.previewUrl);
+      return [];
+    });
+    setMediaUrlsText("");
+  }
+
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragActive(false);
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+  }
+
   const createMut = useMutation({
     mutationFn: (payload: {
       ids: string[];
@@ -147,9 +257,10 @@ export function SocialsCompose() {
     }) =>
       // N client-side inserts over the existing single-account POST /posts —
       // no bulk endpoint. The server derives pending_approval/scheduled per
-      // request from the actor (server/src/routes/socials.ts), so N calls
-      // preserve that split for free. Partial failure is expected and
-      // surfaced per-account below, not rolled back.
+      // request from the actor, and re-validates platform requirements (media
+      // present, caption length) independently per account — so N calls
+      // preserve per-account correctness for free. Partial failure is
+      // expected and surfaced per-account below, not rolled back.
       submitToAccounts(payload.ids, (id) =>
         socialsApi.createPost({
           socialAccountId: id,
@@ -177,7 +288,7 @@ export function SocialsCompose() {
       }
       if (failedIds.length === 0) {
         setText("");
-        setMediaUrlsText("");
+        resetMedia();
         setSelectedIds(new Set());
       } else {
         // Keep only the failed accounts selected so a retry is one click.
@@ -190,7 +301,11 @@ export function SocialsCompose() {
 
   const selectedAccounts = composableAccounts.filter((a) => selectedIds.has(a.id));
   const charCount = text.length;
-  const tooLong = charCount > 300 && selectedAccounts.some((a) => a.platform === "bluesky");
+  const selectedCaptionLimits = selectedAccounts
+    .map((a) => PLATFORM_CAPTION_LIMITS[a.platform])
+    .filter((n): n is number => n !== undefined);
+  const captionLimit = selectedCaptionLimits.length > 0 ? Math.min(...selectedCaptionLimits) : null;
+  const tooLong = captionLimit !== null && charCount > captionLimit;
 
   function submit() {
     setFormError(null);
@@ -203,10 +318,36 @@ export function SocialsCompose() {
       setFormError("Post text is empty");
       return;
     }
-    const mediaUrls = mediaUrlsText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    if (anyUploading) {
+      setFormError("Wait for media to finish uploading");
+      return;
+    }
+
+    const media: ComposeMediaRef[] = [
+      ...mediaItems
+        .filter((m) => m.status === "done" && m.objectKey)
+        .map((m) => ({ value: m.objectKey!, isVideo: m.isVideo })),
+      ...pastedMediaUrls.map((value) => ({ value, isVideo: isVideoRef(value) })),
+    ];
+
+    // Same pure guard the server re-runs per account (@paperclipai/shared) —
+    // each selected account's platform is validated independently so a mixed
+    // Bluesky + Instagram selection catches each leg's own requirements.
+    const problems = new Set<string>();
+    for (const account of selectedAccounts) {
+      const problem = checkComposeForPlatform({
+        platform: account.platform,
+        textLength: text.length,
+        media,
+      });
+      if (problem) problems.add(problem);
+    }
+    if (problems.size > 0) {
+      setFormError(Array.from(problems).join(" "));
+      return;
+    }
+
+    const mediaUrls = media.map((m) => m.value);
     createMut.mutate({
       ids: Array.from(selectedIds),
       text,
@@ -222,9 +363,10 @@ export function SocialsCompose() {
         <h2 className="text-sm font-semibold">Compose</h2>
         <HelpTip label="What is Compose?">
           Write a post, pick one or more accounts, and submit. If you're an admin it queues right
-          away; otherwise it waits for an admin to approve it before going out. A kit sent from
-          Content Hub pre-selects its account below — its production notes show up in the "Kit
-          details" panel, not in the post text.
+          away; otherwise it waits for an admin to approve it before going out. Instagram and
+          TikTok accounts need a photo or video attached — attach one below and their chips
+          unlock. A kit sent from Content Hub pre-selects its account below — its production notes
+          show up in the "Kit details" panel, not in the post text.
         </HelpTip>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -249,9 +391,9 @@ export function SocialsCompose() {
               <div className="text-xs text-muted-foreground">Accounts</div>
               {groupedAccounts.length === 0 ? (
                 <div className="text-xs text-muted-foreground">
-                  No active text-capable accounts. Add a Bluesky account in the <strong>Accounts</strong> tab,
-                  set <code>BLUESKY_HANDLE</code> + <code>BLUESKY_APP_PASSWORD</code> on the server, and ensure
-                  its status is <code>active</code>.
+                  No active composable accounts. Add a Bluesky account in the <strong>Accounts</strong> tab
+                  (set <code>BLUESKY_HANDLE</code> + <code>BLUESKY_APP_PASSWORD</code> on the server), or connect
+                  an Instagram/TikTok account through Zernio — either way its status must be <code>active</code>.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -259,6 +401,7 @@ export function SocialsCompose() {
                     const ids = accountsForPlatform.map((a) => a.id);
                     const selectedCount = ids.filter((id) => selectedIds.has(id)).length;
                     const meta = PLATFORM_META[platform];
+                    const needsMedia = MEDIA_REQUIRED_PLATFORMS.has(platform) && readyMediaCount === 0;
                     return (
                       <div key={platform} className="rounded-md border p-2 space-y-2">
                         <div className="flex items-center justify-between gap-2">
@@ -268,11 +411,17 @@ export function SocialsCompose() {
                             <span className="text-muted-foreground font-normal">
                               {selectedCount}/{ids.length} selected
                             </span>
+                            {needsMedia && (
+                              <span className="text-amber-600 dark:text-amber-400 font-normal">
+                                — needs a photo or video
+                              </span>
+                            )}
                           </div>
                           <button
                             type="button"
+                            disabled={needsMedia}
                             onClick={() => toggleGroup(ids)}
-                            className="text-xs text-primary underline underline-offset-2"
+                            className="text-xs text-primary underline underline-offset-2 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
                           >
                             {selectedCount === ids.length ? "Deselect all" : "Select all"}
                           </button>
@@ -286,12 +435,15 @@ export function SocialsCompose() {
                                 type="button"
                                 role="checkbox"
                                 aria-checked={isSelected}
+                                disabled={needsMedia && !isSelected}
+                                title={needsMedia && !isSelected ? "Needs a photo or video" : undefined}
                                 onClick={() => toggleAccount(a.id)}
                                 className={cn(
                                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                                   isSelected
                                     ? cn(platformBadge[platform] ?? platformBadgeDefault, "border-transparent")
                                     : "border-border bg-transparent text-foreground hover:bg-accent",
+                                  needsMedia && !isSelected && "opacity-40 cursor-not-allowed hover:bg-transparent",
                                 )}
                               >
                                 {isSelected && <Check className="h-3 w-3" />}@{a.handle}
@@ -312,7 +464,7 @@ export function SocialsCompose() {
                 <span>Text</span>
                 <span className={tooLong ? "text-destructive" : ""}>
                   {charCount}
-                  {selectedAccounts.some((a) => a.platform === "bluesky") ? " / 300" : ""}
+                  {captionLimit !== null ? ` / ${captionLimit}` : ""}
                 </span>
               </div>
               <textarea
@@ -324,8 +476,79 @@ export function SocialsCompose() {
               />
             </label>
 
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">
+                Media ({readyMediaCount}/{MAX_COMPOSE_MEDIA_ITEMS})
+              </div>
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-md border-2 border-dashed p-4 text-center text-xs cursor-pointer transition-colors",
+                  dragActive ? "border-primary bg-accent/40" : "border-border hover:bg-accent/20",
+                )}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  Drag photos or videos here, or click to choose (jpg/png/webp, mp4/mov — max{" "}
+                  {MAX_COMPOSE_MEDIA_ITEMS})
+                </span>
+              </div>
+              {mediaItems.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {mediaItems.map((m) => (
+                    <div key={m.id} className="relative h-20 w-20 overflow-hidden rounded-md border bg-muted/30">
+                      {m.isVideo ? (
+                        <video src={m.previewUrl} className="h-full w-full object-cover" muted />
+                      ) : (
+                        <img src={m.previewUrl} className="h-full w-full object-cover" alt={m.file.name} />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeMedia(m.id)}
+                        aria-label={`Remove ${m.file.name}`}
+                        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                      {m.status === "uploading" && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] text-white">
+                          Uploading…
+                        </div>
+                      )}
+                      {m.status === "error" && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-red-900/80 p-1 text-center text-[9px] text-white">
+                          {m.error}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <label className="block space-y-1">
-              <div className="text-xs text-muted-foreground">Media URLs (one per line, optional, max 4)</div>
+              <div className="text-xs text-muted-foreground">
+                Or paste already-public media URLs (one per line, optional)
+              </div>
               <textarea
                 rows={2}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
@@ -353,10 +576,15 @@ export function SocialsCompose() {
               )}
             </div>
 
-            <Button onClick={submit} disabled={createMut.isPending || tooLong || selectedIds.size === 0}>
+            <Button
+              onClick={submit}
+              disabled={createMut.isPending || tooLong || selectedIds.size === 0 || anyUploading}
+            >
               {createMut.isPending
                 ? "Sending…"
-                : `Queue to ${selectedIds.size} account${selectedIds.size === 1 ? "" : "s"}`}
+                : anyUploading
+                  ? "Uploading media…"
+                  : `Queue to ${selectedIds.size} account${selectedIds.size === 1 ? "" : "s"}`}
             </Button>
 
             {formError && <div className="text-sm text-destructive">{formError}</div>}
