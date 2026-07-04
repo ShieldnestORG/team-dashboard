@@ -93,6 +93,7 @@ function AddInspirationForm() {
 
 function InspirationRow({ item, canManage }: { item: InspirationItem; canManage: boolean }) {
   const qc = useQueryClient();
+  const { pushToast } = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["inspiration"] });
   const archiveMut = useMutation({
@@ -101,9 +102,18 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
   });
   const deleteMut = useMutation({
     mutationFn: () => socialsApi.deleteInspiration(item.id),
+    // onSuccess is the only closer — the Action button preventDefaults the
+    // Radix auto-close so a failed delete keeps the dialog open.
     onSuccess: () => {
       setConfirmDelete(false);
       invalidate();
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Couldn't delete the link",
+        body: err instanceof ApiError ? err.message : "Something went wrong — try again.",
+        tone: "error",
+      });
     },
   });
 
@@ -169,7 +179,15 @@ function InspirationRow({ item, canManage }: { item: InspirationItem; canManage:
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Radix auto-closes on Action click; keep the dialog open so a
+                // failed delete is visible (mutation onSuccess closes it).
+                e.preventDefault();
+                deleteMut.mutate();
+              }}
+              disabled={deleteMut.isPending}
+            >
               {deleteMut.isPending ? "Deleting…" : "Delete forever"}
             </AlertDialogAction>
           </AlertDialogFooter>
