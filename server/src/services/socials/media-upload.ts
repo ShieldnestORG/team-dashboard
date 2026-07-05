@@ -27,7 +27,7 @@ export const SOCIAL_MEDIA_MAX_IMAGE_BYTES =
   Number(process.env.SOCIALS_MEDIA_IMAGE_MAX_BYTES) || 10 * 1024 * 1024; // 10MB, matches attachment-types.ts default
 export const SOCIAL_MEDIA_MAX_VIDEO_BYTES =
   Number(process.env.SOCIALS_MEDIA_VIDEO_MAX_BYTES) || 200 * 1024 * 1024; // 200MB
-export const SOCIAL_MEDIA_MAX_FILES = 4; // matches MAX_COMPOSE_MEDIA_ITEMS (@paperclipai/shared)
+export const SOCIAL_MEDIA_MAX_FILES = 10; // matches MAX_COMPOSE_MEDIA_ITEMS (@paperclipai/shared)
 
 function detectContainer(buf: Buffer): "jpeg" | "png" | "webp" | "isobmff" | null {
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpeg";

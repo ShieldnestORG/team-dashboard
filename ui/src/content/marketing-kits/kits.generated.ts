@@ -2,8 +2,8 @@
 // AUTO-GENERATED — DO NOT EDIT BY HAND. (scripts/import-marketing-kits.ts)
 //
 // Source: /Users/exe/Downloads/Claude/marketing/plans/plan-zernio-leverage.md (§6)
-// Section sha256: a1ffef5ae5e21c29a04d04c5df6db0f5730b073ff355e9c4b494b8c74e99d74b
-// Synced: 2026-07-03T03:31:56.107Z
+// Section sha256: 4b07bfecbceb06a2c30a39b6799f220c4791b56e151fdeeba8127ca88d66113f
+// Synced: 2026-07-05T06:12:14.096Z
 //
 // Refresh path: edit the plan md → `pnpm kits:sync` → commit this diff.
 // Verify drift: `pnpm kits:sync --check` (exits 1 when md and module differ).
@@ -12,8 +12,8 @@ import type { KitSyncMeta, MarketingKit } from "./types";
 
 export const KIT_SYNC_META: KitSyncMeta = {
   "sourcePath": "/Users/exe/Downloads/Claude/marketing/plans/plan-zernio-leverage.md",
-  "sha256": "a1ffef5ae5e21c29a04d04c5df6db0f5730b073ff355e9c4b494b8c74e99d74b",
-  "syncedAt": "2026-07-03T03:31:56.107Z"
+  "sha256": "4b07bfecbceb06a2c30a39b6799f220c4791b56e151fdeeba8127ca88d66113f",
+  "syncedAt": "2026-07-05T06:12:14.096Z"
 };
 
 export const KITS: MarketingKit[] = [
@@ -78,10 +78,10 @@ export const KITS: MarketingKit[] = [
   {
     "id": 1,
     "title": "ROOM · Founding-100 reservations ⭐ do this one first",
-    "raw": "FUNNEL: ROOM — honest-version pitch → founding seat reservation (email only, no charge until July 13)\nACCOUNT: @coherencedaddy (IG) · VOICE: Mark\nKEYWORD: ROOM · DESTINATION: https://jointhecoherent.com?src=ig-room · clickTag: ig-room\n\nIDEA: Teardown/contrast content. We call out the guru playbook (never a person),\nthen show ours: one track live, four building in public, $50 flat locked for life.\nComment ROOM → DM → reserve a seat. Zero payment friction before July 13.\n\nTHUMBNAIL: Black card, coral text: \"THE HONEST VERSION.\" Small line under: \"$50. No countdown.\"\nMark's face, deadpan, no smile.\n\nSCRIPT (reel, 30–45s):\n  HOOK 0–2s  · on-screen: \"The $99 fantasy vs. the honest version\" · shot: Mark deadpan to camera\n  BEAT 1     · \"A mentor you'll never meet. A countdown that resets at midnight. A Discord of 50,000 strangers.\"\n             · shot: hard cuts, text stamps each phrase\n  BEAT 2     · \"Here's mine. One track live today. Four building in public. Zero income promises.\"\n             · shot: screen shows the real page, scrolling\n  BEAT 3     · \"Fifty a month, locked for life, for the first hundred. When it's full, it's $79. That's it.\"\n  CTA last 3s · on-screen BIG: \"Comment ROOM\" · say: \"Comment ROOM and I'll DM you the honest version.\n             No charge till doors open.\"\n\nVOICE SNIPPET (~20s, read as-is):\n\"Everyone's selling you a mentor you'll never meet and a timer that resets at midnight.\nHere's the honest version: one track live today, four building in public, zero income\nfairy tales. Fifty a month, locked for life, for the first hundred people. Comment ROOM\nand I'll send it to you.\"\n\nDM #1 (link-free — AS BUILT, live in Zernio): \"Got you 👊 The honest version: one track live\ntoday, four building in public, zero income fairy tales — $50/mo locked for life for the\nfirst 100. Reply YES and I'll send the reservation link (no charge until doors open July 13).\"\nDM #2 (sent automatically ~15 min after they reply): \"Here it is 👇 your Founding seat —\nemail only, no card, no charge until doors open July 13. Cancel anytime.\"\n  BUTTON: \"Reserve my Founding seat\" → https://jointhecoherent.com/?src=ig-dm2&seg=room\nPUBLIC REPLY: \"sent — check your DMs 💬\"\n\nZERNIO SETTINGS: ✅ CREATED LIVE 2026-07-02 (automation id 6a46e05af48898fb750519e4,\n@coherencedaddy, account-wide, contains, linkTracking ON, clickTag \"room\"). DM #2 rides the\nexisting two_step.py reply-watcher (cron, every 15 min). Nothing left to set up — just post.",
+    "raw": "FUNNEL: ROOM — honest-version pitch → founding seat reservation (email only, no charge until July 12)\nACCOUNT: @coherencedaddy (IG) · VOICE: Mark\nKEYWORD: ROOM · DESTINATION: https://jointhecoherent.com?src=ig-room · clickTag: ig-room\n\nIDEA: Teardown/contrast content. We call out the guru playbook (never a person),\nthen show ours: one track live, four building in public, $50 flat locked for life.\nComment ROOM → DM → reserve a seat. Zero payment friction before July 12.\n\nTHUMBNAIL: Black card, coral text: \"THE HONEST VERSION.\" Small line under: \"$50. No countdown.\"\nMark's face, deadpan, no smile.\n\nSCRIPT (reel, 30–45s):\n  HOOK 0–2s  · on-screen: \"The $99 fantasy vs. the honest version\" · shot: Mark deadpan to camera\n  BEAT 1     · \"A mentor you'll never meet. A countdown that resets at midnight. A Discord of 50,000 strangers.\"\n             · shot: hard cuts, text stamps each phrase\n  BEAT 2     · \"Here's mine. One track live today. Four building in public. Zero income promises.\"\n             · shot: screen shows the real page, scrolling\n  BEAT 3     · \"Fifty a month, locked for life, for the first hundred. When it's full, it's $79. That's it.\"\n  CTA last 3s · on-screen BIG: \"Comment ROOM\" · say: \"Comment ROOM and I'll DM you the honest version.\n             No charge till doors open.\"\n\nVOICE SNIPPET (~20s, read as-is):\n\"Everyone's selling you a mentor you'll never meet and a timer that resets at midnight.\nHere's the honest version: one track live today, four building in public, zero income\nfairy tales. Fifty a month, locked for life, for the first hundred people. Comment ROOM\nand I'll send it to you.\"\n\nDM #1 (link-free — AS BUILT, live in Zernio): \"Got you 👊 The honest version: one track live\ntoday, four building in public, zero income fairy tales — $50/mo locked for life for the\nfirst 100. Reply YES and I'll send the reservation link (no charge until doors open July 12).\"\nDM #2 (sent automatically ~15 min after they reply): \"Here it is 👇 your Founding seat —\nemail only, no card, no charge until doors open July 12. Cancel anytime.\"\n  BUTTON: \"Reserve my Founding seat\" → https://jointhecoherent.com/?src=ig-dm2&seg=room\nPUBLIC REPLY: \"sent — check your DMs 💬\"\n\nZERNIO SETTINGS: ✅ CREATED LIVE 2026-07-02 (automation id 6a46e05af48898fb750519e4,\n@coherencedaddy, account-wide, contains, linkTracking ON, clickTag \"room\"). DM #2 rides the\nexisting two_step.py reply-watcher (cron, every 15 min). Nothing left to set up — just post.",
     "voiceKey": "mark",
     "staticStatus": "live",
-    "subtitle": "Founding-100 seats — post daily until July 13",
+    "subtitle": "Founding-100 seats — post daily until July 12",
     "kind": "funnel",
     "keyword": "ROOM",
     "account": "@coherencedaddy (IG)",
@@ -92,7 +92,7 @@ export const KITS: MarketingKit[] = [
     "fields": [
       {
         "label": "FUNNEL",
-        "value": "ROOM — honest-version pitch → founding seat reservation (email only, no charge until July 13)"
+        "value": "ROOM — honest-version pitch → founding seat reservation (email only, no charge until July 12)"
       },
       {
         "label": "ACCOUNT",
@@ -104,7 +104,7 @@ export const KITS: MarketingKit[] = [
       },
       {
         "label": "IDEA",
-        "value": "Teardown/contrast content. We call out the guru playbook (never a person),\nthen show ours: one track live, four building in public, $50 flat locked for life.\nComment ROOM → DM → reserve a seat. Zero payment friction before July 13."
+        "value": "Teardown/contrast content. We call out the guru playbook (never a person),\nthen show ours: one track live, four building in public, $50 flat locked for life.\nComment ROOM → DM → reserve a seat. Zero payment friction before July 12."
       },
       {
         "label": "THUMBNAIL",
@@ -120,11 +120,11 @@ export const KITS: MarketingKit[] = [
       },
       {
         "label": "DM #1 (link-free — AS BUILT, live in Zernio)",
-        "value": "\"Got you 👊 The honest version: one track live\ntoday, four building in public, zero income fairy tales — $50/mo locked for life for the\nfirst 100. Reply YES and I'll send the reservation link (no charge until doors open July 13).\""
+        "value": "\"Got you 👊 The honest version: one track live\ntoday, four building in public, zero income fairy tales — $50/mo locked for life for the\nfirst 100. Reply YES and I'll send the reservation link (no charge until doors open July 12).\""
       },
       {
         "label": "DM #2 (sent automatically ~15 min after they reply)",
-        "value": "\"Here it is 👇 your Founding seat —\nemail only, no card, no charge until doors open July 13. Cancel anytime.\"\n  BUTTON: \"Reserve my Founding seat\" → https://jointhecoherent.com/?src=ig-dm2&seg=room"
+        "value": "\"Here it is 👇 your Founding seat —\nemail only, no card, no charge until doors open July 12. Cancel anytime.\"\n  BUTTON: \"Reserve my Founding seat\" → https://jointhecoherent.com/?src=ig-dm2&seg=room"
       },
       {
         "label": "PUBLIC REPLY",
@@ -365,7 +365,7 @@ export const KITS: MarketingKit[] = [
   {
     "id": 6,
     "title": "SOFT · Brianna (persona)",
-    "raw": "FUNNEL: SOFT — soft-reset content → comment SOFT → \"Soft Reset\" checklist\nACCOUNT: @bribriwaifu (IG) · VOICE: Brianna (persona ElevenLabs voice — NOT Mark)\nKEYWORD: SOFT · DESTINATION: Soft Reset checklist ⚠ ASSET NEEDED — 1-page PDF/link, host with\nthe free tools · clickTag: ig-bri-soft\n\nIDEA: Anti-hustle. Slow morning ASMR ritual (matcha, journal, light), text overlay does the\nselling. The checklist is 5 free habits — the capture is the checklist, the handoff to brand\ncomes later (checklist footer links the free Coherence Check).\n\nTHUMBNAIL: warm still of the ritual, small serif text: \"the soft reset.\"\n\nSCRIPT (reel, 20s, minimal VO):\n  HOOK 0–2s  · text: \"this is your sign to stop performing productivity\"\n  BEATS      · ASMR ritual b-roll, one text line per shot: \"slower isn't behind\" · \"calm is a skill\" ·\n               \"5 habits, all free\"\n  CTA last 3s · text: \"comment SOFT — I'll DM you the checklist 🤍\"\n\nVOICE SNIPPET (~10s, Brianna's voice, soft): \"You don't need a harder morning. You need a\nsofter reset. Five habits, all free. Comment SOFT and I'll send you the list.\"\n\nDM #1 (link-free): \"hi 🤍 the soft reset is 5 free habits — nothing to buy. reply YES and\nI'll send it over.\"\nDM #2 (after reply): \"here it is 🤍 {link} — start with #3, it's the one nobody does.\"\nPUBLIC REPLY: \"sent 🤍\"\nZERNIO SETTINGS: trigger=comment · account-wide · keywords=SOFT · matchMode=contains ·\nlinkTracking=ON · clickTag=ig-bri-soft",
+    "raw": "FUNNEL: SOFT — soft-reset content → comment SOFT → \"Soft Reset\" checklist\nACCOUNT: @bribriwaifu (IG) · VOICE: Brianna (persona ElevenLabs voice — NOT Mark)\nKEYWORD: SOFT · DESTINATION: Soft Reset checklist ⚠ ASSET NEEDED — 1-page PDF/link, host with\nthe free tools · clickTag: ig-bri-soft\n\nIDEA: Anti-hustle. Slow morning ASMR ritual (matcha, journal, light), text overlay does the\nselling. The checklist is 5 free habits — the capture is the checklist, the handoff to brand\ncomes later (checklist footer links the free Coherence Check).\n\nTHUMBNAIL: warm still of the ritual, small serif text: \"the soft reset.\"\n  ✅ DONE 2026-07-04 — shot + LIVE on IG: https://www.instagram.com/p/DaW03IOjN24/ (posted via\n  the dashboard's new direct-IG compose as the SOFT funnel hook post). Note: the dashboard kit\n  pipeline is text-only (no committed-image mechanism), so the image itself lives on IG, not in\n  the kit card. The DESTINATION checklist (1-page PDF/link) is STILL the open asset gap.\n\nSCRIPT (reel, 20s, minimal VO):\n  HOOK 0–2s  · text: \"this is your sign to stop performing productivity\"\n  BEATS      · ASMR ritual b-roll, one text line per shot: \"slower isn't behind\" · \"calm is a skill\" ·\n               \"5 habits, all free\"\n  CTA last 3s · text: \"comment SOFT — I'll DM you the checklist 🤍\"\n\nVOICE SNIPPET (~10s, Brianna's voice, soft): \"You don't need a harder morning. You need a\nsofter reset. Five habits, all free. Comment SOFT and I'll send you the list.\"\n\nDM #1 (link-free): \"hi 🤍 the soft reset is 5 free habits — nothing to buy. reply YES and\nI'll send it over.\"\nDM #2 (after reply): \"here it is 🤍 {link} — start with #3, it's the one nobody does.\"\nPUBLIC REPLY: \"sent 🤍\"\nZERNIO SETTINGS: trigger=comment · account-wide · keywords=SOFT · matchMode=contains ·\nlinkTracking=ON · clickTag=ig-bri-soft",
     "voiceKey": "brianna",
     "staticStatus": "plan",
     "subtitle": "Brianna persona — checklist asset needed",
@@ -394,7 +394,7 @@ export const KITS: MarketingKit[] = [
       },
       {
         "label": "THUMBNAIL",
-        "value": "warm still of the ritual, small serif text: \"the soft reset.\""
+        "value": "warm still of the ritual, small serif text: \"the soft reset.\"\n  ✅ DONE 2026-07-04 — shot + LIVE on IG: https://www.instagram.com/p/DaW03IOjN24/ (posted via\n  the dashboard's new direct-IG compose as the SOFT funnel hook post). Note: the dashboard kit\n  pipeline is text-only (no committed-image mechanism), so the image itself lives on IG, not in\n  the kit card. The DESTINATION checklist (1-page PDF/link) is STILL the open asset gap."
       },
       {
         "label": "SCRIPT (reel, 20s, minimal VO)",

@@ -75,7 +75,7 @@ const VOICE_BY_KIT: Record<number, KitVoiceKey> = {
 // Hand-maintained buildability badges (mirrors the board's b-live/b-plan/b-defer).
 const STATIC_STATUS: Record<number, { status: "live" | "plan" | "defer"; subtitle: string }> = {
   0: { status: "live", subtitle: "End-card pack — bolt onto content that already exists" },
-  1: { status: "live", subtitle: "Founding-100 seats — post daily until July 13" },
+  1: { status: "live", subtitle: "Founding-100 seats — post daily until July 12" },
   2: { status: "live", subtitle: "Free tool funnel — live and starving for content" },
   3: { status: "plan", subtitle: "Story check-in — waiting on the Check URL" },
   4: { status: "plan", subtitle: "Diagnostic carousel — waiting on the Check URL" },

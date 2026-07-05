@@ -98,8 +98,8 @@ describe("checkComposeForPlatform (re-exported shared guard, exercised from the 
     const problem = checkComposeForPlatform({
       platform: "bluesky",
       textLength: 5,
-      media: Array.from({ length: 5 }, (_, i) => ({ value: `${i}.jpg`, isVideo: false })),
+      media: Array.from({ length: 11 }, (_, i) => ({ value: `${i}.jpg`, isVideo: false })),
     });
-    expect(problem).toMatch(/at most 4/i);
+    expect(problem).toMatch(/at most 10/i);
   });
 });
