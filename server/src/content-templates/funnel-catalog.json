@@ -39,7 +39,7 @@
       ],
       "tos_risk": "low",
       "live_stats": true,
-      "notes": "Second funnel routed through the shared two_step.py multi-funnel config (funnel id 'room', seg=room). Zernio automation 6a46e05af48898fb750519e4, brand account 6a2f0e515f7d1751abb350cf only, created 2026-07-02. Founding seat = $50/mo locked for life, first 100, no charge until doors open July 13. Idempotent + capped + jittered (shared caps with coherent-2step)."
+      "notes": "Second funnel routed through the shared two_step.py multi-funnel config (funnel id 'room', seg=room). Zernio automation 6a46e05af48898fb750519e4, brand account 6a2f0e515f7d1751abb350cf only, created 2026-07-02. Founding seat = $50/mo locked for life, first 100, no charge until doors open July 12. Idempotent + capped + jittered (shared caps with coherent-2step)."
     },
     {
       "id": "soft-2step",

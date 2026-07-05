@@ -139,7 +139,7 @@ describe("POST /socials/posts — platform-requirement guard", () => {
     expect(captured.values?.mediaUrls).toEqual([]);
   });
 
-  it("rejects more than 4 media attachments regardless of platform", async () => {
+  it("rejects more than 10 media attachments regardless of platform", async () => {
     const { db } = createDbFor("bluesky");
     const app = createApp(db);
     const res = await request(local.via(app))
@@ -147,9 +147,9 @@ describe("POST /socials/posts — platform-requirement guard", () => {
       .send({
         socialAccountId: ACCOUNT_ID,
         text: "too much",
-        mediaUrls: ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg"],
+        mediaUrls: ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg", "f.jpg", "g.jpg", "h.jpg", "i.jpg", "j.jpg", "k.jpg"],
       });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/at most 4/i);
+    expect(res.body.error).toMatch(/at most 10/i);
   });
 });

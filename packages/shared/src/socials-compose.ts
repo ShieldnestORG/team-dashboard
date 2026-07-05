@@ -31,9 +31,9 @@ export const PLATFORM_CAPTION_LIMITS: Record<string, number> = {
   tiktok: 2200,
 };
 
-/** Hard cap on attachments per post — matches Compose's long-standing (until
- *  now cosmetic-only) "max 4" label. */
-export const MAX_COMPOSE_MEDIA_ITEMS = 4;
+/** Hard cap on attachments per post — raised to 10 to match Zernio's
+ *  Instagram carousel limit (10 images per carousel, per Zernio's OpenAPI spec). */
+export const MAX_COMPOSE_MEDIA_ITEMS = 10;
 
 /** Video container extensions recognized by the Zernio publisher's own
  *  mediaType() classifier (server/src/services/platform-publishers/zernio.ts)
