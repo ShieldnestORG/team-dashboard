@@ -663,7 +663,7 @@ export async function runUniversityStreakNudge(
     .where(
       and(
         eq(universityMembers.status, "active"),
-        sql`LOWER(${universityMembers.email}) = ANY(${emails})`,
+        sql`LOWER(${universityMembers.email}) = ANY(ARRAY[${sql.join(emails.map((e) => sql`${e}`), sql`, `)}]::text[])`,
       ),
     );
 
@@ -682,7 +682,7 @@ export async function runUniversityStreakNudge(
       and(
         eq(universityEmailLog.kind, "university_streak_nudge"),
         gte(universityEmailLog.sentAt, sql`now() - interval '7 days'`),
-        sql`LOWER(${universityEmailLog.email}) = ANY(${emails})`,
+        sql`LOWER(${universityEmailLog.email}) = ANY(ARRAY[${sql.join(emails.map((e) => sql`${e}`), sql`, `)}]::text[])`,
       ),
     );
   const cappedEmails = new Set<string>();
@@ -834,7 +834,7 @@ export async function runUniversityReengage(
       and(
         inArray(universityEmailLog.kind, REENGAGE_KINDS),
         gte(universityEmailLog.sentAt, sql`now() - interval '30 days'`),
-        sql`LOWER(${universityEmailLog.email}) = ANY(${emails})`,
+        sql`LOWER(${universityEmailLog.email}) = ANY(ARRAY[${sql.join(emails.map((e) => sql`${e}`), sql`, `)}]::text[])`,
       ),
     );
   const alreadySent = new Set<string>();
@@ -964,7 +964,7 @@ async function runUniversityDunning(
         and(
           eq(universityEmailLog.kind, logMarker),
           gte(universityEmailLog.sentAt, sql`now() - interval '30 days'`),
-          sql`LOWER(${universityEmailLog.email}) = ANY(${emails})`,
+          sql`LOWER(${universityEmailLog.email}) = ANY(ARRAY[${sql.join(emails.map((e) => sql`${e}`), sql`, `)}]::text[])`,
         ),
       );
     for (const r of recent) alreadySent.add(r.email.toLowerCase());
