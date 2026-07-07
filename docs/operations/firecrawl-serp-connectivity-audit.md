@@ -22,7 +22,7 @@ are correctly connected to the rest of the platform.
 | 2 | Confirm `FIRECRAWL_URL=http://100.67.128.51:3002` in prod — code default points at the WRONG host (public domain → VPS4 `.14`, but Firecrawl runs on VPS1 `.12`) | High | Runtime |
 | 3 | Confirm self-hosted Firecrawl still accepts the hardcoded `Bearer self-hosted` token | High | Runtime |
 | 4 | Confirm the **plugin's** `apiUrl` config is populated (schema default is blank `""`) | Medium | Runtime |
-| 5 | Confirm embedding service `147.79.78.251:8000` is reachable | Medium | Runtime |
+| 5 | Confirm embedding service `100.67.128.51:8080` is reachable | Medium | Runtime |
 | 6 | SERP ingest pipeline is unbuilt — PRD only, zero code | (Build, not fix) | Feature |
 | 7 | Crawlee fallback is off by default (`CRAWLEE_FALLBACK_ENABLED`) — decide if intentional | Low | Config |
 
@@ -98,7 +98,7 @@ ssh root@31.220.61.12 'curl -s -X POST http://100.67.128.51:3002/v1/scrape \
   -d "{\"url\":\"https://example.com\",\"formats\":[\"markdown\"]}"' | jq '.success'
 
 # 4. Embedding (BGE-M3) service reachable from the tailnet?
-ssh root@31.220.61.12 "curl -s -m 6 -o /dev/null -w '%{http_code}\n' http://147.79.78.251:8000/health" || echo unreachable
+ssh root@31.220.61.12 "curl -s -m 6 -o /dev/null -w '%{http_code}\n' http://100.67.128.51:8080/health" || echo unreachable
 ```
 
 ### Known risks to harden

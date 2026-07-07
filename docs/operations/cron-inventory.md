@@ -56,6 +56,8 @@ All content cron jobs below are mirrored into `social_automations` (linked to `s
 
 All 11 jobs are registered by `startUniversityCrons(db)` and named `university:*`. There is **no** per-cron `UNIVERSITY_*_ENABLED` env kill-switch — pause individual jobs from the cron UI (`system_crons.enabled`), and the global circuit breaker (`CRON_CIRCUIT_BREAKER_THRESHOLD` / `_ENABLED`) applies as it does to every cron. All emails are dispatched through the storefront email callback (`sendCreditscoreEmail`). The touch-1 / day-0 sends (welcome, receipt, first past-due notice, cancel) are **event-driven** on the University Stripe webhook (`server/src/services/university-stripe-handler.ts`), not crons.
 
+> **Changelog 2026-07-07 — array-binding fix:** `university:streak-nudge`, `university:reengage`, and `university:dunning-d3` / `university:dunning-d7` were silently throwing Postgres `malformed array literal` on every non-empty batch. The dedup/lookup queries interpolated a JS array directly into `= ANY(${jsArray})`, which drizzle + postgres.js renders as `ANY(($1, $2, …))` — a row expression, not an array literal. Fixed to `= ANY(ARRAY[...]::text[])` (`university-crons.ts:666 / 685 / 837 / 967`). See [PG array-binding footgun](../guides/pg-array-binding-footgun.md) for the canonical pitfall + safe forms.
+
 - **Onboarding D1 (1 job)**: `university:onboarding-d1` — daily 14:00 UTC (`0 14 * * *`). Active members who joined ~1 day ago. Emails `university_onboarding_d1`.
 - **Onboarding D3 (1 job)**: `university:onboarding-d3` — daily 14:15 UTC (`15 14 * * *`). Active members who joined ~3 days ago. Emails `university_onboarding_d3`.
 - **Win-back (1 job)**: `university:winback` — daily 14:30 UTC (`30 14 * * *`). Cancelled members ~14 days after cancel. Emails `university_winback`.
@@ -82,11 +84,11 @@ All 11 jobs are registered by `startUniversityCrons(db)` and named `university:*
 - **Discord Plugin (2 jobs)**: Ticket cleanup and daily stats.
 - **Twitter Plugin (4 jobs)**: Post-dispatcher (2m), engagement-cycle (30m), queue-cleanup (6h), analytics-rollup (daily).
 - **Moltbook Plugin (3 jobs)**: Content-dispatcher (5m), heartbeat (30m), daily-cleanup (midnight).
-- **Knowledge Graph (10 jobs)**:
-  - Nexus Extraction (2 jobs)
-  - Weaver Curation (3 jobs)
-  - Recall Memory (4 jobs) — includes `memory:extract-comments` (every 5 min), Ollama-driven extraction of operational triples from agent-authored `issue_comments` into `agent_memory` under `agent_name='recall'`. Predicate set: `lives_at`, `owned_by`, `depends_on`, `blocks`, `causes`, `breaks`, `replaces`, `deprecated_by`, `requires`, `do_not`, `learned_that`. Decays confidence by 0.15 on existing rows that share `(subject, predicate)` but disagree on `object` (stigmergic contradiction signal). Source: `server/src/services/comment-knowledge-extractor.ts`.
-  - Oracle Cache (1 job)
+- **Knowledge Graph (10 jobs)** — full list in [agent-cron-ownership.md](../guides/agent-cron-ownership.md):
+  - Nexus Extraction (2 jobs): `kg:extract-relationships`, `kg:embed-tags`.
+  - Weaver Curation (3 jobs): `kg:deduplicate-tags`, `kg:prune-edges`, `kg:stats`.
+  - Recall Memory (4 jobs): `memory:expire`, `memory:compact`, `memory:embed`, `memory:extract-comments` (every 5 min) — Ollama-driven extraction of operational triples from agent-authored `issue_comments` into `agent_memory` under `agent_name='recall'`. Predicate set: `lives_at`, `owned_by`, `depends_on`, `blocks`, `causes`, `breaks`, `replaces`, `deprecated_by`, `requires`, `do_not`, `learned_that`. Decays confidence by 0.15 on existing rows that share `(subject, predicate)` but disagree on `object` (stigmergic contradiction signal). Source: `server/src/services/comment-knowledge-extractor.ts`.
+  - Oracle Cache (1 job): `kg:warm-cache`.
 
 For a full mapping of which agent owns which specific cron, refer to:
 `docs/guides/agent-cron-ownership.md`

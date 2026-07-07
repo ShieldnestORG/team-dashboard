@@ -57,9 +57,9 @@ All cron services use a 30-second tick interval with per-job mutual exclusion (`
 | Auto-reply | `server/src/services/auto-reply.ts` | 1 | Core |
 | Moltbook backend | `server/src/services/moltbook-crons.ts` | 5 | Moltbook |
 | YouTube pipeline | `server/src/services/youtube/yt-crons.ts` | 5 | Core — Ollama scripts, Grok TTS (xAI Rex voice), Playwright slides + site-walker, FFmpeg, YouTube API |
-| Knowledge graph | `server/src/services/knowledge-graph-crons.ts` | 9 | Nexus (2), Weaver (3), Recall (3), Oracle (1) |
+| Knowledge graph | `server/src/services/knowledge-graph-crons.ts` | 10 | Nexus (2), Weaver (3), Recall (4), Oracle (1) |
 
-**Total: 61 system cron jobs across 11 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 70 total**
+**Total: 62 system cron jobs across 11 services + 9 plugin jobs (Discord 2 + Twitter 4 + Moltbook 3) = 71 total**
 
 > **Ready (paused):** `content:canva-media:morning` and `content:canva-media:evening` owned by Sage — posts Canva designs as image tweets 2x/day. Canva OAuth connected (2026-04-11), but paused until Canva folder API is available for image/video separation. Twitter plugin image posting is functional.
 
@@ -199,13 +199,14 @@ Sage orchestrates the 4 content personality agents below.
 | `kg:prune-edges` | `0 3 * * *` | knowledge-graph-crons | Remove low-confidence unverified edges daily at 3 AM |
 | `kg:stats` | `0 */12 * * *` | knowledge-graph-crons | Compute and log graph statistics twice daily |
 
-### Recall (Memory Manager) — 3 jobs
+### Recall (Memory Manager) — 4 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
 | `memory:expire` | `0 4 * * *` | knowledge-graph-crons | Delete expired agent memories daily at 4 AM |
 | `memory:compact` | `0 5 * * *` | knowledge-graph-crons | Merge near-duplicate memories daily at 5 AM |
 | `memory:embed` | `0 */4 * * *` | knowledge-graph-crons | Embed unembedded memories every 4 hours |
+| `memory:extract-comments` | `*/5 * * * *` | knowledge-graph-crons | Ollama-driven extraction of operational triples from agent `issue_comments` into `agent_memory` every 5 min |
 
 ### Oracle (Graph Query Agent) — 1 job
 

@@ -30,6 +30,7 @@ cd ui && npx tsc --noEmit
 ### Git Hygiene
 - Stage specific files only. Do not use `git add -A`.
 - Cast `req.params.*` as `string` in Express routes.
+- Never interpolate a JS array into `= ANY(${arr})` — it renders `ANY(($1,$2))` → Postgres `malformed array literal`. Use drizzle `inArray()` or `= ANY(ARRAY[...]::text[])`. See [PG array-binding footgun](docs/guides/pg-array-binding-footgun.md).
 
 ## GitHub Identity Map
 

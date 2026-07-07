@@ -55,6 +55,7 @@ kg-*-backup-*.jsonl
 CD-og/
 CD-og.zip
 scripts/scratch/
+graphify-out/
 
 # Playwright
 tests/e2e/test-results/

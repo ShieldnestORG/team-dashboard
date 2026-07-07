@@ -40,7 +40,7 @@ Per the user's `reference_ollama_routing.md`: **content workloads route to Ollam
 
 - **Nexus extraction → Ollama Cloud free tier → $0 cash.**
 - The free tier has a daily request cap. 240 calls/month = 8/day average; well under the cap. No overage risk at current volume.
-- Embeddings hit `EMBED_URL = http://147.79.78.251:8000` (VPS2-hosted BGE-M3). VPS2 is sunk cost (already paid for agent workloads); KG embedding adds negligible marginal CPU.
+- Embeddings hit `EMBED_URL = http://100.67.128.51:8080` (VPS1-hosted BGE-M3 via HuggingFace TEI, Tailnet-only). VPS1 is sunk cost (already paid for the LLM/scrape stack); KG embedding adds negligible marginal CPU.
 
 **Ollama cash line: $0 / month.**
 **Implied opportunity cost:** if VPS2 were retired and embeddings moved to a paid API (e.g., Voyage/OpenAI at ~$0.02/M tokens), 300 batches × ~100 texts × ~30 tokens ≈ 900k tokens/month → ~$0.02. Trivial.
@@ -89,9 +89,9 @@ Neon doesn't currently bill egress separately on Launch tier. Skipping.
 
 ---
 
-## 4. VPS2 (embeddings + agent Ollama) — sunk
+## 4. VPS1 (embeddings + agent Ollama) — sunk
 
-VPS2 (`147.79.78.251`) is rented for agents/memory workloads regardless of KG. Marginal CPU added by KG embedding crons is < 5% of one core for a few minutes/day.
+VPS1 (`100.67.128.51`) hosts the BGE-M3 embedding service (`:8080`), Firecrawl, and Ollama, and is rented for those LLM/scrape workloads regardless of KG. Marginal CPU added by KG embedding crons is < 5% of one core for a few minutes/day.
 
 - **Cash line: $0** (already in the VPS rental).
 - **Opportunity cost:** if KG were eliminated, VPS2 could potentially downsize one tier (~$10/mo savings). Counted as soft cost, not cash burn.
@@ -139,7 +139,7 @@ Realistic ongoing maintenance: **1–3 hours/month**. At a $150/hr blended rate 
 | A1 | Ollama Cloud is the production endpoint for Nexus (i.e., `OLLAMA_URL` not overridden in prod env) | medium — needs prod env confirmation | If actually VPS2: $0 → $0 cash either way, but VPS2 CPU load is 50× higher than current estimate |
 | A2 | `intel_reports` ≈ 50k rows, `knowledge_tags` ≈ 5k, `agent_memory` ≈ 30k | **low** — guessed from "captured_at > NOW() - 7 days" cron limit & cron age | Storage cost scales linearly; could be 2-5× off |
 | A3 | Neon Launch tier ($19/mo base), KG fits inside the existing project's allocation | medium | If KG forces a tier upgrade (Scale at $69/mo), attribute the delta = $50/mo |
-| A4 | BGE-M3 embedding service runs on VPS2 (147.79.78.251) and that VPS is paid regardless | high — endpoint is hard-coded; user memory confirms VPS2 routing | — |
+| A4 | BGE-M3 embedding service runs on VPS1 (100.67.128.51:8080) and that VPS is paid regardless | high — endpoint is hard-coded; user memory confirms VPS1 routing | — |
 | A5 | Operator spends 1-3 hr/month on KG maintenance | low — pure guess | Could be 0 hr (silent) or 10 hr (frequent breakage) |
 | A6 | Steady-state Nexus actually processes far fewer than 50 reports/run because of the 7-day window + processed-IDs filter | medium | If wrong (high intel ingest), Ollama calls scale up but free tier still holds at < 1000/day |
 
