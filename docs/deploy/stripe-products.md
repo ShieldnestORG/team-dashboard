@@ -103,8 +103,8 @@ member entity is real, while login reuses the shared magic-link
   |---|---|---|---|---|
   | Founding monthly | $50/mo (`5000`) | `university_monthly` | `UNIVERSITY_STRIPE_PRICE_ID` | ✅ live (Starwise, 2026-06-18) |
   | Founding annual | $500/yr (`50000`) | `university_annual` | `UNIVERSITY_ANNUAL_PRICE_ID` | ✅ live (Wave-2) |
-  | Standard monthly | $79/mo (`7900`) | `university_monthly_standard` | `UNIVERSITY_STRIPE_STANDARD_PRICE_ID` | ⛔ create before the founding cap fills |
-  | Standard annual | TBD (owner) | `university_annual_standard` | `UNIVERSITY_ANNUAL_STANDARD_PRICE_ID` | ⛔ unpriced — annual fails closed past the cap |
+  | Standard monthly | $79/mo (`7900`) | `university_monthly_standard` | `UNIVERSITY_STRIPE_STANDARD_PRICE_ID` | ✅ live (`price_1TrArqAf8PjDIzDYr4Hyzbi5`, created 2026-07-09) |
+  | Standard annual | $790/yr (`79000`) — "two months free for our yearly dedicated members" | `university_annual_standard` | `UNIVERSITY_ANNUAL_STANDARD_PRICE_ID` | ✅ live (`price_1TrLvUAf8PjDIzDYhXFQbKdl`, created 2026-07-09; a mispriced $869 predecessor is archived, lookup_key transferred) |
 
   The first `UNIVERSITY_FOUNDING_CAP` (default 100) members get the founding
   tier; after that checkout switches to the standard tier and **fails closed

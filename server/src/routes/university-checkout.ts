@@ -95,12 +95,13 @@ const STANDARD_PRICE_CONFIG: Record<
     defaultCents: 7900,
   },
   [PLAN_ANNUAL]: {
-    // No owner-decided standard annual price yet. If/when priced, create the
-    // Stripe price with this lookup_key (or set the env var) and it goes live
-    // with zero code change. Until then annual FAILS CLOSED past the cap.
+    // Owner-priced 2026-07-09: $790/yr = 10× standard monthly — "two months
+    // free for our yearly dedicated members". Live on Starwise as
+    // price_1TrLvUAf8PjDIzDYhXFQbKdl (this lookup_key). The 10× relationship
+    // is what lights the storefront's "2 months free" badge post-cap.
     lookupKey: "university_annual_standard",
     envVar: "UNIVERSITY_ANNUAL_STANDARD_PRICE_ID",
-    defaultCents: 0, // unknown — display comes from the Stripe object only
+    defaultCents: 79000,
   },
 };
 

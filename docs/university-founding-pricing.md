@@ -76,11 +76,13 @@ introducing the $79 price affects new checkouts only.
 
 ## Go-live steps (owner or authorized deploy)
 
-1. **Create the standard monthly price** on the **Starwise** Stripe account: $79/mo recurring
-   USD on the existing "Coherent Ones University" product, **lookup key
-   `university_monthly_standard`** (or set `UNIVERSITY_STRIPE_STANDARD_PRICE_ID`).
-   Optional, later: standard annual via `university_annual_standard` /
-   `UNIVERSITY_ANNUAL_STANDARD_PRICE_ID` — until then annual closes at the cap.
+1. ✅ **DONE 2026-07-09 — both standard prices live on Starwise:** monthly $79
+   (`price_1TrArqAf8PjDIzDYr4Hyzbi5`, lookup `university_monthly_standard`) and annual $790
+   (`price_1TrLvUAf8PjDIzDYhXFQbKdl`, lookup `university_annual_standard` — owner decision:
+   "two months free for our yearly dedicated members"; $790 = 10× monthly, which is exactly
+   the relationship that lights the storefront's "2 months free" badge post-cap). A mispriced
+   $869 predecessor is archived with its lookup_key transferred. NEVER edit these amounts —
+   re-pricing = new price + `transfer_lookup_key=true`, then archive the old one.
 2. **Apply migration `0151`** (additive, `IF NOT EXISTS`, safe on prod). Check prod for
    out-of-band tables first (2026-07-02 incident lesson).
 3. **Env on VPS4:** `UNIVERSITY_FOUNDING_CAP=100` (set 2026-06-20; now actually load-bearing).
@@ -95,8 +97,9 @@ introducing the $79 price affects new checkouts only.
 
 - **SSR price post-cap:** storefront components default to $50 in SSR HTML and swap on
   hydration. Correct while founders remain; near the cap, move the /status fetch server-side.
-- **Standard ANNUAL price is an open owner decision** (suggestion: $790/yr keeps the
-  2-months-free shape). Until priced, annual quietly disappears from the join page post-cap.
+- ~~Standard ANNUAL price open~~ → **decided 2026-07-09: $790/yr** (two months free); price
+  live, annual stays purchasable post-cap. Refund policy covers annual explicitly
+  (landing PR #105: no refunds, access runs to the end of the paid year).
 - **Badge copy for returning founders:** a founder who lapses and rejoins at $79 keeps the
   `founding` flag; portal surfaces reading it as "founding rate" would be stale. Portal copy
   should read it as "Founding 100 member" (historical), not a price claim.
