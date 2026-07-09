@@ -76,7 +76,8 @@ All 11 jobs are registered by `startUniversityCrons(db)` and named `university:*
 - **Admin Access Log Retention (1 job)**: Daily 04:30 UTC purge of `admin_access_log` rows older than 90 days (per migration 0114 spec). Batch-capped at 100k rows per run to avoid table locks on a long backlog. Owner: `system`. Daily (`admin-access-log:purge`). Source: `server/src/services/admin-access-log-retention-cron.ts`.
 - **SSL Monitor (1 job)**: Certificate expiry check every 6h.
 - **Auto-Reply (1 job)**: Single `search/recent` query covering all targets (default 30 min).
-- **Cron Watchdog (1 job)**: `alert:cron-watchdog` — every 15 min, owner `nova`. Reads `getAutomationHealth()` and sends one `cron_stale` SMTP alert for any enabled job that is `critical`-stale or has a non-null `lastError` (respects the existing 1h per-type cooldown). Pairs with the in-registry **circuit breaker** (`cron-registry.ts`): after `CRON_CIRCUIT_BREAKER_THRESHOLD` (default 5) consecutive failures it fires one alert and — unless `CRON_CIRCUIT_BREAKER_ENABLED=false` — auto-disables the crash-looping job (re-enable from `/automation-health`). Source: `server/src/services/alert-crons.ts`.
+- **Cron Watchdog (1 job)**: `alert:cron-watchdog` — every 15 min, owner `nova`. Reads `getAutomationHealth()` and records one `cron_stale` alert for any enabled job that is `critical`-stale or has a non-null `lastError` (respects the existing 1h per-type cooldown). **Since 2026-07-09 `cron_stale` is a routine-severity type: it is persisted to `alert_events` and rolled into the Sunday weekly recap instead of emailed immediately** (see [Alerting Policy](alerting-policy.md)). Pairs with the in-registry **circuit breaker** (`cron-registry.ts`): after `CRON_CIRCUIT_BREAKER_THRESHOLD` (default 5) consecutive failures it fires one `cron_breaker` alert (critical — emails immediately, own cooldown key since 2026-07-09) and — unless `CRON_CIRCUIT_BREAKER_ENABLED=false` — auto-disables the crash-looping job (re-enable from `/automation-health`). Source: `server/src/services/alert-crons.ts`.
+- **Weekly Ops Recap (1 job)**: `alert:weekly-recap` — Sunday 08:00 UTC, owner `nova`. The one scheduled ops email: summarizes the last 7 days of `alert_events` (routine alerts surface here), current unhealthy crons, and the latest eval run. Sends even when all clear so the cadence is predictable. Replaced `alert:digest` (retired 2026-07-09; its `system_crons` row is deleted by migration 0151). Source: `server/src/services/alert-crons.ts`.
 - **Synthetic Canary (opt-in, 1 job)**: `monitor:synthetic-canary` — every 15 min, owner `nova`, **gated by `SYNTHETIC_MONITOR_ENABLED` (default off)**. Playwright canary over key public URLs; alerts after 2 consecutive failures with a recovery notice. Registers no cron until the flag is set. Source: `server/src/services/synthetic-monitor-cron.ts`.
 - **Moltbook Backend (5 jobs)**: Ingest, post, engage, heartbeat, and performance tracking.
 - **YouTube Pipeline (6 jobs)**: Production, publish-queue, analytics, strategy, optimization, and 30-day video file cleanup.
@@ -104,17 +105,18 @@ Added 2026-05-09 alongside the day's container hardening (cap_drop / no-new-priv
   - **Path on VPS**: `/usr/local/bin/egress-watch.sh` (mode 750 root:root)
   - **Cron file**: `/etc/cron.d/egress-watch` (root)
   - **Config**: `/etc/egress-watch.env` (mode 600 root:root) — Proton SMTP creds + thresholds.
-  - **What it actually does**: Samples eth0 RX/TX bytes from `/proc/net/dev` over 10s, reads `/proc/loadavg`, appends a line to `/var/log/egress-watch/YYYY-MM-DD.log`. Sends Proton SMTP alert (`curl --ssl-reqd smtp://smtp.protonmail.ch:587`) when **either** TX > 500 KB/s **or** load15 > nproc × 0.9. 1-hour cooldown via `/var/lib/egress-watch/last-alert`.
+  - **What it actually does**: Samples eth0 RX/TX bytes from `/proc/net/dev` over 10s, reads `/proc/loadavg`, appends a line to `/var/log/egress-watch/YYYY-MM-DD.log`. Sends Proton SMTP alert (`curl --ssl-reqd smtp://smtp.protonmail.ch:587`) when **either** TX exceeds `TX_THRESHOLD_BYTES_PER_SEC` **or** load15 > nproc × 0.9. 1-hour cooldown via `/var/lib/egress-watch/last-alert`.
+  - **TX thresholds (2026-07-09)**: VPS4 = 512000 (500 KB/s, box is quiet). VPS1 = 4194304 (4 MB/s) — the `tokns-ipfs` kubo node (deployed 2026-07-02) legitimately pushes P2P traffic that peaked ~2.1 MB/s; the old 500 KB/s threshold alerted on normal workload 13–26×/day.
   - **Why this catches miners**: XMRig pool traffic is small (KB/s) and slips under bandwidth alerts — load15 is the more reliable signal because miners peg cores. Designed to catch a repeat of the 2026-05-08 Ollama-RCE → XMRig pattern early.
-  - **Alert destination**: `nestd@pm.me` from `info@coherencedaddy.com` via Proton SMTP (16-char token, rotated 2026-05-09).
+  - **Alert destination**: `info@coherencedaddy.com` (`ALERT_EMAIL_TO`/`ALERT_DEST` in `/etc/egress-watch.env`) from `info@coherencedaddy.com` via Proton SMTP (16-char token, rotated 2026-05-09).
   - **Owner**: Infra (HEAD_DEV / `nestd@pm.me`); not assigned to an in-app agent.
 
-- **Egress Daily Summary (23:55 daily, VPS1 + VPS4)**
-  - **Schedule**: `55 23 * * *`
-  - **Path on VPS**: `/usr/local/bin/egress-daily-summary.sh` (mode 750 root:root)
+- **Egress Weekly Summary (Sundays 23:55, VPS1 + VPS4)** — *was daily until 2026-07-09*
+  - **Schedule**: `55 23 * * 0`
+  - **Path on VPS**: `/usr/local/bin/egress-weekly-summary.sh` (mode 750 root:root; replaced `egress-daily-summary.sh`)
   - **Cron file**: `/etc/cron.d/egress-watch` (root)
-  - **What it actually does**: Roll up the day's `/var/log/egress-watch/YYYY-MM-DD.log` entries into a single digest email and prune logs older than 30 days. Always sent, even on clean days, so a missing email is itself a signal that the host or cron is dead.
-  - **Alert destination**: `nestd@pm.me` from `info@coherencedaddy.com` via Proton SMTP.
+  - **What it actually does**: Rolls up the last 7 days of `/var/log/egress-watch/YYYY-MM-DD.log` into one per-day table (samples, avg/max TX, samples over threshold, max load15) and prunes logs older than 30 days. Always sent, even on clean weeks, so a missing email is itself a signal that the host or cron is dead.
+  - **Alert destination**: `info@coherencedaddy.com` from `info@coherencedaddy.com` via Proton SMTP.
   - **Owner**: Infra (HEAD_DEV / `nestd@pm.me`); not assigned to an in-app agent.
 
 > **Status (2026-05-09 EOD):** team-dashboard's `.env.production` on VPS4 has been synced with the new Proton SMTP token and the container restarted (hardening preserved, healthy). VPS1 Tailscale re-auth + admin-console key-expiry-disable on both `shield-llm` and `shield-main-1` are complete. Both egress-watch crons firing on schedule on both VPSs.

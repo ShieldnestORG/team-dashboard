@@ -1,9 +1,10 @@
 import { registerCronJob } from "./cron-registry.js";
 import { logger } from "../middleware/logger.js";
-import { sendAlert } from "./alerting.js";
+import { sendAlert, setAlertDb } from "./alerting.js";
 import { getLatestEval } from "./eval-store.js";
 import { getAutomationHealth } from "./automation-health.js";
-import type { Db } from "@paperclipai/db";
+import { alertEvents, type Db } from "@paperclipai/db";
+import { desc, gte } from "drizzle-orm";
 
 async function checkHealth(): Promise<void> {
   try {
@@ -17,51 +18,22 @@ async function checkHealth(): Promise<void> {
   }
 }
 
-async function dailyDigest(): Promise<void> {
-  const parts: string[] = [];
-
-  // Eval results
-  const latestEval = getLatestEval();
-  if (latestEval) {
-    const passRate = latestEval.totalTests > 0 ? Math.round((latestEval.passed / latestEval.totalTests) * 100) : 0;
-    parts.push(`Eval Results: ${latestEval.passed}/${latestEval.totalTests} passed (${passRate}%) — ran ${latestEval.ranAt}`);
-    if (latestEval.failed > 0) {
-      parts.push(`  Failed cases: ${latestEval.results.filter(r => !r.pass).map(r => r.case).join(", ")}`);
-    }
-  } else {
-    parts.push("Eval Results: No eval runs recorded yet");
-  }
-
-  // Health status
-  try {
-    const resp = await fetch(`http://127.0.0.1:${process.env.PORT || 5173}/api/health/metrics`);
-    const data = await resp.json() as { uptime: number; memoryMB: number; activeRuns: number };
-    parts.push(`\nServer: uptime ${Math.round(data.uptime / 3600)}h, memory ${data.memoryMB}MB, active runs: ${data.activeRuns}`);
-  } catch {
-    parts.push("\nServer: metrics unavailable");
-  }
-
-  const body = parts.join("\n");
-  // Only send digest as alert if there are failures
-  if (latestEval && latestEval.failed > 0) {
-    await sendAlert("eval_failed", "Daily Digest — Eval Failures Detected", body);
-  } else {
-    logger.info("Daily digest: all clear, no alert needed");
-  }
+async function getUnhealthyCrons(db: Db) {
+  const health = await getAutomationHealth(db);
+  return health.crons.jobs.filter(
+    (j) => j.enabled && (j.staleness === "critical" || j.lastError !== null),
+  );
 }
 
 /**
  * Watchdog: scan automation-health for enabled cron jobs that are either
  * critically stale (missed multiple expected runs) or erroring on their last
  * run, and fire a single aggregated alert. Runs ~every 15 min; the
- * type-level cooldown in sendAlert() dedups so it can't spam.
+ * type-level cooldown in sendAlert() dedups so it can't spam. cron_stale is
+ * a routine severity: it is persisted for the weekly recap, not emailed.
  */
 async function cronWatchdog(db: Db): Promise<void> {
-  const health = await getAutomationHealth(db);
-
-  const unhealthy = health.crons.jobs.filter(
-    (j) => j.enabled && (j.staleness === "critical" || j.lastError !== null),
-  );
+  const unhealthy = await getUnhealthyCrons(db);
 
   if (unhealthy.length === 0) {
     logger.debug("Cron watchdog: all enabled jobs healthy");
@@ -90,12 +62,68 @@ async function cronWatchdog(db: Db): Promise<void> {
   );
 }
 
+/**
+ * Weekly ops recap — the one scheduled ops email. Summarizes every alert
+ * recorded in alert_events over the last 7 days (routine types never email
+ * immediately; this is where they surface), plus current cron health and the
+ * latest eval run. Sends even when all clear so the cadence is predictable.
+ */
+async function weeklyRecap(db: Db): Promise<void> {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const events = await db
+    .select()
+    .from(alertEvents)
+    .where(gte(alertEvents.createdAt, since))
+    .orderBy(desc(alertEvents.createdAt));
+
+  const parts: string[] = [];
+
+  if (events.length === 0) {
+    parts.push("Alerts this week: none — all quiet.");
+  } else {
+    parts.push(`Alerts this week: ${events.length} total`);
+    const byType = new Map<string, { count: number; emailed: number; latestSubject: string }>();
+    for (const e of events) {
+      const g = byType.get(e.type) ?? { count: 0, emailed: 0, latestSubject: e.subject };
+      g.count += 1;
+      if (e.emailSent) g.emailed += 1;
+      byType.set(e.type, g);
+    }
+    for (const [type, g] of byType) {
+      parts.push(`• ${type}: ${g.count}× (${g.emailed} emailed immediately) — latest: ${g.latestSubject}`);
+    }
+  }
+
+  const unhealthy = await getUnhealthyCrons(db);
+  if (unhealthy.length === 0) {
+    parts.push("\nCron jobs: all enabled jobs healthy.");
+  } else {
+    parts.push(`\nCron jobs currently unhealthy: ${unhealthy.length}`);
+    for (const j of unhealthy) {
+      parts.push(`• ${j.jobName} (${j.ownerAgent})${j.lastError ? ` — ${j.lastError}` : " — stale"}`);
+    }
+  }
+
+  const latestEval = getLatestEval();
+  if (latestEval) {
+    parts.push(`\nLatest eval: ${latestEval.passed}/${latestEval.totalTests} passed — ran ${latestEval.ranAt}`);
+  }
+
+  const allClear = events.length === 0 && unhealthy.length === 0;
+  const headline = allClear
+    ? "Weekly Ops Recap — all clear"
+    : `Weekly Ops Recap — ${events.length} alert${events.length === 1 ? "" : "s"}, ${unhealthy.length} cron${unhealthy.length === 1 ? "" : "s"} unhealthy`;
+
+  await sendAlert("weekly_recap", headline, parts.join("\n"));
+}
+
 export function startAlertCrons(db?: Db) {
   registerCronJob({ jobName: "alert:health-check", schedule: "*/5 * * * *", ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: checkHealth });
-  registerCronJob({ jobName: "alert:digest",       schedule: "0 7 * * *",   ownerAgent: "nova", sourceFile: "alert-crons.ts", handler: dailyDigest });
 
   // Partner report & site health crons (require db)
   if (db) {
+    setAlertDb(db); // persist every alert to alert_events for history + the weekly recap
+
     // Monthly partner metrics report — 1st of month at 8 AM
     registerCronJob({
       jobName: "reports:partner-metrics",
@@ -122,7 +150,7 @@ export function startAlertCrons(db?: Db) {
       },
     });
 
-    // Self-healing watchdog — every 15 min, alert on stale/erroring cron jobs.
+    // Self-healing watchdog — every 15 min, record stale/erroring cron jobs.
     registerCronJob({
       jobName: "alert:cron-watchdog",
       schedule: "*/15 * * * *",
@@ -133,8 +161,20 @@ export function startAlertCrons(db?: Db) {
         return { checked: true };
       },
     });
+
+    // Weekly ops recap — Sunday 8 AM, the one scheduled ops email.
+    registerCronJob({
+      jobName: "alert:weekly-recap",
+      schedule: "0 8 * * 0",
+      ownerAgent: "nova",
+      sourceFile: "alert-crons.ts",
+      handler: async () => {
+        await weeklyRecap(db);
+        return { sent: true };
+      },
+    });
   }
 
-  const jobCount = db ? 5 : 2;
+  const jobCount = db ? 5 : 1;
   logger.info({ count: jobCount }, "Alert cron jobs registered");
 }
