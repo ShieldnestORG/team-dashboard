@@ -60,6 +60,7 @@ import {
   UNIVERSITY_REJOIN_URL,
   planLabel,
   priceDisplay,
+  amountDisplay,
   firstNameFromDisplayName,
 } from "./university-email.js";
 import {
@@ -144,6 +145,21 @@ export async function handleUniversityCheckout(
   // Plan key set at checkout ('university_monthly' | 'university_annual').
   // Normalize defensively; unknown/missing → monthly.
   const plan = resolvePlanKey(metadata.plan);
+  // Founding-100 pricing (routes/university-checkout.ts): the checkout route
+  // stamps which price tier actually billed. founding_price present → exact
+  // truth (founder = paid the founding rate); absent (in-flight sessions from
+  // before the price switch deployed — they all billed founding-era prices) →
+  // the count-recheck below decides, as it always did.
+  const foundingPaid =
+    metadata.founding_price === "true"
+      ? true
+      : metadata.founding_price === "false"
+        ? false
+        : null;
+  const stripePriceId = metadata.stripe_price_id?.trim() || null;
+  const parsedCents = Number.parseInt(metadata.unit_amount_cents ?? "", 10);
+  const unitAmountCents =
+    Number.isFinite(parsedCents) && parsedCents > 0 ? parsedCents : null;
   const stripeCustomerId =
     typeof session.customer === "string" ? session.customer : null;
   const stripeSubscriptionId =
@@ -209,6 +225,8 @@ export async function handleUniversityCheckout(
       .set({
         status: "active",
         plan,
+        stripePriceId,
+        unitAmountCents,
         stripeCustomerId,
         stripeCheckoutSessionId: session.id,
         email,
@@ -225,6 +243,8 @@ export async function handleUniversityCheckout(
       .values({
         status: "active",
         plan,
+        stripePriceId,
+        unitAmountCents,
         stripeCustomerId,
         stripeSubscriptionId,
         stripeCheckoutSessionId: session.id,
@@ -268,21 +288,28 @@ export async function handleUniversityCheckout(
     memberId = existingMember[0].id;
     founding = updated[0]?.founding ?? false;
   } else {
-    // First activation: founding is decided ONCE, here, against the live count
-    // of existing members (which excludes this not-yet-inserted one) versus the
-    // configured cap. Stamped permanently — see schema/university.ts. The count
-    // is best-effort; a failure defaults to non-founding so we never over-grant
-    // the lifetime-locked rate by accident.
-    let existingCount = Number.POSITIVE_INFINITY;
-    try {
-      existingCount = await countUniversityMembers(db);
-    } catch (err) {
-      logger.error(
-        { err, sessionId: session.id, email },
-        "university-stripe-handler: member count failed (non-fatal) — defaulting founding=false",
-      );
+    // First activation: founding is decided ONCE, here, and stamped permanently
+    // (see schema/university.ts). Preferred source: the price tier the checkout
+    // actually billed (metadata.founding_price) — "founder" and "pays the
+    // founding rate" can then never disagree. Fallback for sessions created
+    // before the price switch deployed: the live count-vs-cap recheck (those
+    // sessions all billed founding-era prices, and the count decides exactly as
+    // it did pre-switch). The count is best-effort; a failure defaults to
+    // non-founding so we never over-grant the price-locked rate by accident.
+    if (foundingPaid !== null) {
+      founding = foundingPaid;
+    } else {
+      let existingCount = Number.POSITIVE_INFINITY;
+      try {
+        existingCount = await countUniversityMembers(db);
+      } catch (err) {
+        logger.error(
+          { err, sessionId: session.id, email },
+          "university-stripe-handler: member count failed (non-fatal) — defaulting founding=false",
+        );
+      }
+      founding = isFoundingEligible(existingCount, foundingCap());
     }
-    founding = isFoundingEligible(existingCount, foundingCap());
     const [row] = await db
       .insert(universityMembers)
       .values({
@@ -318,6 +345,11 @@ export async function handleUniversityCheckout(
   // are plan-aware (monthly vs annual) via priceDisplay/planLabel.
   if (created) {
     const firstName = firstNameFromDisplayName(displayName);
+    // The member's REAL charged amount (founding $50 vs standard $79) — from
+    // the recorded price when the checkout stamped it, else the plan default.
+    // Receipts and owner alerts must never claim "$50" for a $79 member.
+    const chargedDisplay =
+      unitAmountCents != null ? amountDisplay(unitAmountCents) : priceDisplay(plan);
     try {
       await sendCreditscoreEmail({
         kind: "university_welcome",
@@ -339,7 +371,7 @@ export async function handleUniversityCheckout(
         kind: "university_receipt",
         to: email,
         data: {
-          amount: priceDisplay(plan),
+          amount: chargedDisplay,
           dateISO: now.toISOString(),
           plan: planLabel(plan),
           manageBillingUrl: UNIVERSITY_MANAGE_BILLING_URL,
@@ -360,7 +392,7 @@ export async function handleUniversityCheckout(
       await sendBrevoEmail({
         from: `Coherence Daddy <${fromAddr}>`,
         to: ownerTo,
-        subject: `💸 New $50 member: ${email}`,
+        subject: `💸 New ${chargedDisplay} member: ${email}`,
         html: `<div style="font-family:system-ui,sans-serif;font-size:15px;color:#111">
           <h2 style="margin:0 0 12px">💸 New paying member</h2>
           <table style="border-collapse:collapse">
@@ -399,7 +431,7 @@ export async function handleUniversityCheckout(
       });
       if (existingAlerts.length === 0) {
         await issueService(db).create(COMPANY_ID, {
-          title: `New $50 member: ${email}`,
+          title: `New ${chargedDisplay} member: ${email}`,
           priority: "low",
           originKind: "signup_alert",
           originId,

@@ -14,7 +14,10 @@
 //     lookup_key matches so resolveUniversityPriceId resolves without env vars.
 //   - ../services/stripe-checkout.js — createCheckoutSession is a spy that
 //     captures the options it was called with (we assert on those).
-// No DB is touched (the route only does `void db`); a bare {} stub suffices.
+//   - db — the Founding-100 price switch made the member count LOAD-BEARING
+//     (it picks the $50 vs $79 tier; unknown count → 503 refusal), so the stub
+//     models countUniversityMembers: select().from() → [{ n: 0 }]
+//     (0 members → founding window open → the founding price resolves).
 // ---------------------------------------------------------------------------
 
 import express from "express";
@@ -54,8 +57,15 @@ import { universityCheckoutRoutes } from "../routes/university-checkout.ts";
 function makeApp() {
   const app = express();
   app.use(express.json());
-  // The route never touches db (it only does `void db`); a bare stub is fine.
-  app.use("/api/university", universityCheckoutRoutes({} as unknown as Db));
+  // The route counts members to pick the founding-vs-standard price tier.
+  // 0 members → founding window open → founding price. (An unknown count
+  // makes the route refuse checkout with 503 — see university-checkout.ts.)
+  const db = {
+    select: () => ({
+      from: () => Promise.resolve([{ n: 0 }]),
+    }),
+  } as unknown as Db;
+  app.use("/api/university", universityCheckoutRoutes(db));
   return app;
 }
 

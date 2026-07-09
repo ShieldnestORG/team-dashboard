@@ -20,7 +20,7 @@
 |---|---|---|---|---|---|
 | llms.txt generator | $19 one-time | _pending — see lookup_key_ | one-time | llms-txt-generator | `server/src/services/llms-txt-generator.ts` |
 | Watchtower | $29/mo | `price_1TVOu6QvkbvTR7Og3xrx0GsG` (lookup_key `watchtower_monthly`, prod `prod_UUNfgdeWldCIQS`) | monthly | watchtower | `server/src/services/watchtower-monitor.ts`, `server/src/services/watchtower-cron.ts` |
-| Coherent Ones University | $50/mo | _pending — lookup_key `university_monthly` (run `scripts/setup-university-stripe-product.ts`)_ | monthly | university | `server/src/services/university-stripe-handler.ts`, `server/src/routes/university-checkout.ts` |
+| Coherent Ones University | $50/mo founding → $79/mo standard past the Founding-100 cap ($500/yr annual) | lookup_keys `university_monthly` ✅ / `university_annual` ✅ / `university_monthly_standard` ⛔ create pre-cap (Starwise acct) | monthly/annual | university | `server/src/services/university-stripe-handler.ts`, `server/src/routes/university-checkout.ts`, `docs/university-founding-pricing.md` |
 
 ## llms.txt generator — $19 one-time
 
@@ -94,14 +94,24 @@ member entity is real, while login reuses the shared magic-link
 `customer_accounts` identity and the existing Stripe pipeline.
 
 - **Stripe product name:** `Coherent Ones University`
-- **Price:** $50 USD recurring monthly (unit_amount `5000`)
-- **Price lookup_key:** `university_monthly` (preferred resolution path)
-- **Price ID env var (fallback):** `UNIVERSITY_STRIPE_PRICE_ID`
-- **Status:** ⛔ Product + Price **not yet created**. Create via
-  `scripts/setup-university-stripe-product.ts` (idempotent; uses the CD
-  account `STRIPE_SECRET_KEY` — see runbook Gotcha #1 about the CLI account
-  mismatch). Backend resolves by lookup_key, so `UNIVERSITY_STRIPE_PRICE_ID`
-  stays unset once the lookup_key path is live.
+- **Account:** University bills on the **Starwise** Stripe account
+  (`UNIVERSITY_STRIPE_SECRET_KEY`), NOT the shared CD account — owner decision
+  2026-06-18.
+- **Prices (Founding-100 two-tier — see docs/university-founding-pricing.md):**
+
+  | Tier | Amount | lookup_key | Env fallback | Status |
+  |---|---|---|---|---|
+  | Founding monthly | $50/mo (`5000`) | `university_monthly` | `UNIVERSITY_STRIPE_PRICE_ID` | ✅ live (Starwise, 2026-06-18) |
+  | Founding annual | $500/yr (`50000`) | `university_annual` | `UNIVERSITY_ANNUAL_PRICE_ID` | ✅ live (Wave-2) |
+  | Standard monthly | $79/mo (`7900`) | `university_monthly_standard` | `UNIVERSITY_STRIPE_STANDARD_PRICE_ID` | ⛔ create before the founding cap fills |
+  | Standard annual | TBD (owner) | `university_annual_standard` | `UNIVERSITY_ANNUAL_STANDARD_PRICE_ID` | ⛔ unpriced — annual fails closed past the cap |
+
+  The first `UNIVERSITY_FOUNDING_CAP` (default 100) members get the founding
+  tier; after that checkout switches to the standard tier and **fails closed
+  (503)** if the standard price doesn't resolve — it never sells the founding
+  rate past the cap. **Never edit or archive the founding prices** — existing
+  subscriptions stay bound to the Price they were created on, which is the
+  entire grandfather guarantee.
 - **Post-checkout flow:** success → `https://app.coherencedaddy.com/university?status=success&session_id=…&product=university`
   (customer portal — surfaces the new membership). Cancel →
   `https://coherencedaddy.com/university?status=cancelled` (storefront signup).

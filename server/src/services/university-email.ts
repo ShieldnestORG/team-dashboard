@@ -67,6 +67,16 @@ export function priceDisplay(plan: string | null | undefined): string {
 }
 
 /**
+ * Charged-amount display from the ACTUAL recorded cents (founding $50 vs
+ * standard $79 — see migration 0151). Preferred over priceDisplay(plan)
+ * whenever the webhook recorded unit_amount_cents; the plan-based display is
+ * the fallback for pre-0151 rows. Matches the "$50.00" style above.
+ */
+export function amountDisplay(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
  * Derives the optional `firstName` token for the email payload from the
  * member's stored display name. The contract marks firstName as optional, so
  * we return undefined when there's no usable name and let the template fall

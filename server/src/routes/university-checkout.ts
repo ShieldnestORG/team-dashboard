@@ -59,20 +59,48 @@ import {
 } from "../services/university-founding.js";
 import { logger } from "../middleware/logger.js";
 
-// Per-plan Stripe price resolution. Each plan resolves by its own lookup_key
-// first (stable across test/live rotations) then falls back to its env var.
-// Both prices live on the University Stripe account (Starwise).
+// Per-plan, per-tier Stripe price resolution. Each price resolves by its own
+// lookup_key first (stable across test/live rotations) then falls back to its
+// env var. All prices live on the University Stripe account (Starwise).
+//
+// FOUNDING tier = the launch prices ($50/mo, $500/yr) sold while the
+// Founding-100 window is open (COUNT(university_members) < cap — same count
+// that stamps `founding` at the webhook). STANDARD tier = the post-cap prices
+// ($79/mo; annual TBD by owner). The founding prices are NEVER edited or
+// archived — grandfathering works precisely because an existing subscription
+// stays bound to the Price it was created on and nothing ever repoints it.
 const PLAN_PRICE_CONFIG: Record<
   UniversityPlanKey,
-  { lookupKey: string; envVar: string }
+  { lookupKey: string; envVar: string; defaultCents: number }
 > = {
   [PLAN_MONTHLY]: {
     lookupKey: "university_monthly",
     envVar: "UNIVERSITY_STRIPE_PRICE_ID",
+    defaultCents: 5000,
   },
   [PLAN_ANNUAL]: {
     lookupKey: "university_annual",
     envVar: "UNIVERSITY_ANNUAL_PRICE_ID",
+    defaultCents: 50000,
+  },
+};
+
+const STANDARD_PRICE_CONFIG: Record<
+  UniversityPlanKey,
+  { lookupKey: string; envVar: string; defaultCents: number }
+> = {
+  [PLAN_MONTHLY]: {
+    lookupKey: "university_monthly_standard",
+    envVar: "UNIVERSITY_STRIPE_STANDARD_PRICE_ID",
+    defaultCents: 7900,
+  },
+  [PLAN_ANNUAL]: {
+    // No owner-decided standard annual price yet. If/when priced, create the
+    // Stripe price with this lookup_key (or set the env var) and it goes live
+    // with zero code change. Until then annual FAILS CLOSED past the cap.
+    lookupKey: "university_annual_standard",
+    envVar: "UNIVERSITY_ANNUAL_STANDARD_PRICE_ID",
+    defaultCents: 0, // unknown — display comes from the Stripe object only
   },
 };
 
@@ -81,32 +109,32 @@ interface PriceListResponse {
     id: string;
     active: boolean;
     lookup_key: string | null;
+    unit_amount: number | null;
   }>;
 }
 
+export interface ResolvedPrice {
+  id: string;
+  /** The Stripe price's amount when known (lookup path); null on env-id path. */
+  unitAmountCents: number | null;
+}
+
 /**
- * Resolves the Stripe price id for a University plan (monthly or annual).
- *
- * Order of preference per plan (matches docs/deploy/stripe-products.md):
- *   1. `stripe.prices.list({ lookup_keys: [<plan lookup_key>], ... })`
- *      — stable across test/live mode rotations.
- *   2. the plan's env var fallback (UNIVERSITY_STRIPE_PRICE_ID for monthly,
- *      UNIVERSITY_ANNUAL_PRICE_ID for annual) for accounts that haven't
- *      backfilled lookup_keys yet.
- *
- * Throws if neither resolves so the route surfaces a clear 503.
+ * Resolves one Stripe price by lookup_key, then env-var fallback. Returns null
+ * when neither is configured — callers decide whether a miss throws (founding
+ * tier: University must always be able to sell) or fails closed (standard
+ * tier: never silently sell the founding rate past the cap).
  *
  * The prices live on the University Stripe account (Starwise), NOT the shared
  * Coherence Daddy account — so the lookup_keys call must authenticate with the
  * University key (`universityStripeKey()` = UNIVERSITY_STRIPE_SECRET_KEY ??
- * STRIPE_SECRET_KEY). Callers pass that key in; it defaults to the resolved
- * University key when omitted. `plan` defaults to monthly for back-compat.
+ * STRIPE_SECRET_KEY).
  */
-export async function resolveUniversityPriceId(
-  plan: UniversityPlanKey = PLAN_MONTHLY,
-  secretKey: string | undefined = universityStripeKey(),
-): Promise<string> {
-  const { lookupKey, envVar } = PLAN_PRICE_CONFIG[plan];
+async function resolvePriceByConfig(
+  config: { lookupKey: string; envVar: string; defaultCents: number },
+  secretKey: string | undefined,
+): Promise<ResolvedPrice | null> {
+  const { lookupKey, envVar, defaultCents } = config;
 
   if (secretKey) {
     try {
@@ -119,21 +147,87 @@ export async function resolveUniversityPriceId(
       const active = list.data?.find(
         (p) => p.active && p.lookup_key === lookupKey,
       );
-      if (active) return active.id;
+      if (active) {
+        return { id: active.id, unitAmountCents: active.unit_amount ?? null };
+      }
     } catch (err) {
       logger.warn(
-        { err: (err as Error).message, lookupKey, plan },
+        { err: (err as Error).message, lookupKey },
         "university-checkout: lookup_key resolve failed, falling back to env var",
       );
     }
   }
 
   const envId = process.env[envVar]?.trim();
-  if (envId) return envId;
+  if (envId) {
+    // Read the REAL amount from Stripe (we have the id + key) so the recorded/
+    // receipted amount is never an assumption — an env-repriced product must
+    // not mint rows claiming the documented default. Best-effort: on failure
+    // fall back to the documented default (>0) or null (unknown).
+    if (secretKey) {
+      try {
+        const price = await stripeRequest<{ id: string; unit_amount: number | null }>(
+          "GET",
+          `/prices/${encodeURIComponent(envId)}`,
+          undefined,
+          secretKey,
+        );
+        return {
+          id: envId,
+          unitAmountCents:
+            price.unit_amount ?? (defaultCents > 0 ? defaultCents : null),
+        };
+      } catch (err) {
+        logger.warn(
+          { err: (err as Error).message, envVar },
+          "university-checkout: env price fetch failed — falling back to documented default cents",
+        );
+      }
+    }
+    return { id: envId, unitAmountCents: defaultCents > 0 ? defaultCents : null };
+  }
 
+  return null;
+}
+
+/**
+ * The FOUNDING-tier price for a plan ($50/mo, $500/yr). Throws if unresolvable
+ * so the route surfaces a clear 503 — University must always be able to sell
+ * the founding rate while the window is open.
+ */
+export async function resolveUniversityFoundingPrice(
+  plan: UniversityPlanKey = PLAN_MONTHLY,
+  secretKey: string | undefined = universityStripeKey(),
+): Promise<ResolvedPrice> {
+  const resolved = await resolvePriceByConfig(PLAN_PRICE_CONFIG[plan], secretKey);
+  if (resolved) return resolved;
+  const { lookupKey, envVar } = PLAN_PRICE_CONFIG[plan];
   throw new Error(
     `University price not resolvable for plan="${plan}": no Stripe price with lookup_key="${lookupKey}" and ${envVar} is unset`,
   );
+}
+
+/**
+ * The STANDARD-tier (post-cap) price for a plan ($79/mo; annual TBD). Returns
+ * null when unconfigured — the checkout route FAILS CLOSED on null rather than
+ * undercharging at the founding rate past the cap.
+ */
+export async function resolveUniversityStandardPrice(
+  plan: UniversityPlanKey = PLAN_MONTHLY,
+  secretKey: string | undefined = universityStripeKey(),
+): Promise<ResolvedPrice | null> {
+  return resolvePriceByConfig(STANDARD_PRICE_CONFIG[plan], secretKey);
+}
+
+/**
+ * Back-compat shim (existing callers/tests): the founding-tier price id for a
+ * plan. Same contract as before the standard tier existed.
+ */
+export async function resolveUniversityPriceId(
+  plan: UniversityPlanKey = PLAN_MONTHLY,
+  secretKey: string | undefined = universityStripeKey(),
+): Promise<string> {
+  return (await resolveUniversityFoundingPrice(plan, secretKey)).id;
 }
 
 interface CheckoutBody {
@@ -144,6 +238,12 @@ interface CheckoutBody {
   // 'monthly' | 'annual' selector from the storefront toggle. Normalized via
   // resolvePlanKey; anything unrecognized fails safe to monthly.
   plan?: unknown;
+  // The price (cents) the storefront DISPLAYED when the user ticked the ROSCA
+  // consent. If present and it disagrees with the price this route resolves
+  // (e.g. the founding window closed while the tab sat open), the route
+  // returns 409 price_changed instead of creating a session — the signed
+  // attestation must never mismatch the charge. Optional for back-compat.
+  expectedPriceCents?: unknown;
 }
 
 function asString(v: unknown): string {
@@ -153,36 +253,114 @@ function asString(v: unknown): string {
 export function universityCheckoutRoutes(db: Db): Router {
   const router = Router();
 
-  // Public status — drives the storefront's "Founding member — rate locked for
-  // life" badge + the pricing copy. Server-authoritative so the badge can't be
-  // shown after founders run out. Cheap (one COUNT); cached briefly by the CDN.
+  // Public status — drives the storefront's founding badge + EVERY price
+  // surface (hero, CTA, ROSCA attestation, closing card). Server-authoritative
+  // so the page can't show the founding rate after the window closes: while
+  // founding is open the plans carry the founding prices ($50/mo, $500/yr);
+  // once the cap is reached they carry the standard prices ($79/mo; annual is
+  // marked unavailable until the owner prices its standard tier).
+  //
+  // Cached in-process for 60s (on top of the CDN header) — the Stripe price
+  // lookups and the COUNT are per-cache-fill, not per-request.
+  let statusCache: { at: number; body: Record<string, unknown> } | null = null;
+  const STATUS_CACHE_MS = 60_000;
+
   router.get("/status", async (_req: Request, res: Response) => {
-    try {
-      const cap = foundingCap();
-      const count = await countUniversityMembers(db);
-      const remaining = Math.max(0, cap - count);
+    if (statusCache && Date.now() - statusCache.at < STATUS_CACHE_MS) {
       res.set("Cache-Control", "public, max-age=60");
-      res.json({
-        founding: {
-          available: isFoundingEligible(count, cap),
-          cap,
-          claimed: count,
-          remaining,
-        },
+      res.json(statusCache.body);
+      return;
+    }
+    const cap = foundingCap();
+    try {
+      const count = await countUniversityMembers(db);
+      const available = isFoundingEligible(count, cap);
+      const remaining = Math.max(0, cap - count);
+
+      // Resolve the tier's real amounts, best-effort. A Stripe hiccup must not
+      // 500 a public display endpoint — fall back to the documented defaults.
+      const secretKey = universityStripeKey();
+      let monthlyCents: number;
+      let annualCents: number | null;
+      let annualAvailable: boolean;
+      if (available) {
+        monthlyCents = PLAN_PRICE_CONFIG[PLAN_MONTHLY].defaultCents;
+        annualCents = PLAN_PRICE_CONFIG[PLAN_ANNUAL].defaultCents;
+        annualAvailable = true;
+        try {
+          const pm = await resolveUniversityFoundingPrice(PLAN_MONTHLY, secretKey);
+          if (pm.unitAmountCents) monthlyCents = pm.unitAmountCents;
+          // Symmetric with monthly: consult the real annual founding price too.
+          const pa = await resolveUniversityFoundingPrice(PLAN_ANNUAL, secretKey);
+          if (pa.unitAmountCents) annualCents = pa.unitAmountCents;
+        } catch {
+          /* defaults hold */
+        }
+      } else {
+        monthlyCents = STANDARD_PRICE_CONFIG[PLAN_MONTHLY].defaultCents;
+        annualCents = null;
+        annualAvailable = false;
+        try {
+          const pm = await resolveUniversityStandardPrice(PLAN_MONTHLY, secretKey);
+          if (pm?.unitAmountCents) monthlyCents = pm.unitAmountCents;
+          const pa = await resolveUniversityStandardPrice(PLAN_ANNUAL, secretKey);
+          // Only advertise annual when we can STATE its price — an
+          // { available: true, priceCents: null } payload would make the
+          // storefront fall back to the (wrong) founding $500 display.
+          if (pa?.unitAmountCents) {
+            annualAvailable = true;
+            annualCents = pa.unitAmountCents;
+          }
+        } catch {
+          /* defaults hold */
+        }
+      }
+
+      const dollars = (cents: number) =>
+        cents % 100 === 0 ? `$${Math.round(cents / 100)}` : `$${(cents / 100).toFixed(2)}`;
+      const body: Record<string, unknown> = {
+        founding: { available, cap, claimed: count, remaining },
         plans: {
-          monthly: { key: PLAN_MONTHLY, priceDisplay: "$50/mo" },
-          annual: { key: PLAN_ANNUAL, priceDisplay: "$500/yr" },
+          monthly: {
+            key: PLAN_MONTHLY,
+            priceDisplay: `${dollars(monthlyCents)}/mo`,
+            priceCents: monthlyCents,
+          },
+          annual: {
+            key: PLAN_ANNUAL,
+            priceDisplay: annualCents ? `${dollars(annualCents)}/yr` : null,
+            priceCents: annualCents,
+            available: annualAvailable,
+          },
         },
-      });
+      };
+      statusCache = { at: Date.now(), body };
+      res.set("Cache-Control", "public, max-age=60");
+      res.json(body);
     } catch (err) {
       logger.error({ err }, "university-checkout: status failed");
       // Fail safe: report founding UNAVAILABLE so the storefront never promises
-      // a founding rate it can't verify.
+      // a founding rate it can't verify. Prices fall back to the standard
+      // defaults for the same reason (never understate what checkout may
+      // charge — checkout itself refuses on an unknown count, so no charge can
+      // happen at a price this payload didn't reflect). NOT cacheable — a
+      // transient DB blip must not poison CDN/browser caches with the degraded
+      // payload for a minute.
+      res.set("Cache-Control", "no-store");
       res.status(200).json({
         founding: { available: false, cap: 0, claimed: 0, remaining: 0 },
         plans: {
-          monthly: { key: PLAN_MONTHLY, priceDisplay: "$50/mo" },
-          annual: { key: PLAN_ANNUAL, priceDisplay: "$500/yr" },
+          monthly: {
+            key: PLAN_MONTHLY,
+            priceDisplay: "$79/mo",
+            priceCents: STANDARD_PRICE_CONFIG[PLAN_MONTHLY].defaultCents,
+          },
+          annual: {
+            key: PLAN_ANNUAL,
+            priceDisplay: null,
+            priceCents: null,
+            available: false,
+          },
         },
       });
     }
@@ -200,6 +378,13 @@ export function universityCheckoutRoutes(db: Db): Router {
     // Plan selector ('monthly' | 'annual'). Tolerate the query param as a
     // fallback. Normalized to a stable plan key; unknown → monthly.
     const planKey = resolvePlanKey(asString(body.plan) || asString(req.query.plan));
+    // The price the storefront showed when consent was ticked (optional).
+    const expectedPriceCents =
+      typeof body.expectedPriceCents === "number"
+      && Number.isFinite(body.expectedPriceCents)
+      && body.expectedPriceCents > 0
+        ? Math.round(body.expectedPriceCents)
+        : null;
 
     // Validation
     if (!email) {
@@ -235,31 +420,91 @@ export function universityCheckoutRoutes(db: Db): Router {
       // BOTH the price lookup and the checkout session so they hit the same
       // account the university prices live on.
       const secretKey = universityStripeKey();
-      const priceId = await resolveUniversityPriceId(planKey, secretKey);
 
-      // Founding eligibility is a hint here (the webhook is authoritative and
-      // re-checks against the live count at activation). Computed best-effort so
-      // a slow/failed count never blocks checkout. We pass it on metadata so the
-      // success page / receipt can reflect it without another round-trip.
-      let foundingHint = false;
+      // --- Founding-100 price selection --------------------------------------
+      // The first `cap` members pay the founding rate; everyone after pays the
+      // standard rate. The member count is LOAD-BEARING here (it picks the
+      // price a card gets charged), so an unknown count REFUSES checkout — we
+      // never guess a price. Read-only (no seat reservation): a burst of
+      // simultaneous checkouts at the exact boundary can grant a small bounded
+      // overage of founders — a soft cap, accepted by owner decision 2026-07-08
+      // (reserving seats would strand them on abandoned checkouts and make the
+      // public price flip-flop). The webhook stamps `founding` from the tier
+      // that actually billed (metadata.founding_price below).
+      let foundingOpen: boolean;
       try {
-        foundingHint = isFoundingEligible(
+        foundingOpen = isFoundingEligible(
           await countUniversityMembers(db),
           foundingCap(),
         );
       } catch (err) {
-        logger.warn(
-          { err: (err as Error).message, email },
-          "university-checkout: founding count failed (non-fatal) — metadata hint=false; webhook re-checks",
+        logger.error(
+          { err, email },
+          "university-checkout: member count failed — refusing checkout rather than guessing the price tier",
         );
+        res.status(503).json({ error: "membership count unavailable — try again shortly" });
+        return;
+      }
+
+      let price: ResolvedPrice;
+      if (foundingOpen) {
+        price = await resolveUniversityFoundingPrice(planKey, secretKey);
+      } else {
+        const standard = await resolveUniversityStandardPrice(planKey, secretKey);
+        if (!standard) {
+          // Fail CLOSED: the founding window is over but this plan's standard
+          // price isn't configured (annual until the owner prices it, or a
+          // misconfigured monthly). NEVER silently sell the founding rate past
+          // the cap.
+          logger.error(
+            { planKey, email },
+            "university-checkout: founding cap reached but standard price unconfigured — refusing to undercharge",
+          );
+          res.status(503).json({ error: "plan not currently available" });
+          return;
+        }
+        price = standard;
+      }
+
+      // ROSCA consent guard: the attestation the user ticked renders from the
+      // price the page displayed. If that price no longer matches what this
+      // checkout would actually bill (the founding window closed while the tab
+      // sat open, or the page rendered stale/failed /status data), REFUSE with
+      // 409 so the storefront can re-render the real price and collect fresh
+      // consent. A signed "$50/month" attestation must never produce a $79
+      // subscription.
+      if (
+        expectedPriceCents != null
+        && price.unitAmountCents != null
+        && expectedPriceCents !== price.unitAmountCents
+      ) {
+        logger.warn(
+          { email, planKey, expectedPriceCents, actual: price.unitAmountCents },
+          "university-checkout: displayed price no longer matches — 409 price_changed",
+        );
+        res.status(409).json({
+          error: "price_changed",
+          priceCents: price.unitAmountCents,
+          founding: foundingOpen,
+        });
+        return;
       }
 
       const metadata: Record<string, string> = {
         product: "university",
         plan: planKey,
-        founding_hint: foundingHint ? "true" : "false",
+        // The tier that actually billed — the webhook stamps `founding` and the
+        // recorded price from these. founding_hint kept for back-compat
+        // consumers (success page/receipt); same value, now exact not
+        // best-effort.
+        founding_price: foundingOpen ? "true" : "false",
+        founding_hint: foundingOpen ? "true" : "false",
+        stripe_price_id: price.id,
         customerEmail: email,
       };
+      if (price.unitAmountCents != null) {
+        metadata.unit_amount_cents = String(price.unitAmountCents);
+      }
       if (displayName) metadata.displayName = displayName;
       // Belt-and-suspenders attribution: client_reference_id is the canonical
       // Stripe-native field; metadata.referral_code is the redundant read path.
@@ -267,7 +512,7 @@ export function universityCheckoutRoutes(db: Db): Router {
 
       const { checkoutUrl, sessionId } = await createStripeCheckoutSession({
         email,
-        priceId,
+        priceId: price.id,
         successUrl,
         cancelUrl,
         metadata,

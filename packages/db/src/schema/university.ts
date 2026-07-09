@@ -99,6 +99,13 @@ export const universitySubscriptions = pgTable(
     // Idempotency key — UNIQUE. A replayed checkout updates this row in place.
     stripeSubscriptionId: text("stripe_subscription_id"),
     stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+    // WHAT this subscription actually bills — the Stripe price it was created
+    // on and its amount in cents ($50 founding / $79 standard / $500 annual).
+    // Stamped by the webhook from checkout metadata (migration 0151). NULL on
+    // pre-0151 rows = founding-era prices; consumers fall back to plan
+    // defaults. Powers receipts, audit, and referral-credit headroom.
+    stripePriceId: text("stripe_price_id"),
+    unitAmountCents: integer("unit_amount_cents"),
     currentPeriodStart: timestamp("current_period_start", {
       withTimezone: true,
     }),

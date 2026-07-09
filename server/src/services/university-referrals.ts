@@ -30,10 +30,11 @@
 // ---------------------------------------------------------------------------
 
 import { randomBytes } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   universityMembers,
+  universitySubscriptions,
   universityReferralCodes,
   universityReferrals,
   universityCreditLedger,
@@ -47,7 +48,14 @@ import { logger } from "../middleware/logger.js";
 export const REFERRAL_REWARD_CENTS = 1000;
 /** A referrer's monthly bill can never be discounted below $5.00. */
 export const CREDIT_FLOOR_CENTS = 500;
-/** Flat monthly dues — $50. The apply headroom is computed against this. */
+/**
+ * FALLBACK dues — $50/mo (the founding monthly rate). Used only when the
+ * member's real recurring amount is unknown (rows from before migration 0151
+ * recorded unit_amount_cents — all founding-era). The apply headroom is
+ * computed against the member's ACTUAL dues (memberDuesCents) so a $79
+ * standard member or a $500 annual member isn't credited against the wrong
+ * bill.
+ */
 const DUES_CENTS = 5000;
 /** Stripe customer-balance currency. University dues are USD. */
 const CREDIT_CURRENCY = "usd";
@@ -459,6 +467,36 @@ async function earnForReferral(
   return false;
 }
 
+/**
+ * The member's real recurring dues in cents — what their live subscription
+ * actually bills (founding $50 / standard $79 / annual $500), recorded by the
+ * webhook since migration 0151. Pre-0151 rows have NULL unit_amount_cents;
+ * they are all founding-era, so the fallback derives from the row's PLAN
+ * (annual $500, monthly $50) — never a flat $50 for an annual member. Drives
+ * the credit-apply headroom so the next renewal lands >= the floor on every
+ * tier.
+ */
+async function memberDuesCents(db: Db, email: string): Promise<number> {
+  const rows = await db
+    .select({
+      amt: universitySubscriptions.unitAmountCents,
+      plan: universitySubscriptions.plan,
+    })
+    .from(universitySubscriptions)
+    .where(
+      and(
+        sql`LOWER(${universitySubscriptions.email}) = ${email.toLowerCase()}`,
+        inArray(universitySubscriptions.status, ["active", "past_due"]),
+      ),
+    )
+    .orderBy(desc(universitySubscriptions.updatedAt))
+    .limit(1);
+  const amt = rows[0]?.amt;
+  if (typeof amt === "number" && amt > 0) return amt;
+  // Founding-era fallback, by plan.
+  return rows[0]?.plan === "university_annual" ? 50000 : DUES_CENTS;
+}
+
 async function applyCreditForPayer(
   db: Db,
   args: { email: string; customer: string | null; invoiceId: string },
@@ -482,12 +520,12 @@ async function applyCreditForPayer(
   const balanceCents = await ledgerBalanceCents(db, args.email);
   if (balanceCents <= 0) return 0;
 
-  // The bill is a flat $50/mo — the price is fixed, so the headroom is computed
-  // against the dues amount, not the (already-paid) invoice total. We use the
-  // dues as the bill so the next renewal lands at >= the floor.
+  // Headroom is computed against the member's real recurring dues (founding
+  // $50 / standard $79 / annual $500), not the (already-paid) invoice total,
+  // so the NEXT renewal lands at >= the floor regardless of tier.
   const applyCents = computeApplyAmountCents({
     balanceCents,
-    billCents: DUES_CENTS,
+    billCents: await memberDuesCents(db, args.email),
     floorCents: CREDIT_FLOOR_CENTS,
   });
   if (applyCents <= 0) return 0;
