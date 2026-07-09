@@ -153,6 +153,22 @@ export async function handleUniversityCheckout(
     return null;
   }
 
+  // Founding-100 pricing: the checkout route stamped which tier actually billed
+  // (see routes/university-checkout.ts). A member is a founder iff they checked
+  // out on the founding price. Anything not explicitly 'standard' is treated as
+  // founding so in-flight sessions from before this deploy (which paid $50) stay
+  // founders. is_founding is upgrade-only downstream — never downgraded.
+  const planKey =
+    metadata.plan === "university_monthly_standard"
+      ? "university_monthly_standard"
+      : "university_monthly";
+  const isFounding = planKey !== "university_monthly_standard";
+  const stripePriceId = metadata.stripe_price_id?.trim() || null;
+  const parsedAmount = metadata.unit_amount_cents
+    ? Number.parseInt(metadata.unit_amount_cents, 10)
+    : NaN;
+  const unitAmountCents = Number.isFinite(parsedAmount) ? parsedAmount : null;
+
   // Resolve account_id BEFORE the upserts so both the member and the
   // subscription point at the customer_accounts row from creation — this is
   // the shared magic-link login identity. Non-fatal on failure: rows are still
@@ -191,7 +207,9 @@ export async function handleUniversityCheckout(
       .update(universitySubscriptions)
       .set({
         status: "active",
-        plan: "university_monthly",
+        plan: planKey,
+        stripePriceId,
+        unitAmountCents,
         stripeCustomerId,
         stripeCheckoutSessionId: session.id,
         email,
@@ -207,7 +225,9 @@ export async function handleUniversityCheckout(
       .insert(universitySubscriptions)
       .values({
         status: "active",
-        plan: "university_monthly",
+        plan: planKey,
+        stripePriceId,
+        unitAmountCents,
         stripeCustomerId,
         stripeSubscriptionId,
         stripeCheckoutSessionId: session.id,
@@ -232,11 +252,16 @@ export async function handleUniversityCheckout(
       .update(universityMembers)
       .set({
         status: "active",
-        plan: "university_monthly",
+        plan: planKey,
         accountId,
         displayName,
         joinedAt: now,
         updatedAt: now,
+        // Upgrade-only: a returning founder who re-subscribes at $79 keeps
+        // is_founding=true (they still "spent" a founding seat — the monotonic
+        // count must not drop), but their plan above reflects the $79 they now
+        // pay. We only ever set is_founding true, never false.
+        ...(isFounding ? { isFounding: true } : {}),
       })
       .where(eq(universityMembers.id, existingMember[0].id))
       .returning({ id: universityMembers.id });
@@ -248,7 +273,8 @@ export async function handleUniversityCheckout(
         email,
         displayName,
         status: "active",
-        plan: "university_monthly",
+        plan: planKey,
+        isFounding,
         accountId,
         joinedAt: now,
       })

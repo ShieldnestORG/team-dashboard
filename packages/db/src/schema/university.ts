@@ -45,8 +45,14 @@ export const universityMembers = pgTable(
     displayName: text("display_name"),
     // pending | active | past_due | cancelled
     status: text("status").notNull().default("pending"),
-    // Stable plan key — currently single-tier 'university_monthly'.
+    // Plan key. 'university_monthly' (founding, $50) | 'university_monthly_standard'
+    // ($79). Reflects the member's CURRENT tier.
     plan: text("plan").notNull().default("university_monthly"),
+    // Was this member ever granted the founding ($50) rate? Set true at the
+    // webhook when they check out on the founding price. MONOTONIC — never unset,
+    // so a cancelled founder still "spends" a seat and the public price never
+    // flip-flops back to $50. COUNT(*) WHERE is_founding drives the $50→$79 switch.
+    isFounding: boolean("is_founding").notNull().default(false),
     joinedAt: timestamp("joined_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -59,6 +65,9 @@ export const universityMembers = pgTable(
     emailUq: uniqueIndex("university_members_email_key").on(table.email),
     accountIdx: index("university_members_account_idx").on(table.accountId),
     statusIdx: index("university_members_status_idx").on(table.status),
+    // Backs the checkout count query. The migration declares this partial
+    // (WHERE is_founding); the query model just needs the column indexed.
+    foundingIdx: index("university_members_founding_idx").on(table.isFounding),
   }),
 );
 
@@ -73,10 +82,16 @@ export const universitySubscriptions = pgTable(
     accountId: uuid("account_id"),
     // Captured at checkout. Recipient + member join key fallback.
     email: text("email"),
-    // Stable plan key — currently single-tier 'university_monthly'.
+    // Plan key. 'university_monthly' (founding, $50) | 'university_monthly_standard' ($79).
     plan: text("plan").default("university_monthly"),
     // pending | active | past_due | cancelled
     status: text("status").default("pending"),
+    // What this subscription actually bills, captured at the webhook. The
+    // Stripe Price object is the true source, but recording it here makes the
+    // row self-describing (audit + referral-credit headroom + current-rate
+    // display) and is how we know a member is a founder (founding price == $50).
+    stripePriceId: text("stripe_price_id"),
+    unitAmountCents: integer("unit_amount_cents"),
     stripeCustomerId: text("stripe_customer_id"),
     // Idempotency key — UNIQUE. A replayed checkout updates this row in place.
     stripeSubscriptionId: text("stripe_subscription_id"),

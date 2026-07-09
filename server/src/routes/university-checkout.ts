@@ -21,7 +21,9 @@
 
 import express, { Router } from "express";
 import type { Request, Response } from "express";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { universityMembers } from "@paperclipai/db";
 import {
   createCheckoutSession as createStripeCheckoutSession,
 } from "../services/stripe-checkout.js";
@@ -43,62 +45,131 @@ import {
 } from "../services/university-referrals.js";
 import { logger } from "../middleware/logger.js";
 
+// Founding ("first 100", $50/mo) vs standard ($79/mo) price lookup keys.
 const LOOKUP_KEY = "university_monthly";
+const STANDARD_LOOKUP_KEY = "university_monthly_standard";
+
+const DEFAULT_FOUNDING_CAP = 100;
+// Display/fallback amounts. The Stripe Price object is authoritative at charge
+// time; these are used for the public /status display and as the recorded
+// unit_amount when the price is resolved via env-id fallback (no Stripe object
+// to read the amount from). Keep in sync with the Stripe prices — see
+// docs/university-founding-pricing.md.
+const FOUNDING_PRICE_CENTS = Number(
+  process.env.UNIVERSITY_FOUNDING_PRICE_CENTS ?? 5000,
+);
+const STANDARD_PRICE_CENTS = Number(
+  process.env.UNIVERSITY_STANDARD_PRICE_CENTS ?? 7900,
+);
 
 interface PriceListResponse {
   data: Array<{
     id: string;
     active: boolean;
     lookup_key: string | null;
+    unit_amount: number | null;
   }>;
 }
 
+export interface ResolvedPrice {
+  id: string;
+  unitAmountCents: number | null;
+}
+
+/** The Founding-100 cap. Env-overridable (UNIVERSITY_FOUNDING_CAP); default 100. */
+export function universityFoundingCap(): number {
+  const raw = Number(process.env.UNIVERSITY_FOUNDING_CAP);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_FOUNDING_CAP;
+}
+
 /**
- * Resolves the Stripe price id for University.
- *
- * Order of preference (matches the convention in docs/deploy/stripe-products.md):
- *   1. `stripe.prices.list({ lookup_keys: ["university_monthly"], expand: ["data.product"] })`
- *      — stable across test/live mode rotations.
- *   2. `UNIVERSITY_STRIPE_PRICE_ID` env var fallback for accounts that
- *      haven't backfilled lookup_keys yet.
- *
- * Throws if neither resolves so the route surfaces a clear 503.
- *
- * The price lives on the University Stripe account (Starwise), NOT the shared
- * Coherence Daddy account — so the lookup_keys call must authenticate with the
- * University key (`universityStripeKey()` = UNIVERSITY_STRIPE_SECRET_KEY ??
- * STRIPE_SECRET_KEY). Callers pass that key in; it defaults to the resolved
- * University key when omitted.
+ * Counts members ever granted the founding rate. MONOTONIC — a cancelled
+ * founder keeps is_founding=true, so this only ever grows and the public price
+ * never flips back to $50 ("no resets"). This drives BOTH the $50→$79 switch
+ * (checkout) and the public /status display.
+ */
+export async function countFoundingMembers(db: Db): Promise<number> {
+  const rows = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(universityMembers)
+    .where(eq(universityMembers.isFounding, true));
+  return rows[0]?.n ?? 0;
+}
+
+/**
+ * Resolves a University Stripe price by lookup_key on the Starwise account.
+ * Returns null (never throws) so callers decide how a miss is handled — a
+ * lookup_key resolve failure is a non-fatal warning that falls through to the
+ * env-id path.
+ */
+async function tryLookup(
+  secretKey: string,
+  lookupKey: string,
+): Promise<ResolvedPrice | null> {
+  try {
+    const list = await stripeRequest<PriceListResponse>(
+      "GET",
+      `/prices?lookup_keys[]=${encodeURIComponent(lookupKey)}&active=true&expand[]=data.product&limit=10`,
+      undefined,
+      secretKey,
+    );
+    const active = list.data?.find((p) => p.active && p.lookup_key === lookupKey);
+    if (active) return { id: active.id, unitAmountCents: active.unit_amount ?? null };
+  } catch (err) {
+    logger.warn(
+      { err: (err as Error).message, lookupKey },
+      "university-checkout: lookup_key resolve failed, falling back to env var",
+    );
+  }
+  return null;
+}
+
+/**
+ * Resolves the FOUNDING ($50) price. lookup_key `university_monthly`, then the
+ * `UNIVERSITY_STRIPE_PRICE_ID` env fallback. Throws if neither resolves so the
+ * route surfaces a clear 503 (University must always be able to sell the
+ * founding rate). The price lives on the University Stripe account (Starwise);
+ * the caller passes that key in (defaults to universityStripeKey()).
+ */
+export async function resolveUniversityFoundingPrice(
+  secretKey: string | undefined = universityStripeKey(),
+): Promise<ResolvedPrice> {
+  const byLookup = secretKey ? await tryLookup(secretKey, LOOKUP_KEY) : null;
+  if (byLookup) return byLookup;
+
+  const envId = process.env.UNIVERSITY_STRIPE_PRICE_ID?.trim();
+  if (envId) return { id: envId, unitAmountCents: FOUNDING_PRICE_CENTS };
+
+  throw new Error(
+    `University founding price not resolvable: no Stripe price with lookup_key="${LOOKUP_KEY}" and UNIVERSITY_STRIPE_PRICE_ID is unset`,
+  );
+}
+
+/**
+ * Resolves the STANDARD ($79) price. lookup_key `university_monthly_standard`,
+ * then the `UNIVERSITY_STRIPE_STANDARD_PRICE_ID` env fallback. Returns null when
+ * neither is configured — the caller (checkout) FAILS CLOSED rather than
+ * silently selling the founding rate past the cap.
+ */
+export async function resolveUniversityStandardPrice(
+  secretKey: string | undefined = universityStripeKey(),
+): Promise<ResolvedPrice | null> {
+  const byLookup = secretKey ? await tryLookup(secretKey, STANDARD_LOOKUP_KEY) : null;
+  if (byLookup) return byLookup;
+
+  const envId = process.env.UNIVERSITY_STRIPE_STANDARD_PRICE_ID?.trim();
+  if (envId) return { id: envId, unitAmountCents: STANDARD_PRICE_CENTS };
+
+  return null;
+}
+
+/**
+ * Back-compat shim (kept for existing callers/tests): the founding price id.
  */
 export async function resolveUniversityPriceId(
   secretKey: string | undefined = universityStripeKey(),
 ): Promise<string> {
-  if (secretKey) {
-    try {
-      const list = await stripeRequest<PriceListResponse>(
-        "GET",
-        `/prices?lookup_keys[]=${encodeURIComponent(LOOKUP_KEY)}&active=true&expand[]=data.product&limit=10`,
-        undefined,
-        secretKey,
-      );
-      const active = list.data?.find(
-        (p) => p.active && p.lookup_key === LOOKUP_KEY,
-      );
-      if (active) return active.id;
-    } catch (err) {
-      logger.warn(
-        { err: (err as Error).message, lookupKey: LOOKUP_KEY },
-        "university-checkout: lookup_key resolve failed, falling back to env var",
-      );
-    }
-  }
-
-  const envId = process.env.UNIVERSITY_STRIPE_PRICE_ID?.trim();
-  if (envId) return envId;
-
-  throw new Error(
-    `University price not resolvable: no Stripe price with lookup_key="${LOOKUP_KEY}" and UNIVERSITY_STRIPE_PRICE_ID is unset`,
-  );
+  return (await resolveUniversityFoundingPrice(secretKey)).id;
 }
 
 interface CheckoutBody {
@@ -114,8 +185,6 @@ function asString(v: unknown): string {
 
 export function universityCheckoutRoutes(db: Db): Router {
   const router = Router();
-  // db is reserved for future per-checkout side effects (e.g. dedup lookups).
-  void db;
 
   router.post("/checkout", async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as CheckoutBody;
@@ -159,14 +228,59 @@ export function universityCheckoutRoutes(db: Db): Router {
     try {
       // University bills on the Starwise account — use the University key for
       // BOTH the price lookup and the checkout session so they hit the same
-      // account the university_monthly price lives on.
+      // account the University prices live on.
       const secretKey = universityStripeKey();
-      const priceId = await resolveUniversityPriceId(secretKey);
+
+      // --- Founding-100 price selection -------------------------------------
+      // The first `cap` paying members get the founding ($50) price; everyone
+      // after gets the standard ($79) price. The count of already-granted
+      // founders (is_founding, monotonic) is the source of truth — NOT a
+      // hardcoded number. We only READ the count here (no reservation), so a
+      // burst of simultaneous checkouts at the exact boundary can grant a small,
+      // bounded overage of founders (a "soft" cap). The webhook records which
+      // price actually billed, so a member is a founder iff they paid $50.
+      const cap = universityFoundingCap();
+      const foundingCount = await countFoundingMembers(db);
+      const foundingAvailable = foundingCount < cap;
+
+      let priceId: string;
+      let planKey: string;
+      let unitAmountCents: number | null;
+      if (foundingAvailable) {
+        const p = await resolveUniversityFoundingPrice(secretKey);
+        priceId = p.id;
+        unitAmountCents = p.unitAmountCents;
+        planKey = "university_monthly";
+      } else {
+        const p = await resolveUniversityStandardPrice(secretKey);
+        if (!p) {
+          // Fail CLOSED: the founding window is over but the $79 price isn't
+          // configured. NEVER silently sell the founding rate past the cap.
+          logger.error(
+            { foundingCount, cap },
+            "university-checkout: founding cap reached but standard price unconfigured — refusing to undercharge",
+          );
+          res
+            .status(503)
+            .json({ error: "standard price not configured" });
+          return;
+        }
+        priceId = p.id;
+        unitAmountCents = p.unitAmountCents;
+        planKey = "university_monthly_standard";
+      }
+
       const metadata: Record<string, string> = {
         product: "university",
-        plan: "university_monthly",
+        plan: planKey,
+        // The webhook stamps is_founding + the recorded price from these.
+        founding: String(foundingAvailable),
+        stripe_price_id: priceId,
         customerEmail: email,
       };
+      if (unitAmountCents != null) {
+        metadata.unit_amount_cents = String(unitAmountCents);
+      }
       if (displayName) metadata.displayName = displayName;
       // Belt-and-suspenders attribution: client_reference_id is the canonical
       // Stripe-native field; metadata.referral_code is the redundant read path.
@@ -189,6 +303,52 @@ export function universityCheckoutRoutes(db: Db): Router {
         "university-checkout: create session failed",
       );
       res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // --------------------------------------------------------------------------
+  // GET /status — PUBLIC. Drives the price shown on the storefront (the founding
+  // card fetches this to render $50 vs $79). Server-authoritative: the client
+  // never decides the price. Cached in-process so a burst of page loads can't
+  // hammer the members count.
+  // --------------------------------------------------------------------------
+  let statusCache: { at: number; body: Record<string, unknown> } | null = null;
+  const STATUS_CACHE_MS = 60_000;
+
+  router.get("/status", async (_req: Request, res: Response) => {
+    const cap = universityFoundingCap();
+    try {
+      if (statusCache && Date.now() - statusCache.at < STATUS_CACHE_MS) {
+        res.json(statusCache.body);
+        return;
+      }
+      const foundingCount = await countFoundingMembers(db);
+      const foundingAvailable = foundingCount < cap;
+      const priceCents = foundingAvailable
+        ? FOUNDING_PRICE_CENTS
+        : STANDARD_PRICE_CENTS;
+      const body: Record<string, unknown> = {
+        foundingCount,
+        cap,
+        foundingAvailable,
+        seatsRemaining: Math.max(0, cap - foundingCount),
+        priceCents,
+        priceDisplay: `$${Math.round(priceCents / 100)}`,
+      };
+      statusCache = { at: Date.now(), body };
+      res.json(body);
+    } catch (err) {
+      logger.error({ err }, "university-status: count failed");
+      // Fail SAFE for a public display endpoint: assume the founding window is
+      // still open (show $50) rather than 500 the storefront's price card.
+      res.json({
+        foundingCount: 0,
+        cap,
+        foundingAvailable: true,
+        seatsRemaining: cap,
+        priceCents: FOUNDING_PRICE_CENTS,
+        priceDisplay: `$${Math.round(FOUNDING_PRICE_CENTS / 100)}`,
+      });
     }
   });
 
