@@ -105,6 +105,7 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Org Structure](docs/architecture/org-structure.md) — 508(c)(1)(A) governance → ShieldNest → ventures → storefronts flow chart; Hostinger WooCommerce shop detail.
 - [Project Structure](docs/architecture/project-structure.md) — Directory map and key files.
 - [Cron Inventory](docs/operations/cron-inventory.md) — Scheduled jobs and ownership.
+- [Alerting Policy](docs/operations/alerting-policy.md) — Immediate-vs-weekly severity routing (`alert_events` + Sunday recap), egress-watch thresholds. **Read before adding any `sendAlert` call or ops email.**
 - [Key Files Reference](docs/operations/key-files.md) — Critical file mapping.
 - [Branch Safety](docs/guides/branch-safety.md) — Concurrent session rules.
 - [Test Isolation](docs/guides/test-isolation.md) — macOS port-steal race; never `request(bare app)` in server tests, use `useLocalServer()`.

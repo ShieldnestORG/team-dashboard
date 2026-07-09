@@ -383,7 +383,7 @@ async function tripCircuitBreakerIfNeeded(
     ? "Auto-disabled to stop the crash loop. Fix the underlying error, then re-enable from /automation-health."
     : "Auto-disable is OFF (CRON_CIRCUIT_BREAKER_ENABLED=false); the job is still running. Fix the underlying error.";
   await sendAlert(
-    "cron_stale",
+    "cron_breaker",
     `Cron job "${jobName}" crash-looping`,
     `Job "${jobName}" (owner: ${entry.def.ownerAgent}, ${entry.def.sourceFile}) failed ${entry.consecutiveFailures} consecutive times (threshold ${CIRCUIT_BREAKER_THRESHOLD}).\n\nLast error: ${lastError}\n\n${action}`,
   );

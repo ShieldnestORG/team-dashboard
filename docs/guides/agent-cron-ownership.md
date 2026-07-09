@@ -149,7 +149,7 @@ Sage orchestrates the 4 content personality agents below.
 |-----|----------|---------|-------------|
 | `eval:smoke` | `0 6 * * *` | eval-crons | Daily promptfoo eval suite |
 | `alert:health-check` | `*/5 * * * *` | alert-crons | Readiness probe every 5 minutes |
-| `alert:digest` | `0 7 * * *` | alert-crons | Daily server/eval digest email |
+| `alert:weekly-recap` | `0 8 * * 0` | alert-crons | Sunday ops recap email (7d of `alert_events` + cron health + latest eval); replaced `alert:digest` 2026-07-09 |
 
 ### Core (Backend Dev) — 1 job
 
@@ -236,4 +236,4 @@ logger.info({ job: "intel:prices", ownerAgent: "echo" }, "Intel cron job startin
 
 Filter logs by agent: `grep ownerAgent.*echo` to see all Echo-owned job activity.
 
-The `alert:health-check` job pings readiness every 5 minutes and sends SMTP alerts if the server is down. The `alert:digest` sends a daily email with eval results and server metrics when failures are detected.
+The `alert:health-check` job pings readiness every 5 minutes and sends SMTP alerts if the server is down. The `alert:weekly-recap` job (Sunday 08:00) sends the one scheduled ops email — a roll-up of the week's `alert_events` rows, current cron health, and the latest eval run. Routine alert types (`cron_stale`, `eval_failed`) are persisted, not emailed; see [Alerting Policy](../operations/alerting-policy.md).
