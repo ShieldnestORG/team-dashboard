@@ -470,13 +470,18 @@ async function earnForReferral(
 /**
  * The member's real recurring dues in cents — what their live subscription
  * actually bills (founding $50 / standard $79 / annual $500), recorded by the
- * webhook since migration 0151. Falls back to DUES_CENTS ($50) for pre-0151
- * rows (all founding-era, so the fallback is exact for them). Drives the
- * credit-apply headroom so the next renewal lands >= the floor on every tier.
+ * webhook since migration 0151. Pre-0151 rows have NULL unit_amount_cents;
+ * they are all founding-era, so the fallback derives from the row's PLAN
+ * (annual $500, monthly $50) — never a flat $50 for an annual member. Drives
+ * the credit-apply headroom so the next renewal lands >= the floor on every
+ * tier.
  */
 async function memberDuesCents(db: Db, email: string): Promise<number> {
   const rows = await db
-    .select({ amt: universitySubscriptions.unitAmountCents })
+    .select({
+      amt: universitySubscriptions.unitAmountCents,
+      plan: universitySubscriptions.plan,
+    })
     .from(universitySubscriptions)
     .where(
       and(
@@ -487,7 +492,9 @@ async function memberDuesCents(db: Db, email: string): Promise<number> {
     .orderBy(desc(universitySubscriptions.updatedAt))
     .limit(1);
   const amt = rows[0]?.amt;
-  return typeof amt === "number" && amt > 0 ? amt : DUES_CENTS;
+  if (typeof amt === "number" && amt > 0) return amt;
+  // Founding-era fallback, by plan.
+  return rows[0]?.plan === "university_annual" ? 50000 : DUES_CENTS;
 }
 
 async function applyCreditForPayer(

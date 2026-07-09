@@ -160,8 +160,30 @@ async function resolvePriceByConfig(
 
   const envId = process.env[envVar]?.trim();
   if (envId) {
-    // Env-id path can't read the amount from Stripe; use the documented
-    // default so the recorded amount is still meaningful (0 = unknown → null).
+    // Read the REAL amount from Stripe (we have the id + key) so the recorded/
+    // receipted amount is never an assumption — an env-repriced product must
+    // not mint rows claiming the documented default. Best-effort: on failure
+    // fall back to the documented default (>0) or null (unknown).
+    if (secretKey) {
+      try {
+        const price = await stripeRequest<{ id: string; unit_amount: number | null }>(
+          "GET",
+          `/prices/${encodeURIComponent(envId)}`,
+          undefined,
+          secretKey,
+        );
+        return {
+          id: envId,
+          unitAmountCents:
+            price.unit_amount ?? (defaultCents > 0 ? defaultCents : null),
+        };
+      } catch (err) {
+        logger.warn(
+          { err: (err as Error).message, envVar },
+          "university-checkout: env price fetch failed — falling back to documented default cents",
+        );
+      }
+    }
     return { id: envId, unitAmountCents: defaultCents > 0 ? defaultCents : null };
   }
 
@@ -216,6 +238,12 @@ interface CheckoutBody {
   // 'monthly' | 'annual' selector from the storefront toggle. Normalized via
   // resolvePlanKey; anything unrecognized fails safe to monthly.
   plan?: unknown;
+  // The price (cents) the storefront DISPLAYED when the user ticked the ROSCA
+  // consent. If present and it disagrees with the price this route resolves
+  // (e.g. the founding window closed while the tab sat open), the route
+  // returns 409 price_changed instead of creating a session — the signed
+  // attestation must never mismatch the charge. Optional for back-compat.
+  expectedPriceCents?: unknown;
 }
 
 function asString(v: unknown): string {
@@ -238,8 +266,8 @@ export function universityCheckoutRoutes(db: Db): Router {
   const STATUS_CACHE_MS = 60_000;
 
   router.get("/status", async (_req: Request, res: Response) => {
-    res.set("Cache-Control", "public, max-age=60");
     if (statusCache && Date.now() - statusCache.at < STATUS_CACHE_MS) {
+      res.set("Cache-Control", "public, max-age=60");
       res.json(statusCache.body);
       return;
     }
@@ -260,8 +288,11 @@ export function universityCheckoutRoutes(db: Db): Router {
         annualCents = PLAN_PRICE_CONFIG[PLAN_ANNUAL].defaultCents;
         annualAvailable = true;
         try {
-          const p = await resolveUniversityFoundingPrice(PLAN_MONTHLY, secretKey);
-          if (p.unitAmountCents) monthlyCents = p.unitAmountCents;
+          const pm = await resolveUniversityFoundingPrice(PLAN_MONTHLY, secretKey);
+          if (pm.unitAmountCents) monthlyCents = pm.unitAmountCents;
+          // Symmetric with monthly: consult the real annual founding price too.
+          const pa = await resolveUniversityFoundingPrice(PLAN_ANNUAL, secretKey);
+          if (pa.unitAmountCents) annualCents = pa.unitAmountCents;
         } catch {
           /* defaults hold */
         }
@@ -273,7 +304,10 @@ export function universityCheckoutRoutes(db: Db): Router {
           const pm = await resolveUniversityStandardPrice(PLAN_MONTHLY, secretKey);
           if (pm?.unitAmountCents) monthlyCents = pm.unitAmountCents;
           const pa = await resolveUniversityStandardPrice(PLAN_ANNUAL, secretKey);
-          if (pa) {
+          // Only advertise annual when we can STATE its price — an
+          // { available: true, priceCents: null } payload would make the
+          // storefront fall back to the (wrong) founding $500 display.
+          if (pa?.unitAmountCents) {
             annualAvailable = true;
             annualCents = pa.unitAmountCents;
           }
@@ -301,6 +335,7 @@ export function universityCheckoutRoutes(db: Db): Router {
         },
       };
       statusCache = { at: Date.now(), body };
+      res.set("Cache-Control", "public, max-age=60");
       res.json(body);
     } catch (err) {
       logger.error({ err }, "university-checkout: status failed");
@@ -308,7 +343,10 @@ export function universityCheckoutRoutes(db: Db): Router {
       // a founding rate it can't verify. Prices fall back to the standard
       // defaults for the same reason (never understate what checkout may
       // charge — checkout itself refuses on an unknown count, so no charge can
-      // happen at a price this payload didn't reflect).
+      // happen at a price this payload didn't reflect). NOT cacheable — a
+      // transient DB blip must not poison CDN/browser caches with the degraded
+      // payload for a minute.
+      res.set("Cache-Control", "no-store");
       res.status(200).json({
         founding: { available: false, cap: 0, claimed: 0, remaining: 0 },
         plans: {
@@ -340,6 +378,13 @@ export function universityCheckoutRoutes(db: Db): Router {
     // Plan selector ('monthly' | 'annual'). Tolerate the query param as a
     // fallback. Normalized to a stable plan key; unknown → monthly.
     const planKey = resolvePlanKey(asString(body.plan) || asString(req.query.plan));
+    // The price the storefront showed when consent was ticked (optional).
+    const expectedPriceCents =
+      typeof body.expectedPriceCents === "number"
+      && Number.isFinite(body.expectedPriceCents)
+      && body.expectedPriceCents > 0
+        ? Math.round(body.expectedPriceCents)
+        : null;
 
     // Validation
     if (!email) {
@@ -419,6 +464,30 @@ export function universityCheckoutRoutes(db: Db): Router {
           return;
         }
         price = standard;
+      }
+
+      // ROSCA consent guard: the attestation the user ticked renders from the
+      // price the page displayed. If that price no longer matches what this
+      // checkout would actually bill (the founding window closed while the tab
+      // sat open, or the page rendered stale/failed /status data), REFUSE with
+      // 409 so the storefront can re-render the real price and collect fresh
+      // consent. A signed "$50/month" attestation must never produce a $79
+      // subscription.
+      if (
+        expectedPriceCents != null
+        && price.unitAmountCents != null
+        && expectedPriceCents !== price.unitAmountCents
+      ) {
+        logger.warn(
+          { email, planKey, expectedPriceCents, actual: price.unitAmountCents },
+          "university-checkout: displayed price no longer matches — 409 price_changed",
+        );
+        res.status(409).json({
+          error: "price_changed",
+          priceCents: price.unitAmountCents,
+          founding: foundingOpen,
+        });
+        return;
       }
 
       const metadata: Record<string, string> = {
