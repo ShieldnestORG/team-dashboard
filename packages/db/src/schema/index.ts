@@ -209,6 +209,7 @@ export {
   universityEmailLog,
   universityEmailEvents,
   universityVoiceAddons,
+  universityTrainingScores,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -243,6 +244,8 @@ export type {
   NewUniversityEmailEvent,
   UniversityVoiceAddon,
   NewUniversityVoiceAddon,
+  UniversityTrainingScore,
+  NewUniversityTrainingScore,
 } from "./university.js";
 export {
   universityCommunityPosts,

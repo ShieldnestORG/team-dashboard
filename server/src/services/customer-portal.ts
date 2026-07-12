@@ -21,6 +21,7 @@ import {
   universityCommunityIdeaVotes,
   universityCommunityReports,
   universityCommunityNotifications,
+  universityTrainingScores,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
 import type { CustomerCredentialKind } from "@paperclipai/db";
@@ -196,11 +197,72 @@ export function decodeCommunityCursor(
   }
 }
 
+// ---------------------------------------------------------------------------
+// University TRAINING drills — score submission + community author badge.
+// Member-facing copy says "drills"/"training" (standing owner directive); the
+// wire/DB field is `game` / `game_slug` per the frozen cross-repo contract.
+// ---------------------------------------------------------------------------
+
+// The six shipped drills. CHECK-gated in the DB (0153), allowlist-validated in
+// the route via isTrainingGameSlug.
+export const TRAINING_GAME_SLUGS = [
+  "reaction-tap",
+  "sequence-memory",
+  "number-recall",
+  "color-word",
+  "pattern-grid",
+  "circuit",
+] as const;
+export type TrainingGameSlug = (typeof TRAINING_GAME_SLUGS)[number];
+
+export function isTrainingGameSlug(value: unknown): value is TrainingGameSlug {
+  return (
+    typeof value === "string" &&
+    (TRAINING_GAME_SLUGS as readonly string[]).includes(value)
+  );
+}
+
+// The community author's training badge. ABSENT (never zeroed) for members
+// with no scores and ALWAYS absent for agent-persona members — agents are also
+// excluded from the percentile pool (honesty mandate: never fabricate agent
+// activity). `pct` is the member's percentile rank 1-99 (higher = better)
+// among non-agent members with at least one score.
+export interface CommunityTrainingBadge {
+  tier: "coral" | "gold" | "silver" | "bronze";
+  pct: number;
+  plays: number;
+}
+
+// Tier thresholds on the member's aggregate (MAX best_score across drills).
+const TRAINING_TIER_CORAL_MIN = 900;
+const TRAINING_TIER_GOLD_MIN = 750;
+const TRAINING_TIER_SILVER_MIN = 600;
+
+function trainingBadgeTier(
+  aggregate: number,
+): CommunityTrainingBadge["tier"] {
+  if (aggregate >= TRAINING_TIER_CORAL_MIN) return "coral";
+  if (aggregate >= TRAINING_TIER_GOLD_MIN) return "gold";
+  if (aggregate >= TRAINING_TIER_SILVER_MIN) return "silver";
+  return "bronze";
+}
+
+// pg drivers return either an array or an { rows } envelope depending on path;
+// normalize like voice-budget's firstRow does.
+function allRows<T>(result: unknown): T[] {
+  const envelope = result as { rows?: T[] };
+  if (envelope && Array.isArray(envelope.rows)) return envelope.rows;
+  if (Array.isArray(result)) return result as T[];
+  return [];
+}
+
 export interface CommunityAuthor {
   displayName: string;
   handle: string;
   isYou: boolean;
   isMark: boolean;
+  // Present only for non-agent members with at least one training score.
+  trainingBadge?: CommunityTrainingBadge;
 }
 
 // Post types (Spec A). 'statement' is the default catch-all; the wire/DB value
@@ -1353,6 +1415,79 @@ export function customerPortalService(db: Db) {
   }
 
   // -------------------------------------------------------------------------
+  // University TRAINING drills — best-score upsert.
+  // -------------------------------------------------------------------------
+
+  // Resolve the University member row (university_members id) for a portal
+  // account — the identity key the training scores table uses (same key as
+  // university_voice_meter / university_coherence_checks). Matches on the
+  // durable lowercased email OR the linked account_id, newest row first.
+  // Status-blind on purpose: the route gate (isUniversityAccount) is also
+  // status-blind, so a member who passes the gate always resolves here.
+  async function resolveTrainingMemberId(
+    accountId: string,
+  ): Promise<string | null> {
+    const account = await getAccount(accountId);
+    if (!account) return null;
+    const email = normalizeEmail(account.email);
+    const rows = await db
+      .select({ id: universityMembers.id })
+      .from(universityMembers)
+      .where(
+        or(
+          sql`LOWER(${universityMembers.email}) = ${email}`,
+          eq(universityMembers.accountId, accountId),
+        ),
+      )
+      .orderBy(desc(universityMembers.createdAt))
+      .limit(1);
+    return rows.length ? rows[0].id : null;
+  }
+
+  /**
+   * Record one finished drill run. Upsert per (member, game):
+   *   best_score = GREATEST(existing, incoming)
+   *   best_level = the level of the best-scoring run — replaced only when the
+   *                incoming score STRICTLY beats the stored best
+   *   plays      = plays + 1 on EVERY valid submission
+   * The route validates game/level/score (allowlist + integer ranges) before
+   * calling; the DB CHECKs (0153) back it up. Scores are never echoed back.
+   */
+  async function recordTrainingScore(
+    accountId: string,
+    game: TrainingGameSlug,
+    level: number,
+    score: number,
+  ): Promise<void> {
+    const memberId = await resolveTrainingMemberId(accountId);
+    if (!memberId) throw new Error("University member not found");
+    await db
+      .insert(universityTrainingScores)
+      .values({
+        memberId,
+        gameSlug: game,
+        bestScore: score,
+        bestLevel: level,
+        plays: 1,
+      })
+      .onConflictDoUpdate({
+        target: [
+          universityTrainingScores.memberId,
+          universityTrainingScores.gameSlug,
+        ],
+        set: {
+          // Postgres evaluates every SET expression against the OLD row, so
+          // best_level's comparison sees the pre-update best_score regardless
+          // of assignment order.
+          bestLevel: sql`CASE WHEN EXCLUDED.best_score > ${universityTrainingScores.bestScore} THEN EXCLUDED.best_level ELSE ${universityTrainingScores.bestLevel} END`,
+          bestScore: sql`GREATEST(${universityTrainingScores.bestScore}, EXCLUDED.best_score)`,
+          plays: sql`${universityTrainingScores.plays} + 1`,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  // -------------------------------------------------------------------------
   // University native COMMUNITY feed — the "Do, between sessions" beat of the
   // Coherent Loop. Members post short updates, comment on each other, and react
   // ("Resonate"). Identity is the durable email (account_id once the linker has
@@ -1407,9 +1542,75 @@ export function customerPortalService(db: Db) {
     return out;
   }
 
+  // Resolve training badges for a set of author emails in ONE query (no N+1):
+  // per non-agent member with at least one score, aggregate = MAX(best_score)
+  // across drills, plays = SUM(plays), and percentile via a percent_rank()
+  // window computed over the WHOLE non-agent scored pool (the window must see
+  // every scored member, so the email filter applies AFTER ranking). Agents
+  // (is_agent = true) are excluded from both the pool and the result — their
+  // authors never carry a badge (honesty mandate). Returns a map
+  // email→badge; unscored emails are simply absent (never a zeroed badge).
+  // Mirrors resolveDisplayNames: newest member row wins on a duplicate email.
+  async function resolveTrainingBadges(
+    emails: string[],
+  ): Promise<Map<string, CommunityTrainingBadge>> {
+    const out = new Map<string, CommunityTrainingBadge>();
+    const unique = Array.from(new Set(emails.map((e) => normalizeEmail(e))));
+    if (unique.length === 0) return out;
+    const result = await db.execute(sql`
+      WITH scored AS (
+        SELECT
+          LOWER(m.email) AS email,
+          m.created_at,
+          MAX(s.best_score)::int AS aggregate,
+          SUM(s.plays)::int AS plays
+        FROM university_training_scores s
+        JOIN university_members m ON m.id = s.member_id
+        WHERE m.is_agent = false
+        GROUP BY m.id
+      ),
+      ranked AS (
+        SELECT
+          email,
+          created_at,
+          aggregate,
+          plays,
+          percent_rank() OVER (ORDER BY aggregate) AS pr
+        FROM scored
+      )
+      SELECT email, aggregate, plays, pr
+      FROM ranked
+      WHERE email IN (${sql.join(
+        unique.map((e) => sql`${e}`),
+        sql`, `,
+      )})
+      ORDER BY created_at DESC
+    `);
+    const rows = allRows<{
+      email: string;
+      aggregate: number | string;
+      plays: number | string;
+      pr: number | string;
+    }>(result);
+    for (const row of rows) {
+      // First row wins (newest member row first); skip if already set.
+      if (out.has(row.email)) continue;
+      const aggregate = Number(row.aggregate);
+      // percent_rank ∈ [0,1] (0 for a pool of one) → 1-99, higher = better.
+      const pct = Math.min(99, Math.max(1, Math.round(Number(row.pr) * 100)));
+      out.set(row.email, {
+        tier: trainingBadgeTier(aggregate),
+        pct,
+        plays: Number(row.plays),
+      });
+    }
+    return out;
+  }
+
   function buildAuthor(
     authorEmail: string,
     displayNames: Map<string, string>,
+    trainingBadges: Map<string, CommunityTrainingBadge>,
     viewerEmail: string,
   ): CommunityAuthor {
     const email = normalizeEmail(authorEmail);
@@ -1418,6 +1619,9 @@ export function customerPortalService(db: Db) {
       handle: deriveCommunityHandle(email, displayNames.get(email) ?? null),
       isYou: email === viewerEmail,
       isMark: communityStaffEmails().has(email),
+      // Absent (undefined → omitted on the wire) for unscored members and for
+      // agent personas — never a zeroed badge.
+      trainingBadge: trainingBadges.get(email),
     };
   }
 
@@ -1473,12 +1677,14 @@ export function customerPortalService(db: Db) {
           eq(universityCommunityComments.status, "visible"),
         ),
       );
-    const displayNames = await resolveDisplayNames(rows.map((r) => r.authorEmail));
+    const answerEmails = rows.map((r) => r.authorEmail);
+    const displayNames = await resolveDisplayNames(answerEmails);
+    const trainingBadges = await resolveTrainingBadges(answerEmails);
     for (const r of rows) {
       out.set(r.id, {
         commentId: r.id,
         body: r.body,
-        author: buildAuthor(r.authorEmail, displayNames, viewerEmail),
+        author: buildAuthor(r.authorEmail, displayNames, trainingBadges, viewerEmail),
       });
     }
     return out;
@@ -1624,6 +1830,9 @@ export function customerPortalService(db: Db) {
     const displayNames = await resolveDisplayNames(
       page.map((r) => r.authorEmail),
     );
+    const trainingBadges = await resolveTrainingBadges(
+      page.map((r) => r.authorEmail),
+    );
     const reacted = await reactedTargetIds(
       identity.email,
       "post",
@@ -1644,7 +1853,7 @@ export function customerPortalService(db: Db) {
 
     const posts: CommunityPostView[] = page.map((r) => ({
       id: r.id,
-      author: buildAuthor(r.authorEmail, displayNames, identity.email),
+      author: buildAuthor(r.authorEmail, displayNames, trainingBadges, identity.email),
       body: r.body,
       commentCount: r.commentCount,
       reactionCount: r.reactionCount,
@@ -1756,9 +1965,10 @@ export function customerPortalService(db: Db) {
         })
       : (await db.insert(universityCommunityPosts).values(insertValues).returning(returning))[0];
     const displayNames = await resolveDisplayNames([row.authorEmail]);
+    const trainingBadges = await resolveTrainingBadges([row.authorEmail]);
     return {
       id: row.id,
-      author: buildAuthor(row.authorEmail, displayNames, identity.email),
+      author: buildAuthor(row.authorEmail, displayNames, trainingBadges, identity.email),
       body: row.body,
       commentCount: row.commentCount,
       reactionCount: row.reactionCount,
@@ -1849,10 +2059,9 @@ export function customerPortalService(db: Db) {
     const hasMore = commentRows.length > opts.limit;
     const page = hasMore ? commentRows.slice(0, opts.limit) : commentRows;
 
-    const displayNames = await resolveDisplayNames([
-      post.authorEmail,
-      ...page.map((c) => c.authorEmail),
-    ]);
+    const threadEmails = [post.authorEmail, ...page.map((c) => c.authorEmail)];
+    const displayNames = await resolveDisplayNames(threadEmails);
+    const trainingBadges = await resolveTrainingBadges(threadEmails);
     const postReacted = await reactedTargetIds(identity.email, "post", [
       post.id,
     ]);
@@ -1876,7 +2085,7 @@ export function customerPortalService(db: Db) {
       : new Map<string, CommunityIdeaSupport>();
     const postView: CommunityPostView = {
       id: post.id,
-      author: buildAuthor(post.authorEmail, displayNames, identity.email),
+      author: buildAuthor(post.authorEmail, displayNames, trainingBadges, identity.email),
       body: post.body,
       commentCount: post.commentCount,
       reactionCount: post.reactionCount,
@@ -1895,7 +2104,7 @@ export function customerPortalService(db: Db) {
     const comments: CommunityCommentView[] = page.map((c) => ({
       id: c.id,
       postId: c.postId,
-      author: buildAuthor(c.authorEmail, displayNames, identity.email),
+      author: buildAuthor(c.authorEmail, displayNames, trainingBadges, identity.email),
       body: c.body,
       reactionCount: commentReactionCounts.get(c.id) ?? 0,
       youReacted: commentReacted.has(c.id),
@@ -2054,12 +2263,16 @@ export function customerPortalService(db: Db) {
     }
 
     const displayNames = await resolveDisplayNames([inserted.comment.authorEmail]);
+    const trainingBadges = await resolveTrainingBadges([
+      inserted.comment.authorEmail,
+    ]);
     return {
       id: inserted.comment.id,
       postId: inserted.comment.postId,
       author: buildAuthor(
         inserted.comment.authorEmail,
         displayNames,
+        trainingBadges,
         identity.email,
       ),
       body: inserted.comment.body,
@@ -2175,6 +2388,7 @@ export function customerPortalService(db: Db) {
       .limit(1);
     if (!post) throw new CommunityError(404, "Post not found");
     const displayNames = await resolveDisplayNames([post.authorEmail]);
+    const trainingBadges = await resolveTrainingBadges([post.authorEmail]);
     const reacted = await reactedTargetIds(viewerEmail, "post", [post.id]);
     const acceptedAnswers = post.acceptedCommentId
       ? await resolveAcceptedAnswers([post.acceptedCommentId], viewerEmail)
@@ -2185,7 +2399,7 @@ export function customerPortalService(db: Db) {
       : new Map<string, CommunityIdeaSupport>();
     return {
       id: post.id,
-      author: buildAuthor(post.authorEmail, displayNames, viewerEmail),
+      author: buildAuthor(post.authorEmail, displayNames, trainingBadges, viewerEmail),
       body: post.body,
       commentCount: post.commentCount,
       reactionCount: post.reactionCount,
@@ -2518,9 +2732,12 @@ export function customerPortalService(db: Db) {
     const displayNames = await resolveDisplayNames(
       page.map((r) => r.authorEmail),
     );
+    const trainingBadges = await resolveTrainingBadges(
+      page.map((r) => r.authorEmail),
+    );
     const supporters: CommunityIdeaSupporter[] = page.map((r) => ({
       reason: r.reason,
-      author: buildAuthor(r.authorEmail, displayNames, identity.email),
+      author: buildAuthor(r.authorEmail, displayNames, trainingBadges, identity.email),
       createdAt: r.createdAt,
     }));
     const last = page[page.length - 1];
@@ -2837,6 +3054,7 @@ export function customerPortalService(db: Db) {
     recordRep,
     getProgressSummary,
     computeStreak,
+    recordTrainingScore,
     upsertNote,
     getNotes,
     deleteNote,
