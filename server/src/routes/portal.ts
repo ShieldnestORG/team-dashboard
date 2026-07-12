@@ -10,6 +10,7 @@ import {
   COMMUNITY_POST_TYPES,
   COMMUNITY_TOPICS,
   clampCommunityLimit,
+  isTrainingGameSlug,
   type CommunityPostType,
   type CommunityTopic,
 } from "../services/customer-portal.js";
@@ -851,6 +852,71 @@ export function portalRoutes(db: Db): Router {
       res.status(500).json({ error: "Failed to record rep" });
     }
   });
+
+  // -- University training (brain-training drills) -----------------------------
+  //
+  // The portal Training hub POSTs every finished drill run here. Member-facing
+  // copy says "drills"/"training" (standing owner directive); the wire field is
+  // `game` per the frozen cross-repo contract.
+  //
+  // POST /university/training/score { game, level, score } → 200 { ok: true }
+  //   Upsert per (member, game): best_score keeps the max, best_level follows
+  //   the best-scoring run, plays counts EVERY valid submission. Scores are
+  //   never echoed back.
+  //
+  // Gates are EXACTLY POST /university/progress's: member via
+  // requireUniversityMember(), writes blocked under impersonation — plus the
+  // per-member write limiter the community endpoints use (a real drill run
+  // takes tens of seconds; 30/min is generous headroom, bot-hostile).
+  // NOTE: communityWriteLimiter/writeLimit are function declarations below —
+  // hoisted, so calling them here at router-setup time is safe.
+
+  const trainingScoreLimiter = communityWriteLimiter(
+    writeLimit("UNIVERSITY_TRAINING_SCORE_RATE_PER_MIN", 30),
+  );
+
+  router.post(
+    "/university/training/score",
+    trainingScoreLimiter,
+    async (req: Request, res: Response) => {
+      // Recording a score mutates state — block under impersonation (read-only).
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      const body = (req.body ?? {}) as {
+        game?: unknown;
+        level?: unknown;
+        score?: unknown;
+      };
+      const game = typeof body.game === "string" ? body.game.trim() : "";
+      if (!isTrainingGameSlug(game)) {
+        res.status(400).json({ error: "Unknown drill" });
+        return;
+      }
+      const level = Number(body.level);
+      if (!Number.isInteger(level) || level < 1 || level > 5) {
+        res.status(400).json({ error: "level must be an integer 1–5" });
+        return;
+      }
+      const score = Number(body.score);
+      if (!Number.isInteger(score) || score < 0 || score > 1000) {
+        res.status(400).json({ error: "score must be an integer 0–1000" });
+        return;
+      }
+
+      try {
+        await svc.recordTrainingScore(accountId, game, level, score);
+        res.status(200).json({ ok: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId, game },
+          "portal/university/training/score: record failed",
+        );
+        res.status(500).json({ error: "Failed to record score" });
+      }
+    },
+  );
 
   // -- University notes (in-lesson "write this down") -------------------------
   //

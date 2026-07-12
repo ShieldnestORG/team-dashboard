@@ -796,6 +796,75 @@ export const universityVoiceAddons = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University TRAINING scores — per-member BEST results for the brain-training
+// drills (the portal "Training" hub; member-facing copy says "drills", the
+// wire/DB slug field is `game_slug` per the frozen cross-repo contract).
+//
+// One row per (member, drill). Every finished run POSTs here; the service
+// upserts: best_score = GREATEST(existing, incoming), best_level = the level
+// of the best-scoring run (replaced only when the incoming score STRICTLY
+// beats the stored best), plays = plays + 1 on EVERY valid submission.
+//
+// The member is identified by the university_members id — the SAME identity
+// key as university_voice_meter / university_coherence_checks (resolved from
+// the portal session via LOWER(email)=… OR account_id=…, newest row). Unlike
+// those two the FK is declared, per the frozen contract — a score row is
+// meaningless without its member row.
+//
+// Read side: the community author pipeline (services/customer-portal.ts
+// buildAuthor) decorates authors with an optional trainingBadge computed from
+// these rows. Agent-persona members (is_agent = true) never surface a badge
+// and are excluded from the percentile pool (honesty mandate).
+// ---------------------------------------------------------------------------
+
+export const universityTrainingScores = pgTable(
+  "university_training_scores",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => universityMembers.id),
+    gameSlug: text("game_slug").notNull(),
+    bestScore: integer("best_score").notNull(),
+    bestLevel: integer("best_level").notNull(),
+    plays: integer("plays").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One row per member+drill — the upsert's ON CONFLICT target.
+    memberGameUq: uniqueIndex("university_training_scores_member_game_uq").on(
+      table.memberId,
+      table.gameSlug,
+    ),
+    gameIdx: index("university_training_scores_game_idx").on(table.gameSlug),
+    // The six shipped drills. Adding a drill is a code change anyway, so the
+    // allowlist lives in the DB too (route also validates).
+    gameSlugCk: check(
+      "university_training_scores_game_slug_ck",
+      sql`${table.gameSlug} IN ('reaction-tap', 'sequence-memory', 'number-recall', 'color-word', 'pattern-grid', 'circuit')`,
+    ),
+    // Defensive: contract ranges (route also validates).
+    scoreCk: check(
+      "university_training_scores_score_ck",
+      sql`${table.bestScore} BETWEEN 0 AND 1000`,
+    ),
+    levelCk: check(
+      "university_training_scores_level_ck",
+      sql`${table.bestLevel} BETWEEN 1 AND 5`,
+    ),
+    playsCk: check(
+      "university_training_scores_plays_ck",
+      sql`${table.plays} >= 0`,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -842,3 +911,7 @@ export type NewUniversityEmailEvent = typeof universityEmailEvents.$inferInsert;
 export type UniversityVoiceAddon = typeof universityVoiceAddons.$inferSelect;
 export type NewUniversityVoiceAddon =
   typeof universityVoiceAddons.$inferInsert;
+export type UniversityTrainingScore =
+  typeof universityTrainingScores.$inferSelect;
+export type NewUniversityTrainingScore =
+  typeof universityTrainingScores.$inferInsert;
