@@ -1218,8 +1218,12 @@ export function customerPortalService(db: Db) {
 
   /**
    * The member's progress summary: current streak, this-week rep count, the
-   * weekly goal, and a recent rep list. Streak is computed in code from the
-   * distinct rep-days (Rule 5).
+   * weekly goal, and a recent rep list, plus the aggregate fields the
+   * `/university` home redesign renders (totalReps, thirtyDayRate, weekByDay,
+   * lessonsDone). Streak is computed in code from the distinct rep-days
+   * (Rule 5). The existing query already pulls every row for this identity, so
+   * the new fields are derived in-memory from that same set — no extra DB
+   * round-trips, no n+1.
    */
   async function getProgressSummary(
     accountId: string,
@@ -1233,10 +1237,28 @@ export function customerPortalService(db: Db) {
       createdAt: Date;
       reflection: string | null;
     }>;
+    totalReps: number;
+    thirtyDayRate: number;
+    weekByDay: Array<{ dayOffset: number; count: number }>;
+    lessonsDone: string[];
   }> {
+    const today = utcDayString(now);
+    // 7-slot week grid, OLDEST FIRST (dayOffset 0 = today − 6; offset 6 = today).
+    const emptyWeekByDay = (): Array<{ dayOffset: number; count: number }> =>
+      Array.from({ length: 7 }, (_, i) => ({ dayOffset: i, count: 0 }));
+
     const identity = await resolveProgressIdentity(accountId);
     if (!identity) {
-      return { currentStreak: 0, weekCount: 0, weekGoal: weekGoal(), recent: [] };
+      return {
+        currentStreak: 0,
+        weekCount: 0,
+        weekGoal: weekGoal(),
+        recent: [],
+        totalReps: 0,
+        thirtyDayRate: 0,
+        weekByDay: emptyWeekByDay(),
+        lessonsDone: [],
+      };
     }
 
     const rows = await db
@@ -1255,7 +1277,6 @@ export function customerPortalService(db: Db) {
       )
       .orderBy(desc(universityProgress.createdAt));
 
-    const today = utcDayString(now);
     // rep_day comes back from the `date` column as a 'YYYY-MM-DD' string.
     const repDays = rows.map((r) => String(r.repDay));
     const currentStreak = computeStreak(repDays, today);
@@ -1274,7 +1295,51 @@ export function customerPortalService(db: Db) {
       reflection: r.reflection,
     }));
 
-    return { currentStreak, weekCount, weekGoal: weekGoal(), recent };
+    // totalReps = every row this identity has ever logged.
+    const totalReps = rows.length;
+
+    // 30-day adherence rate: distinct rep-days in the trailing 30-day window
+    // (today and the 29 prior UTC days, inclusive) divided by 30, as an
+    // integer percent clamped to 0..100.
+    const thirtyStart = addUtcDays(today, -29);
+    const thirtyDayDays = new Set(
+      repDays.filter((d) => d >= thirtyStart && d <= today),
+    );
+    const thirtyDayRate = Math.max(
+      0,
+      Math.min(100, Math.round((thirtyDayDays.size / 30) * 100)),
+    );
+
+    // weekByDay: 7 slots OLDEST FIRST. Count = distinct lesson rows on that
+    // UTC day (rows are already keyed (email, lessonSlug, repDay) uniquely, so
+    // a row count per day == distinct lessons repped that day).
+    const weekByDay = emptyWeekByDay();
+    const perDayCounts = new Map<string, number>();
+    for (const d of repDays) {
+      if (d < windowStart || d > today) continue;
+      perDayCounts.set(d, (perDayCounts.get(d) ?? 0) + 1);
+    }
+    for (let i = 0; i < 7; i++) {
+      const day = addUtcDays(today, i - 6);
+      weekByDay[i] = { dayOffset: i, count: perDayCounts.get(day) ?? 0 };
+    }
+
+    // lessonsDone: every distinct lessonSlug this identity has ever repped,
+    // sorted lexicographically.
+    const lessonsDone = Array.from(
+      new Set(rows.map((r) => r.lessonSlug)),
+    ).sort();
+
+    return {
+      currentStreak,
+      weekCount,
+      weekGoal: weekGoal(),
+      recent,
+      totalReps,
+      thirtyDayRate,
+      weekByDay,
+      lessonsDone,
+    };
   }
 
   // -------------------------------------------------------------------------

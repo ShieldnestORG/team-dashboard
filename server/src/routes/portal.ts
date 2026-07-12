@@ -795,6 +795,10 @@ export function portalRoutes(db: Db): Router {
           created_at: r.createdAt.toISOString(),
           reflection: r.reflection ?? undefined,
         })),
+        totalReps: summary.totalReps,
+        thirtyDayRate: summary.thirtyDayRate,
+        weekByDay: summary.weekByDay,
+        lessonsDone: summary.lessonsDone,
       });
     } catch (err) {
       logger.error(
