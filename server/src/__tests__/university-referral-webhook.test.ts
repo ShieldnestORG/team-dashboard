@@ -129,7 +129,7 @@ function invoicePaidEvent(): unknown {
 // $10 "1hr" add-on price. The line-item check must identify it as an add-on and
 // skip the referral engine regardless of the (missing) DB row. The price id
 // mirrors VOICE_ADDON_TIERS["1hr"] in services/university-stripe-handler.ts.
-const VOICE_ADDON_1HR_PRICE_ID = "price_1ToG6HAf8PjDIzDYmjHp5WqU";
+const VOICE_ADDON_1HR_PRICE_ID = "price_1TseAAI4ork6rI44c6yhHEkn";
 
 function addonInvoicePaidEvent(): unknown {
   return {
