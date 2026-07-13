@@ -706,14 +706,16 @@ export type VoiceAddonTier = "1hr" | "2p5hr";
 // The metadata.product marker that routes a checkout to the add-on handler.
 export const VOICE_ADDON_PRODUCT = "university_voice_addon";
 
-// tier → { Stripe price (Starwise), seconds granted }. Price ids are the two
-// live add-on prices; seconds mirror VOICE_ADDON_TIER_SECONDS.
+// tier → { Stripe price, seconds granted }. Price ids are the two live add-on
+// prices on the Coherence Daddy account under Starwise (acct_1TsdfKI4ork6rI44,
+// 2026-07-13 cutover — all CD revenue bills there); seconds mirror
+// VOICE_ADDON_TIER_SECONDS.
 export const VOICE_ADDON_TIERS: Record<
   VoiceAddonTier,
   { priceId: string; seconds: number }
 > = {
-  "1hr": { priceId: "price_1ToG6HAf8PjDIzDYmjHp5WqU", seconds: 3600 },
-  "2p5hr": { priceId: "price_1ToG6HAf8PjDIzDYVQR6KsV6", seconds: 9000 },
+  "1hr": { priceId: "price_1TseAAI4ork6rI44c6yhHEkn", seconds: 3600 },
+  "2p5hr": { priceId: "price_1TseAAI4ork6rI44sBsZgLJf", seconds: 9000 },
 };
 
 // Reverse lookup: Stripe price id → tier, or null when it isn't an add-on price.
