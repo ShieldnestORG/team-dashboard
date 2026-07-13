@@ -79,7 +79,8 @@
       "undici@6": ">=6.27.0 <7",
       "undici@7": ">=7.28.0 <8",
       "@babel/core": ">=7.29.6 <8",
-      "form-data": ">=4.0.6"
+      "form-data": ">=4.0.6",
+      "js-yaml": ">=4.2.0 <5"
     },
     "overridesReasons": {
       "fast-xml-parser": "GHSA-gh4j-gqv2-49f6 (medium) XMLBuilder comment/CDATA injection, fixed >=5.7.0",
@@ -90,7 +91,8 @@
       "undici@6": "GHSA-58qx-3vcg-4xpx (medium) uninitialized memory disclosure, pulled in transitively by discord.js/@discordjs/rest which pins undici to a 6.x major - kept within major to avoid a breaking API jump for the bot client",
       "undici@7": "GHSA-vxpw-j846-p89q (high) WebSocket DoS + GHSA-hm92-r4w5-c3mj (high) SOCKS5 proxy pool routing + GHSA-p88m-4jfj-68fv (medium) Set-Cookie header injection, pulled in transitively by jsdom (test-only), fixed >=7.28.0",
       "@babel/core": "GHSA-4x5r-pxfx-6jf8 (low) arbitrary source-map file read via sourceMappingURL, fixed >=7.29.6 (stays on the 7.x line; 8.x is a breaking major)",
-      "form-data": "GHSA-hmw2-7cc7-3qxx (high) CRLF injection via unescaped multipart field names, pulled in by axios/superagent, fixed >=4.0.6"
+      "form-data": "GHSA-hmw2-7cc7-3qxx (high) CRLF injection via unescaped multipart field names, pulled in by axios/superagent, fixed >=4.0.6",
+      "js-yaml": "CVE-2026-53550 (medium) quadratic-complexity DoS when parsing untrusted YAML, fixed >=4.2.0 (transitive runtime dep; stays on the 4.x line)"
     },
     "auditConfig": {
       "ignoreCves": ["CVE-2016-10538"]
@@ -101,6 +103,6 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
-    "nodemailer": "^8.0.5"
+    "nodemailer": "^8.0.11"
   }
 }

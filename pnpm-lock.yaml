@@ -33,6 +33,7 @@ overrides:
   undici@7: '>=7.28.0 <8'
   '@babel/core': '>=7.29.6 <8'
   form-data: '>=4.0.6'
+  js-yaml: '>=4.2.0 <5'
 
 patchedDependencies:
   embedded-postgres@18.1.0-beta.16:
@@ -47,8 +48,8 @@ importers:
         specifier: ^12.8.0
         version: 12.8.0
       nodemailer:
-        specifier: ^8.0.5
-        version: 8.0.5
+        specifier: ^8.0.11
+        version: 8.0.11
     devDependencies:
       '@playwright/test':
         specifier: ^1.58.2
@@ -602,7 +603,7 @@ importers:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.18.0)
       better-auth:
-        specifier: ^1.6.2
+        specifier: ^1.6.16
         version: 1.6.16(better-sqlite3@12.8.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@electric-sql/pglite@0.3.15)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.8.0)(kysely@0.28.17)(pg@8.18.0)(postgres@3.4.8))(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.6(@types/debug@4.1.12)(@types/node@24.12.0)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.32.0)(tsx@4.21.0))
       chokidar:
         specifier: ^4.0.3
@@ -5295,8 +5296,8 @@ packages:
   js-tokens@9.0.1:
     resolution: {integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==}
 
-  js-yaml@4.1.1:
-    resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
+  js-yaml@4.3.0:
+    resolution: {integrity: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==}
     hasBin: true
 
   jsdom@26.1.0:
@@ -5900,8 +5901,8 @@ packages:
   node-releases@2.0.27:
     resolution: {integrity: sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA==}
 
-  nodemailer@8.0.5:
-    resolution: {integrity: sha512-0PF8Yb1yZuQfQbq+5/pZJrtF6WQcjTd5/S4JOHs9PGFxuTqoB/icwuB44pOdURHJbRKX1PPoJZtY7R4VUoCC8w==}
+  nodemailer@8.0.11:
+    resolution: {integrity: sha512-nrO/pDAUKl+wXX+lx16tDLbnm0fW6sK/x8mgohaCpg+CdCEl482bD4tCuAZk2DyliruiNTIZxRCoWkDqJEnAiA==}
     engines: {node: '>=6.0.0'}
 
   normalize-url@8.1.1:
@@ -9220,7 +9221,7 @@ snapshots:
       cm6-theme-basic-light: 0.2.0(@codemirror/language@6.12.1)(@codemirror/state@6.5.4)(@codemirror/view@6.39.15)(@lezer/highlight@1.2.3)
       codemirror: 6.0.2
       downshift: 7.6.2(react@19.2.4)
-      js-yaml: 4.1.1
+      js-yaml: 4.3.0
       lexical: 0.35.0
       mdast-util-directive: 3.1.0
       mdast-util-from-markdown: 2.0.2
@@ -12555,7 +12556,7 @@ snapshots:
 
   js-tokens@9.0.1: {}
 
-  js-yaml@4.1.1:
+  js-yaml@4.3.0:
     dependencies:
       argparse: 2.0.1
 
@@ -13427,7 +13428,7 @@ snapshots:
 
   node-releases@2.0.27: {}
 
-  nodemailer@8.0.5: {}
+  nodemailer@8.0.11: {}
 
   normalize-url@8.1.1: {}
 
