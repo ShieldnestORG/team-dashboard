@@ -22,7 +22,7 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 | Product | Price ID prefix | $ | Cadence | lookup_key | Code |
 |---|---|---|---|---|---|
-| **Watchtower** | `price_1TVOu6Q…0GsG` | $29 | monthly | ✅ `watchtower_monthly` | `server/src/services/watchtower-monitor.ts` |
+| **Watchtower** | `price_1TseofQ…UBNL` _(prev $29 `price_1TVOu6Q…0GsG` archived 2026-07-13)_ | $49 | monthly | ✅ `watchtower_monthly` | `server/src/services/watchtower-monitor.ts` |
 | **Coherent Ones University** _(Starwise acct — NOT CD)_ | _pending — created on Starwise_ | $50 | monthly | ✅ `university_monthly` | `server/src/services/university-stripe-handler.ts` |
 | CreditScore — Report (one-time) | `price_1TPd1zQ…fP7vP` | $19 | one-time | (none) | `services/creditscore.ts` |
 | CreditScore — Starter | `price_1TPd20Q…A82g0` | $49 | monthly | (none) | same |

@@ -19,7 +19,7 @@
 | Product | Plan / Price | Stripe price ID | Recurring | Owner | Code references |
 |---|---|---|---|---|---|
 | llms.txt generator | $19 one-time | _pending — see lookup_key_ | one-time | llms-txt-generator | `server/src/services/llms-txt-generator.ts` |
-| Watchtower | $29/mo | `price_1TVOu6QvkbvTR7Og3xrx0GsG` (lookup_key `watchtower_monthly`, prod `prod_UUNfgdeWldCIQS`) | monthly | watchtower | `server/src/services/watchtower-monitor.ts`, `server/src/services/watchtower-cron.ts` |
+| Watchtower | $49/mo | `price_1TseofQvkbvTR7OgrYdGUBNL` (lookup_key `watchtower_monthly`, prod `prod_UUNfgdeWldCIQS`; supersedes archived $29 `price_1TVOu6QvkbvTR7Og3xrx0GsG`) | monthly | watchtower | `server/src/services/watchtower-monitor.ts`, `server/src/services/watchtower-cron.ts` |
 | Coherent Ones University | $50/mo founding → $79/mo standard past the Founding-100 cap ($500/yr annual) | lookup_keys `university_monthly` ✅ / `university_annual` ✅ / `university_monthly_standard` ⛔ create pre-cap (Starwise acct) | monthly/annual | university | `server/src/services/university-stripe-handler.ts`, `server/src/routes/university-checkout.ts`, `docs/university-founding-pricing.md` |
 
 ## llms.txt generator — $19 one-time
@@ -42,19 +42,26 @@
 - **Until then:** Anonymous public-form requests use
   `POST /api/llms-txt/generate` directly (no Stripe in the loop).
 
-## Watchtower — $29/mo
+## Watchtower — $49/mo
 
 Brand-mention monitor. See [docs/products/watchtower.md](../products/watchtower.md).
 
 - **Stripe product name:** `Watchtower`
-- **Price:** $29 USD recurring monthly
+- **Price:** $49 USD recurring monthly
 - **Price lookup_key:** `watchtower_monthly` (preferred resolution path)
 - **Price ID env var (fallback):** `WATCHTOWER_STRIPE_PRICE_ID`
+- **Status (2026-07-13):** ✅ **Price change $29 → $49** (owner decision).
+  New Price `price_1TseofQvkbvTR7OgrYdGUBNL` ($49.00/mo USD) created on
+  `prod_UUNfgdeWldCIQS` with `transfer_lookup_key=true`; the original $29
+  price `price_1TVOu6QvkbvTR7Og3xrx0GsG` is archived (active=false,
+  lookup_key removed). Zero subscriptions existed on the old price at flip
+  time — no grandfathering needed. Verified end-to-end same day: prod
+  `POST /api/watchtower/checkout` session `amount_total=4900`.
 - **Status (2026-05-09):** ✅ Live Product + Price created on Coherence Daddy
   account `acct_1TJQywQvkbvTR7Og`:
   - Product: `prod_UUNfgdeWldCIQS`
   - Price: `price_1TVOu6QvkbvTR7Og3xrx0GsG` (lookup_key `watchtower_monthly`)
-  - $29.00/mo USD recurring
+  - $29.00/mo USD recurring (superseded 2026-07-13, see above)
   - Created via `scripts/setup-watchtower-stripe-product.ts` using
     `STRIPE_SECRET_KEY` from local `.env` (rk_live key for the CD
     account; `acct_1QF1Qe…` is a separate account that the Stripe CLI

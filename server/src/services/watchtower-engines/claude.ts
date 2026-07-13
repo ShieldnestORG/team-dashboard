@@ -5,7 +5,7 @@
 // against a brand. Haiku 4.5 returns the answer pattern we care about
 // (positioning sentences, recommendation-style phrasing) at ~1/12th the
 // cost of Sonnet 4.5 — cheap enough that we can run all 25 prompts × all
-// engines without breaking the $29/mo unit economics. If output quality
+// engines without breaking the $49/mo unit economics. If output quality
 // drops we'll switch to Sonnet via WATCHTOWER_CLAUDE_MODEL override.
 //
 // Reuses the existing fetch() pattern from launch-comment-monitor (no

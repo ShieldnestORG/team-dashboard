@@ -7,7 +7,7 @@
 //   runAnswerCheck()    → execute the one-shot, persist row, return result
 //   attachEmailToRun()  → email captured post-result, fire HTML report
 //   markUpsellClicked() → attribution stamp when the visitor clicks the
-//                          $29 Watchtower upsell CTA
+//                          $49 Watchtower upsell CTA
 //
 // Cost guardrail: this is a public, unauthenticated endpoint. Each call
 // fans out to ALL five engines once (~5 LLM calls, ~$0.007–0.008 per call;
