@@ -19,7 +19,7 @@
 //     "productId": "prod_...",
 //     "priceId": "price_...",
 //     "lookupKey": "watchtower_monthly",
-//     "amount": 2900,
+//     "amount": 4900,
 //     "currency": "usd",
 //     "interval": "month",
 //     "created": true | false   // true = newly created, false = already existed
@@ -31,7 +31,7 @@ const PRODUCT_NAME = "Watchtower";
 const PRODUCT_DESCRIPTION =
   "Brand-mention monitor for AI answer engines (ChatGPT, Claude, Perplexity, Gemini, Grok). Weekly digest. 25 prompts × 5 engines.";
 const STATEMENT_DESCRIPTOR = "CD WATCHTOWER";
-const AMOUNT_CENTS = 2900;
+const AMOUNT_CENTS = 4900;
 const CURRENCY = "usd";
 const INTERVAL = "month" as const;
 

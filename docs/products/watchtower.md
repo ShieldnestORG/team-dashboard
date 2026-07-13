@@ -6,7 +6,7 @@
 
 | Plan | Price | Cadence | Engines | Prompt cap | Surfaces |
 |---|---|---|---|---|---|
-| **Watchtower** | **$29 / month** recurring | Weekly | All five (chatgpt, claude, perplexity, gemini, grok) | 25 prompts (system hard-cap 50) | Weekly digest email + read-only run viewer at `/api/watchtower/runs/:id` |
+| **Watchtower** | **$49 / month** recurring | Weekly | All five (chatgpt, claude, perplexity, gemini, grok) | 25 prompts (system hard-cap 50) | Weekly digest email + read-only run viewer at `/api/watchtower/runs/:id` |
 
 Stripe price ID lives in `docs/deploy/stripe-products.md`. Frequency `daily` is reserved for a future upsell tier — no cron is wired for it in v1.
 
@@ -59,7 +59,7 @@ Order-of-magnitude estimates at v1 model choices and ~600 max output tokens. Tre
 | **Total / week** | | | **≈ $0.21** | |
 | **Total / month** | | | **≈ $0.85** | |
 
-**Margin on $29 retail:** ~97%. Even with 10× actual token usage we stay >70% gross margin, which is why this product exists.
+**Margin on $49 retail:** ~98%. Even with 10× actual token usage we stay >80% gross margin, which is why this product exists.
 
 ## Env vars (which engines are gated on what)
 
@@ -106,7 +106,7 @@ same row.
 |---|---|---|
 | `POST /run` | Run one prompt across all enabled engines, persist a row, return per-engine results | 5 per IP per 24h (in-memory bucket, identical pattern to `/api/public/audit`) |
 | `POST /email` | Attach an email to an existing run + dispatch the HTML report via the storefront Resend template `answer_check_report` | global only |
-| `POST /click` | Stamp `upsell_clicked_at` on the run row when the visitor clicks the $29 Watchtower CTA | global only |
+| `POST /click` | Stamp `upsell_clicked_at` on the run row when the visitor clicks the $49 Watchtower CTA | global only |
 
 Reuses the engine adapters and `detectMention()` directly via the new
 `runPromptOneShot()` export in `services/watchtower-monitor.ts`. Cost per
@@ -156,6 +156,16 @@ PR for the source list).
 
 ## Changelog
 
+- **2026-07-13** — **Price change $29 → $49/mo** (owner decision). New Stripe
+  Price `price_1TseofQvkbvTR7OgrYdGUBNL` created on `prod_UUNfgdeWldCIQS`
+  with `lookup_key=watchtower_monthly`
+  transferred from the original $29 price (`price_1TVOu6QvkbvTR7Og3xrx0GsG`,
+  now archived). Zero subscriptions existed on the old price at flip time, so
+  no grandfathering was needed. Checkout resolves by lookup_key at request
+  time — no backend deploy required. Storefront copy updated in the same
+  session (incl. removing the "only $29 tier with Grok" positioning and the
+  price-floor promise on `/watchtower-home`). See `docs/deploy/stripe-products.md`
+  for the new price ID.
 - **2026-05-15** — Weekly digest email — Stream F (partial) of the
   Watchtower portal audit. Payload contract gained `dashboardUrl`
   (UTM-tagged deep-link to `${PORTAL_BASE_URL}/watchtower?run=<id>`,
