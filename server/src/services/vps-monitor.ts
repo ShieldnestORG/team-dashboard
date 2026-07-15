@@ -60,8 +60,13 @@ export interface SystemMetrics {
 const serviceStatuses = new Map<string, ServiceStatus>();
 let latestMetrics: SystemMetrics | null = null;
 
-// Track previous status for state transition alerts
-const previousStatus = new Map<string, "up" | "down" | "degraded" | "unknown">();
+// Services currently in a paged-"down" state — prevents re-paging every tick and gates the
+// RECOVERED alert (a single-blip that never paged must not emit a spurious recovery).
+const alertedDown = new Set<string>();
+// Consecutive failing checks required before paging a service as down. Checks run every 3 min
+// (see the monitor:services cron), so a lone transient timeout no longer fires a critical email;
+// a genuine outage still pages within a few minutes.
+const DOWN_ALERT_THRESHOLD = 2;
 
 // ---------------------------------------------------------------------------
 // Service definitions
@@ -446,7 +451,6 @@ async function checkAllServices(db: Db): Promise<void> {
   for (const result of results) {
     if (result.status === "fulfilled") {
       const svc = result.value;
-      const prev = previousStatus.get(svc.name);
 
       // Attach per-service resource data and costs
       svc.resources = resourceMap.get(svc.name) ?? null;
@@ -455,26 +459,29 @@ async function checkAllServices(db: Db): Promise<void> {
       // Update state
       serviceStatuses.set(svc.name, svc);
 
-      // State transition alerts
-      if (prev && prev !== svc.status) {
-        if (svc.status === "down" && prev !== "down") {
-          const alertSubject = svc.name === "Ollama LLM"
-            ? buildOllamaAlertSubject(svc.error, svc.consecutiveFailures)
-            : `Service DOWN: ${svc.name}`;
-          const alertBody = svc.name === "Ollama LLM"
-            ? buildOllamaAlertBody(svc)
-            : `${svc.name} at ${svc.url} is unreachable.\nError: ${svc.error}\nConsecutive failures: ${svc.consecutiveFailures}`;
-          await sendAlert("service_down", alertSubject, alertBody);
-        } else if (svc.status === "up" && prev === "down") {
-          await sendAlert(
-            "service_recovered",
-            `Service RECOVERED: ${svc.name}`,
-            `${svc.name} at ${svc.url} is back online.\nLatency: ${svc.latencyMs}ms`,
-          );
-        }
-      }
+      // State transition alerts (debounced): page only after DOWN_ALERT_THRESHOLD consecutive
+      // failing checks, so a single transient timeout no longer fires a critical email. The
+      // RECOVERED notice is gated on having actually paged, so a blip that never paged stays silent.
+      const confirmedDown =
+        svc.status === "down" && svc.consecutiveFailures >= DOWN_ALERT_THRESHOLD;
 
-      previousStatus.set(svc.name, svc.status);
+      if (confirmedDown && !alertedDown.has(svc.name)) {
+        alertedDown.add(svc.name);
+        const alertSubject = svc.name === "Ollama LLM"
+          ? buildOllamaAlertSubject(svc.error, svc.consecutiveFailures)
+          : `Service DOWN: ${svc.name}`;
+        const alertBody = svc.name === "Ollama LLM"
+          ? buildOllamaAlertBody(svc)
+          : `${svc.name} at ${svc.url} is unreachable.\nError: ${svc.error}\nConsecutive failures: ${svc.consecutiveFailures}`;
+        await sendAlert("service_down", alertSubject, alertBody);
+      } else if (svc.status === "up" && alertedDown.has(svc.name)) {
+        alertedDown.delete(svc.name);
+        await sendAlert(
+          "service_recovered",
+          `Service RECOVERED: ${svc.name}`,
+          `${svc.name} at ${svc.url} is back online.\nLatency: ${svc.latencyMs}ms`,
+        );
+      }
     }
   }
 
