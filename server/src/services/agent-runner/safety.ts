@@ -33,12 +33,22 @@ export interface SafetyResult {
   reason?: string;
 }
 
+// Default sentence ceiling. Matches the system prompt's "two to four short
+// sentences" (the gate was previously 2, which contradicted the prompt and
+// safety-blocked legitimate 3-4 sentence output into scripted fallbacks).
+// Long-form personas may raise it via persona.maxSentences.
+export const DEFAULT_MAX_SENTENCES = 4;
+
 /**
  * Gate agent-generated text before posting.
  * `originalHadEmoji` lets responsive replies match the member's register — an
  * agent reply should not introduce emoji into a plain-text thread.
  */
-export function contentSafe(text: string, originalHadEmoji = false): SafetyResult {
+export function contentSafe(
+  text: string,
+  originalHadEmoji = false,
+  maxSentences = DEFAULT_MAX_SENTENCES,
+): SafetyResult {
   const t = text.trim();
   if (!t) return { ok: false, reason: "empty" };
   if (AI_SELF_REFERENCE.test(t)) return { ok: false, reason: "ai_self_reference" };
@@ -46,7 +56,7 @@ export function contentSafe(text: string, originalHadEmoji = false): SafetyResul
     if (p.test(t)) return { ok: false, reason: "advice" };
   }
   if (JARGON.test(t)) return { ok: false, reason: "jargon" };
-  if (sentenceCount(t) > 2) return { ok: false, reason: "too_long" };
+  if (sentenceCount(t) > maxSentences) return { ok: false, reason: "too_long" };
   if (!originalHadEmoji && EMOJI.test(t)) return { ok: false, reason: "emoji_mismatch" };
   return { ok: true };
 }
