@@ -3071,10 +3071,10 @@ export function customerPortalService(db: Db) {
     return updated.length;
   }
 
-  // Fire the reply email via the lifecycle envelope. The storefront Resend
-  // template for `university_community_reply` is owner-gated — until it ships,
-  // sendCreditscoreEmail warn-and-continues (it no-ops when the callback isn't
-  // configured), so the in-app badge works without it.
+  // Fire the reply email via the lifecycle envelope. The storefront template
+  // for `university_community_reply` shipped 2026-07-01 (landing `1441d7a`).
+  // sendCreditscoreEmail still warn-and-continues (it no-ops when the callback
+  // isn't configured), so the in-app badge works even without it.
   async function sendCommunityReplyEmail(args: {
     recipientEmail: string;
     postId: string;
