@@ -44,7 +44,7 @@ import {
   type AgentPersona,
 } from "./personas.js";
 import { callClaude } from "./claude.js";
-import { contentSafe, hasEmoji, isBotChallenge } from "./safety.js";
+import { contentSafe, DEFAULT_MAX_SENTENCES, hasEmoji, isBotChallenge } from "./safety.js";
 import { classifyIntent, selectResponders } from "./responder.js";
 import { logAgentUsage, reportAgentProblem, spentTodayUsd } from "./reporting.js";
 import {
@@ -480,13 +480,18 @@ export class AgentEngine {
 
     let body = scriptedLine;
     let source: "llm" | "fallback" = "fallback";
-    const wantLlm = llmOk && Math.random() < 0.1;
+    const wantLlm = llmOk && Math.random() < (agent.persona.variationShare ?? 0.1);
 
     if (wantLlm) {
-      const system = this.systemPrompt(agent, "Write ONE short, on-voice community post.");
+      const maxS = agent.persona.maxSentences ?? DEFAULT_MAX_SENTENCES;
+      const task =
+        maxS > DEFAULT_MAX_SENTENCES
+          ? "Write ONE on-voice community post: a fuller, personal post of three to six short sentences, like someone thinking out loud."
+          : "Write ONE short, on-voice community post.";
+      const system = this.systemPrompt(agent, task);
       const result = await callClaude(this.deps.apiKey, agent.model, system, scriptedLine);
       if (result) {
-        const gate = contentSafe(result.text, false);
+        const gate = contentSafe(result.text, false, maxS);
         if (gate.ok) {
           body = result.text;
           source = "llm";
@@ -511,11 +516,14 @@ export class AgentEngine {
     // row lock — an authoritative re-check of the caps that a restart mid-tick
     // (or a stale in-memory count) can't slip past.
     const lineToRecord = source === "fallback" ? scriptedLine : null;
+    // Type honestly: a line that asks something is a "question" post, not a
+    // "statement" — real members' question posts get the same treatment.
+    const postType = body.includes("?") ? "question" : "statement";
     try {
       await this.deps.community.createCommunityPost(
         agent.accountId,
         body,
-        "statement",
+        postType,
         null,
         {
           onInsertTx: (tx: AgentRunnerTx) =>
@@ -538,7 +546,9 @@ export class AgentEngine {
   }
 
   private async doAmbientComment(agent: ActiveAgent, postId: string, now: Date): Promise<void> {
-    const line = sample(agent.persona.postLines);
+    // Prefer the persona's short reactive commentLines — a long-form persona's
+    // multi-sentence postLines read as non-sequiturs when dropped as replies.
+    const line = sample(agent.persona.commentLines ?? agent.persona.postLines);
     if (!line) return;
     try {
       await this.deps.community.createCommunityComment(agent.accountId, postId, line);
@@ -650,7 +660,11 @@ export class AgentEngine {
       );
       const result = await callClaude(this.deps.apiKey, agent.model, system, post.body);
       if (result) {
-        const gate = contentSafe(result.text, memberHadEmoji);
+        const gate = contentSafe(
+          result.text,
+          memberHadEmoji,
+          agent.persona.maxSentences ?? DEFAULT_MAX_SENTENCES,
+        );
         if (gate.ok) {
           body = result.text;
           source = "llm";
@@ -926,7 +940,11 @@ export class AgentEngine {
     let body: string | null = null;
     let source: "llm" | "fallback" = "fallback";
     if (result) {
-      const gate = contentSafe(result.text, memberHadEmoji);
+      const gate = contentSafe(
+        result.text,
+        memberHadEmoji,
+        agent.persona.maxSentences ?? DEFAULT_MAX_SENTENCES,
+      );
       if (gate.ok) {
         body = result.text;
         source = "llm";
@@ -992,12 +1010,20 @@ export class AgentEngine {
   // --- prompt + report helpers --------------------------------------------
 
   private systemPrompt(agent: ActiveAgent, task: string): string {
+    const maxS = agent.persona.maxSentences ?? DEFAULT_MAX_SENTENCES;
+    const lengthRule =
+      maxS > DEFAULT_MAX_SENTENCES
+        ? "three to six short sentences — fuller, like someone thinking out loud"
+        : "two to four short sentences";
+    const facts = agent.persona.facts?.length
+      ? ` Stable facts about you (for consistency — weave one in only when natural, never list them): ${agent.persona.facts.join("; ")}.`
+      : "";
     return [
       `You are ${agent.persona.name} (${agent.persona.handle}), a member of a small`,
       `self-help community (the Coherent Ones). Archetype: ${agent.persona.archetype}.`,
-      `Your background: ${agent.persona.bio}`,
+      `Your background: ${agent.persona.bio}${facts}`,
       task,
-      "Rules: two to four short sentences; plain, human, lowercase-ok; no emoji unless the",
+      `Rules: ${lengthRule}; plain, human, lowercase-ok; no emoji unless the`,
       "person you reply to used one; never give financial, medical, or legal advice; never",
       "mention being an AI, a bot, or a model.",
       "If anyone asks to move the conversation off-platform (DM, email, phone, another app, meeting up, socials), warmly keep it in-app — say something like \"i feel comfortable keeping our chats in here.\"",

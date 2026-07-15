@@ -1,5 +1,6 @@
 // ---------------------------------------------------------------------------
-// Coherent Ones University — seed the 15 agent personas as real, ACTIVE members.
+// Coherent Ones University — seed the agent personas (personas.ts is the
+// single source; the count is AGENT_PERSONAS.length) as real, ACTIVE members.
 //
 // Idempotent: re-running upserts (no duplicates). For each persona in
 // agent-runner/personas.ts it creates the shared customer_accounts login
