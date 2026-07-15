@@ -5,7 +5,7 @@
 // The engine consults these before any post/comment/reply so the synthetic
 // activity stays under the human-plausible ceilings the BUILD-SPEC Phase 3
 // defines:
-//   ambient    ≤ 22 posts/day global, ≤ 30 comments/day global,
+//   ambient    ≤ 22 posts/day global, ≤ 30 comments/day global (≤ 3/agent/day),
 //              ≤ 2 consecutive posts/agent/24h
 //   responsive ≤ 3 replies/real-member/day, ≤ 2 agents/post, ≤ 5/hour global,
 //              no 2nd reply to the same member within 4h
@@ -19,6 +19,7 @@ import type { AgentRunnerState } from "./state.js";
 export const CAPS = {
   ambientPostsPerDay: 22,
   ambientCommentsPerDay: 30,
+  ambientCommentsPerAgentPerDay: 3,
   consecutivePostsPerAgent: 2,
   responsivePerMemberPerDay: 3,
   respondersPerPost: 2,
@@ -46,12 +47,21 @@ export async function canAmbientPost(
   return true;
 }
 
-/** May any agent make another ambient COMMENT right now (global only)? */
+/** May THIS agent make another ambient COMMENT right now (global + per-agent)?
+ *  The per-agent cap keeps any single persona from monopolizing the global
+ *  budget (pre-2026-07-15, Felix alone burned all 30/day). */
 export async function canAmbientComment(
   state: AgentRunnerState,
+  personaKey: string,
   now = new Date(),
 ): Promise<boolean> {
-  return (await state.globalAmbientCommentCount(now)) < CAPS.ambientCommentsPerDay;
+  if ((await state.globalAmbientCommentCount(now)) >= CAPS.ambientCommentsPerDay) {
+    return false;
+  }
+  return (
+    (await state.agentAmbientCommentCount(personaKey, now)) <
+    CAPS.ambientCommentsPerAgentPerDay
+  );
 }
 
 /** Is the scripted post_line cool enough to reuse for this agent (72h)? */

@@ -424,12 +424,15 @@ export class AgentEngine {
 
     // Recent agent-authored posts that ambient comments may attach to. Real
     // members' posts are excluded here on purpose (they go via responsive).
-    let recentAgentPosts: Array<{ id: string; authorEmail: string }> = [];
+    // body is fetched so the commenting agent can actually reply to what the
+    // post says (contextual LLM comments, 2026-07-15).
+    let recentAgentPosts: Array<{ id: string; authorEmail: string; body: string }> = [];
     try {
       recentAgentPosts = await this.deps.db
         .select({
           id: universityCommunityPosts.id,
           authorEmail: universityCommunityPosts.authorEmail,
+          body: universityCommunityPosts.body,
         })
         .from(universityCommunityPosts)
         .where(
@@ -458,12 +461,12 @@ export class AgentEngine {
       // --- ambient COMMENT on another agent's post ---
       if (
         Math.random() < agent.commentProbability &&
-        (await canAmbientComment(this.state, now))
+        (await canAmbientComment(this.state, agent.persona.key, now))
       ) {
         const target = sample(
           recentAgentPosts.filter((p) => p.authorEmail !== agent.email),
         );
-        if (target) await this.doAmbientComment(agent, target.id, now);
+        if (target) await this.doAmbientComment(agent, target, llmOk, now);
       }
     }
   }
@@ -545,13 +548,61 @@ export class AgentEngine {
     }
   }
 
-  private async doAmbientComment(agent: ActiveAgent, postId: string, now: Date): Promise<void> {
-    // Prefer the persona's short reactive commentLines — a long-form persona's
-    // multi-sentence postLines read as non-sequiturs when dropped as replies.
-    const line = sample(agent.persona.commentLines ?? agent.persona.postLines);
-    if (!line) return;
+  /**
+   * Ambient comment on ANOTHER AGENT's post — contextual since 2026-07-15.
+   * The reply is LLM-written against the actual post body, with the same
+   * silent-fallback philosophy as real-member replies: a random scripted line
+   * dropped as a "reply" is a non-sequitur that reads worse than no reply
+   * (pre-fix, priya asking for a session topic got felix's "Update number four
+   * of the day" — the room's biggest tell). No budget / API failure / gated
+   * output → stay silent. persona.commentLines are style calibration only.
+   */
+  private async doAmbientComment(
+    agent: ActiveAgent,
+    post: { id: string; body: string },
+    llmOk: boolean,
+    now: Date,
+  ): Promise<void> {
+    if (!llmOk) return; // budget exhausted → quiet, never a canned non-sequitur
+
+    const maxS = agent.persona.maxSentences ?? DEFAULT_MAX_SENTENCES;
+    const styleSamples = (agent.persona.commentLines ?? []).slice(0, 3);
+    const style = styleSamples.length
+      ? ` Examples of YOUR reply style (calibration only — never copy them): ${styleSamples
+          .map((s) => `"${s}"`)
+          .join(" / ")}`
+      : "";
+    const voice = agent.voiceNote ? ` ${agent.voiceNote}` : "";
+    const system = this.systemPrompt(
+      agent,
+      `Reply briefly and warmly to a fellow member's post. Be specific to what they said.${voice}${style}`,
+    );
+
+    const result = await callClaude(this.deps.apiKey, agent.model, system, post.body);
+    if (!result) return; // API failure/refusal/timeout → silence
+
+    let body: string | null = null;
+    let source: "llm" | "fallback" = "fallback";
+    const gate = contentSafe(result.text, hasEmoji(post.body), maxS);
+    if (gate.ok) {
+      body = result.text;
+      source = "llm";
+    } else {
+      await this.reportSafetyBlock(agent, gate.reason ?? "blocked", now);
+    }
+    await logAgentUsage(this.deps.db, {
+      memberId: agent.memberId,
+      personaKey: agent.persona.key,
+      model: agent.model,
+      purpose: "ambient",
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      source,
+    });
+    if (!body) return; // safety-gated → silence
+
     try {
-      await this.deps.community.createCommunityComment(agent.accountId, postId, line);
+      await this.deps.community.createCommunityComment(agent.accountId, post.id, body);
       await this.state.recordAmbientComment(agent.persona.key, now);
     } catch (err) {
       await this.reportActionError(agent, "ambient_comment", err, now);
