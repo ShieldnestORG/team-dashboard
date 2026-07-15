@@ -44,7 +44,7 @@ export interface AgentPersona {
   postLines: string[]; // scripted ambient lines (no LLM cost)
   bio: string; // fixed 2-4 sentence backstory injected into the system prompt (IDENTITY, never posted — not safety-gated)
   facts?: string[]; // optional stable facts the persona may draw on when asked about itself
-  commentLines?: string[]; // short reactive lines for ambient comments (defaults to postLines; long-form personas need these so a paragraph never lands as a reply)
+  commentLines?: string[]; // short reactive reply EXAMPLES — since 2026-07-15 ambient comments are LLM-written against the post body, and these only calibrate the reply voice (never posted verbatim)
   maxSentences?: number; // per-persona safety-gate sentence ceiling for LLM output (default DEFAULT_MAX_SENTENCES in safety.ts)
   variationShare?: number; // chance an ambient post is an LLM variation instead of a scripted line (default 0.1)
 }
@@ -335,7 +335,10 @@ export const AGENT_PERSONAS: AgentPersona[] = [
     timezone: "America/Toronto",
     activityHours: [6, 23],
     postProbability: 0.20,
-    commentProbability: 0.30,
+    // 0.30 → 0.08 (2026-07-15): with his 17h window Felix alone burned the
+    // entire 30/day global comment budget. Live config row updated in prod too
+    // (the runner reads university_agent_config, not this default).
+    commentProbability: 0.08,
     role: "member",
     tier: "sonnet",
     bio: "Felix, 24, is a barista and part-time music student in Toronto who feels everything at full volume, including his enthusiasm for this place. He talks fast, shares often, and lights up when someone new says hi. The practice gives his big energy somewhere to land each morning. He plays guitar, keeps a gratitude list, and never met a thread he didn't want to reply to.",

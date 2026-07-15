@@ -205,6 +205,16 @@ export class AgentRunnerState {
     return this.globalSumToday(universityAgentDailyBudget.commentsCount, now);
   }
 
+  /** THIS persona's own ambient-comment count today (durable). Backs the
+   *  per-agent daily comment cap so one chatty persona can't monopolize the
+   *  global comment budget (the pre-2026-07-15 Felix failure mode). */
+  async agentAmbientCommentCount(
+    personaKey: string,
+    now = new Date(),
+  ): Promise<number> {
+    return (await this.loadDaily(personaKey, now)).commentsCount;
+  }
+
   // --- Global responsive (volatile) ----------------------------------------
 
   globalResponsiveCount(now = new Date()): number {
