@@ -22,6 +22,11 @@ failures + host egress alerts = multiple emails/day).
 - `cron_breaker` (circuit breaker auto-disabling a crash-looping job) got its own type on
   2026-07-09 — it previously shared `cron_stale`'s cooldown key, so a watchdog alert could
   silently suppress a breaker trip for an hour.
+- **`service_down` is debounced** (`vps-monitor.ts`, `DOWN_ALERT_THRESHOLD = 2`, added
+  2026-07-14): the every-3-min health check must fail **2 consecutive** times before a
+  `service_down` email fires, and the paired `service_recovered` only sends if a
+  `service_down` actually paged. A single transient timeout (e.g. a one-off 15s Ollama
+  `/api/version` blip) no longer emails; a genuine outage still pages within a few minutes.
 
 ## Persistence: `alert_events` (migration 0151)
 
