@@ -49,6 +49,10 @@ import {
   handleReferralRefund,
 } from "../services/university-referrals.js";
 import {
+  uploadUniversityPurchaseConversion,
+  universityConversionFromSession,
+} from "../services/google-ads-conversions.js";
+import {
   resolvePlanKey,
   countUniversityMembers,
   foundingCap,
@@ -245,10 +249,26 @@ interface CheckoutBody {
   // returns 409 price_changed instead of creating a session — the signed
   // attestation must never mismatch the charge. Optional for back-compat.
   expectedPriceCents?: unknown;
+  // Google Ads click ids captured by the storefront from the ad's landing URL
+  // (?gclid= standard, ?wbraid=/?gbraid= iOS/consent variants). Stamped on the
+  // session metadata so the checkout.session.completed webhook can upload the
+  // purchase conversion server-side (services/google-ads-conversions.ts).
+  // Absent on organic/direct joins.
+  gclid?: unknown;
+  wbraid?: unknown;
+  gbraid?: unknown;
 }
 
 function asString(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
+}
+
+// Click ids are opaque URL-safe tokens; cap charset + length so nothing junk
+// reaches Stripe metadata (500-char value limit) or the Google Ads API.
+const CLICK_ID_RE = /^[A-Za-z0-9_-]{1,200}$/;
+function asClickId(v: unknown): string | null {
+  const s = asString(v);
+  return s && CLICK_ID_RE.test(s) ? s : null;
 }
 
 export function universityCheckoutRoutes(db: Db): Router {
@@ -379,6 +399,10 @@ export function universityCheckoutRoutes(db: Db): Router {
     // Plan selector ('monthly' | 'annual'). Tolerate the query param as a
     // fallback. Normalized to a stable plan key; unknown → monthly.
     const planKey = resolvePlanKey(asString(body.plan) || asString(req.query.plan));
+    // Google Ads click ids (validated; null when absent/malformed).
+    const gclid = asClickId(body.gclid);
+    const wbraid = asClickId(body.wbraid);
+    const gbraid = asClickId(body.gbraid);
     // The price the storefront showed when consent was ticked (optional).
     const expectedPriceCents =
       typeof body.expectedPriceCents === "number"
@@ -510,11 +534,39 @@ export function universityCheckoutRoutes(db: Db): Router {
       // Belt-and-suspenders attribution: client_reference_id is the canonical
       // Stripe-native field; metadata.referral_code is the redundant read path.
       if (ref) metadata.referral_code = ref;
+      // Google Ads click id — persisted on the session so the webhook can
+      // upload the purchase conversion (and so an unconfigured-uploader period
+      // stays backfillable straight from Stripe).
+      if (gclid) metadata.gclid = gclid;
+      if (wbraid) metadata.wbraid = wbraid;
+      if (gbraid) metadata.gbraid = gbraid;
+
+      // Carry the click id + billed amount onto the success URL too: the
+      // portal's post-checkout page fires the belt-and-suspenders CLIENT-side
+      // purchase conversion (gtag picks the click id up from the page URL —
+      // app.coherencedaddy.com is a different eTLD+1 than the ad landing page,
+      // so no cookie crosses on its own). Same transaction_id (the session id,
+      // already in the URL) keeps Google deduping it against the server-side
+      // upload. Exactly one click-id param, mirroring the upload rule.
+      let checkoutSuccessUrl = successUrl;
+      const successClickId = gclid
+        ? (["gclid", gclid] as const)
+        : wbraid
+          ? (["wbraid", wbraid] as const)
+          : gbraid
+            ? (["gbraid", gbraid] as const)
+            : null;
+      if (successClickId) {
+        checkoutSuccessUrl += `&${successClickId[0]}=${encodeURIComponent(successClickId[1])}`;
+      }
+      if (price.unitAmountCents != null) {
+        checkoutSuccessUrl += `&amount_cents=${price.unitAmountCents}`;
+      }
 
       const { checkoutUrl, sessionId } = await createStripeCheckoutSession({
         email,
         priceId: price.id,
-        successUrl,
+        successUrl: checkoutSuccessUrl,
         cancelUrl,
         metadata,
         secretKey,
@@ -669,7 +721,24 @@ export async function dispatchUniversityEvent(
         "university-webhook: referral attribution failed (non-fatal) — activation continues",
       );
     }
-    await handleUniversityCheckout(db, session);
+    const activation = await handleUniversityCheckout(db, session);
+    // Google Ads purchase conversion (server-side). Non-fatal like referral
+    // attribution — ad measurement must never block activation. No-ops with a
+    // log when the session carries no click id or the uploader env isn't
+    // configured; a Stripe webhook RETRY re-uploads the same orderId, which
+    // Google reports as a duplicate partial failure (harmless, logged warn).
+    if (activation) {
+      try {
+        await uploadUniversityPurchaseConversion(
+          universityConversionFromSession(session),
+        );
+      } catch (err) {
+        logger.error(
+          { err, sessionId: session.id },
+          "university-webhook: google-ads conversion upload failed (non-fatal) — activation unaffected",
+        );
+      }
+    }
     return;
   }
 
