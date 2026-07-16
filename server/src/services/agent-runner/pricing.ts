@@ -12,6 +12,9 @@ interface ModelPrice {
 export const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude-haiku-4-5": { inputPerMtok: 1, outputPerMtok: 5 },
   "claude-sonnet-4-6": { inputPerMtok: 3, outputPerMtok: 15 },
+  // Standard rate; Anthropic intro pricing is $2/$10 through 2026-08-31, so
+  // the ledger slightly OVERSTATES sonnet-5 cost until then (fail-safe-high).
+  "claude-sonnet-5": { inputPerMtok: 3, outputPerMtok: 15 },
   "claude-opus-4-8": { inputPerMtok: 5, outputPerMtok: 25 },
 };
 
