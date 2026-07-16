@@ -23,10 +23,16 @@
 
 export type PersonaTier = "haiku" | "sonnet" | "opus";
 
+// Standardized 2026-07-15 (owner decision after a live head-to-head): ALL
+// personas chat on claude-sonnet-5 — best member-facing voice and strict
+// instruction-following, and currently cheaper than sonnet-4-6 (intro $2/$10
+// per Mtok through 2026-08-31, then the same $3/$15). The tier field remains
+// as archetype metadata and for easy rollback of this mapping; live rows are
+// in university_agent_config (migration 0154 widened its model CHECK).
 export const TIER_MODEL: Record<PersonaTier, string> = {
-  haiku: "claude-haiku-4-5",
-  sonnet: "claude-sonnet-4-6",
-  opus: "claude-opus-4-8",
+  haiku: "claude-sonnet-5",
+  sonnet: "claude-sonnet-5",
+  opus: "claude-sonnet-5",
 };
 
 export interface AgentPersona {

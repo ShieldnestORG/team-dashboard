@@ -36,6 +36,7 @@ const ALLOWED_MODELS = new Set([
   "claude-haiku-4-5",
   "claude-sonnet-4-6",
   "claude-opus-4-8",
+  "claude-sonnet-5", // standardized agent-chat model (2026-07-15, migration 0154)
 ]);
 
 function startOfUtcDay(): Date {

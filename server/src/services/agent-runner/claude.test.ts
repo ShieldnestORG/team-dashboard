@@ -19,7 +19,9 @@ import { callOllamaChat } from "../ollama-client.js";
 const okOllama = { content: "a warm fallback line", promptTokens: 5, completionTokens: 6, model: "gemma4:31b" };
 
 function stubFetch(impl: () => unknown) {
-  vi.stubGlobal("fetch", vi.fn(async () => impl()));
+  const mock = vi.fn(async (..._args: Parameters<typeof fetch>) => impl());
+  vi.stubGlobal("fetch", mock);
+  return mock;
 }
 
 afterEach(() => {
@@ -52,6 +54,24 @@ describe("callClaude fallback ladder", () => {
     const r = await callClaude("k", "claude-sonnet-5", "sys", "hi");
     expect(r).toEqual({ text: "a real claude line", model: "claude-sonnet-5", inputTokens: 3, outputTokens: 4 });
     expect(callOllamaChat).not.toHaveBeenCalled();
+  });
+
+  it("disables adaptive thinking for claude-sonnet-5 only (protects the 500-token reply budget)", async () => {
+    const mock = stubFetch(() => ({
+      ok: true,
+      json: async () => ({
+        content: [{ type: "text", text: "hi there" }],
+        usage: { input_tokens: 1, output_tokens: 2 },
+      }),
+    }));
+
+    await callClaude("k", "claude-sonnet-5", "sys", "hi");
+    const body1 = JSON.parse(mock.mock.calls[0]![1]!.body as string);
+    expect(body1.thinking).toEqual({ type: "disabled" });
+
+    await callClaude("k", "claude-sonnet-4-6", "sys", "hi");
+    const body2 = JSON.parse(mock.mock.calls[1]![1]!.body as string);
+    expect(body2.thinking).toBeUndefined();
   });
 
   it("returns null when BOTH tiers fail", async () => {

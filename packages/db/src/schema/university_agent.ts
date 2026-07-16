@@ -80,7 +80,7 @@ export const universityAgentUsage = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     memberId: uuid("member_id").references(() => universityMembers.id),
     agentPersonaKey: text("agent_persona_key").notNull(),
-    // claude-haiku-4-5 | claude-sonnet-4-6 | claude-opus-4-8
+    // claude-haiku-4-5 | claude-sonnet-4-6 | claude-opus-4-8 | claude-sonnet-5 (mig 0154)
     model: text("model").notNull(),
     // ambient | responsive_help | variation
     purpose: text("purpose").notNull(),
@@ -124,7 +124,7 @@ export const universityAgentConfig = pgTable(
       .notNull()
       .references(() => universityMembers.id),
     personaKey: text("persona_key").notNull(),
-    model: text("model").notNull(), // claude-haiku-4-5 | claude-sonnet-4-6 | claude-opus-4-8
+    model: text("model").notNull(), // claude-haiku-4-5 | claude-sonnet-4-6 | claude-opus-4-8 | claude-sonnet-5 (mig 0154)
     postProbability: numeric("post_probability", { precision: 4, scale: 3 })
       .notNull()
       .default("0.2"),

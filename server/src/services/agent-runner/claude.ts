@@ -78,6 +78,12 @@ async function attemptAnthropic(
         max_tokens: MAX_TOKENS,
         system,
         messages: [{ role: "user", content: userText }],
+        // Sonnet 5 runs ADAPTIVE thinking when `thinking` is omitted — for a
+        // 500-token community reply that silently burns the output budget on
+        // reasoning (risking truncated/empty text → pointless fallback).
+        // Disable it explicitly; on the older allowed models omitted = off,
+        // so only sonnet-5 needs the field (and e.g. haiku would reject it).
+        ...(model === "claude-sonnet-5" ? { thinking: { type: "disabled" } } : {}),
       }),
     });
 
