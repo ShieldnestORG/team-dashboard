@@ -9,6 +9,7 @@
 // Routes (all board-only):
 //   GET  /agents                  → every agent: persona + live config + today's
 //                                    cost + unresolved-report count + paused state
+//   GET  /agents/cost-summary     → total today/week/month + by-model breakdown
 //   GET  /agents/:id              → one agent: config + cost rollup + recent reports
 //   POST /agents/:id/config       → fine-tune upsert (model / chattiness / hours /
 //                                    voice note). Takes effect next runner tick.
@@ -148,6 +149,55 @@ export function universityAgentsAdminRoutes(db: Db) {
     } catch (err) {
       logger.error({ err }, "university-agents-admin: GET /agents failed");
       res.status(500).json({ error: "Failed to load agents" });
+    }
+  });
+
+  // -------------------- GET /agents/cost-summary --------------------
+  // MUST be registered BEFORE /agents/:id — Express matches in registration
+  // order, so registering it later binds :id="cost-summary" and 500s on the
+  // UUID member lookup.
+  router.get("/agents/cost-summary", async (_req, res) => {
+    try {
+      const dayStart = startOfUtcDay();
+      const weekStart = new Date(dayStart);
+      weekStart.setUTCDate(weekStart.getUTCDate() - 7);
+      const monthStart = new Date(dayStart);
+      monthStart.setUTCDate(monthStart.getUTCDate() - 30);
+
+      const sumSince = async (since: Date): Promise<number> => {
+        const rows = await db
+          .select({ total: sql<string>`COALESCE(SUM(${universityAgentUsage.costUsd}), 0)` })
+          .from(universityAgentUsage)
+          .where(gte(universityAgentUsage.createdAt, since));
+        return Number(rows[0]?.total ?? 0);
+      };
+
+      // 30d per-model rollup. Ollama-fallback replies are logged truthfully as
+      // model 'ollama:…' at $0 (PR #173), so cost+calls by model IS the
+      // claude-vs-free-fallback serving-mix signal for the admin UI.
+      const byModelRows = await db
+        .select({
+          model: universityAgentUsage.model,
+          total: sql<string>`COALESCE(SUM(${universityAgentUsage.costUsd}), 0)`,
+          calls: sql<string>`COUNT(*)`,
+        })
+        .from(universityAgentUsage)
+        .where(gte(universityAgentUsage.createdAt, monthStart))
+        .groupBy(universityAgentUsage.model);
+
+      res.json({
+        todayUsd: await sumSince(dayStart),
+        weekUsd: await sumSince(weekStart),
+        monthUsd: await sumSince(monthStart),
+        byModel: byModelRows.map((r) => ({
+          model: r.model,
+          usd: Number(r.total),
+          calls: Number(r.calls),
+        })),
+      });
+    } catch (err) {
+      logger.error({ err }, "university-agents-admin: cost-summary failed");
+      res.status(500).json({ error: "Failed to load cost summary" });
     }
   });
 
@@ -409,44 +459,6 @@ export function universityAgentsAdminRoutes(db: Db) {
     } catch (err) {
       logger.error({ err, reportId }, "university-agents-admin: resolve report failed");
       res.status(500).json({ error: "Failed to resolve report" });
-    }
-  });
-
-  // -------------------- GET /agents/cost-summary --------------------
-  router.get("/agents/cost-summary", async (_req, res) => {
-    try {
-      const dayStart = startOfUtcDay();
-      const weekStart = new Date(dayStart);
-      weekStart.setUTCDate(weekStart.getUTCDate() - 7);
-      const monthStart = new Date(dayStart);
-      monthStart.setUTCDate(monthStart.getUTCDate() - 30);
-
-      const sumSince = async (since: Date): Promise<number> => {
-        const rows = await db
-          .select({ total: sql<string>`COALESCE(SUM(${universityAgentUsage.costUsd}), 0)` })
-          .from(universityAgentUsage)
-          .where(gte(universityAgentUsage.createdAt, since));
-        return Number(rows[0]?.total ?? 0);
-      };
-
-      const byModelRows = await db
-        .select({
-          model: universityAgentUsage.model,
-          total: sql<string>`COALESCE(SUM(${universityAgentUsage.costUsd}), 0)`,
-        })
-        .from(universityAgentUsage)
-        .where(gte(universityAgentUsage.createdAt, monthStart))
-        .groupBy(universityAgentUsage.model);
-
-      res.json({
-        todayUsd: await sumSince(dayStart),
-        weekUsd: await sumSince(weekStart),
-        monthUsd: await sumSince(monthStart),
-        byModel: byModelRows.map((r) => ({ model: r.model, usd: Number(r.total) })),
-      });
-    } catch (err) {
-      logger.error({ err }, "university-agents-admin: cost-summary failed");
-      res.status(500).json({ error: "Failed to load cost summary" });
     }
   });
 

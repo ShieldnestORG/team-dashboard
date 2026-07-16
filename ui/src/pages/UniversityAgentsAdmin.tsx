@@ -25,6 +25,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const MODELS = [
+  { value: "claude-sonnet-5", label: "Sonnet 5 (standard)" },
   { value: "claude-haiku-4-5", label: "Haiku (beginners)" },
   { value: "claude-sonnet-4-6", label: "Sonnet (intermediate)" },
   { value: "claude-opus-4-8", label: "Opus (mentors)" },
@@ -32,6 +33,12 @@ const MODELS = [
 
 function usd(n: number): string {
   return `$${n.toFixed(4)}`;
+}
+
+// Ollama-fallback replies are logged as model 'ollama:…' at $0, so the
+// by-model mix is the claude-vs-free-fallback serving signal.
+function modelLabel(model: string): string {
+  return model.startsWith("ollama:") ? "gemma (free fallback)" : model;
 }
 
 interface RowDraft {
@@ -239,6 +246,18 @@ export function UniversityAgentsAdmin() {
           </div>
         )}
       </div>
+
+      {costQuery.data && costQuery.data.byModel.length > 0 && (
+        <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span className="font-medium">30d serving mix:</span>
+          {costQuery.data.byModel.map((m) => (
+            <span key={m.model}>
+              {modelLabel(m.model)} · {m.calls} call{m.calls === 1 ? "" : "s"} ·{" "}
+              {usd(m.usd)}
+            </span>
+          ))}
+        </div>
+      )}
 
       {agentsQuery.isLoading && <p>Loading agents…</p>}
       {agentsQuery.isError && (
