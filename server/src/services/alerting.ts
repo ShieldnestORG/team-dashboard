@@ -7,7 +7,11 @@ import { alertEvents, type Db } from "@paperclipai/db";
 export type AlertType =
   | "health_down" | "eval_failed" | "agent_error" | "budget_breach" | "backup_failed"
   | "service_down" | "service_recovered" | "disk_warning" | "memory_warning" | "cron_stale"
-  | "cron_breaker" | "weekly_recap";
+  | "cron_breaker" | "weekly_recap"
+  // AI provider failures (provider-alerts.ts). All critical (not routine) →
+  // immediate owner email + alert_events. Deduped per provider/class/day by the
+  // caller, so these never spam even during a sustained outage.
+  | "provider_capped" | "provider_unauthorized" | "provider_error";
 
 // Severity routing: "critical" types email immediately; "routine" types are
 // only persisted to alert_events and surfaced by the Sunday alert:weekly-recap

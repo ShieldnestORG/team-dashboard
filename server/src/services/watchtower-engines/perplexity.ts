@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/chat/completions";
@@ -57,6 +58,12 @@ export const perplexityAdapter: EngineAdapter = {
           { status: res.status, err: errText.slice(0, 200) },
           "watchtower:perplexity non-2xx",
         );
+        noteProviderFailure({
+          provider: "perplexity",
+          service: "watchtower:perplexity",
+          status: res.status,
+          bodyText: errText,
+        });
         return {
           text: "",
           latencyMs,
@@ -74,6 +81,11 @@ export const perplexityAdapter: EngineAdapter = {
       const latencyMs = Date.now() - start;
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ err: message }, "watchtower:perplexity threw");
+      noteProviderFailure({
+        provider: "perplexity",
+        service: "watchtower:perplexity",
+        error: err,
+      });
       return { text: "", latencyMs, ok: false, error: message };
     }
   },

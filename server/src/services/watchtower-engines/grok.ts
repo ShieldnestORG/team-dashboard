@@ -13,6 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const XAI_ENDPOINT = "https://api.x.ai/v1/chat/completions";
@@ -65,6 +66,12 @@ export const grokAdapter: EngineAdapter = {
           { status: res.status, err: errText.slice(0, 200) },
           "watchtower:grok non-2xx",
         );
+        noteProviderFailure({
+          provider: "xai",
+          service: "watchtower:grok",
+          status: res.status,
+          bodyText: errText,
+        });
         return {
           text: "",
           latencyMs,
@@ -82,6 +89,11 @@ export const grokAdapter: EngineAdapter = {
       const latencyMs = Date.now() - start;
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ err: message }, "watchtower:grok threw");
+      noteProviderFailure({
+        provider: "xai",
+        service: "watchtower:grok",
+        error: err,
+      });
       return { text: "", latencyMs, ok: false, error: message };
     }
   },

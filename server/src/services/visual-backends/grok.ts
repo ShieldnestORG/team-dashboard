@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { logger } from "../../middleware/logger.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 import type {
   VisualBackend,
   VisualCapability,
@@ -58,6 +59,7 @@ async function generateImage(
 
     if (!res.ok) {
       const text = await res.text().catch(() => "Unknown error");
+      noteProviderFailure({ provider: "xai", service: "visual-backends:grok", status: res.status, bodyText: text });
       throw new Error(`Grok image API error (${res.status}): ${text}`);
     }
 
@@ -90,6 +92,7 @@ async function generateImage(
       height: opts.height || 1024,
     };
   } catch (err) {
+    noteProviderFailure({ provider: "xai", service: "visual-backends:grok", error: err });
     logger.error({ err, jobId }, "Grok image generation failed");
     return {
       jobId,
@@ -127,6 +130,7 @@ async function generateVideo(
 
     if (!res.ok) {
       const text = await res.text().catch(() => "Unknown error");
+      noteProviderFailure({ provider: "xai", service: "visual-backends:grok", status: res.status, bodyText: text });
       throw new Error(`Grok video API error (${res.status}): ${text}`);
     }
 
@@ -147,6 +151,7 @@ async function generateVideo(
 
     return { jobId, status: "generating" };
   } catch (err) {
+    noteProviderFailure({ provider: "xai", service: "visual-backends:grok", error: err });
     logger.error({ err, jobId }, "Grok video generation failed to start");
     return {
       jobId,
@@ -176,6 +181,7 @@ async function checkJob(jobId: string): Promise<VisualJobResult> {
 
     if (!res.ok) {
       const text = await res.text().catch(() => "Unknown error");
+      noteProviderFailure({ provider: "xai", service: "visual-backends:grok", status: res.status, bodyText: text });
       throw new Error(`Grok video poll error (${res.status}): ${text}`);
     }
 
@@ -223,6 +229,7 @@ async function checkJob(jobId: string): Promise<VisualJobResult> {
     // Still pending
     return { jobId, status: "generating" };
   } catch (err) {
+    noteProviderFailure({ provider: "xai", service: "visual-backends:grok", error: err });
     logger.error({ err, jobId }, "Grok video job check failed");
     // Treat transient errors as still generating
     return { jobId, status: "generating" };

@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
@@ -58,6 +59,12 @@ export const chatgptAdapter: EngineAdapter = {
           { status: res.status, err: errText.slice(0, 200) },
           "watchtower:chatgpt non-2xx",
         );
+        noteProviderFailure({
+          provider: "openai",
+          service: "watchtower:openai",
+          status: res.status,
+          bodyText: errText,
+        });
         return {
           text: "",
           latencyMs,
@@ -75,6 +82,11 @@ export const chatgptAdapter: EngineAdapter = {
       const latencyMs = Date.now() - start;
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ err: message }, "watchtower:chatgpt threw");
+      noteProviderFailure({
+        provider: "openai",
+        service: "watchtower:openai",
+        error: err,
+      });
       return { text: "", latencyMs, ok: false, error: message };
     }
   },

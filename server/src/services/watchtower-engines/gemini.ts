@@ -13,6 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
@@ -65,6 +66,12 @@ export const geminiAdapter: EngineAdapter = {
           { status: res.status, err: errText.slice(0, 200) },
           "watchtower:gemini non-2xx",
         );
+        noteProviderFailure({
+          provider: "gemini",
+          service: "watchtower:gemini",
+          status: res.status,
+          bodyText: errText,
+        });
         return {
           text: "",
           latencyMs,
@@ -88,6 +95,11 @@ export const geminiAdapter: EngineAdapter = {
       const latencyMs = Date.now() - start;
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ err: message }, "watchtower:gemini threw");
+      noteProviderFailure({
+        provider: "gemini",
+        service: "watchtower:gemini",
+        error: err,
+      });
       return { text: "", latencyMs, ok: false, error: message };
     }
   },

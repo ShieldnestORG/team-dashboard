@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import { logger } from "../middleware/logger.js";
+import { noteProviderFailure } from "./provider-alerts.js";
 import type { EngineId } from "./watchtower-engines/types.js";
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -173,6 +174,12 @@ async function judgeCell(
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
+      noteProviderFailure({
+        provider: "anthropic",
+        service: "watchtower-accuracy-judge",
+        status: res.status,
+        bodyText: errText,
+      });
       logger.warn(
         { status: res.status, err: errText.slice(0, 200), engine: cell.engine },
         "watchtower:accuracy-judge non-2xx (fail-soft, no alert)",
@@ -211,6 +218,11 @@ async function judgeCell(
     }
     return alerts;
   } catch (err) {
+    noteProviderFailure({
+      provider: "anthropic",
+      service: "watchtower-accuracy-judge",
+      error: err,
+    });
     const message = err instanceof Error ? err.message : String(err);
     logger.warn(
       { err: message, engine: cell.engine },

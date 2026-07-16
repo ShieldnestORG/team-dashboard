@@ -11,6 +11,7 @@ import { writeFile, unlink } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 
 const execAsync = promisify(exec);
 
@@ -90,6 +91,7 @@ async function generateGrokTTS(text: string, outputPath: string): Promise<TTSRes
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
+    noteProviderFailure({ provider: "xai", service: "youtube-tts", status: res.status, bodyText: errBody });
     throw new Error(`Grok TTS failed (${res.status}): ${errBody.slice(0, 500)}`);
   }
 
@@ -180,6 +182,7 @@ export async function generateChunkedTTS(
         chunkDurations.push(SILENCE_GAP_SEC);
       }
     } catch (err) {
+      noteProviderFailure({ provider: "xai", service: "youtube-tts", error: err });
       logger.warn({ err, chunk: i }, "Chunk TTS failed, adding silence");
       chunkPaths.push(silencePath);
       chunkDurations.push(SILENCE_GAP_SEC);

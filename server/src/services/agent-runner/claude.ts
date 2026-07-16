@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ClaudeResult } from "./types.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -51,7 +52,13 @@ export async function callClaude(
       }),
     });
 
-    if (!res.ok) return null; // 4xx/5xx → scripted fallback
+    if (!res.ok) {
+      // Loud alert (deduped/day) so a usage cap / auth failure can't hide behind
+      // the scripted fallback the way it did for 8 days in the 2026-07 incident.
+      const bodyText = await res.text().catch(() => "");
+      noteProviderFailure({ provider: "anthropic", service: "agent-runner", status: res.status, bodyText });
+      return null; // 4xx/5xx → scripted fallback
+    }
 
     const json = (await res.json()) as AnthropicResponse;
 
@@ -70,8 +77,9 @@ export async function callClaude(
       inputTokens: json.usage?.input_tokens ?? 0,
       outputTokens: json.usage?.output_tokens ?? 0,
     };
-  } catch {
+  } catch (err) {
     // AbortError (timeout), network error, JSON parse error → fallback.
+    noteProviderFailure({ provider: "anthropic", service: "agent-runner", error: err });
     return null;
   } finally {
     clearTimeout(timer);
