@@ -61,7 +61,7 @@ export interface AgentCostSummary {
   todayUsd: number;
   weekUsd: number;
   monthUsd: number;
-  byModel: Array<{ model: string; usd: number }>;
+  byModel: Array<{ model: string; usd: number; calls: number }>;
 }
 
 export type AgentConfigUpdate = Partial<{
