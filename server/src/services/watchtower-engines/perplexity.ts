@@ -8,6 +8,7 @@
 
 import { logger } from "../../middleware/logger.js";
 import { noteProviderFailure } from "../provider-alerts.js";
+import { logApiUsage } from "../api-usage.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/chat/completions";
@@ -74,7 +75,15 @@ export const perplexityAdapter: EngineAdapter = {
 
       const data = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
+      void logApiUsage({
+        provider: "perplexity",
+        service: "watchtower:perplexity",
+        model: MODEL,
+        inputTokens: data.usage?.prompt_tokens || 0,
+        outputTokens: data.usage?.completion_tokens || 0,
+      });
       const text = data.choices?.[0]?.message?.content ?? "";
       return { text, latencyMs, ok: true };
     } catch (err) {

@@ -5,6 +5,7 @@ import { systemHealthApi } from "../api/system-health";
 import type { EvalRunRecord, EvalCaseResult, AlertRecord, LogEntry, ServiceStatusInfo, InfraCostItem, SslCertStatusInfo } from "../api/system-health";
 import { nitterApi } from "../api/nitter";
 import type { NitterInstance } from "../api/nitter";
+import { apiUsageApi } from "../api/api-usage";
 import {
   Card,
   CardContent,
@@ -50,9 +51,16 @@ const systemHealthKeys = {
   logs: (level?: string, limit?: number) =>
     ["system-health", "logs", level, limit] as const,
   nitter: ["nitter-instances"] as const,
+  apiUsage: ["system-health", "api-usage"] as const,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+// Per-call LLM spend is micro-dollars; plain toFixed(2) would show creeping
+// nonzero spend as $0.00 forever, defeating the meter's early-warning purpose.
+function fmtUsd(usd: number): string {
+  return usd > 0 && usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`;
+}
 
 function gradeColor(grade: string): string {
   switch (grade.toUpperCase()) {
@@ -337,6 +345,12 @@ export function SystemHealth() {
     queryKey: ["system-health", "services"] as const,
     queryFn: () => systemHealthApi.services(),
     refetchInterval: 30_000,
+  });
+
+  const { data: apiUsageData } = useQuery({
+    queryKey: systemHealthKeys.apiUsage,
+    queryFn: () => apiUsageApi.summary(),
+    refetchInterval: 60_000,
   });
 
   const queryClient = useQueryClient();
@@ -731,6 +745,66 @@ export function SystemHealth() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── AI API Spend (api_usage_events success-path meter) ──────────── */}
+      {apiUsageData && (
+        <Card className="rounded-xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Gauge className="h-4 w-4 text-muted-foreground" />
+              AI API Spend
+            </CardTitle>
+            <CardDescription>
+              Success-path meter by provider. Non-Anthropic models are token-metered
+              but $0-priced pending verified prices.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4 text-center mb-3">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Today</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-amber-400">
+                  {fmtUsd(apiUsageData.todayUsd)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">7 Days</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-amber-400">
+                  {fmtUsd(apiUsageData.weekUsd)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">30 Days</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-amber-400">
+                  {fmtUsd(apiUsageData.monthUsd)}
+                </p>
+              </div>
+            </div>
+            {apiUsageData.byProvider.length > 0 ? (
+              <div className="grid gap-1.5 pt-2 border-t">
+                {apiUsageData.byProvider.map((row) => (
+                  <div key={row.provider} className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${row.month.usd > 0 ? "bg-amber-400" : "bg-emerald-400"}`} />
+                      <span className="text-muted-foreground truncate">{row.provider}</span>
+                      <span className="text-muted-foreground/60 text-[10px]">
+                        {row.month.calls} calls / 30d
+                      </span>
+                    </div>
+                    <span className="font-mono tabular-nums text-muted-foreground shrink-0">
+                      {fmtUsd(row.today.usd)} / {fmtUsd(row.week.usd)} / {fmtUsd(row.month.usd)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground pt-2 border-t">
+                No API usage recorded yet.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

@@ -8,6 +8,7 @@
  */
 
 import { noteProviderFailure } from "./provider-alerts.js";
+import { logApiUsage } from "./api-usage.js";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -217,6 +218,13 @@ async function callMessagesApi(
     data.usage?.output_tokens || 0,
     Date.now() - start,
   );
+  void logApiUsage({
+    provider: "anthropic",
+    service: "anthropic-client",
+    model: data.model || String(body.model ?? ""),
+    inputTokens: data.usage?.input_tokens || 0,
+    outputTokens: data.usage?.output_tokens || 0,
+  });
 
   markAnthropicSuccess();
   return data;

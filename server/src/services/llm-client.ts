@@ -19,6 +19,7 @@
  */
 
 import { logger } from "../middleware/logger.js";
+import { logApiUsage } from "./api-usage.js";
 import {
   callAnthropicChat,
   callAnthropicGenerate,
@@ -163,7 +164,17 @@ async function generateWith(
     return { text, provider, model: model || defaultModel("claude") };
   }
   const text = await callOllamaGenerate(prompt, { model, timeoutMs: opts.timeoutMs });
-  return { text, provider, model: model || defaultModel("ollama") };
+  const resolvedModel = model || defaultModel("ollama");
+  // Free tier — the ollama: prefix prices at $0; logged so the rollup counts
+  // call volume on the content path (generate returns no token usage).
+  void logApiUsage({
+    provider: "ollama",
+    service: "llm-client",
+    model: `ollama:${resolvedModel}`,
+    inputTokens: 0,
+    outputTokens: 0,
+  });
+  return { text, provider, model: resolvedModel };
 }
 
 export async function callLlmGenerate(
@@ -227,6 +238,16 @@ async function chatWith(
     temperature: opts.temperature,
     maxTokens: opts.maxTokens,
     timeoutMs: opts.timeoutMs,
+  });
+  // Free tier — $0 via the ollama: prefix; chat DOES return token counts.
+  // (agent-runner calls callOllamaChat directly and has its own ledger — this
+  // site only sees content-path traffic, so there is no double count.)
+  void logApiUsage({
+    provider: "ollama",
+    service: "llm-client",
+    model: `ollama:${result.model}`,
+    inputTokens: result.promptTokens ?? 0,
+    outputTokens: result.completionTokens ?? 0,
   });
   return { ...result, provider };
 }

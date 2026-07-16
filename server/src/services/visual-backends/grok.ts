@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { logger } from "../../middleware/logger.js";
 import { noteProviderFailure } from "../provider-alerts.js";
+import { logApiUsage } from "../api-usage.js";
 import type {
   VisualBackend,
   VisualCapability,
@@ -66,6 +67,16 @@ async function generateImage(
     const data = (await res.json()) as {
       data?: Array<{ b64_json?: string; url?: string }>;
     };
+
+    // Image responses carry no token usage — log 0 tokens so the CALL is
+    // still counted (priced $0 until owner supplies verified image pricing).
+    void logApiUsage({
+      provider: "xai",
+      service: "visual-backends:grok",
+      model: "grok-imagine-image",
+      inputTokens: 0,
+      outputTokens: 0,
+    });
 
     const imageData = data.data?.[0];
     if (!imageData) {
@@ -135,6 +146,17 @@ async function generateVideo(
     }
 
     const data = (await res.json()) as { request_id?: string };
+
+    // Log at generation START (the billable request); status polls in
+    // checkJob are free reads and are deliberately not metered.
+    void logApiUsage({
+      provider: "xai",
+      service: "visual-backends:grok",
+      model: "grok-imagine-video",
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+
     if (!data.request_id) {
       return { jobId, status: "failed", error: "No request_id returned from Grok video API" };
     }

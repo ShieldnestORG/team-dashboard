@@ -14,6 +14,7 @@
 
 import { logger } from "../../middleware/logger.js";
 import { noteProviderFailure } from "../provider-alerts.js";
+import { logApiUsage } from "../api-usage.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const XAI_ENDPOINT = "https://api.x.ai/v1/chat/completions";
@@ -82,7 +83,15 @@ export const grokAdapter: EngineAdapter = {
 
       const data = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
+      void logApiUsage({
+        provider: "xai",
+        service: "watchtower:grok",
+        model,
+        inputTokens: data.usage?.prompt_tokens || 0,
+        outputTokens: data.usage?.completion_tokens || 0,
+      });
       const text = data.choices?.[0]?.message?.content ?? "";
       return { text, latencyMs, ok: true };
     } catch (err) {

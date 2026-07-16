@@ -16,6 +16,7 @@ import { fetchQualityContext } from "./intel-quality.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 import { getAeoCta } from "./aeo-cta.js";
 import { noteProviderFailure } from "./provider-alerts.js";
+import { logApiUsage } from "./api-usage.js";
 
 // ---------------------------------------------------------------------------
 // SEO Content Engine — generates blog posts from trend signals and publishes
@@ -58,7 +59,17 @@ async function callClaude(system: string, prompt: string): Promise<string> {
     throw new Error(`Claude API error (${res.status}): ${err}`);
   }
 
-  const data = (await res.json()) as { content: Array<{ type: string; text: string }> };
+  const data = (await res.json()) as {
+    content: Array<{ type: string; text: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  void logApiUsage({
+    provider: "anthropic",
+    service: "seo-engine",
+    model: ANTHROPIC_MODEL,
+    inputTokens: data.usage?.input_tokens || 0,
+    outputTokens: data.usage?.output_tokens || 0,
+  });
   return data.content[0]?.text || "";
 }
 
