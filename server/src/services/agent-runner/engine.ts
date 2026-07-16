@@ -504,7 +504,7 @@ export class AgentEngine {
         await logAgentUsage(this.deps.db, {
           memberId: agent.memberId,
           personaKey: agent.persona.key,
-          model: agent.model,
+          model: result.model,
           purpose: "variation",
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
@@ -593,7 +593,7 @@ export class AgentEngine {
     await logAgentUsage(this.deps.db, {
       memberId: agent.memberId,
       personaKey: agent.persona.key,
-      model: agent.model,
+      model: result.model,
       purpose: "ambient",
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
@@ -725,7 +725,7 @@ export class AgentEngine {
         await logAgentUsage(this.deps.db, {
           memberId: agent.memberId,
           personaKey: agent.persona.key,
-          model: agent.model,
+          model: result.model,
           purpose: "responsive_help",
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
@@ -1005,7 +1005,7 @@ export class AgentEngine {
       await logAgentUsage(this.deps.db, {
         memberId: agent.memberId,
         personaKey: agent.persona.key,
-        model: agent.model,
+        model: result.model,
         purpose: "responsive_help",
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
