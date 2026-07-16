@@ -162,7 +162,7 @@ async function generateWith(
     });
     return { text, provider, model: model || defaultModel("claude") };
   }
-  const text = await callOllamaGenerate(prompt, { model });
+  const text = await callOllamaGenerate(prompt, { model, timeoutMs: opts.timeoutMs });
   return { text, provider, model: model || defaultModel("ollama") };
 }
 
