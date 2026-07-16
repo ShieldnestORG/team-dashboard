@@ -56,6 +56,12 @@ const systemHealthKeys = {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+// Per-call LLM spend is micro-dollars; plain toFixed(2) would show creeping
+// nonzero spend as $0.00 forever, defeating the meter's early-warning purpose.
+function fmtUsd(usd: number): string {
+  return usd > 0 && usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`;
+}
+
 function gradeColor(grade: string): string {
   switch (grade.toUpperCase()) {
     case "A":
@@ -761,19 +767,19 @@ export function SystemHealth() {
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Today</p>
                 <p className="mt-1 text-xl font-bold tabular-nums text-amber-400">
-                  ${apiUsageData.todayUsd.toFixed(2)}
+                  {fmtUsd(apiUsageData.todayUsd)}
                 </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">7 Days</p>
                 <p className="mt-1 text-xl font-bold tabular-nums text-amber-400">
-                  ${apiUsageData.weekUsd.toFixed(2)}
+                  {fmtUsd(apiUsageData.weekUsd)}
                 </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">30 Days</p>
                 <p className="mt-1 text-xl font-bold tabular-nums text-amber-400">
-                  ${apiUsageData.monthUsd.toFixed(2)}
+                  {fmtUsd(apiUsageData.monthUsd)}
                 </p>
               </div>
             </div>
@@ -789,7 +795,7 @@ export function SystemHealth() {
                       </span>
                     </div>
                     <span className="font-mono tabular-nums text-muted-foreground shrink-0">
-                      ${row.today.usd.toFixed(2)} / ${row.week.usd.toFixed(2)} / ${row.month.usd.toFixed(2)}
+                      {fmtUsd(row.today.usd)} / {fmtUsd(row.week.usd)} / {fmtUsd(row.month.usd)}
                     </span>
                   </div>
                 ))}
