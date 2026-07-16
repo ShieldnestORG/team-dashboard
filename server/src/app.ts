@@ -53,6 +53,7 @@ import { mediaDropRoutes } from "./routes/media-drop.js";
 import { startIntelCrons } from "./services/intel-crons.js";
 import { startEvalCrons } from "./services/eval-crons.js";
 import { startAlertCrons } from "./services/alert-crons.js";
+import { setApiUsageDb } from "./services/api-usage.js";
 import { startContentCrons } from "./services/content-crons.js";
 import { startSocialCrons } from "./services/social-crons.js";
 import { startTrendCrons } from "./services/trend-crons.js";
@@ -99,6 +100,7 @@ import {
 } from "./routes/watchtower-checkout.js";
 import { watchtowerAdminRoutes } from "./routes/watchtower-admin.js";
 import { universityAgentsAdminRoutes } from "./routes/university-agents-admin.js";
+import { apiUsageRoutes } from "./routes/api-usage.js";
 import {
   universityCheckoutRoutes,
   universityWebhookRouter,
@@ -383,6 +385,8 @@ export async function createApp(
   api.use("/watchtower", watchtowerCheckoutRoutes(db));
   api.use("/watchtower-admin", watchtowerAdminRoutes(db));
   api.use("/university-agents-admin", universityAgentsAdminRoutes(db));
+  // Success-path API usage/cost meter rollup (board-only, gated in-route).
+  api.use("/api-usage", apiUsageRoutes(db));
   // Email-campaign analytics rollup — GET /api/admin/university/email-stats.
   api.use("/admin/university", universityEmailStatsAdminRoutes(db));
   api.use("/university", universityCheckoutRoutes(db));
@@ -584,6 +588,7 @@ export async function createApp(
   startIntelCrons(db);
   startEvalCrons();
   startAlertCrons(db);
+  setApiUsageDb(db); // persist success-path API usage to api_usage_events (Phase 2 of provider observability)
   startContentCrons(db);
   startSocialCrons(db, opts.storageService);
   startTrendCrons(db);

@@ -12,6 +12,7 @@ import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
 import { noteProviderFailure } from "../provider-alerts.js";
+import { logApiUsage } from "../api-usage.js";
 
 const execAsync = promisify(exec);
 
@@ -94,6 +95,17 @@ async function generateGrokTTS(text: string, outputPath: string): Promise<TTSRes
     noteProviderFailure({ provider: "xai", service: "youtube-tts", status: res.status, bodyText: errBody });
     throw new Error(`Grok TTS failed (${res.status}): ${errBody.slice(0, 500)}`);
   }
+
+  // TTS responses are audio bytes, no token usage — log 0 tokens so the CALL
+  // is still counted. The API takes a voice_id, not a model id; "grok-tts" is
+  // our stable identifier for this endpoint.
+  void logApiUsage({
+    provider: "xai",
+    service: "youtube-tts",
+    model: "grok-tts",
+    inputTokens: 0,
+    outputTokens: 0,
+  });
 
   const audioBuffer = Buffer.from(await res.arrayBuffer());
   await writeFile(outputPath, audioBuffer);

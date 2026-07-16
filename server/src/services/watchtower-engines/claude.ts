@@ -16,6 +16,7 @@
 
 import { logger } from "../../middleware/logger.js";
 import { noteProviderFailure } from "../provider-alerts.js";
+import { logApiUsage } from "../api-usage.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -83,7 +84,15 @@ export const claudeAdapter: EngineAdapter = {
 
       const data = (await res.json()) as {
         content?: Array<{ type: string; text: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
       };
+      void logApiUsage({
+        provider: "anthropic",
+        service: "watchtower:claude",
+        model,
+        inputTokens: data.usage?.input_tokens || 0,
+        outputTokens: data.usage?.output_tokens || 0,
+      });
       const text = data.content
         ?.filter((c) => c.type === "text")
         .map((c) => c.text)

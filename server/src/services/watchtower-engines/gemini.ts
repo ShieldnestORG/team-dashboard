@@ -14,6 +14,7 @@
 
 import { logger } from "../../middleware/logger.js";
 import { noteProviderFailure } from "../provider-alerts.js";
+import { logApiUsage } from "../api-usage.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
@@ -36,6 +37,7 @@ export const geminiAdapter: EngineAdapter = {
 
   async query(q: EngineQuery): Promise<EngineResponse> {
     const apiKey = process.env.WATCHTOWER_GEMINI_API_KEY?.trim();
+    const model = resolveModel();
     const start = Date.now();
 
     if (!apiKey) {
@@ -48,7 +50,7 @@ export const geminiAdapter: EngineAdapter = {
     }
 
     try {
-      const res = await fetch(endpoint(apiKey, resolveModel()), {
+      const res = await fetch(endpoint(apiKey, model), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -84,7 +86,15 @@ export const geminiAdapter: EngineAdapter = {
         candidates?: Array<{
           content?: { parts?: Array<{ text?: string }> };
         }>;
+        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       };
+      void logApiUsage({
+        provider: "gemini",
+        service: "watchtower:gemini",
+        model,
+        inputTokens: data.usageMetadata?.promptTokenCount || 0,
+        outputTokens: data.usageMetadata?.candidatesTokenCount || 0,
+      });
       const text =
         data.candidates?.[0]?.content?.parts
           ?.map((p) => p.text ?? "")

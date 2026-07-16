@@ -34,6 +34,7 @@ import {
 import { registerCronJob } from "./cron-registry.js";
 import { callOllamaChat } from "./ollama-client.js";
 import { noteProviderFailure } from "./provider-alerts.js";
+import { logApiUsage } from "./api-usage.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -173,7 +174,15 @@ async function askClaude(rule: ComplianceRule, excerpt: string): Promise<boolean
 
     const data = (await res.json()) as {
       content?: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
     };
+    void logApiUsage({
+      provider: "anthropic",
+      service: "compliance-scanner",
+      model: ANTHROPIC_MODEL,
+      inputTokens: data.usage?.input_tokens || 0,
+      outputTokens: data.usage?.output_tokens || 0,
+    });
     return parseVerdict(data.content?.[0]?.text ?? "");
   } catch (err) {
     noteProviderFailure({
