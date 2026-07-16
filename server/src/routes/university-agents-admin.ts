@@ -15,7 +15,6 @@
 //                                    voice note). Takes effect next runner tick.
 //   POST /agents/:id/toggle       → on/off via university_members.agent_paused_at
 //   POST /agents/reports/:id/resolve → mark a problem report resolved
-//   GET  /agents/cost-summary     → total today/week/month + by-model breakdown
 //
 // `:id` is the university_members.id (the agent member). Edits do NOT require a
 // redeploy — the runner reads university_agent_config every tick.
