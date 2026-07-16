@@ -161,6 +161,7 @@ export function getOllamaUsageStats(): OllamaUsageStats {
 
 export interface OllamaGenerateOptions {
   model?: string;
+  timeoutMs?: number;
 }
 
 export async function callOllamaGenerate(
@@ -178,6 +179,7 @@ export async function callOllamaGenerate(
         prompt,
         stream: false,
       }),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 300_000),
     });
   } catch (err) {
     recordError();
