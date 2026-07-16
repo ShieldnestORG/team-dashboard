@@ -19,6 +19,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { commentReplies, launchTrackedItems } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { noteProviderFailure } from "./provider-alerts.js";
 
 // Hard-coded confidence threshold — at or above this we attach a suggested
 // reply; below, status defaults to needs_custom and suggestedReply is null.
@@ -217,6 +218,12 @@ export async function classifyComment(commentBody: string): Promise<ClassifierRe
         { status: res.status, err: errText },
         "launch-comment-monitor: Haiku classify failed",
       );
+      noteProviderFailure({
+        provider: "anthropic",
+        service: "launch-comment-monitor",
+        status: res.status,
+        bodyText: errText,
+      });
       return fallback;
     }
     const data = (await res.json()) as { content: Array<{ type: string; text: string }> };
@@ -229,6 +236,11 @@ export async function classifyComment(commentBody: string): Promise<ClassifierRe
     return enforceClassifierInvariants(parsed);
   } catch (err) {
     logger.error({ err }, "launch-comment-monitor: classify call threw");
+    noteProviderFailure({
+      provider: "anthropic",
+      service: "launch-comment-monitor",
+      error: err,
+    });
     return fallback;
   }
 }

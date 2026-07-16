@@ -27,6 +27,7 @@ import {
   selfCheckContent,
 } from "./aeo-seo-playbook.js";
 import { logger } from "../middleware/logger.js";
+import { noteProviderFailure } from "./provider-alerts.js";
 
 // Claude API Configuration
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
@@ -107,12 +108,23 @@ async function askClaude(system: string, prompt: string): Promise<string | null>
 
     if (!res.ok) {
       const err = await res.text().catch(() => "Unknown");
+      noteProviderFailure({
+        provider: "anthropic",
+        service: "creditscore-content-agent",
+        status: res.status,
+        bodyText: err,
+      });
       throw new Error(`Claude API error (${res.status}): ${err}`);
     }
 
     const data = (await res.json()) as { content: Array<{ type: string; text: string }> };
     return data.content[0]?.text || null;
   } catch (err) {
+    noteProviderFailure({
+      provider: "anthropic",
+      service: "creditscore-content-agent",
+      error: err,
+    });
     logger.error(
       { err, model: ANTHROPIC_MODEL },
       "creditscore-content-agent: Claude call failed",

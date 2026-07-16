@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { logger } from "../../middleware/logger.js";
+import { noteProviderFailure } from "../provider-alerts.js";
 import type { EngineAdapter, EngineQuery, EngineResponse } from "./types.js";
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -62,6 +63,12 @@ export const claudeAdapter: EngineAdapter = {
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
+        noteProviderFailure({
+          provider: "anthropic",
+          service: "watchtower:claude",
+          status: res.status,
+          bodyText: errText,
+        });
         logger.warn(
           { status: res.status, err: errText.slice(0, 200) },
           "watchtower:claude non-2xx",
@@ -86,6 +93,11 @@ export const claudeAdapter: EngineAdapter = {
     } catch (err) {
       const latencyMs = Date.now() - start;
       const message = err instanceof Error ? err.message : String(err);
+      noteProviderFailure({
+        provider: "anthropic",
+        service: "watchtower:claude",
+        error: err,
+      });
       logger.warn({ err: message }, "watchtower:claude threw");
       return { text: "", latencyMs, ok: false, error: message };
     }

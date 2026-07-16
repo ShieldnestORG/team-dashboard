@@ -7,6 +7,8 @@
  * Includes in-memory daily usage tracking (resets at midnight UTC).
  */
 
+import { noteProviderFailure } from "./provider-alerts.js";
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -194,6 +196,7 @@ async function callMessagesApi(
   } catch (err) {
     recordError();
     markAnthropicFailure(err instanceof Error ? err.message : String(err));
+    noteProviderFailure({ provider: "anthropic", service: "anthropic-client", error: err });
     throw err;
   }
 
@@ -202,6 +205,7 @@ async function callMessagesApi(
     const errorText = await res.text().catch(() => "Unknown error");
     const msg = `Anthropic API error (${res.status}): ${errorText.slice(0, 300)}`;
     markAnthropicFailure(msg);
+    noteProviderFailure({ provider: "anthropic", service: "anthropic-client", status: res.status, bodyText: errorText });
     throw new Error(msg);
   }
 

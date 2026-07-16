@@ -32,6 +32,7 @@ import {
   assertCanWrite,
   type SkillKey,
 } from "./marketing-skill-registry.js";
+import { noteProviderFailure } from "./provider-alerts.js";
 
 // Claude API Configuration. Per CLAUDE.md: default to latest model.
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
@@ -136,11 +137,13 @@ async function askClaude(userPrompt: string): Promise<string | null> {
     });
     if (!res.ok) {
       const err = await res.text().catch(() => "Unknown");
+      noteProviderFailure({ provider: "anthropic", service: "tutorials-marketing-agent", status: res.status, bodyText: err });
       throw new Error(`Claude API error (${res.status}): ${err}`);
     }
     const data = (await res.json()) as { content: Array<{ type: string; text: string }> };
     return data.content[0]?.text || null;
   } catch (err) {
+    noteProviderFailure({ provider: "anthropic", service: "tutorials-marketing-agent", error: err });
     logger.error({ err, model: ANTHROPIC_MODEL }, "tutorials-marketing-agent: Claude call failed");
     return null;
   }

@@ -15,6 +15,7 @@ import { embedPublishedContent } from "./content-embedder.js";
 import { fetchQualityContext } from "./intel-quality.js";
 import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 import { getAeoCta } from "./aeo-cta.js";
+import { noteProviderFailure } from "./provider-alerts.js";
 
 // ---------------------------------------------------------------------------
 // SEO Content Engine — generates blog posts from trend signals and publishes
@@ -53,6 +54,7 @@ async function callClaude(system: string, prompt: string): Promise<string> {
 
   if (!res.ok) {
     const err = await res.text().catch(() => "Unknown");
+    noteProviderFailure({ provider: "anthropic", service: "seo-engine", status: res.status, bodyText: err });
     throw new Error(`Claude API error (${res.status}): ${err}`);
   }
 

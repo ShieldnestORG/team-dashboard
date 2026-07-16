@@ -33,6 +33,7 @@ import {
 } from "./email-templates.js";
 import { registerCronJob } from "./cron-registry.js";
 import { callOllamaChat } from "./ollama-client.js";
+import { noteProviderFailure } from "./provider-alerts.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -157,6 +158,12 @@ async function askClaude(rule: ComplianceRule, excerpt: string): Promise<boolean
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      noteProviderFailure({
+        provider: "anthropic",
+        service: "compliance-scanner",
+        status: res.status,
+        bodyText: body,
+      });
       logger.warn(
         { status: res.status, body: body.slice(0, 200), rule: rule.rule },
         "compliance-scanner: Claude API error — falling back to regex-only",
@@ -169,6 +176,11 @@ async function askClaude(rule: ComplianceRule, excerpt: string): Promise<boolean
     };
     return parseVerdict(data.content?.[0]?.text ?? "");
   } catch (err) {
+    noteProviderFailure({
+      provider: "anthropic",
+      service: "compliance-scanner",
+      error: err,
+    });
     logger.warn({ err, rule: rule.rule }, "compliance-scanner: Claude fetch failed");
     return null;
   }
