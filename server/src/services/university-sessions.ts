@@ -17,7 +17,7 @@
 // before the join window or to non-RSVPs.
 // ---------------------------------------------------------------------------
 
-import { and, asc, desc, eq, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   customerAccounts,
@@ -178,6 +178,24 @@ export type CancelRsvpResult =
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+/**
+ * Validate an untrusted IANA timezone id (e.g. from a member's browser at RSVP)
+ * and return it, or null when it's absent/blank/not a real zone. We never store
+ * or forward a zone the runtime can't format with — a bad value falls through to
+ * the storefront house zone instead of poisoning a member's session emails.
+ */
+export function normalizeTimeZone(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const tz = input.trim();
+  if (!tz) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -764,15 +782,57 @@ export function universitySessionsService(db: Db) {
    * stored; callers lowercase as needed for de-dup / messageId keys.
    */
   async function listActiveMemberEmails(): Promise<
-    Array<{ email: string; displayName: string | null }>
+    Array<{ email: string; displayName: string | null; timeZone: string | null }>
   > {
     return db
       .select({
         email: universityMembers.email,
         displayName: universityMembers.displayName,
+        timeZone: universityMembers.timezone,
       })
       .from(universityMembers)
       .where(eq(universityMembers.status, "active"));
+  }
+
+  /**
+   * Persist a member's browser IANA timezone (captured at RSVP). Resolved from
+   * the portal accountId → the durable email key. A no-op when the value isn't a
+   * valid zone or no member row matches (the email may be a going-RSVP without a
+   * member row yet). Display-only — never touches billing/auth.
+   */
+  async function setMemberTimeZone(
+    accountId: string,
+    timeZone: string,
+  ): Promise<void> {
+    const tz = normalizeTimeZone(timeZone);
+    if (!tz) return;
+    const identity = await resolveMemberIdentity(accountId);
+    if (!identity) return;
+    await db
+      .update(universityMembers)
+      .set({ timezone: tz, updatedAt: new Date() })
+      .where(sql`LOWER(${universityMembers.email}) = ${identity.email}`);
+  }
+
+  /**
+   * Map lowercased email → stored IANA timezone (or null) for a set of emails.
+   * Lets the cancel / waitlist send-sites localize each recipient's session-time
+   * copy without changing the shape of cancelSession/cancelRsvp. Emails with no
+   * member row (or no stored zone) simply map to null → house-zone fallback.
+   */
+  async function getMemberTimeZones(
+    emails: string[],
+  ): Promise<Map<string, string | null>> {
+    const wanted = [...new Set(emails.map(normalizeEmail))].filter(Boolean);
+    if (wanted.length === 0) return new Map();
+    const rows = await db
+      .select({
+        email: universityMembers.email,
+        timeZone: universityMembers.timezone,
+      })
+      .from(universityMembers)
+      .where(inArray(sql`LOWER(${universityMembers.email})`, wanted));
+    return new Map(rows.map((r) => [normalizeEmail(r.email), r.timeZone]));
   }
 
   /** Insert a single `scheduled` session row. Returns the created row. */
@@ -863,6 +923,8 @@ export function universitySessionsService(db: Db) {
     getAdminSessionById,
     listSessionRsvps,
     listActiveMemberEmails,
+    setMemberTimeZone,
+    getMemberTimeZones,
     createSession,
     patchSession,
     cancelSession,

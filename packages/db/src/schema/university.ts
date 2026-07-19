@@ -63,6 +63,11 @@ export const universityMembers = pgTable(
     agentPersonaKey: text("agent_persona_key"), // 'maya' | 'dario' | ... ; NULL for humans
     agentPausedAt: timestamp("agent_paused_at", { withTimezone: true }), // NULL = running; set = kill-switch engaged
     agentPauseReason: text("agent_pause_reason"), // why an admin paused this agent
+    // IANA timezone id (e.g. 'America/Chicago') captured from the member's
+    // browser at RSVP. Used ONLY to display live-session wall-clock times in the
+    // member's own zone in session emails; NULL for every member predating
+    // capture (they fall back to the storefront house zone). Never billing/auth.
+    timezone: text("timezone"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -286,6 +286,7 @@ async function runSessionReminderWindow(
     .select({
       email: universitySessionRsvps.email,
       displayName: universityMembers.displayName,
+      timeZone: universityMembers.timezone,
       title: universitySessions.title,
       startsAt: universitySessions.startsAt,
     })
@@ -324,6 +325,7 @@ async function runSessionReminderWindow(
           title: r.title,
           startsAtIso: r.startsAt.toISOString(),
           sessionsUrl: UNIVERSITY_SESSIONS_URL,
+          timeZone: r.timeZone ?? undefined,
         },
       });
       sent += 1;

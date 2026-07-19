@@ -32,7 +32,10 @@ import {
   mintBridgeToken,
   type BridgeStatus,
 } from "../services/optimize-me-bridge.js";
-import { universitySessionsService } from "../services/university-sessions.js";
+import {
+  universitySessionsService,
+  normalizeTimeZone,
+} from "../services/university-sessions.js";
 import { voiceBudgetService } from "../services/voice-budget.js";
 import { coherenceService } from "../services/coherence.js";
 import { createCheckoutSession } from "../services/stripe-checkout.js";
@@ -2133,8 +2136,24 @@ export function portalRoutes(db: Db): Router {
       const accountId = await requireUniversityMember(req, res);
       if (!accountId) return;
       const sessionId = String(req.params.id);
+      // The member's browser sends its IANA zone so session emails show times in
+      // their own timezone. Optional + display-only; a bad/absent value just
+      // rides the storefront house-zone fallback. Persist it to the member, and
+      // use the fresh value in the confirm email below (freshest > stored).
+      const timeZone = normalizeTimeZone(
+        (req.body as { timeZone?: unknown } | undefined)?.timeZone,
+      );
       try {
         const result = await sessionsSvc.rsvp(accountId, sessionId);
+        if (timeZone) {
+          // Non-fatal: a timezone-store failure must never fail the RSVP.
+          await sessionsSvc.setMemberTimeZone(accountId, timeZone).catch((err) => {
+            logger.error(
+              { err, accountId },
+              "portal/university/sessions: timezone store failed (non-fatal)",
+            );
+          });
+        }
         if (!result.ok) {
           switch (result.code) {
             case "not_found":
@@ -2171,6 +2190,7 @@ export function portalRoutes(db: Db): Router {
                 description: s.description ?? undefined,
                 sessionsUrl: UNIVERSITY_SESSIONS_URL,
                 calendarUrl: universitySessionIcsUrl(s.id),
+                timeZone: timeZone ?? undefined,
               },
             });
           } catch (sendErr) {
@@ -2211,6 +2231,10 @@ export function portalRoutes(db: Db): Router {
         // Per-send failure must not fail the cancel — log and continue.
         if (result.promoted) {
           const p = result.promoted;
+          const promotedTz =
+            (await sessionsSvc.getMemberTimeZones([p.email])).get(
+              p.email.trim().toLowerCase(),
+            ) ?? undefined;
           try {
             await sendCreditscoreEmail({
               kind: "university_session_waitlist_open",
@@ -2224,6 +2248,7 @@ export function portalRoutes(db: Db): Router {
                 description: p.description ?? undefined,
                 sessionsUrl: UNIVERSITY_SESSIONS_URL,
                 calendarUrl: universitySessionIcsUrl(p.sessionId),
+                timeZone: promotedTz,
               },
             });
           } catch (sendErr) {
@@ -2370,6 +2395,7 @@ export function portalRoutes(db: Db): Router {
                 durationMinutes: row.durationMinutes,
                 description: row.description ?? undefined,
                 sessionsUrl: UNIVERSITY_SESSIONS_URL,
+                timeZone: m.timeZone ?? undefined,
               },
             });
           } catch (sendErr) {
@@ -2443,6 +2469,9 @@ export function portalRoutes(db: Db): Router {
         // Event-driven "session canceled" notice to going RSVPs (DESIGN §9).
         // The storefront template owns FROM/subject/body; we post the envelope.
         // Per-send failures must not fail the cancel — log and continue.
+        const cancelTz = await sessionsSvc.getMemberTimeZones(
+          result.goingEmails,
+        );
         for (const email of result.goingEmails) {
           try {
             await sendCreditscoreEmail({
@@ -2452,6 +2481,8 @@ export function portalRoutes(db: Db): Router {
                 title: result.row.title,
                 startsAtIso: result.row.startsAt.toISOString(),
                 sessionsUrl: UNIVERSITY_SESSIONS_URL,
+                timeZone:
+                  cancelTz.get(email.trim().toLowerCase()) ?? undefined,
               },
             });
           } catch (sendErr) {

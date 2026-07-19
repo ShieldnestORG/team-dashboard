@@ -952,6 +952,34 @@ describeDb("university session reminder crons (windowing)", () => {
     const sent = await runUniversitySessionReminder1h(db);
     expect(sent).toBe(0);
   });
+
+  it("captured timezone stores on the member and rides the 24h reminder payload; bad zones no-op", async () => {
+    // Store a valid IANA zone (as the RSVP route does from the browser)…
+    await svc.setMemberTimeZone(rsvpAccountId, "America/Chicago");
+    // …a garbage zone must NOT overwrite it (validated before write).
+    await svc.setMemberTimeZone(rsvpAccountId, "Not/AZone");
+    expect(
+      (await svc.getMemberTimeZones(["rsvp@crons.test"])).get(
+        "rsvp@crons.test",
+      ),
+    ).toBe("America/Chicago");
+
+    await seedRsvpdSession(new Date(Date.now() + 23.5 * HOUR));
+    const sent = await runUniversitySessionReminder24h(db);
+    expect(sent).toBe(1);
+    const call = sendEmailMock.mock.calls.find(
+      (c) => c[0]?.kind === "university_session_reminder_24h",
+    );
+    // The cron read the stored zone and passed it through to the storefront
+    // renderer, which localizes the session wall-clock to the member's zone.
+    expect(call?.[0].data.timeZone).toBe("America/Chicago");
+
+    // Reset so this can't couple to sibling tests (afterEach leaves the member).
+    await db
+      .update(universityMembers)
+      .set({ timezone: null })
+      .where(eq(universityMembers.email, "rsvp@crons.test"));
+  });
 });
 
 // ---------------------------------------------------------------------------
