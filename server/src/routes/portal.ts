@@ -41,6 +41,7 @@ import {
   type VoiceAddonTier,
 } from "../services/university-stripe-handler.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
+import { enrichNote } from "../services/notes-enrichment.js";
 import {
   UNIVERSITY_SESSIONS_URL,
   universitySessionIcsUrl,
@@ -997,6 +998,8 @@ export function portalRoutes(db: Db): Router {
           lessonSlug: n.lessonSlug,
           noteKey: n.noteKey,
           body: n.body,
+          title: n.title,
+          tags: n.tags,
           updatedAt: n.updatedAt.toISOString(),
         })),
       });
@@ -1016,6 +1019,7 @@ export function portalRoutes(db: Db): Router {
       lessonSlug?: unknown;
       noteKey?: unknown;
       body?: unknown;
+      title?: unknown;
     };
     const lessonSlug =
       typeof body.lessonSlug === "string" ? body.lessonSlug.trim() : "";
@@ -1035,6 +1039,13 @@ export function portalRoutes(db: Db): Router {
         .json({ error: `body must be at most ${NOTE_BODY_MAX} characters` });
       return;
     }
+    // Optional free-form title. Trimmed + capped at 200 chars (truncate rather
+    // than reject — a long title should never block a save). Empty → undefined,
+    // so an omitted/blank title never overwrites an existing one.
+    const title =
+      typeof body.title === "string" && body.title.trim()
+        ? body.title.trim().slice(0, 200)
+        : undefined;
 
     try {
       const saved = await svc.upsertNote({
@@ -1042,14 +1053,28 @@ export function portalRoutes(db: Db): Router {
         lessonSlug,
         noteKey,
         body: noteBody,
+        title,
       });
       res.status(200).json({
         note: {
           lessonSlug: saved.lessonSlug,
           noteKey: saved.noteKey,
           body: saved.body,
+          title: saved.title,
+          tags: saved.tags,
           updatedAt: saved.updatedAt.toISOString(),
         },
+      });
+      // Fire-and-forget AI enrichment (title + tags). NOT awaited — the response
+      // is already sent; enrichNote pins to Ollama, self-limits, and swallows
+      // all errors, so it can never delay or fail this request.
+      void enrichNote({
+        accountId,
+        lessonSlug: saved.lessonSlug,
+        noteKey: saved.noteKey,
+        body: saved.body,
+        existingTitle: saved.title,
+        apply: svc.setNoteEnrichment,
       });
     } catch (err) {
       logger.error(

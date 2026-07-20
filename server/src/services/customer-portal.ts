@@ -492,6 +492,13 @@ export interface AccountWithEntitlements {
   entitlements: CustomerEntitlements;
 }
 
+// Sentinel lesson_slug for free-form ("Your notes") notes that don't belong to
+// any lesson. A standalone note is a row with lesson_slug === this value and a
+// client-minted UUID note_key, so the existing (email, lesson_slug, note_key)
+// unique index + ON CONFLICT upsert work unchanged. lesson_slug is NEVER null
+// (NULL would break ON CONFLICT and silently duplicate).
+export const STANDALONE_LESSON_SLUG = "__standalone__";
+
 export function customerPortalService(db: Db) {
   async function logAction(
     accountId: string | null,
@@ -1362,10 +1369,13 @@ export function customerPortalService(db: Db) {
     lessonSlug: string;
     noteKey: string;
     body: string;
+    title?: string;
   }): Promise<{
     lessonSlug: string;
     noteKey: string;
     body: string;
+    title: string | null;
+    tags: string[];
     updatedAt: Date;
   }> {
     const identity = await resolveProgressIdentity(args.accountId);
@@ -1375,6 +1385,12 @@ export function customerPortalService(db: Db) {
     const noteKey = args.noteKey.trim();
     if (!noteKey) throw new Error("noteKey required");
     const body = args.body;
+    // Only a caller-supplied, non-empty title participates. When omitted we
+    // neither insert nor overwrite the title (enrichment / a prior title win).
+    const title =
+      typeof args.title === "string" && args.title.trim()
+        ? args.title.trim()
+        : undefined;
 
     const now = new Date();
     const [row] = await db
@@ -1385,6 +1401,7 @@ export function customerPortalService(db: Db) {
         lessonSlug,
         noteKey,
         body,
+        ...(title !== undefined ? { title } : {}),
       })
       .onConflictDoUpdate({
         target: [
@@ -1394,9 +1411,11 @@ export function customerPortalService(db: Db) {
         ],
         set: {
           // Backfill the account link if it resolved after the first save, and
-          // refresh the body + updated_at on a re-save.
+          // refresh the body + updated_at on a re-save. Title is updated only
+          // when the caller supplied one — an omitted title is left intact.
           accountId: identity.accountId,
           body,
+          ...(title !== undefined ? { title } : {}),
           updatedAt: now,
         },
       })
@@ -1404,6 +1423,8 @@ export function customerPortalService(db: Db) {
         lessonSlug: universityNotes.lessonSlug,
         noteKey: universityNotes.noteKey,
         body: universityNotes.body,
+        title: universityNotes.title,
+        tags: universityNotes.tags,
         updatedAt: universityNotes.updatedAt,
       });
     return row;
@@ -1421,6 +1442,8 @@ export function customerPortalService(db: Db) {
       lessonSlug: string;
       noteKey: string;
       body: string;
+      title: string | null;
+      tags: string[];
       updatedAt: Date;
     }>
   > {
@@ -1442,6 +1465,8 @@ export function customerPortalService(db: Db) {
         lessonSlug: universityNotes.lessonSlug,
         noteKey: universityNotes.noteKey,
         body: universityNotes.body,
+        title: universityNotes.title,
+        tags: universityNotes.tags,
         updatedAt: universityNotes.updatedAt,
       })
       .from(universityNotes)
@@ -1467,6 +1492,56 @@ export function customerPortalService(db: Db) {
 
     await db
       .delete(universityNotes)
+      .where(
+        and(
+          or(
+            sql`LOWER(${universityNotes.email}) = ${identity.email}`,
+            eq(universityNotes.accountId, identity.accountId),
+          ),
+          eq(universityNotes.lessonSlug, lessonSlug),
+          eq(universityNotes.noteKey, noteKey),
+        ),
+      );
+  }
+
+  /**
+   * Apply AI enrichment (tags + optional title) to a member's note. Scoped to
+   * the durable identity (email OR account_id) + lesson + note_key so a member
+   * can only enrich their own notes. `tags` (when provided) is always written;
+   * `title` is filled ONLY when the current row's title IS NULL — a user-set
+   * title is never overwritten (COALESCE keeps the existing value). Used by the
+   * fire-and-forget enrichment path; a no-op when neither field is provided or
+   * the identity can't be resolved.
+   */
+  async function setNoteEnrichment(args: {
+    accountId: string;
+    lessonSlug: string;
+    noteKey: string;
+    title?: string;
+    tags?: string[];
+  }): Promise<void> {
+    const identity = await resolveProgressIdentity(args.accountId);
+    if (!identity) return;
+    const lessonSlug = args.lessonSlug.trim();
+    const noteKey = args.noteKey.trim();
+    if (!lessonSlug || !noteKey) return;
+
+    const hasTags = Array.isArray(args.tags);
+    const newTitle =
+      typeof args.title === "string" && args.title.trim()
+        ? args.title.trim()
+        : undefined;
+    if (!hasTags && newTitle === undefined) return;
+
+    await db
+      .update(universityNotes)
+      .set({
+        ...(hasTags ? { tags: args.tags } : {}),
+        // Only fill title when it is still NULL — never clobber a user title.
+        ...(newTitle !== undefined
+          ? { title: sql`COALESCE(${universityNotes.title}, ${newTitle})` }
+          : {}),
+      })
       .where(
         and(
           or(
@@ -3123,6 +3198,7 @@ export function customerPortalService(db: Db) {
     upsertNote,
     getNotes,
     deleteNote,
+    setNoteEnrichment,
     getCommunityFeed,
     createCommunityPost,
     getCommunityPost,

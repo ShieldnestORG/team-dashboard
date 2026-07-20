@@ -213,9 +213,18 @@ export const universityNotes = pgTable(
     // The durable join key. Lowercased before insert.
     email: text("email").notNull(),
     lessonSlug: text("lesson_slug").notNull(),
-    // The in-lesson note slot — stable per "write this down" field.
+    // The in-lesson note slot — stable per "write this down" field. Free-form
+    // ("__standalone__") notes use a client-minted UUID here.
     noteKey: text("note_key").notNull(),
     body: text("body").notNull(),
+    // Optional short title. Nullable — lesson notes may have none; the
+    // fire-and-forget enrichment backfills it ONLY when still NULL (a user-set
+    // title is never overwritten).
+    title: text("title"),
+    // AI/user tags. NOT NULL with an empty-array default so every row always
+    // has an array to read. GIN index (`university_notes_tags_gin`) added in
+    // migration 0156.
+    tags: text("tags").array().notNull().default(sql`'{}'`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
