@@ -312,11 +312,30 @@ function renderAuthInterstitial(token: string): string {
   <div class="brand">Coherence Daddy</div>
   <h1>Step inside</h1>
   <p>You're verified — click below to enter. This link is single-use and expires shortly.</p>
-  <form method="POST" action="/api/portal/auth?token=${safeToken}">
-    <button type="submit">Enter</button>
+  <form method="POST" action="/api/portal/auth?token=${safeToken}" id="enter-form">
+    <button type="submit" id="enter-btn">Enter</button>
   </form>
   <div class="fineprint">If you didn't request this, you can safely ignore the email.</div>
 </main>
+<script>
+  // Guard against a double-submit (a fast double-click, or a mail scanner that
+  // auto-submits the form). The token is single-use, so a second POST would
+  // otherwise land the human on a false "already used" error even though the
+  // first submit signed them in. Disabling the button in the submit handler
+  // does NOT cancel the in-flight submission — it only blocks a second one.
+  // Belt-and-suspenders: POST /auth also treats a spent-token submit from an
+  // already-signed-in browser as success, so a blocked script still recovers.
+  (function () {
+    var f = document.getElementById("enter-form");
+    var b = document.getElementById("enter-btn");
+    if (f && b) {
+      f.addEventListener("submit", function () {
+        b.disabled = true;
+        b.textContent = "Entering…";
+      });
+    }
+  })();
+</script>
 </body>
 </html>`;
 }
@@ -662,6 +681,14 @@ export function portalRoutes(db: Db): Router {
       return;
     }
     if (status !== "ok") {
+      // If the visitor is already signed in (e.g. reloading an interstitial for
+      // a token they already spent), don't show a false error — send them into
+      // the app. Gated on the token being unusable, so a signed-in user can
+      // still confirm a FRESH link (e.g. to switch accounts).
+      if (svc.verifySession(readSessionCookie(req))) {
+        res.redirect(302, `${portalBaseUrl()}/`);
+        return;
+      }
       // Uniform error code — don't let callers distinguish missing vs
       // consumed vs expired (token-existence oracle).
       res.redirect(302, `${portalBaseUrl()}/auth?error=invalid_or_expired`);
@@ -700,6 +727,17 @@ export function portalRoutes(db: Db): Router {
       return;
     }
     if (!result) {
+      // Benign double-submit: the interstitial's confirm button was submitted
+      // twice (fast double-click, or a scanner replay). The first POST already
+      // consumed the token AND set the session cookie, so this second POST
+      // finds the token spent. If the request already carries a valid session,
+      // the user IS signed in — send them into the app instead of a false
+      // "expired or already used" error. This is what caused the 2026-07-19
+      // "clicked in <60s and it failed" report.
+      if (svc.verifySession(readSessionCookie(req))) {
+        res.redirect(302, `${portalBaseUrl()}/`);
+        return;
+      }
       res.redirect(302, `${portalBaseUrl()}/auth?error=invalid_or_expired`);
       return;
     }
