@@ -7,10 +7,11 @@
  * swallowed. It self-limits: it only runs once a note has enough body AND no
  * title yet, so re-saves stop calling the model as soon as a title exists.
  *
- * Routing: the enrichment is pinned to the Ollama (Cloud) provider so it never
- * spends against the metered Claude account. If Ollama is not configured we
- * no-op rather than let the router fall back to Claude. Metering is whatever
- * llm-client already records — no extra ledger here.
+ * Routing: enrichment calls Ollama Cloud DIRECTLY with a dedicated University key
+ * (UNIVERSITY_OLLAMA_API_KEY, falling back to the shared OLLAMA_API_KEY only if the
+ * dedicated one is unset). It does NOT go through the shared LLM router — so it is
+ * isolated from content generation and structurally cannot fall back to the metered
+ * Claude account. No usable key → no-op.
  *
  * Persistence is injected (`apply`) by the caller — the portal route already
  * holds the DB-scoped customer-portal service — so this module has no DB or
@@ -19,13 +20,64 @@
  */
 
 import { logger } from "../middleware/logger.js";
-import { callLlmChat, isProviderConfigured } from "./llm-client.js";
 
 // Enough text to be worth summarizing — below this the title/tags would be
 // noise. Also the self-limit floor.
 const MIN_BODY_LEN = 40;
 const ENRICH_MAX_TOKENS = 200;
 const ENRICH_TIMEOUT_MS = 20_000;
+
+// University notes use their OWN Ollama Cloud key, isolated from the content-gen
+// key (OLLAMA_API_KEY). Keeps notes' quota/metering separate, and means a notes
+// problem can never affect the content engine. Falls back to the shared key only
+// if the dedicated one isn't set, so notes still work before isolation is wired.
+const OLLAMA_BASE = process.env.OLLAMA_URL || "https://ollama.com";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:31b";
+
+function notesOllamaKey(): string | undefined {
+  return (
+    process.env.UNIVERSITY_OLLAMA_API_KEY || process.env.OLLAMA_API_KEY || undefined
+  );
+}
+
+/**
+ * Minimal, self-contained Ollama Cloud chat call for notes enrichment — uses the
+ * University key ONLY (never the shared LLM router), so it structurally cannot fall
+ * back to Claude. Times out; returns the assistant text, or "" on any non-2xx /
+ * malformed response.
+ */
+async function ollamaEnrichChat(
+  key: string,
+  system: string,
+  user: string,
+): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ENRICH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        stream: false,
+        options: { num_predict: ENRICH_MAX_TOKENS },
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return "";
+    const data = (await res.json()) as { message?: { content?: string } };
+    return data?.message?.content ?? "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 const SYSTEM_PROMPT = `You label a short personal reflection note for a self-development app. Respond with ONLY valid JSON — no markdown, no backticks — in exactly this shape:
 {"title":"3-6 word title","tags":["tag1","tag2"]}
@@ -67,29 +119,14 @@ export async function enrichNote(args: EnrichNoteArgs): Promise<void> {
     // a title exists (user-set or a prior enrichment), re-saves skip the model.
     if (body.length < MIN_BODY_LEN || existingTitle.length > 0) return;
 
-    // GUARD 2 — never fall through to the metered Claude account. If Ollama is
-    // not configured, don't even attempt (an unconfigured primary would fail
-    // and the router would fall back to Claude).
-    if (!isProviderConfigured("ollama")) return;
+    // GUARD 2 — University notes have a dedicated Ollama key. No usable key → no-op.
+    // There is NO router and NO fallback here, so enrichment can never reach the
+    // metered Claude account no matter how the Ollama call fails.
+    const key = notesOllamaKey();
+    if (!key) return;
 
-    const result = await callLlmChat(
-      [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: body },
-      ],
-      // Pin to Ollama AND never fall back to the metered Claude account, even if
-      // the Ollama call fails at runtime (timeout/5xx). GUARD 2 above covers the
-      // "unconfigured" case; disableFallback covers "configured but failed" — so
-      // enrichment can never bill Claude regardless of how the primary fails.
-      {
-        provider: "ollama",
-        disableFallback: true,
-        maxTokens: ENRICH_MAX_TOKENS,
-        timeoutMs: ENRICH_TIMEOUT_MS,
-      },
-    );
-
-    const parsed = parseEnrichment(result.content);
+    const content = await ollamaEnrichChat(key, SYSTEM_PROMPT, body);
+    const parsed = parseEnrichment(content);
     if (!parsed) return;
     const { title, tags } = parsed;
     if (!title && tags.length === 0) return;
