@@ -107,9 +107,15 @@ export interface LlmCallOptions {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  /**
+   * Never fall back to the other provider on primary failure — rethrow instead.
+   * For cost-pinned callers (e.g. notes enrichment) that must NOT spend on the
+   * metered Claude account when the Ollama primary hiccups at runtime.
+   */
+  disableFallback?: boolean;
 }
 
-function isProviderConfigured(provider: LlmProvider): boolean {
+export function isProviderConfigured(provider: LlmProvider): boolean {
   if (provider === "claude") return isAnthropicConfigured();
   // Ollama has baked-in defaults (OLLAMA_URL falls back to https://ollama.com),
   // but treat it as configured only when the operator set something explicitly —
@@ -186,7 +192,7 @@ export async function callLlmGenerate(
     return await generateWith(primary, prompt, model, opts);
   } catch (primaryErr) {
     const fallback = otherProvider(primary);
-    if (!isProviderConfigured(fallback)) {
+    if (opts.disableFallback || !isProviderConfigured(fallback)) {
       throw primaryErr;
     }
     logger.warn(
@@ -261,7 +267,7 @@ export async function callLlmChat(
     return await chatWith(primary, messages, model, opts);
   } catch (primaryErr) {
     const fallback = otherProvider(primary);
-    if (!isProviderConfigured(fallback)) {
+    if (opts.disableFallback || !isProviderConfigured(fallback)) {
       throw primaryErr;
     }
     logger.warn(
