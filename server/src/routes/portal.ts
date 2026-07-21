@@ -42,6 +42,12 @@ import {
 } from "../services/university-stripe-handler.js";
 import { sendCreditscoreEmail } from "../services/creditscore-email-callback.js";
 import { enrichNote } from "../services/notes-enrichment.js";
+import { embedNote } from "../services/notes-embedding.js";
+import {
+  askNotesCoach,
+  isCoachConfigured,
+} from "../services/university/notes-coach-client.js";
+import { buildNotesCoachPrompt } from "../services/university/notes-coach-prompt.js";
 import {
   UNIVERSITY_SESSIONS_URL,
   universitySessionIcsUrl,
@@ -1076,6 +1082,16 @@ export function portalRoutes(db: Db): Router {
         existingTitle: saved.title,
         apply: svc.setNoteEnrichment,
       });
+      // Fire-and-forget embedding for semantic "related notes" — also NOT
+      // awaited. embedNote self-limits (skips short bodies), swallows all
+      // errors, and re-embeds on every save so an edited note stays current.
+      void embedNote({
+        accountId,
+        lessonSlug: saved.lessonSlug,
+        noteKey: saved.noteKey,
+        body: saved.body,
+        apply: svc.setNoteEmbedding,
+      });
     } catch (err) {
       logger.error(
         { err, accountId, lessonSlug, noteKey },
@@ -1118,6 +1134,165 @@ export function portalRoutes(db: Db): Router {
       res.status(500).json({ error: "Failed to delete note" });
     }
   });
+
+  // -- University notes: semantic "related notes" ----------------------------
+  //
+  // GET /university/notes/related?lessonSlug=<slug>&noteKey=<key>  → the member's
+  //   notes most similar to that source note; OR ?q=<text> → notes matching free
+  //   text. Read-only + member-gated. GET is not under portalCsrfGuard, so the
+  //   ONLY gate is requireUniversityMember + the identity-scoped service query.
+  //   Degrades to keyword matching when embeddings are unavailable, and never
+  //   surfaces an embed/DB hiccup as a hard error — an empty list is the failure
+  //   mode the notes UI sees.
+  router.get(
+    "/university/notes/related",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      const lessonSlug =
+        typeof req.query.lessonSlug === "string"
+          ? req.query.lessonSlug.trim()
+          : undefined;
+      const noteKey =
+        typeof req.query.noteKey === "string"
+          ? req.query.noteKey.trim()
+          : undefined;
+      const queryText =
+        typeof req.query.q === "string" ? req.query.q.trim() : undefined;
+      const limitRaw =
+        typeof req.query.limit === "string" ? Number(req.query.limit) : NaN;
+      const limit = Number.isFinite(limitRaw) ? limitRaw : undefined;
+      try {
+        const related = await svc.getRelatedNotes({
+          accountId,
+          lessonSlug,
+          noteKey,
+          queryText,
+          limit,
+        });
+        res.json({
+          related: related.map((n) => ({
+            lessonSlug: n.lessonSlug,
+            noteKey: n.noteKey,
+            title: n.title,
+            // A short preview only — keep the payload lean (the list UI already
+            // holds the member's own full note bodies).
+            preview: n.body.slice(0, 200),
+            tags: n.tags,
+            similarity: n.similarity,
+            source: n.source,
+          })),
+        });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/notes/related: failed",
+        );
+        res.json({ related: [] });
+      }
+    },
+  );
+
+  // -- University notes coach: read-only "ask about your notes" ---------------
+  //
+  // DISABLED by default. Stays 404 until BOTH UNIVERSITY_COACH_ENABLED === "true"
+  // AND a configured UNIVERSITY_COACH_XAI_KEY — so building/deploying this route
+  // cannot egress notes to xAI on its own. Read-only: it loads the member's own
+  // notes and answers via xAI/Grok; it NEVER writes a note. Two owner review
+  // gates must clear before enabling (see docs handoff §6): (1) notes→xAI privacy
+  // egress approval, (2) a per-member budget ceiling. As a mutation it is blocked
+  // under impersonation and CSRF-guarded (router-wide) + member-gated.
+  const COACH_QUESTION_MAX = 2_000;
+  router.post(
+    "/university/notes-coach",
+    async (req: Request, res: Response) => {
+      // Mutation (billable LLM call) — block impersonation FIRST, then gate.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      // Hard kill-switch — feature-absent (404) until the env flag AND a key are
+      // both set. Keeps the disabled scaffold non-egressing.
+      if (
+        process.env.UNIVERSITY_COACH_ENABLED !== "true" ||
+        !isCoachConfigured()
+      ) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+
+      const body = (req.body ?? {}) as { question?: unknown };
+      const question =
+        typeof body.question === "string" ? body.question.trim() : "";
+      if (!question) {
+        res.status(400).json({ error: "question required" });
+        return;
+      }
+      if (question.length > COACH_QUESTION_MAX) {
+        res.status(400).json({
+          error: `question must be at most ${COACH_QUESTION_MAX} characters`,
+        });
+        return;
+      }
+
+      try {
+        // The member's own notes (identity-scoped inside the service).
+        const allNotes = await svc.getNotes({ accountId });
+        if (allNotes.length === 0) {
+          res.json({
+            answer:
+              "You haven't written any notes yet, so there's nothing for me to look across. Jot a few down and ask again.",
+            grounded: false,
+          });
+          return;
+        }
+        // Recent context + question-relevant context (semantic-first with keyword
+        // fallback — reuses the related-notes query on the QUESTION text).
+        const recentNotes = allNotes.slice(0, 5).map((n) => ({
+          title: n.title,
+          body: n.body,
+          tags: n.tags,
+        }));
+        const related = await svc.getRelatedNotes({
+          accountId,
+          queryText: question,
+          limit: 8,
+        });
+        const relatedNotes = related.map((n) => ({
+          title: n.title,
+          body: n.body,
+        }));
+
+        const { system, user } = buildNotesCoachPrompt({
+          recentNotes,
+          relatedNotes,
+          question,
+        });
+        const result = await askNotesCoach({ system, user });
+        if (!result.ok) {
+          logger.error(
+            { accountId, error: result.error },
+            "portal/university/notes-coach: xAI call failed",
+          );
+          res.status(502).json({
+            error: "The coach is unavailable right now. Try again shortly.",
+          });
+          return;
+        }
+        // TODO(owner gate §6.2): before wide enablement, meter this xAI call via
+        // agent-runner logAgentUsage (universityAgentUsage) and enforce a
+        // per-member budget ceiling / rate limit. Tokens available now:
+        // result.inputTokens / result.outputTokens.
+        res.json({ answer: result.text, grounded: true });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/notes-coach: failed",
+        );
+        res.status(500).json({ error: "Failed to answer" });
+      }
+    },
+  );
 
   // -- University voice budget (Rex realtime-minutes cap) ---------------------
   //

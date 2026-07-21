@@ -36,6 +36,8 @@ import { sendCreditscoreEmail } from "./creditscore-email-callback.js";
 import { voiceBudgetService } from "./voice-budget.js";
 import leoProfanity from "leo-profanity";
 import { logger } from "../middleware/logger.js";
+import { getEmbedding } from "./intel-embeddings.js";
+import { scoreNotesByKeyword } from "./university/notes-keyword-fallback.js";
 
 // ---------------------------------------------------------------------------
 // Customer Portal MVP service
@@ -1552,6 +1554,173 @@ export function customerPortalService(db: Db) {
           eq(universityNotes.noteKey, noteKey),
         ),
       );
+  }
+
+  // -------------------------------------------------------------------------
+  // University Smart Notes — semantic search (embeddings).
+  // -------------------------------------------------------------------------
+  // The `embedding` column (vector(1024)) is deliberately NOT in the Drizzle
+  // schema — all vector ops are raw SQL, like intel_reports / agent_memory.
+  // Reads cast to ::halfvec(1024) so a future HNSW halfvec index is usable.
+  // Everything is identity-scoped (LOWER(email) OR account_id), exactly like
+  // getNotes, so a member can only ever write/see their own notes.
+
+  // Cosine cutoff for a "related" note (ported from Optimize Me; tune later).
+  const RELATED_SIMILARITY_FLOOR = 0.3;
+
+  /**
+   * Persist a note's embedding (identity-scoped). Raw SQL because the column is
+   * out of the Drizzle schema. Called by the fire-and-forget embed-on-save path
+   * (apply = this) and the backfill script. No-op on missing identity/keys/vec.
+   */
+  async function setNoteEmbedding(args: {
+    accountId: string;
+    lessonSlug: string;
+    noteKey: string;
+    embedding: number[];
+  }): Promise<void> {
+    const identity = await resolveProgressIdentity(args.accountId);
+    if (!identity) return;
+    const lessonSlug = args.lessonSlug.trim();
+    const noteKey = args.noteKey.trim();
+    if (!lessonSlug || !noteKey) return;
+    if (!Array.isArray(args.embedding) || args.embedding.length === 0) return;
+    const vec = `[${args.embedding.join(",")}]`;
+    await db.execute(sql`
+      UPDATE university_notes
+      SET embedding = ${vec}::vector
+      WHERE (LOWER(email) = ${identity.email} OR account_id = ${identity.accountId})
+        AND lesson_slug = ${lessonSlug}
+        AND note_key = ${noteKey}
+    `);
+  }
+
+  /**
+   * The member's notes most related to either a source note (pass lessonSlug +
+   * noteKey) or free query text (pass queryText). Semantic-first via cosine over
+   * ::halfvec(1024); if the embed service is down or nothing is embedded yet it
+   * degrades to the ported keyword-overlap fallback (never surfaces an error).
+   * Always identity-scoped, source note excluded. Returns [] on missing input.
+   *
+   * Each result carries `source: "semantic" | "keyword"`. Semantic similarity is
+   * cosine in [0,1] (filtered > floor); keyword results carry no cosine score
+   * (similarity 0) — distinguish via `source`.
+   */
+  async function getRelatedNotes(args: {
+    accountId: string;
+    lessonSlug?: string;
+    noteKey?: string;
+    queryText?: string;
+    limit?: number;
+  }): Promise<
+    Array<{
+      lessonSlug: string;
+      noteKey: string;
+      body: string;
+      title: string | null;
+      tags: string[];
+      similarity: number;
+      source: "semantic" | "keyword";
+    }>
+  > {
+    const identity = await resolveProgressIdentity(args.accountId);
+    if (!identity) return [];
+    const limit = Math.min(Math.max(1, args.limit ?? 5), 20);
+
+    // Load the member's notes once — needed to resolve a source note's text and
+    // to power the keyword fallback. Cheap (members have few notes).
+    const notes = await getNotes({ accountId: args.accountId });
+    if (notes.length === 0) return [];
+
+    // Resolve the query text + the (lesson, key) to exclude.
+    let queryText =
+      typeof args.queryText === "string" ? args.queryText.trim() : "";
+    let excludeLesson: string | null = null;
+    let excludeKey: string | null = null;
+    if (!queryText && args.lessonSlug && args.noteKey) {
+      excludeLesson = args.lessonSlug.trim();
+      excludeKey = args.noteKey.trim();
+      const src = notes.find(
+        (n) => n.lessonSlug === excludeLesson && n.noteKey === excludeKey,
+      );
+      if (!src) return [];
+      queryText = [src.title ?? "", ...src.tags, src.body].join(" ").trim();
+    }
+    if (!queryText) return [];
+
+    const others = notes.filter(
+      (n) =>
+        !(
+          excludeLesson !== null &&
+          n.lessonSlug === excludeLesson &&
+          n.noteKey === excludeKey
+        ),
+    );
+    if (others.length === 0) return [];
+
+    // Semantic-first.
+    try {
+      const vec = await getEmbedding(queryText);
+      const embStr = `[${vec.join(",")}]`;
+      const exclude =
+        excludeLesson !== null && excludeKey !== null
+          ? sql`AND NOT (lesson_slug = ${excludeLesson} AND note_key = ${excludeKey})`
+          : sql``;
+      const rows = allRows<{
+        lesson_slug: string;
+        note_key: string;
+        body: string;
+        title: string | null;
+        tags: string[] | null;
+        similarity: number | string;
+      }>(
+        await db.execute(sql`
+          SELECT lesson_slug, note_key, body, title, tags,
+            1 - (embedding::halfvec(1024) <=> ${embStr}::halfvec(1024)) AS similarity
+          FROM university_notes
+          WHERE (LOWER(email) = ${identity.email} OR account_id = ${identity.accountId})
+            AND embedding IS NOT NULL
+            ${exclude}
+          ORDER BY embedding::halfvec(1024) <=> ${embStr}::halfvec(1024)
+          LIMIT ${limit}
+        `),
+      );
+      const semantic = rows
+        .map((r) => ({
+          lessonSlug: r.lesson_slug,
+          noteKey: r.note_key,
+          body: r.body,
+          title: r.title,
+          tags: Array.isArray(r.tags) ? r.tags : [],
+          similarity: Number(r.similarity),
+          source: "semantic" as const,
+        }))
+        .filter(
+          (r) =>
+            Number.isFinite(r.similarity) &&
+            r.similarity > RELATED_SIMILARITY_FLOOR,
+        );
+      if (semantic.length > 0) return semantic;
+      // else: nothing embedded yet / all below floor → keyword fallback.
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "getRelatedNotes: semantic path failed; using keyword fallback",
+      );
+    }
+
+    // Keyword fallback (ported pure overlap scorer). No cosine score available.
+    return scoreNotesByKeyword(queryText, others)
+      .slice(0, limit)
+      .map((n) => ({
+        lessonSlug: n.lessonSlug,
+        noteKey: n.noteKey,
+        body: n.body,
+        title: n.title,
+        tags: n.tags,
+        similarity: 0,
+        source: "keyword" as const,
+      }));
   }
 
   // -------------------------------------------------------------------------
@@ -3199,6 +3368,8 @@ export function customerPortalService(db: Db) {
     getNotes,
     deleteNote,
     setNoteEnrichment,
+    setNoteEmbedding,
+    getRelatedNotes,
     getCommunityFeed,
     createCommunityPost,
     getCommunityPost,
