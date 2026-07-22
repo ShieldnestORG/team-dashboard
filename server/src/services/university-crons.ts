@@ -35,6 +35,7 @@ import type { Db } from "@paperclipai/db";
 import {
   universityMembers,
   universityProgress,
+  universityCheckins,
   universitySessions,
   universitySessionRsvps,
   universityEmailLog,
@@ -588,18 +589,23 @@ export async function runUniversitySessionRecap(
 // ---------------------------------------------------------------------------
 // Streak nudge — ACTIVE members whose streak is alive but at risk today.
 //
-// "At risk" = the member logged a rep YESTERDAY (UTC) and has NOT logged one
-// TODAY. That's exactly the window where a single missed day breaks the chain
-// (see customer-portal.ts computeStreak: a streak survives on yesterday's rep
-// but resets once a full day is missed). Nudging them today, before the UTC day
-// closes, is the highest-leverage single touch.
+// The streak is a UNION (F2 "Today's Three"): a day counts if it has a rep OR a
+// stand-alone check-in (matching customer-portal.ts getProgressSummary). So
+// "at risk" = the member had a day-signal (rep OR check-in) YESTERDAY (UTC) and
+// has NONE today. That's exactly the window where a single missed day breaks the
+// chain (see computeStreak: a streak survives on yesterday's signal but resets
+// once a full day is missed). Nudging them today, before the UTC day closes, is
+// the highest-leverage single touch.
 //
-// We compute the at-risk set in ONE grouped query over university_progress:
-// per email, the max rep_day. Members whose latest rep_day == yesterday are
-// at-risk (repped yesterday, not today). We then keep only those joined to an
-// ACTIVE member row. Streak length for the email copy is derived from a count
-// of that member's recent distinct rep-days walked backward from yesterday —
-// computed in code (Rule 5), not by the model.
+// CRITICAL: the union MUST be applied here identically to getProgressSummary —
+// a member who already checked in today is NOT at risk and must never be sent a
+// "your streak is at risk" email (that would be a false, outcome-adjacent lie;
+// see university-crons.test.ts). We union two grouped scans (university_progress
+// rep_days + university_checkins checkin_days) into a per-email day set; members
+// whose set has yesterday but NOT today are at-risk. We then keep only those
+// joined to an ACTIVE member row. Streak length for the email copy is derived
+// from that member's union day-set walked backward from yesterday — computed in
+// code (Rule 5), not by the model.
 // ---------------------------------------------------------------------------
 
 export async function runUniversityStreakNudge(
@@ -622,18 +628,31 @@ export async function runUniversityStreakNudge(
     .from(universityProgress)
     .where(gte(universityProgress.repDay, windowStart));
 
-  // Group rep-days per (lowercased) email.
+  // Group day-signals per (lowercased) email — reps FIRST, then check-ins folded
+  // in, so the set is the UNION that drives the streak.
   const byEmail = new Map<string, Set<string>>();
-  for (const r of rows) {
-    const email = r.email.toLowerCase();
-    const day = String(r.repDay);
+  const addDay = (emailRaw: string, dayRaw: unknown) => {
+    const email = emailRaw.toLowerCase();
+    const day = String(dayRaw);
     const set = byEmail.get(email) ?? new Set<string>();
     set.add(day);
     byEmail.set(email, set);
-  }
+  };
+  for (const r of rows) addDay(r.email, r.repDay);
 
-  // At-risk = latest rep is yesterday (repped yesterday, none today). Compute
-  // the live streak length walking back from yesterday for the email copy.
+  // Fold in stand-alone check-ins over the same window (F2). A member who only
+  // checked in (no rep) today is thereby marked safe, not at risk.
+  const checkinRows = await db
+    .select({
+      email: universityCheckins.email,
+      checkinDay: universityCheckins.checkinDay,
+    })
+    .from(universityCheckins)
+    .where(gte(universityCheckins.checkinDay, windowStart));
+  for (const r of checkinRows) addDay(r.email, r.checkinDay);
+
+  // At-risk = a day-signal yesterday but none today. Compute the live streak
+  // length walking back from yesterday (over the union) for the email copy.
   const atRisk: Array<{ email: string; streakDays: number }> = [];
   for (const [email, days] of byEmail) {
     if (days.has(today)) continue; // already did today's rep — safe

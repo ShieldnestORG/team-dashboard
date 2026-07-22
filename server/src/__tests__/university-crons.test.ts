@@ -117,7 +117,8 @@ describe("runUniversityStreakNudge", () => {
     const memberRows: Row[] = [
       { email: "live@x.test", displayName: "Ada Lovelace" },
     ];
-    const { db } = makeDb([progressRows, memberRows]);
+    // Query order: progress, check-ins ([] — none), active members.
+    const { db } = makeDb([progressRows, [], memberRows]);
 
     const sent = await runUniversityStreakNudge(db, NOW);
 
@@ -140,9 +141,30 @@ describe("runUniversityStreakNudge", () => {
       { email: "today@x.test", repDay: YESTERDAY },
       { email: "today@x.test", repDay: TODAY },
     ];
-    // members query should still be issued but with an empty at-risk set we
-    // short-circuit before it; provide [] defensively.
+    // Slot 1 is the check-ins scan ([] — none). With an empty at-risk set we
+    // short-circuit before the members query.
     const { db } = makeDb([progressRows, []]);
+
+    const sent = await runUniversityStreakNudge(db, NOW);
+
+    expect(sent).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it("EXCLUDES a member who checked in today (union streak — no false at-risk nudge)", async () => {
+    // Repped yesterday (streak alive), NO rep today — but DID a stand-alone
+    // check-in today. The union streak counts the check-in as today's signal, so
+    // the member is NOT at risk and must never be nudged. Without the union this
+    // member would be a false positive (repped yesterday, not today) and get a
+    // "your streak is at risk" email while their streak is actually safe.
+    const progressRows: Row[] = [
+      { email: "checkedin@x.test", repDay: YESTERDAY },
+    ];
+    const checkinRows: Row[] = [
+      { email: "checkedin@x.test", checkinDay: TODAY },
+    ];
+    // Query order: progress, check-ins (has TODAY → member is safe).
+    const { db } = makeDb([progressRows, checkinRows]);
 
     const sent = await runUniversityStreakNudge(db, NOW);
 
@@ -154,6 +176,7 @@ describe("runUniversityStreakNudge", () => {
     const progressRows: Row[] = [
       { email: "stale@x.test", repDay: TWO_DAYS_AGO },
     ];
+    // Slot 1 is the check-ins scan ([] — none).
     const { db } = makeDb([progressRows, []]);
 
     const sent = await runUniversityStreakNudge(db, NOW);
@@ -168,7 +191,8 @@ describe("runUniversityStreakNudge", () => {
     ];
     // active-members query returns no row for this email → gated out.
     const memberRows: Row[] = [];
-    const { db } = makeDb([progressRows, memberRows]);
+    // Query order: progress, check-ins ([] — none), active members ([]).
+    const { db } = makeDb([progressRows, [], memberRows]);
 
     const sent = await runUniversityStreakNudge(db, NOW);
 
@@ -176,13 +200,14 @@ describe("runUniversityStreakNudge", () => {
     expect(emailSpy).not.toHaveBeenCalled();
   });
 
-  it("returns 0 and issues no member query when no one repped yesterday", async () => {
-    const harness = makeDb([[]]);
+  it("returns 0 and issues no member query when no one has a day-signal yesterday", async () => {
+    const harness = makeDb([[], []]);
     const sent = await runUniversityStreakNudge(harness.db, NOW);
     expect(sent).toBe(0);
     expect(emailSpy).not.toHaveBeenCalled();
-    // Only the progress query ran (short-circuit before the member query).
-    expect(harness.consumed).toBe(1);
+    // Only the progress + check-ins scans ran (short-circuit before the member
+    // query, since the at-risk set is empty).
+    expect(harness.consumed).toBe(2);
   });
 
   it("skips a member already nudged within the last 7 days (weekly cap)", async () => {
@@ -193,7 +218,8 @@ describe("runUniversityStreakNudge", () => {
     // The email-log query (kind=university_streak_nudge, sent_at > now-7d)
     // returns a recent row for this member → capped.
     const logRows: Row[] = [{ email: "capped@x.test" }];
-    const { db } = makeDb([progressRows, memberRows, logRows]);
+    // Query order: progress, check-ins ([]), active members, email-log.
+    const { db } = makeDb([progressRows, [], memberRows, logRows]);
 
     const sent = await runUniversityStreakNudge(db, NOW);
 
@@ -208,7 +234,8 @@ describe("runUniversityStreakNudge", () => {
     ];
     // The 7-day cap query returns nothing (the >7d-old row is filtered out by
     // the sent_at cutoff in SQL) → not capped.
-    const harness = makeDb([progressRows, memberRows, []]);
+    // Query order: progress, check-ins ([]), active members, email-log.
+    const harness = makeDb([progressRows, [], memberRows, []]);
 
     const sent = await runUniversityStreakNudge(harness.db, NOW);
 

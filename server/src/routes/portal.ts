@@ -827,25 +827,35 @@ export function portalRoutes(db: Db): Router {
     return accountId;
   }
 
+  // One serializer for the progress-summary wire shape so GET
+  // /university/progress and POST /university/checkin (F2 "Today's Three")
+  // never drift — both now carry `checkedInToday`.
+  function serializeProgress(
+    summary: Awaited<ReturnType<typeof svc.getProgressSummary>>,
+  ) {
+    return {
+      currentStreak: summary.currentStreak,
+      checkedInToday: summary.checkedInToday,
+      weekCount: summary.weekCount,
+      weekGoal: summary.weekGoal,
+      recent: summary.recent.map((r) => ({
+        lessonSlug: r.lessonSlug,
+        created_at: r.createdAt.toISOString(),
+        reflection: r.reflection ?? undefined,
+      })),
+      totalReps: summary.totalReps,
+      thirtyDayRate: summary.thirtyDayRate,
+      weekByDay: summary.weekByDay,
+      lessonsDone: summary.lessonsDone,
+    };
+  }
+
   router.get("/university/progress", async (req: Request, res: Response) => {
     const accountId = await requireUniversityMember(req, res);
     if (!accountId) return;
     try {
       const summary = await svc.getProgressSummary(accountId);
-      res.json({
-        currentStreak: summary.currentStreak,
-        weekCount: summary.weekCount,
-        weekGoal: summary.weekGoal,
-        recent: summary.recent.map((r) => ({
-          lessonSlug: r.lessonSlug,
-          created_at: r.createdAt.toISOString(),
-          reflection: r.reflection ?? undefined,
-        })),
-        totalReps: summary.totalReps,
-        thirtyDayRate: summary.thirtyDayRate,
-        weekByDay: summary.weekByDay,
-        lessonsDone: summary.lessonsDone,
-      });
+      res.json(serializeProgress(summary));
     } catch (err) {
       logger.error(
         { err, accountId },
@@ -902,6 +912,45 @@ export function portalRoutes(db: Db): Router {
       res.status(500).json({ error: "Failed to record rep" });
     }
   });
+
+  // -- University daily check-in (F2 "Today's Three") --------------------------
+  //
+  // POST /university/checkin → 200 { ...progress summary, checkedInToday: true }
+  //   One-tap "① Check in". Idempotent per (member, UTC day) via ON CONFLICT DO
+  //   NOTHING, so a second tap the same day is a clean no-op that still returns
+  //   200 (never a 409/500 on the already-checked-in path). The response is the
+  //   full progress summary so the card refreshes the union streak + the tick in
+  //   one round-trip.
+  //
+  // Gates are EXACTLY POST /university/progress's — member via
+  // requireUniversityMember(), writes blocked under impersonation — plus the
+  // per-member write limiter (a check-in is one tap; 30/min is generous
+  // headroom, bot-hostile). communityWriteLimiter/writeLimit are hoisted.
+
+  const checkinLimiter = communityWriteLimiter(
+    writeLimit("UNIVERSITY_CHECKIN_RATE_PER_MIN", 30),
+  );
+
+  router.post(
+    "/university/checkin",
+    checkinLimiter,
+    async (req: Request, res: Response) => {
+      // Recording a check-in mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      try {
+        const summary = await svc.recordCheckin(accountId);
+        res.status(200).json(serializeProgress(summary));
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/checkin: recordCheckin failed",
+        );
+        res.status(500).json({ error: "Failed to check in" });
+      }
+    },
+  );
 
   // -- University training (brain-training drills) -----------------------------
   //

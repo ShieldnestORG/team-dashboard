@@ -185,6 +185,54 @@ export const universityProgress = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// University DAILY CHECK-INS — the "① Check in" leg of the "Today's Three"
+// daily loop (F2). One tap = one idempotent day-unique row: a stand-alone
+// signal that the member showed up today, independent of whether they logged a
+// lesson rep. The union of check-in days and rep-days drives the streak (a day
+// counts if it has a check-in OR a rep) — see customer-portal.ts
+// getProgressSummary + university-crons.ts runUniversityStreakNudge.
+//
+// The day bucket is an explicit `checkin_day` DATE column (UTC), mirroring
+// university_progress.rep_day, so the day boundary is deterministic and the
+// idempotency constraint is trivial: UNIQUE(email, checkin_day). A second tap
+// on the same UTC day is an ON CONFLICT DO NOTHING no-op (never a 409).
+//
+// The member is identified the SAME email-or-account way as progress/notes —
+// the durable join key is the lowercased `email`; `account_id` fills in once
+// the customer-account-linker resolves the shared login. Both are stored so the
+// streak query works before AND after the account link resolves.
+// ---------------------------------------------------------------------------
+
+export const universityCheckins = pgTable(
+  "university_checkins",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    // The day bucket (UTC) this check-in counts for. Idempotency + streak key.
+    checkinDay: date("checkin_day").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One check-in per member+day. A same-day re-tap upserts nothing (ON
+    // CONFLICT DO NOTHING in the service). We key on email (the durable
+    // identity) so the constraint holds before the account link resolves;
+    // account_id is carried for query convenience but is NOT part of the key.
+    checkinUq: uniqueIndex("university_checkins_email_day_uq").on(
+      table.email,
+      table.checkinDay,
+    ),
+    emailIdx: index("university_checkins_email_idx").on(table.email),
+    accountIdx: index("university_checkins_account_idx").on(table.accountId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // University member NOTES — persisted in-lesson "write this down" prompts.
 //
 // A note is one piece of saved text for a member, a lesson, and a note slot
@@ -882,6 +930,8 @@ export type NewUniversitySubscription =
   typeof universitySubscriptions.$inferInsert;
 export type UniversityProgress = typeof universityProgress.$inferSelect;
 export type NewUniversityProgress = typeof universityProgress.$inferInsert;
+export type UniversityCheckin = typeof universityCheckins.$inferSelect;
+export type NewUniversityCheckin = typeof universityCheckins.$inferInsert;
 export type UniversityNote = typeof universityNotes.$inferSelect;
 export type NewUniversityNote = typeof universityNotes.$inferInsert;
 export type UniversityCancelFeedback =
