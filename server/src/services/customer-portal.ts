@@ -13,6 +13,7 @@ import {
   universityMembers,
   universitySubscriptions,
   universityProgress,
+  universityCheckins,
   universityNotes,
   universityCancelFeedback,
   universityCommunityPosts,
@@ -1226,6 +1227,37 @@ export function customerPortalService(db: Db) {
   }
 
   /**
+   * F2 "Today's Three" — record today's stand-alone check-in. Idempotent per
+   * (member, UTC day): a second tap on the same day is an ON CONFLICT DO NOTHING
+   * no-op, so the endpoint always returns a clean 200 (never a 409). Returns the
+   * fresh progress summary so the caller sees the updated union streak +
+   * checkedInToday in a single round-trip (mirrors recordRep).
+   */
+  async function recordCheckin(
+    accountId: string,
+    now: Date = new Date(),
+  ): Promise<Awaited<ReturnType<typeof getProgressSummary>>> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    // utcDayString returns a 'YYYY-MM-DD' STRING (not a JS Date), so this stays
+    // clear of the Drizzle-Date-vs-Neon-pooler footgun on the `date` column.
+    const checkinDay = utcDayString(now);
+    await db
+      .insert(universityCheckins)
+      .values({
+        accountId: identity.accountId,
+        email: identity.email,
+        checkinDay,
+      })
+      .onConflictDoNothing({
+        target: [universityCheckins.email, universityCheckins.checkinDay],
+      });
+
+    return getProgressSummary(accountId, now);
+  }
+
+  /**
    * The member's progress summary: current streak, this-week rep count, the
    * weekly goal, and a recent rep list, plus the aggregate fields the
    * `/university` home redesign renders (totalReps, thirtyDayRate, weekByDay,
@@ -1239,6 +1271,8 @@ export function customerPortalService(db: Db) {
     now: Date = new Date(),
   ): Promise<{
     currentStreak: number;
+    /** F2 "Today's Three" — did this member check in today (UTC)? */
+    checkedInToday: boolean;
     weekCount: number;
     weekGoal: number;
     recent: Array<{
@@ -1260,6 +1294,7 @@ export function customerPortalService(db: Db) {
     if (!identity) {
       return {
         currentStreak: 0,
+        checkedInToday: false,
         weekCount: 0,
         weekGoal: weekGoal(),
         recent: [],
@@ -1288,7 +1323,29 @@ export function customerPortalService(db: Db) {
 
     // rep_day comes back from the `date` column as a 'YYYY-MM-DD' string.
     const repDays = rows.map((r) => String(r.repDay));
-    const currentStreak = computeStreak(repDays, today);
+
+    // F2 "Today's Three" — the streak is a UNION: a day counts if it has a rep
+    // OR a stand-alone check-in. Check-ins are keyed the same email-or-account
+    // way as reps. Only the STREAK unions; weekCount / weekByDay / totalReps /
+    // lessonsDone below stay rep-only (they measure lesson practice, not
+    // showing-up). The streak-nudge cron applies the identical union to its
+    // at-risk derivation (university-crons.ts) so a checked-in member is never
+    // sent a false "your streak is at risk" email.
+    const checkinRows = await db
+      .select({ checkinDay: universityCheckins.checkinDay })
+      .from(universityCheckins)
+      .where(
+        or(
+          sql`LOWER(${universityCheckins.email}) = ${identity.email}`,
+          eq(universityCheckins.accountId, identity.accountId),
+        ),
+      );
+    const checkinDays = checkinRows.map((r) => String(r.checkinDay));
+    const checkedInToday = checkinDays.includes(today);
+    const currentStreak = computeStreak(
+      new Set([...repDays, ...checkinDays]),
+      today,
+    );
 
     // This-week count: distinct rep-days within the trailing 7-day window
     // (today and the 6 prior UTC days, inclusive).
@@ -1341,6 +1398,7 @@ export function customerPortalService(db: Db) {
 
     return {
       currentStreak,
+      checkedInToday,
       weekCount,
       weekGoal: weekGoal(),
       recent,
@@ -3361,6 +3419,7 @@ export function customerPortalService(db: Db) {
     recordCancelFeedback,
     setStripeCustomerId,
     recordRep,
+    recordCheckin,
     getProgressSummary,
     computeStreak,
     recordTrainingScore,
