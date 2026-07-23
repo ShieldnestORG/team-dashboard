@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { houseAdsApi, type HouseAd, type HouseAdPayload } from "@/api/house-ads";
 import { assetsApi } from "@/api/assets";
+import { useToast } from "../context/ToastContext";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,6 +102,7 @@ const INITIAL_FORM: FormState = {
 
 export function HouseAdsAdmin() {
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { pushToast } = useToast();
   const { selectedCompanyId } = useCompany();
   const [ads, setAds] = useState<HouseAd[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,7 +233,11 @@ export function HouseAdsAdmin() {
       await houseAdsApi.remove(ad.id);
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Delete failed");
+      pushToast({
+        title: "Delete failed",
+        body: err instanceof Error ? err.message : "Delete failed",
+        tone: "error",
+      });
     } finally {
       setBusyId(null);
     }
@@ -243,7 +249,11 @@ export function HouseAdsAdmin() {
       await houseAdsApi.update(ad.id, { active: !ad.active });
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Toggle failed");
+      pushToast({
+        title: "Toggle failed",
+        body: err instanceof Error ? err.message : "Toggle failed",
+        tone: "error",
+      });
     } finally {
       setBusyId(null);
     }
