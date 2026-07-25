@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import {
@@ -23,9 +34,18 @@ import {
   universityCommunityReports,
   universityCommunityNotifications,
   universityTrainingScores,
+  universityHabits,
+  universityHabitCompletions,
+  universityJournalEntries,
+  universityActivities,
   CUSTOMER_CREDENTIAL_KINDS,
 } from "@paperclipai/db";
-import type { CustomerCredentialKind } from "@paperclipai/db";
+import type {
+  CustomerCredentialKind,
+  UniversityHabit,
+  UniversityJournalEntry,
+  UniversityActivity,
+} from "@paperclipai/db";
 import {
   asLocalEncryptedMaterial,
   decryptValue,
@@ -222,6 +242,103 @@ export function isTrainingGameSlug(value: unknown): value is TrainingGameSlug {
   return (
     typeof value === "string" &&
     (TRAINING_GAME_SLUGS as readonly string[]).includes(value)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// University PRACTICE suite — shared constants + pure date-window helpers.
+// Backs the portal Routine / Journal / Track pages (migration 0158). All the
+// window math is deterministic module-level code (Rule 5) so it is
+// unit-testable without a DB, and both the routes and the service share ONE
+// definition of every window.
+// ---------------------------------------------------------------------------
+
+// Max ACTIVE habits per member — backs the "Habit limit reached (50)" 400.
+export const PRACTICE_HABIT_ACTIVE_CAP = 50;
+
+// How far back a habit tick may be dated (UTC days before today; never future).
+export const PRACTICE_HABIT_TOGGLE_WINDOW_DAYS = 7;
+
+// How far back a journal entry may be written (UTC days before today).
+export const PRACTICE_JOURNAL_WINDOW_DAYS = 30;
+
+// recordActivity accepts startedAt within the last N days, plus a small
+// forward allowance for client clock skew.
+export const PRACTICE_ACTIVITY_WINDOW_DAYS = 7;
+export const PRACTICE_ACTIVITY_FUTURE_SKEW_MS = 5 * 60_000;
+
+export const PRACTICE_TIMES_OF_DAY = [
+  "morning",
+  "afternoon",
+  "evening",
+  "any",
+] as const;
+export type PracticeTimeOfDay = (typeof PRACTICE_TIMES_OF_DAY)[number];
+
+export function isPracticeTimeOfDay(
+  value: unknown,
+): value is PracticeTimeOfDay {
+  return (
+    typeof value === "string" &&
+    (PRACTICE_TIMES_OF_DAY as readonly string[]).includes(value)
+  );
+}
+
+export const PRACTICE_ACTIVITY_TYPES = [
+  "run",
+  "walk",
+  "hike",
+  "bike",
+  "other",
+] as const;
+export type PracticeActivityType = (typeof PRACTICE_ACTIVITY_TYPES)[number];
+
+export function isPracticeActivityType(
+  value: unknown,
+): value is PracticeActivityType {
+  return (
+    typeof value === "string" &&
+    (PRACTICE_ACTIVITY_TYPES as readonly string[]).includes(value)
+  );
+}
+
+/** Format a Date as its UTC 'YYYY-MM-DD' day bucket. */
+export function practiceUtcDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** True when `day` is a well-formed 'YYYY-MM-DD' naming a real UTC date. */
+export function isValidUtcDayString(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const ms = Date.parse(`${day}T00:00:00.000Z`);
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === day;
+}
+
+/**
+ * True when `day` is `today` or up to `n` UTC days before it — never future.
+ * Both day arguments are 'YYYY-MM-DD' strings; lexicographic order == date
+ * order for that format.
+ */
+export function isUtcDayWithinLastNDays(
+  day: string,
+  today: string,
+  n: number,
+): boolean {
+  if (day > today) return false;
+  const floorMs = Date.parse(`${today}T00:00:00.000Z`) - n * 86_400_000;
+  return day >= new Date(floorMs).toISOString().slice(0, 10);
+}
+
+/**
+ * True when startedAt falls within [now − PRACTICE_ACTIVITY_WINDOW_DAYS,
+ * now + PRACTICE_ACTIVITY_FUTURE_SKEW_MS].
+ */
+export function isActivityStartInWindow(startedAt: Date, now: Date): boolean {
+  const t = startedAt.getTime();
+  if (!Number.isFinite(t)) return false;
+  return (
+    t >= now.getTime() - PRACTICE_ACTIVITY_WINDOW_DAYS * 86_400_000 &&
+    t <= now.getTime() + PRACTICE_ACTIVITY_FUTURE_SKEW_MS
   );
 }
 
@@ -1855,6 +1972,434 @@ export function customerPortalService(db: Db) {
   }
 
   // -------------------------------------------------------------------------
+  // University PRACTICE suite — habits, journal, activities (migration 0158).
+  // Backs the portal Routine / Journal / Track pages. Identity is the durable
+  // email-or-account pair (resolveProgressIdentity), exactly like the rep-log.
+  // university_activities stores aggregate-ONLY GPS summaries — route points
+  // never reach the server.
+  // -------------------------------------------------------------------------
+
+  // The identity-scoped WHERE for a member's habit rows.
+  function habitIdentityWhere(identity: { email: string; accountId: string }) {
+    return or(
+      sql`LOWER(${universityHabits.email}) = ${identity.email}`,
+      eq(universityHabits.accountId, identity.accountId),
+    );
+  }
+
+  /**
+   * The member's habits (active AND inactive — the client filters on `active`),
+   * oldest first, plus a habitId → completion-days map ('YYYY-MM-DD') over the
+   * trailing 30-day window (today and the 29 prior UTC days). Two queries, no
+   * n+1. Completions are looked up by habit id, so they are ownership-scoped
+   * through the habit rows.
+   */
+  async function listHabits(
+    accountId: string,
+    now: Date = new Date(),
+  ): Promise<{
+    habits: UniversityHabit[];
+    completions: Record<string, string[]>;
+  }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) return { habits: [], completions: {} };
+
+    const habits = await db
+      .select()
+      .from(universityHabits)
+      .where(habitIdentityWhere(identity))
+      .orderBy(asc(universityHabits.createdAt));
+
+    const completions: Record<string, string[]> = {};
+    if (habits.length === 0) return { habits, completions };
+
+    const windowStart = addUtcDays(practiceUtcDay(now), -29);
+    const ticks = await db
+      .select({
+        habitId: universityHabitCompletions.habitId,
+        completionDay: universityHabitCompletions.completionDay,
+      })
+      .from(universityHabitCompletions)
+      .where(
+        and(
+          inArray(
+            universityHabitCompletions.habitId,
+            habits.map((h) => h.id),
+          ),
+          sql`${universityHabitCompletions.completionDay} >= ${windowStart}`,
+        ),
+      );
+    for (const tick of ticks) {
+      (completions[tick.habitId] ??= []).push(String(tick.completionDay));
+    }
+    return { habits, completions };
+  }
+
+  /**
+   * Create a habit. Expected business outcomes come back as typed results the
+   * route maps to specific 400s (no string-matching):
+   *   - "limit"     — the member already has PRACTICE_HABIT_ACTIVE_CAP active
+   *                   habits.
+   *   - "duplicate" — a habit with this name (case-insensitive) already exists;
+   *                   backed by the (email, lower(name)) unique index, and the
+   *                   ON CONFLICT DO NOTHING keeps a pre-check race clean.
+   */
+  async function createHabit(
+    accountId: string,
+    input: {
+      name: string;
+      emoji?: string | null;
+      catalogSlug?: string | null;
+      timesPerWeek?: number;
+      timeOfDay?: PracticeTimeOfDay;
+    },
+  ): Promise<
+    | { ok: true; habit: UniversityHabit }
+    | { ok: false; reason: "limit" | "duplicate" }
+  > {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+    const name = input.name.trim();
+    if (!name) throw new Error("name required");
+
+    const [{ c: activeCount }] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(universityHabits)
+      .where(
+        and(habitIdentityWhere(identity), eq(universityHabits.active, true)),
+      );
+    if (Number(activeCount) >= PRACTICE_HABIT_ACTIVE_CAP) {
+      return { ok: false, reason: "limit" };
+    }
+
+    const dupe = await db
+      .select({ id: universityHabits.id })
+      .from(universityHabits)
+      .where(
+        and(
+          habitIdentityWhere(identity),
+          sql`lower(${universityHabits.name}) = ${name.toLowerCase()}`,
+        ),
+      )
+      .limit(1);
+    if (dupe.length) return { ok: false, reason: "duplicate" };
+
+    const [habit] = await db
+      .insert(universityHabits)
+      .values({
+        accountId: identity.accountId,
+        email: identity.email,
+        name,
+        emoji: input.emoji?.trim() || null,
+        catalogSlug: input.catalogSlug?.trim() || null,
+        ...(input.timesPerWeek !== undefined
+          ? { timesPerWeek: input.timesPerWeek }
+          : {}),
+        ...(input.timeOfDay !== undefined
+          ? { timeOfDay: input.timeOfDay }
+          : {}),
+      })
+      .onConflictDoNothing()
+      .returning();
+    // Empty returning = the unique index fired between pre-check and insert.
+    if (!habit) return { ok: false, reason: "duplicate" };
+    return { ok: true, habit };
+  }
+
+  /**
+   * Partial update of the member's own habit. Only provided fields change.
+   * Ownership is the identity scope — an unknown or other-member habitId is
+   * "not_found" (the route's 404), never a hint that the row exists. Renaming
+   * onto another habit's name (case-insensitive) is "duplicate".
+   */
+  async function updateHabit(
+    accountId: string,
+    input: {
+      habitId: string;
+      name?: string;
+      emoji?: string | null;
+      timesPerWeek?: number;
+      timeOfDay?: PracticeTimeOfDay;
+      active?: boolean;
+    },
+  ): Promise<
+    | { ok: true; habit: UniversityHabit }
+    | { ok: false; reason: "not_found" | "duplicate" }
+  > {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    const ownWhere = and(
+      eq(universityHabits.id, input.habitId),
+      habitIdentityWhere(identity),
+    );
+    const [existing] = await db
+      .select()
+      .from(universityHabits)
+      .where(ownWhere)
+      .limit(1);
+    if (!existing) return { ok: false, reason: "not_found" };
+
+    const name = input.name?.trim();
+    if (name && name.toLowerCase() !== existing.name.toLowerCase()) {
+      const dupe = await db
+        .select({ id: universityHabits.id })
+        .from(universityHabits)
+        .where(
+          and(
+            habitIdentityWhere(identity),
+            sql`lower(${universityHabits.name}) = ${name.toLowerCase()}`,
+            ne(universityHabits.id, input.habitId),
+          ),
+        )
+        .limit(1);
+      if (dupe.length) return { ok: false, reason: "duplicate" };
+    }
+
+    const [habit] = await db
+      .update(universityHabits)
+      .set({
+        // Backfill the account link if it resolved after creation.
+        accountId: identity.accountId,
+        ...(name !== undefined && name !== "" ? { name } : {}),
+        ...(input.emoji !== undefined
+          ? { emoji: input.emoji?.trim() || null }
+          : {}),
+        ...(input.timesPerWeek !== undefined
+          ? { timesPerWeek: input.timesPerWeek }
+          : {}),
+        ...(input.timeOfDay !== undefined
+          ? { timeOfDay: input.timeOfDay }
+          : {}),
+        ...(input.active !== undefined ? { active: input.active } : {}),
+        updatedAt: new Date(),
+      })
+      .where(ownWhere)
+      .returning();
+    if (!habit) return { ok: false, reason: "not_found" };
+    return { ok: true, habit };
+  }
+
+  /**
+   * Tick (done: true) or untick (done: false) a habit for a UTC day. The day
+   * must be today or within the last PRACTICE_HABIT_TOGGLE_WINDOW_DAYS days —
+   * never future ("bad_day"). Idempotent in BOTH directions: a repeat tick is
+   * an ON CONFLICT DO NOTHING no-op and a repeat untick deletes nothing, so
+   * the route always answers a clean 200 (never a 409).
+   */
+  async function toggleHabitCompletion(
+    accountId: string,
+    args: { habitId: string; day: string; done: boolean },
+    now: Date = new Date(),
+  ): Promise<{ ok: true } | { ok: false; reason: "not_found" | "bad_day" }> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    const today = practiceUtcDay(now);
+    if (
+      !isValidUtcDayString(args.day) ||
+      !isUtcDayWithinLastNDays(args.day, today, PRACTICE_HABIT_TOGGLE_WINDOW_DAYS)
+    ) {
+      return { ok: false, reason: "bad_day" };
+    }
+
+    const [habit] = await db
+      .select({ id: universityHabits.id })
+      .from(universityHabits)
+      .where(
+        and(
+          eq(universityHabits.id, args.habitId),
+          habitIdentityWhere(identity),
+        ),
+      )
+      .limit(1);
+    if (!habit) return { ok: false, reason: "not_found" };
+
+    if (args.done) {
+      await db
+        .insert(universityHabitCompletions)
+        .values({
+          habitId: args.habitId,
+          email: identity.email,
+          completionDay: args.day,
+        })
+        .onConflictDoNothing({
+          target: [
+            universityHabitCompletions.habitId,
+            universityHabitCompletions.completionDay,
+          ],
+        });
+    } else {
+      await db
+        .delete(universityHabitCompletions)
+        .where(
+          and(
+            eq(universityHabitCompletions.habitId, args.habitId),
+            eq(universityHabitCompletions.completionDay, args.day),
+          ),
+        );
+    }
+    return { ok: true };
+  }
+
+  /**
+   * The member's journal entry for a UTC day, or null when none exists yet
+   * (the route serializes null into the empty shell).
+   */
+  async function getJournalEntry(
+    accountId: string,
+    day: string,
+  ): Promise<UniversityJournalEntry | null> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) return null;
+    const [entry] = await db
+      .select()
+      .from(universityJournalEntries)
+      .where(
+        and(
+          or(
+            sql`LOWER(${universityJournalEntries.email}) = ${identity.email}`,
+            eq(universityJournalEntries.accountId, identity.accountId),
+          ),
+          eq(universityJournalEntries.entryDay, day),
+        ),
+      )
+      .limit(1);
+    return entry ?? null;
+  }
+
+  /**
+   * PARTIAL-MERGE upsert of the member's journal entry for a UTC day: only the
+   * fields the caller provided overwrite the stored row (ON CONFLICT on the
+   * (email, entry_day) unique index) — a POST carrying just { notes } leaves
+   * mit / gratitude / wins untouched. The day must be today or within the last
+   * PRACTICE_JOURNAL_WINDOW_DAYS days — never future ("bad_day").
+   */
+  async function upsertJournalEntry(
+    accountId: string,
+    args: {
+      day: string;
+      mit?: string;
+      mitDone?: boolean;
+      gratitude?: string[];
+      wins?: string[];
+      notes?: string;
+    },
+    now: Date = new Date(),
+  ): Promise<
+    | { ok: true; entry: UniversityJournalEntry }
+    | { ok: false; reason: "bad_day" }
+  > {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    const today = practiceUtcDay(now);
+    if (
+      !isValidUtcDayString(args.day) ||
+      !isUtcDayWithinLastNDays(args.day, today, PRACTICE_JOURNAL_WINDOW_DAYS)
+    ) {
+      return { ok: false, reason: "bad_day" };
+    }
+
+    // Only provided fields participate in the merge — an omitted field is
+    // absent from BOTH the insert values (column default applies) and the
+    // conflict SET (the stored value survives).
+    const provided = {
+      ...(args.mit !== undefined ? { mit: args.mit } : {}),
+      ...(args.mitDone !== undefined ? { mitDone: args.mitDone } : {}),
+      ...(args.gratitude !== undefined ? { gratitude: args.gratitude } : {}),
+      ...(args.wins !== undefined ? { wins: args.wins } : {}),
+      ...(args.notes !== undefined ? { notes: args.notes } : {}),
+    };
+
+    const [entry] = await db
+      .insert(universityJournalEntries)
+      .values({
+        accountId: identity.accountId,
+        email: identity.email,
+        entryDay: args.day,
+        ...provided,
+      })
+      .onConflictDoUpdate({
+        target: [
+          universityJournalEntries.email,
+          universityJournalEntries.entryDay,
+        ],
+        set: {
+          // Backfill the account link if it resolved after the first write.
+          accountId: identity.accountId,
+          ...provided,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return { ok: true, entry };
+  }
+
+  /**
+   * The member's activity summaries, newest 30 by startedAt. Aggregate fields
+   * only — no route points exist server-side to return.
+   */
+  async function listActivities(
+    accountId: string,
+  ): Promise<UniversityActivity[]> {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) return [];
+    return db
+      .select()
+      .from(universityActivities)
+      .where(
+        or(
+          sql`LOWER(${universityActivities.email}) = ${identity.email}`,
+          eq(universityActivities.accountId, identity.accountId),
+        ),
+      )
+      .orderBy(desc(universityActivities.startedAt))
+      .limit(30);
+  }
+
+  /**
+   * Record one aggregate activity summary (type, start, duration, distance).
+   * startedAt must be within the last PRACTICE_ACTIVITY_WINDOW_DAYS days (a
+   * small forward skew allowance covers client clocks) — otherwise
+   * "bad_started_at". Append-only; the route validates ranges and the DB
+   * CHECKs (0158) back them up.
+   */
+  async function recordActivity(
+    accountId: string,
+    args: {
+      activityType: PracticeActivityType;
+      startedAt: Date;
+      durationS: number;
+      distanceM: number;
+    },
+    now: Date = new Date(),
+  ): Promise<
+    | { ok: true; activity: UniversityActivity }
+    | { ok: false; reason: "bad_started_at" }
+  > {
+    const identity = await resolveProgressIdentity(accountId);
+    if (!identity) throw new Error("Account not found");
+
+    if (!isActivityStartInWindow(args.startedAt, now)) {
+      return { ok: false, reason: "bad_started_at" };
+    }
+
+    const [activity] = await db
+      .insert(universityActivities)
+      .values({
+        accountId: identity.accountId,
+        email: identity.email,
+        activityType: args.activityType,
+        startedAt: args.startedAt,
+        durationS: args.durationS,
+        distanceM: args.distanceM,
+      })
+      .returning();
+    return { ok: true, activity };
+  }
+
+  // -------------------------------------------------------------------------
   // University native COMMUNITY feed — the "Do, between sessions" beat of the
   // Coherent Loop. Members post short updates, comment on each other, and react
   // ("Resonate"). Identity is the durable email (account_id once the linker has
@@ -3423,6 +3968,14 @@ export function customerPortalService(db: Db) {
     getProgressSummary,
     computeStreak,
     recordTrainingScore,
+    listHabits,
+    createHabit,
+    updateHabit,
+    toggleHabitCompletion,
+    getJournalEntry,
+    upsertJournalEntry,
+    listActivities,
+    recordActivity,
     upsertNote,
     getNotes,
     deleteNote,
