@@ -2156,28 +2156,38 @@ export function customerPortalService(db: Db) {
       if (dupe.length) return { ok: false, reason: "duplicate" };
     }
 
-    const [habit] = await db
-      .update(universityHabits)
-      .set({
-        // Backfill the account link if it resolved after creation.
-        accountId: identity.accountId,
-        ...(name !== undefined && name !== "" ? { name } : {}),
-        ...(input.emoji !== undefined
-          ? { emoji: input.emoji?.trim() || null }
-          : {}),
-        ...(input.timesPerWeek !== undefined
-          ? { timesPerWeek: input.timesPerWeek }
-          : {}),
-        ...(input.timeOfDay !== undefined
-          ? { timeOfDay: input.timeOfDay }
-          : {}),
-        ...(input.active !== undefined ? { active: input.active } : {}),
-        updatedAt: new Date(),
-      })
-      .where(ownWhere)
-      .returning();
-    if (!habit) return { ok: false, reason: "not_found" };
-    return { ok: true, habit };
+    try {
+      const [habit] = await db
+        .update(universityHabits)
+        .set({
+          // Backfill the account link if it resolved after creation.
+          accountId: identity.accountId,
+          ...(name !== undefined && name !== "" ? { name } : {}),
+          ...(input.emoji !== undefined
+            ? { emoji: input.emoji?.trim() || null }
+            : {}),
+          ...(input.timesPerWeek !== undefined
+            ? { timesPerWeek: input.timesPerWeek }
+            : {}),
+          ...(input.timeOfDay !== undefined
+            ? { timeOfDay: input.timeOfDay }
+            : {}),
+          ...(input.active !== undefined ? { active: input.active } : {}),
+          updatedAt: new Date(),
+        })
+        .where(ownWhere)
+        .returning();
+      if (!habit) return { ok: false, reason: "not_found" };
+      return { ok: true, habit };
+    } catch (err) {
+      // Two concurrent renames can both pass the pre-check above; the loser
+      // then hits the (email, lower(name)) unique index. Surface it as the
+      // same duplicate outcome createHabit's race handling returns.
+      if ((err as { code?: string } | null)?.code === "23505") {
+        return { ok: false, reason: "duplicate" };
+      }
+      throw err;
+    }
   }
 
   /**
