@@ -212,6 +212,10 @@ export {
   universityEmailEvents,
   universityVoiceAddons,
   universityTrainingScores,
+  universityHabits,
+  universityHabitCompletions,
+  universityJournalEntries,
+  universityActivities,
 } from "./university.js";
 export type {
   UniversityMember,
@@ -250,6 +254,14 @@ export type {
   NewUniversityVoiceAddon,
   UniversityTrainingScore,
   NewUniversityTrainingScore,
+  UniversityHabit,
+  NewUniversityHabit,
+  UniversityHabitCompletion,
+  NewUniversityHabitCompletion,
+  UniversityJournalEntry,
+  NewUniversityJournalEntry,
+  UniversityActivity,
+  NewUniversityActivity,
 } from "./university.js";
 export {
   universityCommunityPosts,

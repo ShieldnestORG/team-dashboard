@@ -7,6 +7,7 @@ import {
   bigint,
   boolean,
   date,
+  jsonb,
   index,
   uniqueIndex,
   check,
@@ -922,6 +923,181 @@ export const universityTrainingScores = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// University PRACTICE suite — habits, journal, activities (migration 0158).
+// Backs the portal Routine / Journal / Track pages.
+//
+// Member identity mirrors university_progress / university_checkins /
+// university_notes: durable lowercased `email` as the unique-constraint key,
+// nullable `account_id` filled once the customer-account-linker resolves the
+// shared login. Day buckets are explicit UTC DATE columns so idempotency
+// constraints are trivial.
+//
+// university_activities holds aggregate-ONLY GPS summaries (type, start,
+// duration, distance) — route points NEVER reach the server; full routes stay
+// on the member's device.
+// ---------------------------------------------------------------------------
+
+export const universityHabits = pgTable(
+  "university_habits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    emoji: text("emoji"),
+    // Optional slug of the catalog habit this was adopted from (portal-side
+    // catalog); NULL for fully custom habits.
+    catalogSlug: text("catalog_slug"),
+    timesPerWeek: integer("times_per_week").notNull().default(7),
+    timeOfDay: text("time_of_day").notNull().default("any"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One habit per member+name (case-insensitive) — backs the duplicate-name
+    // 400. Keyed on email (the durable identity) so the constraint holds
+    // before the account link resolves; account_id is carried for query
+    // convenience but is NOT part of the key.
+    habitNameUq: uniqueIndex("university_habits_email_name_uq").on(
+      table.email,
+      sql`lower(${table.name})`,
+    ),
+    emailIdx: index("university_habits_email_idx").on(table.email),
+    accountIdx: index("university_habits_account_idx").on(table.accountId),
+    // Defensive: contract ranges (route also validates).
+    timesPerWeekCk: check(
+      "university_habits_times_per_week_ck",
+      sql`${table.timesPerWeek} BETWEEN 1 AND 7`,
+    ),
+    timeOfDayCk: check(
+      "university_habits_time_of_day_ck",
+      sql`${table.timeOfDay} IN ('morning', 'afternoon', 'evening', 'any')`,
+    ),
+  }),
+);
+
+export const universityHabitCompletions = pgTable(
+  "university_habit_completions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Ticks are meaningless without their habit row — cascade on delete.
+    habitId: uuid("habit_id")
+      .notNull()
+      .references(() => universityHabits.id, { onDelete: "cascade" }),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    // The day bucket (UTC) this tick counts for. Idempotency key.
+    completionDay: date("completion_day").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One tick per habit+day — the ON CONFLICT DO NOTHING target. Untick
+    // deletes the row, so repeat toggles in either direction are no-ops.
+    habitDayUq: uniqueIndex("university_habit_completions_habit_day_uq").on(
+      table.habitId,
+      table.completionDay,
+    ),
+    emailDayIdx: index("university_habit_completions_email_day_idx").on(
+      table.email,
+      table.completionDay,
+    ),
+  }),
+);
+
+export const universityJournalEntries = pgTable(
+  "university_journal_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    // The day bucket (UTC) this entry is for. Partial-merge upsert key.
+    entryDay: date("entry_day").notNull(),
+    // Most Important Task for the day + whether it got done. NULL mitDone =
+    // not yet answered (distinct from an explicit No).
+    mit: text("mit"),
+    mitDone: boolean("mit_done"),
+    // JSONB arrays of short strings (route caps: 3 items, 280 chars each).
+    gratitude: jsonb("gratitude")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    wins: jsonb("wins")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // One entry per member+day — the partial-merge upsert's ON CONFLICT
+    // target. Keyed on email (the durable identity) so the constraint holds
+    // before the account link resolves.
+    entryUq: uniqueIndex("university_journal_entries_email_day_uq").on(
+      table.email,
+      table.entryDay,
+    ),
+    emailIdx: index("university_journal_entries_email_idx").on(table.email),
+  }),
+);
+
+export const universityActivities = pgTable(
+  "university_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable — set once the customer-account-linker resolves the shared
+    // customer_accounts login identity. `email` is the durable join key.
+    accountId: uuid("account_id").references(() => customerAccounts.id),
+    // The durable join key. Lowercased before insert.
+    email: text("email").notNull(),
+    activityType: text("activity_type").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    durationS: integer("duration_s").notNull(),
+    distanceM: integer("distance_m").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // Newest-first history list per member.
+    emailStartedIdx: index("university_activities_email_started_idx").on(
+      table.email,
+      table.startedAt.desc(),
+    ),
+    // Defensive: contract ranges (route also validates). Max 24h / 500km.
+    typeCk: check(
+      "university_activities_type_ck",
+      sql`${table.activityType} IN ('run', 'walk', 'hike', 'bike', 'other')`,
+    ),
+    durationCk: check(
+      "university_activities_duration_ck",
+      sql`${table.durationS} > 0 AND ${table.durationS} <= 86400`,
+    ),
+    distanceCk: check(
+      "university_activities_distance_ck",
+      sql`${table.distanceM} >= 0 AND ${table.distanceM} <= 500000`,
+    ),
+  }),
+);
+
 export type UniversityMember = typeof universityMembers.$inferSelect;
 export type NewUniversityMember = typeof universityMembers.$inferInsert;
 export type UniversitySubscription =
@@ -974,3 +1150,15 @@ export type UniversityTrainingScore =
   typeof universityTrainingScores.$inferSelect;
 export type NewUniversityTrainingScore =
   typeof universityTrainingScores.$inferInsert;
+export type UniversityHabit = typeof universityHabits.$inferSelect;
+export type NewUniversityHabit = typeof universityHabits.$inferInsert;
+export type UniversityHabitCompletion =
+  typeof universityHabitCompletions.$inferSelect;
+export type NewUniversityHabitCompletion =
+  typeof universityHabitCompletions.$inferInsert;
+export type UniversityJournalEntry =
+  typeof universityJournalEntries.$inferSelect;
+export type NewUniversityJournalEntry =
+  typeof universityJournalEntries.$inferInsert;
+export type UniversityActivity = typeof universityActivities.$inferSelect;
+export type NewUniversityActivity = typeof universityActivities.$inferInsert;
