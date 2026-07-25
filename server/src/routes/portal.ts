@@ -11,9 +11,23 @@ import {
   COMMUNITY_TOPICS,
   clampCommunityLimit,
   isTrainingGameSlug,
+  isPracticeTimeOfDay,
+  isPracticeActivityType,
+  isValidUtcDayString,
+  practiceUtcDay,
+  PRACTICE_HABIT_ACTIVE_CAP,
+  PRACTICE_HABIT_TOGGLE_WINDOW_DAYS,
+  PRACTICE_JOURNAL_WINDOW_DAYS,
   type CommunityPostType,
   type CommunityTopic,
+  type PracticeTimeOfDay,
+  type PracticeActivityType,
 } from "../services/customer-portal.js";
+import type {
+  UniversityHabit,
+  UniversityJournalEntry,
+  UniversityActivity,
+} from "@paperclipai/db";
 import {
   stripeRequest,
   stripeConfigured,
@@ -1013,6 +1027,622 @@ export function portalRoutes(db: Db): Router {
           "portal/university/training/score: record failed",
         );
         res.status(500).json({ error: "Failed to record score" });
+      }
+    },
+  );
+
+  // -- University practice suite: habits / journal / activities ---------------
+  //
+  // Backs the portal Routine / Journal / Track pages (migration 0158). Every
+  // mutation follows the check-in recipe exactly: per-member write limiter →
+  // requireNonImpersonating FIRST → requireUniversityMember → typeof body
+  // validation with specific 400s → service call → logged error + generic 500.
+  // GETs are member-gated only. CSRF is router-wide (portalCsrfGuard in
+  // app.ts) — never added per-route.
+  //
+  // GET  /university/habits          → { habits, completions } (last-30d ticks)
+  // POST /university/habits          { name, emoji?, catalogSlug?, timesPerWeek?,
+  //                                    timeOfDay? } → { habit }
+  // POST /university/habits/update   { habitId, name?, emoji?, timesPerWeek?,
+  //                                    timeOfDay?, active? } → { habit }
+  // POST /university/habits/toggle   { habitId, day?, done } → { habitId, day,
+  //                                    done } — idempotent both ways, repeat
+  //                                    toggles always answer 200 (never 409)
+  // GET  /university/journal?day=    → { entry } (empty shell when unwritten)
+  // POST /university/journal         { day, mit?, mitDone?, gratitude?, wins?,
+  //                                    notes? } → { entry } — PARTIAL merge
+  // GET  /university/activities      → { activities } (newest 30)
+  // POST /university/activities      { activityType, startedAt, durationS,
+  //                                    distanceM } → { activity }
+  //
+  // university_activities stores aggregate-ONLY GPS summaries (type, start,
+  // duration, distance). Route points NEVER reach the server — full routes
+  // stay on the member's device.
+  // NOTE: communityWriteLimiter/writeLimit are hoisted function declarations.
+
+  const HABIT_NAME_MAX = 100;
+  const HABIT_EMOJI_MAX = 16;
+  const HABIT_CATALOG_SLUG_MAX = 200;
+  const JOURNAL_MIT_MAX = 280;
+  const JOURNAL_LIST_MAX_ITEMS = 3;
+  const JOURNAL_LIST_ITEM_MAX = 280;
+  const JOURNAL_NOTES_MAX = 4000;
+  const PRACTICE_UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  const habitEditLimiter = communityWriteLimiter(
+    writeLimit("UNIVERSITY_HABIT_EDIT_RATE_PER_MIN", 20),
+  );
+  const habitToggleLimiter = communityWriteLimiter(
+    writeLimit("UNIVERSITY_HABIT_RATE_PER_MIN", 60),
+  );
+  const journalWriteLimiter = communityWriteLimiter(
+    writeLimit("UNIVERSITY_JOURNAL_RATE_PER_MIN", 30),
+  );
+  const activityWriteLimiter = communityWriteLimiter(
+    writeLimit("UNIVERSITY_ACTIVITY_RATE_PER_MIN", 20),
+  );
+
+  function serializeHabit(h: UniversityHabit) {
+    return {
+      id: h.id,
+      name: h.name,
+      emoji: h.emoji,
+      catalogSlug: h.catalogSlug,
+      timesPerWeek: h.timesPerWeek,
+      timeOfDay: h.timeOfDay,
+      active: h.active,
+      createdAt: h.createdAt.toISOString(),
+    };
+  }
+
+  function serializeJournalEntry(
+    day: string,
+    e: UniversityJournalEntry | null,
+  ) {
+    if (!e) {
+      return {
+        day,
+        mit: "",
+        mitDone: null,
+        gratitude: [] as string[],
+        wins: [] as string[],
+        notes: "",
+        updatedAt: null,
+      };
+    }
+    return {
+      day,
+      mit: e.mit ?? "",
+      mitDone: e.mitDone ?? null,
+      gratitude: Array.isArray(e.gratitude) ? e.gratitude : [],
+      wins: Array.isArray(e.wins) ? e.wins : [],
+      notes: e.notes ?? "",
+      updatedAt: e.updatedAt.toISOString(),
+    };
+  }
+
+  function serializeActivity(a: UniversityActivity) {
+    return {
+      id: a.id,
+      activityType: a.activityType,
+      startedAt: a.startedAt.toISOString(),
+      durationS: a.durationS,
+      distanceM: a.distanceM,
+      createdAt: a.createdAt.toISOString(),
+    };
+  }
+
+  // Shared optional-habit-field validation for create + update. Responds with
+  // the specific 400 and returns null on invalid input; returns the cleaned
+  // fields otherwise. `undefined` in the result = field not provided.
+  function parseHabitFields(
+    body: {
+      emoji?: unknown;
+      catalogSlug?: unknown;
+      timesPerWeek?: unknown;
+      timeOfDay?: unknown;
+    },
+    res: Response,
+  ): {
+    emoji?: string | null;
+    catalogSlug?: string | null;
+    timesPerWeek?: number;
+    timeOfDay?: PracticeTimeOfDay;
+  } | null {
+    const out: {
+      emoji?: string | null;
+      catalogSlug?: string | null;
+      timesPerWeek?: number;
+      timeOfDay?: PracticeTimeOfDay;
+    } = {};
+    if (body.emoji !== undefined && body.emoji !== null) {
+      if (typeof body.emoji !== "string") {
+        res.status(400).json({ error: "emoji must be a string" });
+        return null;
+      }
+      // Truncate rather than reject — an emoji never blocks a save.
+      out.emoji = body.emoji.trim().slice(0, HABIT_EMOJI_MAX) || null;
+    }
+    if (body.catalogSlug !== undefined && body.catalogSlug !== null) {
+      if (typeof body.catalogSlug !== "string") {
+        res.status(400).json({ error: "catalogSlug must be a string" });
+        return null;
+      }
+      out.catalogSlug =
+        body.catalogSlug.trim().slice(0, HABIT_CATALOG_SLUG_MAX) || null;
+    }
+    if (body.timesPerWeek !== undefined && body.timesPerWeek !== null) {
+      const n = Number(body.timesPerWeek);
+      if (!Number.isInteger(n) || n < 1 || n > 7) {
+        res
+          .status(400)
+          .json({ error: "timesPerWeek must be an integer 1–7" });
+        return null;
+      }
+      out.timesPerWeek = n;
+    }
+    if (body.timeOfDay !== undefined && body.timeOfDay !== null) {
+      if (!isPracticeTimeOfDay(body.timeOfDay)) {
+        res.status(400).json({
+          error: "timeOfDay must be one of morning, afternoon, evening, any",
+        });
+        return null;
+      }
+      out.timeOfDay = body.timeOfDay;
+    }
+    return out;
+  }
+
+  router.get("/university/habits", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    try {
+      const { habits, completions } = await svc.listHabits(accountId);
+      res.json({ habits: habits.map(serializeHabit), completions });
+    } catch (err) {
+      logger.error({ err, accountId }, "portal/university/habits: list failed");
+      res.status(500).json({ error: "Failed to load habits" });
+    }
+  });
+
+  router.post(
+    "/university/habits",
+    habitEditLimiter,
+    async (req: Request, res: Response) => {
+      // Creating a habit mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      const body = (req.body ?? {}) as {
+        name?: unknown;
+        emoji?: unknown;
+        catalogSlug?: unknown;
+        timesPerWeek?: unknown;
+        timeOfDay?: unknown;
+      };
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      if (!name) {
+        res.status(400).json({ error: "name required" });
+        return;
+      }
+      if (name.length > HABIT_NAME_MAX) {
+        res.status(400).json({
+          error: `name must be at most ${HABIT_NAME_MAX} characters`,
+        });
+        return;
+      }
+      const fields = parseHabitFields(body, res);
+      if (!fields) return;
+
+      try {
+        const result = await svc.createHabit(accountId, { name, ...fields });
+        if (!result.ok) {
+          res.status(400).json({
+            error:
+              result.reason === "limit"
+                ? `Habit limit reached (${PRACTICE_HABIT_ACTIVE_CAP})`
+                : "You already have a habit with this name",
+          });
+          return;
+        }
+        res.status(200).json({ habit: serializeHabit(result.habit) });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/habits: create failed",
+        );
+        res.status(500).json({ error: "Failed to create habit" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/habits/update",
+    habitEditLimiter,
+    async (req: Request, res: Response) => {
+      // Editing a habit mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      const body = (req.body ?? {}) as {
+        habitId?: unknown;
+        name?: unknown;
+        emoji?: unknown;
+        timesPerWeek?: unknown;
+        timeOfDay?: unknown;
+        active?: unknown;
+      };
+      const habitId =
+        typeof body.habitId === "string" && PRACTICE_UUID_RE.test(body.habitId)
+          ? body.habitId
+          : "";
+      if (!habitId) {
+        res.status(400).json({ error: "habitId required" });
+        return;
+      }
+      let name: string | undefined;
+      if (body.name !== undefined && body.name !== null) {
+        name = typeof body.name === "string" ? body.name.trim() : "";
+        if (!name) {
+          res.status(400).json({ error: "name required" });
+          return;
+        }
+        if (name.length > HABIT_NAME_MAX) {
+          res.status(400).json({
+            error: `name must be at most ${HABIT_NAME_MAX} characters`,
+          });
+          return;
+        }
+      }
+      if (
+        body.active !== undefined &&
+        body.active !== null &&
+        typeof body.active !== "boolean"
+      ) {
+        res.status(400).json({ error: "active must be a boolean" });
+        return;
+      }
+      const fields = parseHabitFields(body, res);
+      if (!fields) return;
+
+      try {
+        const result = await svc.updateHabit(accountId, {
+          habitId,
+          ...(name !== undefined ? { name } : {}),
+          ...(typeof body.active === "boolean" ? { active: body.active } : {}),
+          ...fields,
+        });
+        if (!result.ok) {
+          if (result.reason === "not_found") {
+            res.status(404).json({ error: "Habit not found" });
+          } else {
+            res
+              .status(400)
+              .json({ error: "You already have a habit with this name" });
+          }
+          return;
+        }
+        res.status(200).json({ habit: serializeHabit(result.habit) });
+      } catch (err) {
+        logger.error(
+          { err, accountId, habitId },
+          "portal/university/habits/update: update failed",
+        );
+        res.status(500).json({ error: "Failed to update habit" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/habits/toggle",
+    habitToggleLimiter,
+    async (req: Request, res: Response) => {
+      // Ticking a habit mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      const body = (req.body ?? {}) as {
+        habitId?: unknown;
+        day?: unknown;
+        done?: unknown;
+      };
+      const habitId =
+        typeof body.habitId === "string" && PRACTICE_UUID_RE.test(body.habitId)
+          ? body.habitId
+          : "";
+      if (!habitId) {
+        res.status(400).json({ error: "habitId required" });
+        return;
+      }
+      if (typeof body.done !== "boolean") {
+        res.status(400).json({ error: "done must be a boolean" });
+        return;
+      }
+      let day = practiceUtcDay(new Date());
+      if (body.day !== undefined && body.day !== null) {
+        if (typeof body.day !== "string" || !isValidUtcDayString(body.day)) {
+          res.status(400).json({ error: "day must be YYYY-MM-DD" });
+          return;
+        }
+        day = body.day;
+      }
+
+      try {
+        const result = await svc.toggleHabitCompletion(accountId, {
+          habitId,
+          day,
+          done: body.done,
+        });
+        if (!result.ok) {
+          if (result.reason === "not_found") {
+            res.status(404).json({ error: "Habit not found" });
+          } else {
+            res.status(400).json({
+              error: `day must be today or within the last ${PRACTICE_HABIT_TOGGLE_WINDOW_DAYS} days`,
+            });
+          }
+          return;
+        }
+        res.status(200).json({ habitId, day, done: body.done });
+      } catch (err) {
+        logger.error(
+          { err, accountId, habitId },
+          "portal/university/habits/toggle: toggle failed",
+        );
+        res.status(500).json({ error: "Failed to update habit tick" });
+      }
+    },
+  );
+
+  router.get("/university/journal", async (req: Request, res: Response) => {
+    const accountId = await requireUniversityMember(req, res);
+    if (!accountId) return;
+    const dayRaw = req.query.day;
+    const day =
+      typeof dayRaw === "string" && isValidUtcDayString(dayRaw) ? dayRaw : "";
+    if (!day) {
+      res.status(400).json({ error: "day must be YYYY-MM-DD" });
+      return;
+    }
+    try {
+      const entry = await svc.getJournalEntry(accountId, day);
+      res.json({ entry: serializeJournalEntry(day, entry) });
+    } catch (err) {
+      logger.error({ err, accountId }, "portal/university/journal: get failed");
+      res.status(500).json({ error: "Failed to load journal entry" });
+    }
+  });
+
+  router.post(
+    "/university/journal",
+    journalWriteLimiter,
+    async (req: Request, res: Response) => {
+      // Writing a journal entry mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      const body = (req.body ?? {}) as {
+        day?: unknown;
+        mit?: unknown;
+        mitDone?: unknown;
+        gratitude?: unknown;
+        wins?: unknown;
+        notes?: unknown;
+      };
+      const day =
+        typeof body.day === "string" && isValidUtcDayString(body.day)
+          ? body.day
+          : "";
+      if (!day) {
+        res.status(400).json({ error: "day must be YYYY-MM-DD" });
+        return;
+      }
+      let mit: string | undefined;
+      if (body.mit !== undefined && body.mit !== null) {
+        if (typeof body.mit !== "string") {
+          res.status(400).json({ error: "mit must be a string" });
+          return;
+        }
+        mit = body.mit.trim();
+        if (mit.length > JOURNAL_MIT_MAX) {
+          res.status(400).json({
+            error: `mit must be at most ${JOURNAL_MIT_MAX} characters`,
+          });
+          return;
+        }
+      }
+      let mitDone: boolean | undefined;
+      if (body.mitDone !== undefined && body.mitDone !== null) {
+        if (typeof body.mitDone !== "boolean") {
+          res.status(400).json({ error: "mitDone must be a boolean" });
+          return;
+        }
+        mitDone = body.mitDone;
+      }
+      // gratitude / wins: arrays of up to 3 short strings, trimmed.
+      function parseJournalList(
+        value: unknown,
+        field: "gratitude" | "wins",
+      ): string[] | null {
+        if (!Array.isArray(value)) {
+          res
+            .status(400)
+            .json({ error: `${field} must be an array of strings` });
+          return null;
+        }
+        if (value.length > JOURNAL_LIST_MAX_ITEMS) {
+          res.status(400).json({
+            error: `${field} must have at most ${JOURNAL_LIST_MAX_ITEMS} items`,
+          });
+          return null;
+        }
+        const list: string[] = [];
+        for (const item of value) {
+          if (typeof item !== "string") {
+            res
+              .status(400)
+              .json({ error: `${field} must be an array of strings` });
+            return null;
+          }
+          const trimmed = item.trim();
+          if (trimmed.length > JOURNAL_LIST_ITEM_MAX) {
+            res.status(400).json({
+              error: `${field} items must be at most ${JOURNAL_LIST_ITEM_MAX} characters`,
+            });
+            return null;
+          }
+          list.push(trimmed);
+        }
+        return list;
+      }
+      let gratitude: string[] | undefined;
+      if (body.gratitude !== undefined && body.gratitude !== null) {
+        const parsed = parseJournalList(body.gratitude, "gratitude");
+        if (!parsed) return;
+        gratitude = parsed;
+      }
+      let wins: string[] | undefined;
+      if (body.wins !== undefined && body.wins !== null) {
+        const parsed = parseJournalList(body.wins, "wins");
+        if (!parsed) return;
+        wins = parsed;
+      }
+      let notes: string | undefined;
+      if (body.notes !== undefined && body.notes !== null) {
+        if (typeof body.notes !== "string") {
+          res.status(400).json({ error: "notes must be a string" });
+          return;
+        }
+        notes = body.notes.trim();
+        if (notes.length > JOURNAL_NOTES_MAX) {
+          res.status(400).json({
+            error: `notes must be at most ${JOURNAL_NOTES_MAX} characters`,
+          });
+          return;
+        }
+      }
+
+      try {
+        const result = await svc.upsertJournalEntry(accountId, {
+          day,
+          ...(mit !== undefined ? { mit } : {}),
+          ...(mitDone !== undefined ? { mitDone } : {}),
+          ...(gratitude !== undefined ? { gratitude } : {}),
+          ...(wins !== undefined ? { wins } : {}),
+          ...(notes !== undefined ? { notes } : {}),
+        });
+        if (!result.ok) {
+          res.status(400).json({
+            error: `day must be today or within the last ${PRACTICE_JOURNAL_WINDOW_DAYS} days`,
+          });
+          return;
+        }
+        res
+          .status(200)
+          .json({ entry: serializeJournalEntry(day, result.entry) });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/journal: upsert failed",
+        );
+        res.status(500).json({ error: "Failed to save journal entry" });
+      }
+    },
+  );
+
+  router.get(
+    "/university/activities",
+    async (req: Request, res: Response) => {
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+      try {
+        const activities = await svc.listActivities(accountId);
+        res.json({ activities: activities.map(serializeActivity) });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/activities: list failed",
+        );
+        res.status(500).json({ error: "Failed to load activities" });
+      }
+    },
+  );
+
+  router.post(
+    "/university/activities",
+    activityWriteLimiter,
+    async (req: Request, res: Response) => {
+      // Recording an activity mutates state — block under impersonation.
+      if (!requireNonImpersonating(req, res)) return;
+      const accountId = await requireUniversityMember(req, res);
+      if (!accountId) return;
+
+      const body = (req.body ?? {}) as {
+        activityType?: unknown;
+        startedAt?: unknown;
+        durationS?: unknown;
+        distanceM?: unknown;
+      };
+      if (!isPracticeActivityType(body.activityType)) {
+        res.status(400).json({
+          error: "activityType must be one of run, walk, hike, bike, other",
+        });
+        return;
+      }
+      const startedAt =
+        typeof body.startedAt === "string" ? new Date(body.startedAt) : null;
+      if (!startedAt || Number.isNaN(startedAt.getTime())) {
+        res
+          .status(400)
+          .json({ error: "startedAt must be an ISO timestamp" });
+        return;
+      }
+      const durationS = Number(body.durationS);
+      if (!Number.isInteger(durationS) || durationS < 1 || durationS > 86_400) {
+        res
+          .status(400)
+          .json({ error: "durationS must be an integer 1–86400" });
+        return;
+      }
+      const distanceM = Number(body.distanceM);
+      if (
+        !Number.isInteger(distanceM) ||
+        distanceM < 0 ||
+        distanceM > 500_000
+      ) {
+        res
+          .status(400)
+          .json({ error: "distanceM must be an integer 0–500000" });
+        return;
+      }
+
+      try {
+        const result = await svc.recordActivity(accountId, {
+          activityType: body.activityType,
+          startedAt,
+          durationS,
+          distanceM,
+        });
+        if (!result.ok) {
+          res
+            .status(400)
+            .json({ error: "startedAt must be within the last 7 days" });
+          return;
+        }
+        res
+          .status(200)
+          .json({ activity: serializeActivity(result.activity) });
+      } catch (err) {
+        logger.error(
+          { err, accountId },
+          "portal/university/activities: record failed",
+        );
+        res.status(500).json({ error: "Failed to record activity" });
       }
     },
   );
