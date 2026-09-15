@@ -1,6 +1,14 @@
 # Hostinger DNS Setup — Coherence Daddy Ecosystem
 **Date:** 2026-04-14
 
+> **⚠️ Superseded 2026-05-09 (infra swap) — kept for provenance.** Several rows below are
+> stale: `api.coherencedaddy.com` now serves from **VPS_4 (`31.220.61.14`)** fronted by
+> **nginx** (not `31.220.61.12` via Caddy), and Firecrawl moved to **VPS_1 Tailnet
+> (`100.67.128.51:3002`)** — the `firecrawl.coherencedaddy.com` record was later repointed to
+> VPS_4 (`.14`) but has no vhost there (dead weight; slated for deletion). The old
+> `168.231.127.180` host (VPS_2) was nuked 2026-05-08 and handed off. Canonical:
+> [docs/deploy/production.md](../../docs/deploy/production.md).
+
 ## Required DNS Records
 
 Add these in Hostinger DNS Manager for `coherencedaddy.com`:
@@ -37,7 +45,7 @@ The `Caddyfile` in the repo root handles:
 - `coherencedaddy.com` → Vercel ✅
 - `api.coherencedaddy.com` → VPS ✅ (Caddy + Let's Encrypt)
 - `directory.coherencedaddy.com` → launched 2026-04-12 ✅
-- `firecrawl.coherencedaddy.com` → VPS_4 (`168.231.127.180`) ✅ (Nginx + Let's Encrypt, cert issued 2026-04-14, expires 2026-07-14)
+- `firecrawl.coherencedaddy.com` → ⚠️ **stale (see banner).** Firecrawl now runs Tailnet-only on VPS_1 (`100.67.128.51:3002`); the record was later repointed to VPS_4 (`.14`) with no vhost. The old `168.231.127.180` host (VPS_2) was nuked 2026-05-08.
 
 ## New — No New Domains Needed
 The AEO marketing push uses existing domains. `/directory-pricing` is served from the VPS admin UI (accessible at `api.coherencedaddy.com/directory-pricing`). The public enrollment endpoint `POST /api/directory-listings/public/enroll` is already reachable via the Vercel `/api/*` rewrite rule in `vercel.json`.

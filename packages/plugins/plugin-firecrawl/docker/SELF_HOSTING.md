@@ -12,21 +12,24 @@ Firecrawl is an open-source web scraping engine. Running it yourself means:
 
 ## Production Deployment (Current)
 
-Firecrawl is deployed on VPS `168.231.127.180` (srv1060975).
+> **⚠️ Updated 2026-09-15 (post-2026-05-09 infra swap).** Firecrawl was moved off the old
+> box `168.231.127.180` (VPS_2, srv1060975 — nuked 2026-05-08 in the XMRig compromise and
+> handed off). It now runs on **VPS_1 `shield-llm` (`31.220.61.12`)**, bound **Tailnet-only**
+> — there is no public HTTPS endpoint. The `firecrawl.coherencedaddy.com` DNS record now
+> resolves to VPS_4 (`.14`) with no vhost, so it does **not** reach the API; callers use the
+> Tailnet IP directly. Canonical infra: [docs/deploy/production.md](../../../../docs/deploy/production.md).
+
+Firecrawl is deployed on **VPS_1 `shield-llm`** (`31.220.61.12`, Tailnet `100.67.128.51`).
 
 | Detail | Value |
 |--------|-------|
-| **Endpoint** | `https://firecrawl.coherencedaddy.com` |
+| **Endpoint** | `http://100.67.128.51:3002` (Tailnet-only — no public bind) |
 | **API Version** | v1 (`/v1/scrape`, `/v1/crawl`, etc.) |
-| **OS** | Ubuntu 24.04.3 LTS |
-| **CPU** | 2 vCPU |
-| **RAM** | 8 GB |
-| **Disk** | 96 GB (89 GB free) |
-| **Docker** | 29.0.2 |
-| **Nginx** | Reverse proxy on port 80 |
-| **Other services** | Ollama (LLM, port 11434) |
-| **Compose file** | `/opt/firecrawl/docker-compose.yml` |
-| **Images** | `trieve/firecrawl:v0.0.55`, `trieve/puppeteer-service-ts:v0.0.13`, `redis:7-alpine` |
+| **Auth** | `USE_DB_AUTHENTICATION=false` (`Authorization: Bearer self-hosted`) |
+| **Host plan** | Hostinger Game Panel 8 — 32 GB / 8 vCPU / 400 GB |
+| **Compose file** | `/opt/firecrawl/docker-compose.yml` (mendableai/firecrawl via `harness.js --start-docker`) |
+| **Stack (mem caps)** | api (6G), playwright-service (4G), redis (512M), rabbitmq (512M), nuq-postgres (512M) |
+| **Co-located on VPS_1** | BGE-M3 TEI (`:8080`) + Ollama (`:11434`) — also Tailnet-only |
 
 ### Architecture
 
@@ -62,8 +65,7 @@ Firecrawl API
 
 ### SSH Access
 ```bash
-ssh root@168.231.127.180
-# Password was changed on 2026-03-31 -- check secure notes
+ssh root@31.220.61.12   # VPS_1 shield-llm (key-only auth; PasswordAuthentication is off)
 ```
 
 ### Common Commands
@@ -94,10 +96,10 @@ docker stats --no-stream
 
 ### Test Scrape
 ```bash
-curl -X POST https://firecrawl.coherencedaddy.com/v1/scrape \
+# Tailnet-only — run from a box on the mesh (e.g. VPS_4), not the public internet
+curl -X POST http://100.67.128.51:3002/v1/scrape \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer self-hosted" \
-  -d '{"url": "https://example.com"}'
+  -d '{"url": "https://example.com", "formats": ["markdown"]}'
 ```
 
 ---
@@ -126,7 +128,7 @@ curl -X POST https://firecrawl.coherencedaddy.com/v1/scrape \
 | RAM | **8 GB+** |
 | CPU | 4-8 cores |
 | Storage | 50-100 GB |
-| Example | Current VPS (168.231.127.180) |
+| Example | Current VPS (VPS_1 `shield-llm`, 32 GB) |
 
 ---
 
@@ -136,14 +138,14 @@ The Firecrawl plugin is configured via Paperclip Settings or API:
 
 **Current config:**
 - Plugin ID: `c0a67b48-f612-45ba-ad42-dfb773a95ee2`
-- Self-Hosted URL: `https://firecrawl.coherencedaddy.com`
+- Self-Hosted URL: `http://100.67.128.51:3002` (VPS_1 Tailnet — matches `FIRECRAWL_URL` in `.env.production`)
 - API Key: `self-hosted` (placeholder -- no real key needed)
 
 **To change via API:**
 ```bash
 curl -X POST http://localhost:3100/api/plugins/c0a67b48-f612-45ba-ad42-dfb773a95ee2/config \
   -H "Content-Type: application/json" \
-  -d '{"configJson": {"apiUrl": "https://firecrawl.coherencedaddy.com", "apiKey": "self-hosted"}}'
+  -d '{"configJson": {"apiUrl": "http://100.67.128.51:3002", "apiKey": "self-hosted"}}'
 ```
 
 **To switch to cloud API:**
