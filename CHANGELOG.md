@@ -304,15 +304,15 @@ validator-rank |     2 | 2026-04-15 02:38:20  (+ 100 detail rows in validator_ra
 
 ### Local `.env` — VPS credential cluster reorganized
 
-Renamed the existing `VPS=` / `VPS_PASSWORD=` lines to `VPS_1=` / `VPS_1_PASSWORD=`
+Renamed the existing `VPS=` / `VPS_PASSWORD=<redacted 2026-09-15>` lines to `VPS_1=` / `VPS_1_PASSWORD=<redacted 2026-09-15>`
 (kept the originals as legacy aliases so any scripts referencing `$VPS_PASSWORD`
 keep working) and added three new credential pairs:
 
-- `VPS_2=ssh root@31.220.61.14` / `VPS_2_PASSWORD=h#2BEGAE…` — shield-main /
+- `VPS_2=ssh root@31.220.61.14` / `VPS_2_PASSWORD=<redacted 2026-09-15>` — shield-main /
   trustee-gateway-api host
-- `VPS_3=ssh root@147.79.78.251` / `VPS_3_PASSWORD=iw/x;eahl1?4vy8dv/5Y` —
+- `VPS_3=ssh root@147.79.78.251` / `VPS_3_PASSWORD=<redacted 2026-09-15>` —
   BGE-M3 + Ollama + vosk-stt + nft_ host
-- `VPS_4=ssh root@168.231.127.180` / `VPS_4_PASSWORD=?59bn0Ymj6v3)mA/oKbF` —
+- `VPS_4=ssh root@168.231.127.180` / `VPS_4_PASSWORD=<redacted 2026-09-15>` —
   Firecrawl + coherence-ollama + qdrant + directory-api + nft-indexer host
 
 Future sessions will have all four credentials available without back-and-forth.
