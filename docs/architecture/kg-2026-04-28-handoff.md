@@ -16,7 +16,7 @@ This file is the single source of truth for the next agent or operator picking u
 | Junk tags (`node24`, version strings) | [#17](https://github.com/ShieldnestORG/team-dashboard/pull/17) | `resolveEntity()` denylist; drops triples whose endpoint can't resolve |
 | Dependabot/SBOM as `uses` edges | [#18](https://github.com/ShieldnestORG/team-dashboard/pull/18) | Deterministic `package.json` + `go.mod` parser; emits `depends_on` edges with `scope` (runtime/devDependency); never blocks harvester |
 
-**Migrations applied via psql** (Drizzle migrator is broken — see Open Issues):
+**Migrations applied via psql** (Drizzle migrator issue resolved — see Open Issues):
 - `0098_intel_reports_source_repo.sql` — adds nullable `source_repo` column + partial index
 - `0099_depends_on_edges.sql` — adds nullable `scope` column on `company_relationships`
 
@@ -73,13 +73,11 @@ ssh root@31.220.61.14 'cd /opt/team-dashboard/repo && git checkout fix/yt-captio
 
 Note: this will revert the KG fixes too if `fix/yt-caption-sync` hasn't been rebased on master. Either rebase YT onto master first, or merge YT into master, before re-deploying.
 
-### P1 — Drizzle migrator is broken
+### P1 — Drizzle migrator (resolved)
 
-`pnpm db:migrate` thinks 40 migrations are pending and errors on `type "vector" does not exist`. Pre-existing bug discovered during this sprint when applying 0098/0099. **Workaround used:** apply SQL directly with psql. The migrations 0098/0099 are well-formed and idempotent (use `IF NOT EXISTS`).
+**Resolved.** `packages/db/src/client.ts` rewrites a Neon `-pooler` host to the direct endpoint before migrating, because the pooler cannot resolve types provided by extensions, which is what made `CREATE TABLE ... (embedding vector(1024))` fail with `type "vector" does not exist`. Already-applied migrations are no longer replayed.
 
-Likely root cause (unverified): `_journal.json` only has entries up to migration 0050; everything from 0051+ is treated as pending. Plus the runner doesn't bootstrap the pgvector extension before applying old migrations that reference `vector` type.
-
-Need to investigate `packages/db/src/client.ts:applyPendingMigrations` and `inspectMigrations` to understand how it tracks state. Workaround for new migrations meanwhile: apply with `psql "$DATABASE_URL" -f packages/db/src/migrations/<name>.sql`.
+At the time of writing this section the symptom was ~40 migrations reported pending and the psql workaround was in use for 0098/0099. That workaround is no longer required; `pnpm db:migrate` is the normal path again.
 
 ### P2 — Address 4 Dependabot moderate vulns on master
 
