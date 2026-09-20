@@ -184,7 +184,7 @@ Strategy: [`docs/products/knowledge-graph-positioning.md`](docs/products/knowled
 - [x] PR [#17](https://github.com/ShieldnestORG/team-dashboard/pull/17) — `resolveEntity()` denylist drops version strings, SHAs, file extensions; `node24` etc. no longer create edges.
 - [x] PR [#18](https://github.com/ShieldnestORG/team-dashboard/pull/18) — deterministic SBOM parser for `package.json` + `go.mod` emits `depends_on` edges with `scope` (runtime/devDependency).
 - [x] PR [#20](https://github.com/ShieldnestORG/team-dashboard/pull/20) — **Phase 1 silent dependencies block** on `GET /api/intel/company/:slug`. `bucketDependencyRows()` pure helper + 9 unit tests. Live in prod on `c165e8a4`.
-- [x] Migrations `0098_intel_reports_source_repo.sql` + `0099_depends_on_edges.sql` applied to prod Neon (via direct psql — Drizzle migrator is broken; see P1 below).
+- [x] Migrations `0098_intel_reports_source_repo.sql` + `0099_depends_on_edges.sql` applied to prod Neon (via direct psql — Drizzle migrator issue resolved; see P1 below).
 - [x] DB cleanup: 48 H2-mismatched rows flagged with `verified=false`; 3 confirmed-garbage rows deleted (38, 40, 82) with backup; 1 orphan `knowledge_tags` row deleted (`node24`); 1 row added to `intel_companies` (`argo-workflows`).
 - [x] Validation infra: `scripts/audit/kg-phase1-validation.ts` (re-runnable post-deploy script comparing live state to baseline).
 - [x] 48h validation scheduled: remote routine `trig_015aSfHYBvkGEMdguvhfvZfk` (code-level, posts to PR #20) + local cron `18f2281c` (prod-state, posts to PR #20). Both fire 2026-05-01T00:43:00Z.
@@ -199,7 +199,7 @@ Strategy: [`docs/products/knowledge-graph-positioning.md`](docs/products/knowled
 
 ## Open — P0/P1 from the handoff
 
-- [ ] **Drizzle migrator is broken.** `pnpm db:migrate` thinks 40 migrations are pending and errors on `type "vector" does not exist`. `_journal.json` only tracks up to migration 0050; everything from 0051+ is treated as pending; runner doesn't bootstrap pgvector before migrations that reference `vector` type. Workaround used this sprint: apply SQL via direct psql. Root-cause investigation owners: `packages/db/src/client.ts:applyPendingMigrations` and `inspectMigrations`.
+- [x] **Drizzle migrator — resolved.** `packages/db/src/client.ts` now rewrites a Neon `-pooler` host to the direct endpoint, so the `vector` type resolves during migration, and already-applied migrations are no longer replayed. Production is current. The earlier symptom was `pnpm db:migrate` reporting ~40 pending migrations and failing on `type "vector" does not exist`; the psql workaround is no longer needed.
 - [ ] **YT branch redeploy.** VPS1 was on `fix/yt-caption-sync` (10+ in-flight YT commits, `b2391d15`) before this sprint pulled it onto master. The branch is safely on origin. Either rebase `fix/yt-caption-sync` onto current master and re-deploy, or merge YT into master, before re-deploying YT work to prod.
 
 ## Open — Phase 1 follow-through (drives the kill metric)
