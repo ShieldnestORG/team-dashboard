@@ -29,6 +29,17 @@ When a heartbeat fires, Team Dashboard:
 | [Process](/adapters/process) | `process` | Executes arbitrary shell commands |
 | [HTTP](/adapters/http) | `http` | Sends webhooks to external agents |
 
+> **`dangerouslySkipPermissions` defaults differ between adapters.** Only `claude_local` and
+> `opencode_local` carry this flag; no other adapter references it. Their defaults are **not** the
+> same. `claude-local` falls back to `false`
+> (`packages/adapters/claude-local/src/server/execute.ts`), while `opencode_local` falls back to
+> **`true`** (`packages/adapters/opencode-local/src/server/runtime-config.ts`), because
+> `asBoolean(value, fallback)` returns the fallback whenever the config value is not a boolean.
+> An `opencode_local` agent created without setting the flag therefore runs with permission
+> prompts skipped, while an equivalent `claude_local` agent does not. Set it explicitly on any
+> `opencode_local` agent until the fallback is changed.
+
+
 ## Adapter Architecture
 
 Each adapter is a package with three modules:
