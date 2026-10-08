@@ -128,9 +128,18 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
 [script research](youtube-script-research-2026-10-07.md) (honesty, facts-from-code, format, topic engine, draft prompt).
 
 
-- [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (frame-stepped HTML scenes built from
-  `coherencedaddy-landing/DESIGN.md`). The current slide template is off-brand: `slide-templates.ts` uses the banned
-  cyan `#00d4ff`, coral `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
+- [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (commit `2a25862c`, not merged):
+  `server/src/services/youtube/animated/` (`scenes.html` driven by one `seek(t)` clock via paused Web Animations,
+  `render.ts` frame-stepper → ffmpeg) + `server/scripts/yt-animated-demo.ts`. Five templates (title, section, list
+  with moving highlight, quote, end card) from `coherencedaddy-landing/DESIGN.md` tokens, Geist fonts bundled (OFL).
+  Measured 2026-10-07 on the real Mark-voice timeline: 7,707 frames = 256.90 s (matches the audio), all 27 sentence
+  boundaries change the picture (median 6.1 grey levels) while frames hold still inside a sentence (max 0.27); 0 layout
+  warnings; 147 s wall time on the owner's Mac (VPS4 speed unmeasured). Exits start 0.25 s before the next beat by
+  design. Before production: the server build must copy `scenes.html` + `assets/` into `dist`; Chromium on VPS4;
+  render time on VPS4; the sync gate's scene threshold vs smooth fades (the prototype measured with a pixel-change
+  method); short on-screen text per line (the script redesign's `onScreen`), since full sentences render small.
+  The current static slide template is off-brand: `slide-templates.ts` uses the banned cyan `#00d4ff`, coral
+  `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
 - [ ] **Scripts and how the channel talks** — the prompt still produces formula titles, near-duplicate topics and
   invented first-person claims ("I Tested 5 … for 90 Days"); redesign pending research.
 - [ ] **Metadata** — the custom thumbnail and the SRT are generated but never uploaded (publisher sends title,
