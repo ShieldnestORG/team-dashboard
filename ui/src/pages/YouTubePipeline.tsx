@@ -46,7 +46,7 @@ function statusBadge(status: string) {
     processing: "bg-yellow-500/10 text-yellow-500",
     pending: "bg-zinc-500/10 text-zinc-400",
     scheduled: "bg-purple-500/10 text-purple-500",
-    review: "bg-amber-500/10 text-amber-500",
+    pending_review: "bg-amber-500/10 text-amber-500",
     failed: "bg-red-500/10 text-red-500",
   };
   return (
@@ -150,9 +150,9 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
   });
 
   const status = item.status as string;
-  // "review" = a new video waiting for the owner's approval. Reschedule (or
+  // "pending_review" = a new video waiting for the owner's approval. Reschedule (or
   // Publish Now) approves it: the server sets it to "scheduled".
-  const isReview = status === "review";
+  const isReview = status === "pending_review";
   const isScheduled = status === "scheduled" || isReview;
   const isPublished = status === "published";
 
@@ -229,7 +229,10 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
                 variant="outline"
                 onClick={() => {
                   const current = new Date(item.publishTime as string);
-                  setNewDate(current.toISOString().slice(0, 16));
+                  // datetime-local is read back as LOCAL time, so pre-fill it in local
+                  // time too (the UTC string shifted an unchanged approval by the offset).
+                  const local = new Date(current.getTime() - current.getTimezoneOffset() * 60_000);
+                  setNewDate(local.toISOString().slice(0, 16));
                   setEditingDate(true);
                 }}
               >

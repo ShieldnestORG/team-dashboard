@@ -134,7 +134,7 @@ export const ytPublishQueue = pgTable(
     productionId: uuid("production_id").notNull().references(() => ytProductions.id),
     title: text("title").notNull(),
     publishTime: timestamp("publish_time", { withTimezone: true }).notNull(),
-    status: text("status").notNull().default("scheduled"), // review|scheduled|publishing|published|failed|paused ("review" = waits for owner approval)
+    status: text("status").notNull().default("scheduled"), // pending_review|scheduled|publishing|published|failed|paused (pending_review = waits for owner approval)
     priority: integer("priority").default(50),
     youtubeVideoId: text("youtube_video_id"),
     youtubeUrl: text("youtube_url"),

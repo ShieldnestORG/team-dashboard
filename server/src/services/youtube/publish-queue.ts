@@ -15,6 +15,9 @@ import { logger } from "../../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 
+/** Queue rows a human may still schedule, approve or publish now (pending_review = awaiting owner approval). */
+export const PUBLISHABLE_QUEUE_STATUSES = ["pending_review", "scheduled", "paused"];
+
 /**
  * Process the publish queue — publish all items that are due.
  */
@@ -130,5 +133,9 @@ export async function forcePublish(db: Db, queueId: string): Promise<void> {
     .limit(1);
 
   if (!item) throw new Error(`Queue item not found: ${queueId}`);
+  // Never re-upload a published, publishing or failed row as a duplicate.
+  if (!PUBLISHABLE_QUEUE_STATUSES.includes(item.status)) {
+    throw new Error(`Queue item ${queueId} is ${item.status}; only ${PUBLISHABLE_QUEUE_STATUSES.join("/")} can be published`);
+  }
   await publishItem(db, item);
 }

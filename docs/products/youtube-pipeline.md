@@ -15,7 +15,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 | Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them |
 | Mode | `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
-| Queue | `yt_publish_queue.status`: `review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
+| Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
 | Admin UI | `/socials/youtube` (`YouTubePipeline.tsx`): queue cards with Publish Now, Reschedule / Approve & schedule, Remove · `youtube/videos` (`YouTubeVideos.tsx`): watch/download finished videos |
 
 `yt_publish_queue.publishTime` comes from `calculateBestPublishTime()` (`content-strategy.ts`): a **random** Tue–Sun
@@ -80,9 +80,13 @@ wording only after that gate clears, with a claim ID from the register.
 
 ## Owner approval
 
-`YT_REQUIRE_REVIEW` (default on): a finished video enters the queue as `review` with a proposed time; the publish
+`YT_REQUIRE_REVIEW` (default on): a finished video enters the queue as `pending_review` with a proposed time; the publish
 queue only takes `scheduled` rows. Approve in the dashboard with **Approve & schedule** (sets the time and
 `scheduled`) or **Publish Now**. `YT_REQUIRE_REVIEW=false` restores automatic scheduling.
+Both actions only work on `pending_review`, `scheduled` or `paused` rows (route answers 409, `forcePublish` throws), so a
+published or failed video can't be uploaded twice. The time box is pre-filled in local time (it used to pre-fill UTC into
+a local picker, so an unchanged approval moved the video 7 hours later in PDT). A `pending_review` video older than
+30 days is still purged by `yt:cleanup-videos` — approve within a month.
 
 ## The sync gate
 
