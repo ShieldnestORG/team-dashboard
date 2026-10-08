@@ -94,22 +94,28 @@ export async function assembleYouTubeVideo(opts: YtAssembleOptions): Promise<YtA
   await writeFile(concatPath, lines.join("\n"));
 
   const silentVideo = join(TEMP_DIR, `silent_${Date.now()}.mp4`);
-  const vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1";
+  // fps=30 as a filter (not output -r) plus an explicit -t: the repeated last
+  // image otherwise holds past the slides' total, and -shortest does not trim a
+  // copied video stream. Measured 2026-10-07: 3 slides totalling 6.234 s came
+  // out 8.233 s; a 256.9 s real render shipped 259.6 s; live videos on VPS4
+  // ran 0.34-1.9 s past their audio. With this, 6.234 s -> 6.233 s.
+  const vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30";
+  const totalSec = audioDurationSec.toFixed(3);
 
   try {
     // Step 1: Build silent slideshow from images
     await execAsync(
-      `ffmpeg -y -f concat -safe 0 -i "${concatPath}" -vf "${vf}" -c:v libx264 -pix_fmt yuv420p -r 30 "${silentVideo}"`,
+      `ffmpeg -y -f concat -safe 0 -i "${concatPath}" -vf "${vf}" -c:v libx264 -pix_fmt yuv420p -t ${totalSec} "${silentVideo}"`,
       { timeout: 300_000 },
     );
 
     // Step 2: Merge with audio
-    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest`;
+    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest -t ${totalSec}`;
 
     // Step 3: Optionally burn in captions
     if (captionsPath && existsSync(captionsPath)) {
       // Re-encode video with subtitle filter instead of copy
-      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest`;
+      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest -t ${totalSec}`;
     }
 
     // Add metadata
@@ -194,7 +200,7 @@ export async function verifySlideSync(opts: {
 
   // (b) video length vs audio
   const { stdout: probeOut } = await execAsync(
-    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`,
+    `ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`,
   );
   const videoDurationSec = parseFloat(probeOut.trim());
   if (!Number.isFinite(videoDurationSec)) {

@@ -30,6 +30,15 @@ const ffprobeDuration = (p: string) =>
       .trim(),
   );
 
+// The VIDEO track's own length. format=duration is the longest stream, so a picture that
+// ends early or late hides behind the audio's length (it did, 2026-10-07).
+const videoStreamDuration = (p: string) =>
+  parseFloat(
+    execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration", "-of", "default=noprint_wrappers=1:nokey=1", p])
+      .toString()
+      .trim(),
+  );
+
 // Six visually distinct solid slides, 1280x720, with known durations.
 const COLORS = ["red", "lime", "blue", "white", "black", "magenta"];
 const DURATIONS = [2, 3, 2.5, 1.5, 3, 2]; // 14 s
@@ -138,5 +147,36 @@ describe.skipIf(!hasFfmpeg)("WAV concat timing (the helpers generateChunkedTTS u
     const track = await tts.assembleWavTrack([tone, null, tone], join(dir, "gap.wav"), 0.6, "gap");
     expect(track.contentDurations[1]).toBe(0);
     expect(Math.abs(track.durationSec - (1 + 0.6 + 0.6 + 1))).toBeLessThan(0.005);
+  });
+});
+
+describe.skipIf(!hasFfmpeg)("assembleYouTubeVideo end to end (PNG slides + WAV audio, the real assembly path)", () => {
+  it("the finished video is as long as its audio and every slide changes on time", async () => {
+    // Regression for 2026-10-07: the concat demuxer held the repeated last image past the
+    // slides' total and -shortest did not trim the copied video (a 256.9 s render shipped
+    // 259.6 s, live VPS4 videos ran 0.34-1.9 s long), so the sync gate failed real videos.
+    const pngs = COLORS.map((c, i) => {
+      const p = join(dir, `slide_${i}.png`);
+      ffmpeg(["-f", "lavfi", "-i", `color=c=${c}:s=1920x1080`, "-frames:v", "1", p]);
+      return p;
+    });
+    const durations = [1.234, 2.5, 1.9, 3.21, 2.0, 20.0]; // last slide as long as a real CTA end card (the overrun grows with it)
+    const total = durations.reduce((a, b) => a + b, 0);
+    const audio = join(dir, "e2e.wav");
+    ffmpeg(["-f", "lavfi", "-i", `sine=frequency=330:duration=${total}`, "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", audio]);
+
+    const result = await assembler.assembleYouTubeVideo({
+      audioPath: audio,
+      audioDurationSec: total,
+      visualAssets: pngs,
+      slideDurations: durations,
+      outputFilename: "e2e.mp4",
+    });
+
+    expect(Math.abs(videoStreamDuration(result.videoPath) - total)).toBeLessThan(0.05);
+    const report = await assembler.verifySlideSync({ videoPath: result.videoPath, slideDurations: durations, audioDurationSec: total });
+    expect(report.issues).toEqual([]);
+    expect(report.ok).toBe(true);
+    expect(report.maxOffsetSec).toBeLessThanOrEqual(0.1);
   });
 });
