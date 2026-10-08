@@ -46,6 +46,7 @@ function statusBadge(status: string) {
     processing: "bg-yellow-500/10 text-yellow-500",
     pending: "bg-zinc-500/10 text-zinc-400",
     scheduled: "bg-purple-500/10 text-purple-500",
+    review: "bg-amber-500/10 text-amber-500",
     failed: "bg-red-500/10 text-red-500",
   };
   return (
@@ -149,7 +150,10 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
   });
 
   const status = item.status as string;
-  const isScheduled = status === "scheduled";
+  // "review" = a new video waiting for the owner's approval. Reschedule (or
+  // Publish Now) approves it: the server sets it to "scheduled".
+  const isReview = status === "review";
+  const isScheduled = status === "scheduled" || isReview;
   const isPublished = status === "published";
 
   return (
@@ -169,7 +173,8 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
               </a>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Scheduled: {new Date(item.publishTime as string).toLocaleString()}
+                {isReview ? "Awaiting approval — proposed: " : "Scheduled: "}
+                {new Date(item.publishTime as string).toLocaleString()}
               </p>
             )}
           </div>
@@ -229,7 +234,7 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
                 }}
               >
                 <Calendar className="mr-1.5 h-3 w-3" />
-                Reschedule
+                {isReview ? "Approve & schedule" : "Reschedule"}
               </Button>
             )}
 

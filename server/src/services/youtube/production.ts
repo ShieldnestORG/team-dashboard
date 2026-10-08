@@ -25,6 +25,11 @@ import { logger } from "../../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 const VISUAL_MODE = process.env.YT_VISUAL_MODE || "presentation";
+// New videos wait in the queue as "review" until the owner approves them
+// (owner, 2026-10-07: approve the new-style videos before they post).
+// Approve = Reschedule or Publish Now in the dashboard; the publish queue only
+// picks up "scheduled" rows. YT_REQUIRE_REVIEW=false restores auto-scheduling.
+const REQUIRE_REVIEW = process.env.YT_REQUIRE_REVIEW !== "false";
 const ASSETS_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "assets");
 
 function ensureDir(dir: string) {
@@ -258,6 +263,7 @@ export async function runProductionPipeline(
         productionId,
         title: seo.title,
         publishTime: new Date(strategy.bestPublishTime),
+        status: REQUIRE_REVIEW ? "review" : "scheduled",
         priority: calculatePriority(strategy),
         metadata: {
           seoId: seo.id,
@@ -268,7 +274,10 @@ export async function runProductionPipeline(
           description: seo.description,
         },
       });
-      logger.info({ productionId, publishTime: strategy.bestPublishTime }, "Video queued for publishing");
+      logger.info(
+        { productionId, publishTime: strategy.bestPublishTime, awaitingReview: REQUIRE_REVIEW },
+        REQUIRE_REVIEW ? "Video queued for owner review" : "Video queued for publishing",
+      );
     }
 
     return { productionId, status: publishable ? "ready" : "failed", strategy, script, seo, thumbnail, tts, video, error: gateError };
