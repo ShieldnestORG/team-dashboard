@@ -105,7 +105,7 @@ Manages a diverse fleet of AI agents including:
 - **Text Engine**: Ollama-powered generation with personality-driven templates and a feedback loop.
 - **SEO Engine**: Trend-based blog generation with intel vector context and IndexNow integration.
 - **Visual Content System**: AI image/video generation via Gemini, Grok/xAI, and Canva.
-- **YouTube Automation**: Full production pipeline from strategy and script writing to TTS (Grok Rex) and FFmpeg assembly.
+- **YouTube Automation**: Full production pipeline from strategy and script writing to TTS (Mark's ElevenLabs clone; Grok Rex as fallback) and FFmpeg assembly — see [YouTube Pipeline](../products/youtube-pipeline.md).
 - **Public Reels API**: Unauthenticated endpoint for approved visual content.
 
 ### Business & Monetization
