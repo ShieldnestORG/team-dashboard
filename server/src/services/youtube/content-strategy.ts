@@ -210,7 +210,7 @@ async function generateAngleWithAI(topic: string, recentInsights: string[] = [])
       [
         {
           role: "system",
-          content: `You generate YouTube video angles for the Tokns.fi channel. Return ONLY a single-line angle (no quotes, no explanation). Current year: ${year}. The angle should be compelling and click-worthy while being honest.${insightContext}`,
+          content: `You generate YouTube video angles for the Coherence Daddy channel (TX blockchain ecosystem, tokns.fi, crypto news, self-improvement and mindset). Return ONLY a single-line angle (no quotes, no explanation). Current year: ${year}. The angle should be compelling and click-worthy while being honest.${insightContext}`,
         },
         {
           role: "user",

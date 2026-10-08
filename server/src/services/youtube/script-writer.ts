@@ -85,6 +85,7 @@ export function applyPronunciationFixes(text: string): string {
     "Tokns.fi": "Toe-kins dot fye",
     "TOKNS.FI": "TOE-KINS DOT FYE",
     "coherencedaddy.com": "coherence daddy dot com",
+    "evntrace.com": "event trace dot com",
     "HODL": "hoddle",
     "hodl": "hoddle",
     "altcoins": "alt coins",
@@ -95,6 +96,7 @@ export function applyPronunciationFixes(text: string): string {
     text = text.split(word).join(replacement);
   }
   // Regex-based fixes
+  text = text.replace(/\bevntrace\b/gi, "event trace");
   text = text.replace(/\bDeFi\b/g, "de-fi");
   text = text.replace(/\bdefi\b/gi, "de-fi");
   text = text.replace(/\btxecosystem\b/gi, "T-X ecosystem");
@@ -106,6 +108,113 @@ export function applyPronunciationFixes(text: string): string {
   text = text.replace(/\bDAOs\b/g, "dow-z");
   text = text.replace(/\bDAO\b/g, "dow");
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// evntrace line + sanitizer
+// ---------------------------------------------------------------------------
+
+// The ONLY evntrace mention in a published video: fixed text, appended to the
+// call to action by the system (the LLM is told not to mention evntrace, and
+// sanitizeScript drops any sentence that does). CLAIM-FREE ON PURPOSE:
+// evntrace's claims register (Digital Forensics repo, branch
+// marketing/foundation, marketing/claims-register.md "Video gate") forbids any
+// evntrace *claim* in a published video until its legal docs exist and counsel
+// has read them. A name/URL mention is allowed — keep this line to the name and
+// the URL.
+export const EVNTRACE_CTA_LINE = "Also, check out evntrace.com.";
+
+/** Append "." when the line does not already end in sentence punctuation. */
+export function ensureTerminalPunctuation(text: string): string {
+  const t = text.trim();
+  if (!t) return t;
+  return /[.!?]["'”’)\]]*$/.test(t) ? t : `${t}.`;
+}
+
+// A spoken pronunciation aside: `pronounced "de-fi"`, `pronounced dee-fye`,
+// `is pronounced de-fi`, `sounds like dee-fi` — quoted (any quote style) or one
+// or two bare words.
+const QUOTE = String.raw`["“”'‘’]`;
+const PRON_BODY = String.raw`(?:(?:is|are)\s+)?(?:pronounced|pronunciation\s*:?|sounds\s+like)\s*(?:(?:as|like)\s+)?(?:${QUOTE}[^"“”'‘’]*${QUOTE}|[A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)?)`;
+const DASH = String.raw`(?:[—–]|\s-\s)`;
+const PRON_ASIDES: Array<[RegExp, string]> = [
+  // DeFi (pronounced dee-fye) lets
+  [new RegExp(String.raw`\s*[(\[]\s*${PRON_BODY}\s*[,.]?\s*[)\]]`, "gi"), ""],
+  // DeFi—pronounced "de-fi"—allows   /   DeFi – pronounced de-fi – lets
+  [new RegExp(String.raw`\s*${DASH}\s*${PRON_BODY}\s*${DASH}\s*`, "gi"), " "],
+  // DeFi — pronounced de-fi.   (the aside runs to the end of the sentence)
+  [new RegExp(String.raw`\s*${DASH}\s*${PRON_BODY}(?=\s*[.!?,;]|\s*$)`, "gi"), ""],
+  // DeFi, pronounced "dee-fi," allows   /   DeFi, pronounced dee-fi, allows
+  [new RegExp(String.raw`\s*,\s*${PRON_BODY}(?:\s*,)?`, "gi"), ""],
+];
+
+function stripPronunciationAsides(text: string): string {
+  let out = text;
+  for (const [re, replacement] of PRON_ASIDES) out = out.replace(re, replacement);
+  if (out === text) return text;
+  return out
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .replace(/,{2,}/g, ",")
+    .trim();
+}
+
+function dropEvntraceSentences(text: string): string {
+  if (!/evntrace/i.test(text)) return text;
+  // Split on whitespace that follows sentence punctuation, so "evntrace.com"
+  // stays one token.
+  return text
+    .split(/(?<=[.!?]["')\]]*)\s+/)
+    .filter((sentence) => !/evntrace/i.test(sentence))
+    .join(" ")
+    .trim();
+}
+
+const DEFAULT_GREETING = "What's up everyone, welcome back to Coherence Daddy.";
+
+/**
+ * Deterministic clean-up of LLM output before narration and slides are built:
+ *  1. strip spoken pronunciation asides ("DeFi, pronounced de-fi, allows" -> "DeFi allows"),
+ *  2. drop any sentence that mentions evntrace (the system adds its own fixed line),
+ *  3. force the greeting to name Coherence Daddy.
+ * Returns a copy; the input is not mutated.
+ */
+export function sanitizeScript(script: ScriptData): ScriptData {
+  const out = structuredClone(script);
+  const spoken = (v: string): string =>
+    typeof v === "string" ? dropEvntraceSentences(stripPronunciationAsides(v)) : v;
+  const nonEmpty = (v: string): boolean => typeof v !== "string" || v.trim() !== "";
+
+  if (typeof out.title === "string") out.title = stripPronunciationAsides(out.title);
+  if (out.hook) out.hook.text = spoken(out.hook.text);
+  if (out.introduction) {
+    const intro = out.introduction;
+    intro.greeting = spoken(intro.greeting);
+    intro.topicIntro = spoken(intro.topicIntro);
+    intro.valueProposition = spoken(intro.valueProposition);
+    intro.credibility = spoken(intro.credibility);
+    if (!/coherence daddy/i.test(intro.greeting || "")) intro.greeting = DEFAULT_GREETING;
+  }
+  for (const section of out.mainContent?.sections || []) {
+    section.title = spoken(section.title);
+    if (Array.isArray(section.content)) {
+      // "[...]" lines are stage directions: never spoken, never shown. Leave them as written.
+      section.content = section.content
+        .map((l) => (typeof l === "string" && l.startsWith("[") ? l : spoken(l)))
+        .filter(nonEmpty);
+    }
+  }
+  if (out.conclusion) {
+    if (Array.isArray(out.conclusion.recap)) out.conclusion.recap = out.conclusion.recap.map(spoken).filter(nonEmpty);
+    out.conclusion.finalThought = spoken(out.conclusion.finalThought);
+  }
+  if (out.callToAction) {
+    out.callToAction.subscribe = spoken(out.callToAction.subscribe);
+    out.callToAction.like = spoken(out.callToAction.like);
+    out.callToAction.comment = spoken(out.callToAction.comment);
+    out.callToAction.nextVideo = spoken(out.callToAction.nextVideo);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +257,7 @@ export function formatScriptPlainText(script: ScriptData): string {
     text += `${script.callToAction.subscribe}\n`;
     text += `${script.callToAction.like}\n`;
     text += `${script.callToAction.comment}\n`;
+    text += `${EVNTRACE_CTA_LINE}\n`;
   }
   return text;
 }
@@ -175,6 +285,7 @@ export async function generateScript(strategy: ContentStrategy): Promise<ScriptD
     script = generateScriptFromTemplate(strategy, template);
   }
 
+  script = sanitizeScript(script);
   script.fullScript = formatFullScript(script);
   logger.info({ title: script.title }, "YouTube script generated");
   return script;
@@ -186,7 +297,7 @@ async function generateScriptWithOllama(
 ): Promise<ScriptData> {
   const year = new Date().getFullYear();
 
-  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Tokns.fi — a crypto, motivation, and blockchain education channel. The channel covers Bitcoin, altcoins, and the TX blockchain ecosystem (social handle: @txecosystem). Related sites: tokns.fi and coherencedaddy.com. IMPORTANT: Always write "TX ecosystem" as two separate words. Also always write "DeFi" to be pronounced "de-fi". The tone is confident, energetic, and approachable. Occasionally reference tokns.fi or coherencedaddy.com naturally. Always output valid JSON. The current year is ${year}. Always use ${year} when referencing the current year.`;
+  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Coherence Daddy — a crypto, blockchain, and self-improvement channel. The channel covers the TX blockchain ecosystem (social handle: @txecosystem), tokns.fi, crypto news (Bitcoin, altcoins, DeFi), and self-improvement and mindset. Related sites: tokns.fi and coherencedaddy.com. The greeting must welcome viewers to Coherence Daddy. IMPORTANT: Always write "TX ecosystem" as two separate words. Never include pronunciation guides, phonetic spellings, or stage directions in spoken lines — write every spoken line exactly as it should be read aloud. Do not mention evntrace; the system adds that line itself. The tone is confident, energetic, and approachable. Occasionally reference tokns.fi or coherencedaddy.com naturally. Always output valid JSON. The current year is ${year}. Always use ${year} when referencing the current year.`;
 
   const userPrompt = `Write a complete YouTube video script for the following:
 
@@ -255,7 +366,7 @@ function generateScriptFromTemplate(
       duration: "0:00-0:05",
     },
     introduction: {
-      greeting: "Hey everyone, welcome back to the channel!",
+      greeting: "Hey everyone, welcome back to Coherence Daddy!",
       topicIntro: `Today, we're diving deep into ${strategy.topic}.`,
       valueProposition: `By the end of this video, you'll understand everything about ${strategy.topic}.`,
       credibility: "Based on the latest research and data",

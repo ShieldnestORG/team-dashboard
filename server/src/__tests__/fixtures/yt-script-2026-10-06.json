@@ -1,0 +1,94 @@
+{
+  "_source": "Reconstructed 2026-10-07 from the YouTube auto-transcript of production c6e0b897 (published 2026-10-07, youtube.com/watch?v=XKyRJe55i8Y). Its 25 rendered slides (pres_000..pres_024) match this structure: title, hook, 4 sections with 5/4/4/4 lines, conclusion, cta. Greeting and the DeFi aside are kept as the model wrote them, so the sanitizer tests have real input.",
+  "title": "Stop Gambling: the Exact 2026 Crypto Portfolio Blueprint for Beginners to Build Long-term Wealth",
+  "hook": {
+    "type": "statement",
+    "text": "Most beginners treat crypto like a casino, but in 2026, the real wealth is built through a blueprint, not a bet.",
+    "duration": "0:00-0:05"
+  },
+  "introduction": {
+    "greeting": "What's up everyone? Welcome back to Tokns.fi.",
+    "topicIntro": "Today, we are stripping away the hype and giving you a professional crypto portfolio strategy for beginners.",
+    "valueProposition": "I'm going to show you exactly how to allocate your assets to survive volatility and capture massive growth.",
+    "credibility": "Drawing from the latest trends in the TX ecosystem and our research at coherencedaddy.com, we've refined a model that actually works in the current market.",
+    "duration": "0:05-0:20"
+  },
+  "mainContent": {
+    "sections": [
+      {
+        "type": "framework",
+        "title": "The Core Foundation: The 50/30/20 Rule",
+        "content": [
+          "Stop chasing every new memecoin. To build long-term wealth, you need a tiered structure.",
+          "First, 50% of your portfolio should be in blue chips. Think Bitcoin and Ethereum. This is your safety net.",
+          "Next, 30% goes into mid-caps. These are established projects with real utility, like those growing within the TX ecosystem.",
+          "Finally, 20% is your speculative bucket. This is where you take high-risk, high-reward bets on early-stage gems.",
+          "This balance ensures that even if your moonshots fail, your foundation remains intact."
+        ],
+        "visuals": ["pie chart 50/30/20"],
+        "duration": 60
+      },
+      {
+        "type": "strategy",
+        "title": "Integrating DeFi for Passive Income",
+        "content": [
+          "Holding assets is great, but making your assets work for you is better. That's where DeFi comes in.",
+          "For beginners, DeFi—pronounced \"de-fi\"—allows you to earn yield through staking or providing liquidity.",
+          "Instead of just letting your coins sit in a wallet, look for reputable protocols to earn a percentage return on your holdings.",
+          "Check out the guides on tokns.fi to find the safest ways to enter the world of decentralized finance without risking your principal."
+        ],
+        "visuals": ["staking dashboard"],
+        "duration": 45
+      },
+      {
+        "type": "risk",
+        "title": "Risk Management: DCA and Rebalancing",
+        "content": [
+          "The biggest mistake beginners make is all-in investing.",
+          "In 2026, the smartest play is dollar-cost averaging, or DCA. Set a fixed amount to invest every week or month, regardless of the price. This smooths out your entry point.",
+          "But don't just set it and forget it. You need to rebalance quarterly.",
+          "If your speculative coins pump and now make up 50% of your portfolio, sell the profit and move it back into your blue chips."
+        ],
+        "visuals": ["calendar with recurring buys"],
+        "duration": 45
+      },
+      {
+        "type": "outlook",
+        "title": "Looking Ahead: The Role of the TX Ecosystem",
+        "content": [
+          "To truly outperform the market, you need to look where the developers are moving.",
+          "The TX ecosystem is currently providing the infrastructure for the next wave of blockchain adoption.",
+          "By diversifying a portion of your mid-cap allocation into TX ecosystem projects, you're betting on the plumbing of the future internet.",
+          "Whether it's scalability or social integration, this is where the real utility is being built in 2026."
+        ],
+        "visuals": ["network map"],
+        "duration": 45
+      }
+    ],
+    "totalDuration": 195
+  },
+  "conclusion": {
+    "type": "conclusion",
+    "title": "Wrapping Up",
+    "recap": [
+      "Follow the 50/30/20 allocation rule to manage risk.",
+      "Utilize DeFi to generate passive income on your holdings.",
+      "Use DCA and quarterly rebalancing to stay disciplined."
+    ],
+    "finalThought": "Remember, crypto isn't a get-rich-quick scheme. It's a technology play. Build your foundation, stay patient, and let the math do the work.",
+    "duration": "30 seconds"
+  },
+  "callToAction": {
+    "type": "call_to_action",
+    "subscribe": "If you want more professional blueprints for the blockchain era, hit that subscribe button.",
+    "like": "Smash the like button if this helped you clear the fog on your strategy.",
+    "comment": "Comment below what percentage of your portfolio is currently in the TX ecosystem.",
+    "nextVideo": "Next time, we break down how to pick your first mid-cap.",
+    "duration": "15 seconds"
+  },
+  "tone": "informative",
+  "pacing": "steady",
+  "keywords": ["crypto portfolio", "beginners", "50/30/20", "DCA", "TX ecosystem"],
+  "duration": "3:12",
+  "fullScript": ""
+}

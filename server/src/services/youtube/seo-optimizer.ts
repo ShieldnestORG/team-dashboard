@@ -144,9 +144,9 @@ function generateDescription(script: ScriptData, strategy: ContentStrategy): str
     desc += `We walk through ${hostname} page by page, exploring its features, design, and what it offers. `;
     desc += `Perfect for anyone curious about ${hostname} or looking for honest website reviews.\n\n`;
     desc += "LINKS:\n";
-    desc += `- ${strategy.topic}\n- tokns.fi\n- coherencedaddy.com\n\n`;
+    desc += `- ${strategy.topic}\n- tokns.fi\n- coherencedaddy.com\n- evntrace.com\n\n`;
     desc += "DISCLAIMER:\nThis video is for informational purposes only.\n\n";
-    desc += `(c) ${new Date().getFullYear()} Tokns.fi. All Rights Reserved.\n`;
+    desc += `(c) ${new Date().getFullYear()} Coherence Daddy. All Rights Reserved.\n`;
     return desc;
   }
 
@@ -179,10 +179,10 @@ function generateDescription(script: ScriptData, strategy: ContentStrategy): str
   desc += `Perfect for ${strategy.targetAudience}.\n\n`;
 
   desc += "LINKS:\n";
-  desc += "- tokns.fi\n- coherencedaddy.com\n\n";
+  desc += "- tokns.fi\n- coherencedaddy.com\n- evntrace.com\n\n";
 
   desc += "DISCLAIMER:\nThis video is for educational purposes only.\n\n";
-  desc += `(c) ${new Date().getFullYear()} Tokns.fi. All Rights Reserved.\n`;
+  desc += `(c) ${new Date().getFullYear()} Coherence Daddy. All Rights Reserved.\n`;
 
   return desc;
 }
@@ -223,6 +223,7 @@ function generateTags(script: ScriptData, strategy: ContentStrategy): string[] {
     for (const t of ["motivation", "mindset", "self improvement", "success"]) tags.add(t);
   }
   tags.add("tokns.fi");
+  tags.add("coherencedaddy");
   tags.add("TX ecosystem");
 
   if (script.keywords) for (const kw of script.keywords) tags.add(kw);

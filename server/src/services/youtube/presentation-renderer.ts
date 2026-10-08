@@ -14,7 +14,7 @@ import { mkdir } from "fs/promises";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
 import { callOllamaChat } from "../ollama-client.js";
-import type { ScriptData } from "./script-writer.js";
+import { EVNTRACE_CTA_LINE, ensureTerminalPunctuation, type ScriptData } from "./script-writer.js";
 import {
   type SlideTemplate,
   getTemplate,
@@ -40,7 +40,7 @@ function esc(text: string | undefined): string {
 // AI slide generation via Ollama
 // ---------------------------------------------------------------------------
 
-interface SlideRequest {
+export interface SlideRequest {
   type: "title" | "hook" | "section_title" | "content" | "conclusion" | "cta";
   title?: string;
   subtitle?: string;
@@ -121,8 +121,134 @@ async function generateSlideHtml(req: SlideRequest, t: SlideTemplate): Promise<s
 export interface Slide {
   type: string;
   html: string;
-  /** Approximate spoken text this slide covers (for duration weighting) */
+  /** Exact words spoken while this slide is on screen (the beat's text) */
   spokenText?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Beats — one slide = one voice clip
+// ---------------------------------------------------------------------------
+
+export interface Beat {
+  type: SlideRequest["type"];
+  req: SlideRequest;
+  /** The static-template HTML for this slide */
+  fallbackHtml: string;
+  /** EXACT words spoken while this slide shows (display form, no respellings) */
+  text: string;
+}
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+/**
+ * The single source of truth for presentation mode: slides AND narration come
+ * from the same list, so every slide is on screen exactly while its own words
+ * are spoken. Each beat is voiced as one TTS clip; the slide's duration is the
+ * measured clip length (never a word-count guess).
+ */
+export function buildBeats(script: ScriptData, template?: SlideTemplate): Beat[] {
+  const t = template || getTemplate();
+  const beats: Beat[] = [];
+
+  // Title card shows while the hook is spoken (the title itself is never read).
+  const hook = str(script.hook?.text);
+  const greeting = str(script.introduction?.greeting);
+  const intro = [
+    str(script.introduction?.topicIntro),
+    str(script.introduction?.valueProposition),
+    str(script.introduction?.credibility),
+  ].filter(Boolean);
+
+  const titleBeat: Beat = {
+    type: "title",
+    req: { type: "title", title: script.title, subtitle: t.channel },
+    fallbackHtml: staticTemplateTitle(t, script.title || "Untitled"),
+    text: hook || str(script.title),
+  };
+  // No intro items to carry the greeting -> it rides on the title beat.
+  if (intro.length === 0 && greeting) titleBeat.text = `${titleBeat.text} ${greeting}`.trim();
+  beats.push(titleBeat);
+
+  // Intro: one content slide per spoken item, greeting in front of the first.
+  for (let c = 0; c < intro.length; c += 3) {
+    const chunk = intro.slice(c, c + 3);
+    for (let h = 0; h < chunk.length; h++) {
+      beats.push({
+        type: "content",
+        req: { type: "content", title: "In this video", content: chunk, highlightIndex: h },
+        fallbackHtml: staticTemplateBullets(t, "In this video", chunk, h),
+        text: c + h === 0 && greeting ? `${greeting} ${chunk[h]}` : chunk[h],
+      });
+    }
+  }
+
+  // Sections: the title card says the title; each spoken line gets its own slide.
+  // Lines starting with "[" are stage directions — never spoken, never shown.
+  for (const section of script.mainContent?.sections || []) {
+    const title = str(section.title);
+    const badge = (section.type || "topic").toUpperCase();
+    if (title) {
+      beats.push({
+        type: "section_title",
+        req: { type: "section_title", title: section.title, badge },
+        fallbackHtml: staticTemplateSectionTitle(t, title, badge),
+        text: ensureTerminalPunctuation(title),
+      });
+    }
+
+    const rawLines = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
+    const lines = rawLines.filter((l): l is string => typeof l === "string" && !l.startsWith("[") && l.trim() !== "");
+
+    for (let c = 0; c < lines.length; c += 3) {
+      const chunk = lines.slice(c, c + 3);
+      for (let h = 0; h < chunk.length; h++) {
+        beats.push({
+          type: "content",
+          req: { type: "content", title: section.title || "Details", content: chunk, highlightIndex: h },
+          fallbackHtml: staticTemplateBullets(t, title || "Details", chunk, h),
+          text: chunk[h],
+        });
+      }
+    }
+  }
+
+  // Conclusion: the recap slide, then the closing thought as a quote slide.
+  const recap = (Array.isArray(script.conclusion?.recap) ? script.conclusion.recap : [])
+    .map(str)
+    .filter(Boolean);
+  if (recap.length > 0) {
+    beats.push({
+      type: "conclusion",
+      req: { type: "conclusion", content: recap },
+      fallbackHtml: staticTemplateConclusion(t, recap),
+      text: recap.map(ensureTerminalPunctuation).join(" "),
+    });
+  }
+  const finalThought = str(script.conclusion?.finalThought);
+  if (finalThought) {
+    beats.push({
+      type: "hook",
+      req: { type: "hook", content: [finalThought] },
+      fallbackHtml: staticTemplateQuote(t, finalThought),
+      text: finalThought,
+    });
+  }
+
+  // Call to action, then the fixed evntrace line.
+  const cta = [script.callToAction?.subscribe, script.callToAction?.like, script.callToAction?.comment]
+    .map(str)
+    .filter(Boolean)
+    .map(ensureTerminalPunctuation);
+  beats.push({
+    type: "cta",
+    req: { type: "cta" },
+    fallbackHtml: staticTemplateCTA(t, str(script.callToAction?.subscribe) || "Subscribe for more!"),
+    text: [...cta, EVNTRACE_CTA_LINE].join(" "),
+  });
+
+  return beats;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,105 +258,30 @@ export interface Slide {
 // One AI HTML generation per slide. These calls are independent, so they run
 // in a bounded-concurrency pool rather than serially — a video with N slides
 // used to take N × (Ollama latency) and could exceed 30 min; now wall time is
-// roughly ceil(N / SLIDE_GEN_CONCURRENCY) × latency. Each job carries a static
+// roughly ceil(N / SLIDE_GEN_CONCURRENCY) × latency. Each beat carries a static
 // fallback used when the AI call fails or returns non-HTML.
 const SLIDE_GEN_CONCURRENCY = 6;
 
-interface SlideJob {
-  type: string;
-  req: SlideRequest;
-  fallbackHtml: string;
-  spokenText: string;
-}
-
 export async function buildSlidesFromScriptAI(script: ScriptData, template?: SlideTemplate): Promise<Slide[]> {
   const t = template || getTemplate();
-  const jobs: SlideJob[] = [];
-
-  // Title
-  jobs.push({
-    type: "title",
-    req: { type: "title", title: script.title, subtitle: t.channel },
-    fallbackHtml: staticTemplateTitle(t, script.title || "Untitled"),
-    spokenText: script.title || "",
-  });
-
-  // Hook
-  if (script.hook?.text) {
-    jobs.push({
-      type: "hook",
-      req: { type: "hook", content: [script.hook.text] },
-      fallbackHtml: staticTemplateQuote(t, script.hook.text),
-      spokenText: script.hook.text,
-    });
-  }
-
-  // Main sections
-  for (const section of script.mainContent?.sections || []) {
-    const badge = (section.type || "topic").toUpperCase();
-    jobs.push({
-      type: "section_title",
-      req: { type: "section_title", title: section.title, badge },
-      fallbackHtml: staticTemplateSectionTitle(t, section.title || "Section", badge),
-      spokenText: section.title || "",
-    });
-
-    const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
-    const bulletTexts = bullets.map((b) => (typeof b === "string" ? b : String(b)));
-
-    for (let c = 0; c < bulletTexts.length; c += 3) {
-      const chunk = bulletTexts.slice(c, c + 3);
-      for (let h = 0; h < chunk.length; h++) {
-        jobs.push({
-          type: "content",
-          req: { type: "content", title: section.title || "Details", content: chunk, highlightIndex: h },
-          fallbackHtml: staticTemplateBullets(t, section.title || "Details", chunk, h),
-          spokenText: chunk[h],
-        });
-      }
-    }
-  }
-
-  // Conclusion
-  if (script.conclusion?.recap) {
-    const recap = script.conclusion.recap.map((r) => (typeof r === "string" ? r : String(r)));
-    jobs.push({
-      type: "conclusion",
-      req: { type: "conclusion", content: recap },
-      fallbackHtml: staticTemplateConclusion(t, recap),
-      spokenText: recap.join(". "),
-    });
-  }
-
-  // CTA
-  const ctaText = [
-    script.callToAction?.subscribe,
-    script.callToAction?.like,
-    script.callToAction?.comment,
-  ].filter(Boolean).join(". ");
-  jobs.push({
-    type: "cta",
-    req: { type: "cta" },
-    fallbackHtml: staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
-    spokenText: ctaText || "Subscribe for more content!",
-  });
+  const beats = buildBeats(script, t);
 
   // Resolve AI HTML for every slide in a bounded-concurrency pool, preserving
   // order. Each slot falls back to its static template on failure.
-  const htmls: string[] = new Array(jobs.length);
-  for (let i = 0; i < jobs.length; i += SLIDE_GEN_CONCURRENCY) {
-    const slice = jobs.slice(i, i + SLIDE_GEN_CONCURRENCY);
-    const settled = await Promise.allSettled(slice.map((job) => generateSlideHtml(job.req, t)));
+  const htmls: string[] = new Array(beats.length);
+  for (let i = 0; i < beats.length; i += SLIDE_GEN_CONCURRENCY) {
+    const slice = beats.slice(i, i + SLIDE_GEN_CONCURRENCY);
+    const settled = await Promise.allSettled(slice.map((beat) => generateSlideHtml(beat.req, t)));
     settled.forEach((r, j) => {
       const aiHtml = r.status === "fulfilled" ? r.value : null;
       htmls[i + j] = aiHtml || slice[j].fallbackHtml;
     });
   }
 
-  return jobs.map((job, i) => ({
-    type: job.type,
+  return beats.map((beat, i) => ({
+    type: beat.type,
     html: htmls[i],
-    spokenText: job.spokenText,
+    spokenText: beat.text,
   }));
 }
 
@@ -239,66 +290,7 @@ export async function buildSlidesFromScriptAI(script: ScriptData, template?: Sli
 // ---------------------------------------------------------------------------
 
 export function buildSlidesFromScript(script: ScriptData, template?: SlideTemplate): Slide[] {
-  const t = template || getTemplate();
-  const slides: Slide[] = [];
-
-  slides.push({
-    type: "title",
-    html: staticTemplateTitle(t, script.title || "Untitled"),
-    spokenText: script.title || "",
-  });
-
-  if (script.hook?.text) {
-    slides.push({
-      type: "quote",
-      html: staticTemplateQuote(t, script.hook.text),
-      spokenText: script.hook.text,
-    });
-  }
-
-  for (const section of script.mainContent?.sections || []) {
-    slides.push({
-      type: "section_title",
-      html: staticTemplateSectionTitle(t, section.title || "Section", (section.type || "topic").toUpperCase()),
-      spokenText: section.title || "",
-    });
-
-    const bullets = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
-    const bulletTexts = bullets.map((b) => (typeof b === "string" ? b : String(b)));
-
-    for (let c = 0; c < bulletTexts.length; c += 3) {
-      const chunk = bulletTexts.slice(c, c + 3);
-      for (let h = 0; h < chunk.length; h++) {
-        slides.push({
-          type: "bullets",
-          html: staticTemplateBullets(t, section.title || "Details", chunk, h),
-          spokenText: chunk[h],
-        });
-      }
-    }
-  }
-
-  if (script.conclusion?.recap) {
-    const recap = script.conclusion.recap.map((r) => (typeof r === "string" ? r : String(r)));
-    slides.push({
-      type: "conclusion",
-      html: staticTemplateConclusion(t, recap),
-      spokenText: recap.join(". "),
-    });
-  }
-
-  const ctaText = [
-    script.callToAction?.subscribe,
-    script.callToAction?.like,
-    script.callToAction?.comment,
-  ].filter(Boolean).join(". ");
-  slides.push({
-    type: "cta",
-    html: staticTemplateCTA(t, script.callToAction?.subscribe || "Subscribe for more!"),
-    spokenText: ctaText || "Subscribe for more content!",
-  });
-
-  return slides;
+  return buildBeats(script, template).map((b) => ({ type: b.type, html: b.fallbackHtml, spokenText: b.text }));
 }
 
 // ---------------------------------------------------------------------------
