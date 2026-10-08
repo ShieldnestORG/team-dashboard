@@ -1,8 +1,6 @@
 # Track C: script and channel-voice research (read-only)
-> Imported 2026-10-07 from the session's working folder; the helper scripts it mentions (`work/…`, `channel-data.json`) were not kept. Canonical page: [YouTube Pipeline](youtube-pipeline.md).
-
-
 > **Cluster:** youtube-robot · **Tags:** script-writer, prompts, brand-voice, grounding, honesty, beats · **Related:** [Channel measurements](youtube-channel-measurements-2026-10-07.md), [YouTube Pipeline](youtube-pipeline.md)
+> Imported 2026-10-07 from the session's working folder; the helper scripts it mentions (`work/…`, `channel-data.json`) were not kept. Canonical page: [YouTube Pipeline](youtube-pipeline.md).
 
 Written 2026-10-07 23:32 PDT by the Track C researcher. No code, DB, git state or paid service was touched. **V** = I read or ran it, **I** = inferred (from what), **U** = unverified. `file:line` = team-dashboard `origin/master` 659d1219 (equals remote master per `git ls-remote`). **A@8ca93c54** = Track A branch `fix/yt-beat-sync`, tip committed 23:04 PDT and still the tip at 23:31 (in flight, will change). Counts come from `work/fixture_stats.py`, `work/title_stats.py`, `work/pool_recurrence.py` in this folder.
 
