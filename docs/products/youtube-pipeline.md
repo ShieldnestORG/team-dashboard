@@ -123,14 +123,21 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
 
 ## Open items
 
+Evidence behind these items (2026-10-07): [channel measurements](youtube-channel-measurements-2026-10-07.md) ·
+[metadata audit](youtube-metadata-audit-2026-10-07.md) (tags, thumbnails, chapters, analytics scope, builder spec B1–B8) ·
+[script research](youtube-script-research-2026-10-07.md) (honesty, facts-from-code, format, topic engine, draft prompt).
+
+
 - [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (frame-stepped HTML scenes built from
   `coherencedaddy-landing/DESIGN.md`). The current slide template is off-brand: `slide-templates.ts` uses the banned
   cyan `#00d4ff`, coral `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
 - [ ] **Scripts and how the channel talks** — the prompt still produces formula titles, near-duplicate topics and
   invented first-person claims ("I Tested 5 … for 90 Days"); redesign pending research.
 - [ ] **Metadata** — the custom thumbnail and the SRT are generated but never uploaded (publisher sends title,
-  description, tags, category 28 only); chapters come from script estimates (one ran past the video's end); tags
-  include concatenated junk; `yt_analytics` has 0 rows, so the "data-driven" strategy has no data.
+  description, tags, category 28 only); chapters come from script estimates (past the end on 14/14 live videos); tags
+  include concatenated junk and `toknsfi` on every video; `yt_analytics` has 0 rows because the OAuth token has only
+  `youtube.upload` (daily 403, swallowed — the cron reports success). Owner step: re-consent with `youtube.readonly` +
+  `yt-analytics.readonly`; meanwhile Zernio already holds views for 155 videos.
 - [ ] **Publishing cadence** — replace the random slot with N per day; owner wants 3–5/day after approval;
   recommendation is 1/day for 1–2 weeks with analytics working, then scale (YouTube's "inauthentic content"
   policy, renamed 2025-07-15, targets "mass-produced, generic, repetitive" videos).
