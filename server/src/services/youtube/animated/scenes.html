@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coherence Daddy animated scenes</title>
+<!--
+  Animated scene templates for the Coherence Daddy daily videos (PROTOTYPE).
+
+  One page holds every scene type and is driven by ONE clock: window.seek(tSec).
+  Everything on screen is a pure function of that t:
+    - motion is Web Animations API animations, all created paused; seek() sets every one's currentTime.
+      No timers, no animation frames, no CSS transitions or keyframes, nothing reads a wall clock.
+    - the few discrete things (caption cue text, counting numbers) are computed from t inside seek().
+  Only `transform` and `opacity` are ever animated (checked mechanically by window.__report()).
+
+  Brand: coherencedaddy-landing/DESIGN.md. Tokens only: colours, Geist Sans / Geist Mono, motion
+  (260 ms cubic-bezier(0.22, 0.61, 0.36, 1), 60 ms cascade), Pinstripe page texture, CoralGlow wash,
+  section 9b pulse rings. Sizes are the DESIGN rem scale with 1rem = 40px (16px x 2.5): the 1920px frame
+  is the 768px md breakpoint scaled 2.5x, so label caps 0.6875rem, body 1rem, h3 1.375rem, h2 2.75rem,
+  h1 4.5rem and the spacing scale (xs..3xl = 0.25..6rem) keep their DESIGN ratios.
+
+  API (called by render.ts):
+    await window.loadTimeline(timeline, cues)   build every scene from the beats (fonts loaded first)
+    window.seek(tSec)                            set the whole picture to time t
+    window.__report()                            what was built, fonts, animated properties (for checks)
+-->
+<style>
+@font-face {
+  font-family: "Geist";
+  src: url("assets/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+:root {
+  --canvas: #0E0E10;                       /* Deep Canvas */
+  --surface: #18181B;                      /* Raised Surface */
+  --ink: #F2F1ED;                          /* Paper Ink */
+  --muted: #A1A1A6;                        /* Muted Fog */
+  --whisper: rgba(255, 255, 255, 0.08);    /* Whisper Line */
+  --coral: #FF6B4A;                        /* Rizz Coral, THE accent */
+}
+
+html { font-size: 40px; }
+* { box-sizing: border-box; }
+body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--canvas); }
+
+#stage {
+  position: relative; width: 1920px; height: 1080px; overflow: hidden;
+  background-color: var(--canvas); color: var(--ink);
+  font-family: "Geist", sans-serif; font-weight: 400; font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Pinstripe page texture (DESIGN section 9): 1px line at 5% alpha every 4px, x2.5 and whole device pixels. */
+#bg {
+  position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(0deg, transparent 0px, transparent 8px, rgba(255, 255, 255, 0.05) 8px, rgba(255, 255, 255, 0.05) 10px);
+}
+
+.scene { position: absolute; inset: 0; opacity: 0; }
+.glow { position: absolute; inset: 0; }                       /* CoralGlow wash, alpha 0.07-0.14, no blur */
+.frame { position: absolute; left: 4rem; right: 4rem; top: 2.5rem; height: 17rem; display: flex; flex-direction: column; }
+
+/* type */
+.label {
+  font-family: "Geist Mono", monospace; font-weight: 500; font-size: 0.6875rem; line-height: 1.2;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+}
+.display { margin: 0; font-family: "Geist", sans-serif; font-weight: 700; letter-spacing: -0.035em; line-height: 1.05; color: var(--ink); }
+.w { display: inline-block; vertical-align: top; }
+.w--mask { overflow: hidden; padding-bottom: 0.16em; margin-bottom: -0.16em; }
+.wi { display: inline-block; }
+.num { font-family: "Geist Mono", monospace; font-weight: 500; letter-spacing: 0; }
+
+/* rules and bars (scaled with transform, never width/height) */
+.rule-coral { width: 6rem; height: 0.15rem; background: var(--coral); transform-origin: 0 50%; }
+.rule-whisper { height: 2px; background: var(--whisper); transform-origin: 0 50%; }
+
+/* 1. title: offset-left */
+.title .frame { justify-content: center; }
+.title .label { margin-bottom: 1.5rem; }
+.title .display { max-width: 1500px; }
+.title .rule-coral { margin-top: 1.5rem; }
+
+/* 2. section */
+.section .frame { justify-content: center; }
+.section__row { display: flex; align-items: center; gap: 2.5rem; }
+.section__index { font-family: "Geist Mono", monospace; font-weight: 500; font-size: 4.5rem; line-height: 1; letter-spacing: -0.03em; color: var(--coral); }
+.section__title { max-width: 1160px; font-size: 2.75rem; }
+.section .rule-whisper { margin-top: 2.5rem; }
+
+/* 3. list */
+.list__head { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem; }
+.list__head .rule-whisper { flex: 1; }
+.items { position: relative; display: grid; row-gap: 1.5rem; padding-left: 1.5rem; }
+.item { display: grid; max-width: 65ch; line-height: 1.6; font-weight: 400; }
+.layer { grid-area: 1 / 1; }
+.layer--muted { color: var(--muted); }
+.layer--ink { color: var(--ink); }
+.bar { position: absolute; left: 0; top: 0; width: 0.15rem; height: 100px; background: var(--coral); transform-origin: 0 0; }
+
+/* 4. quote */
+.quote .frame { justify-content: center; }
+.quote__row { display: flex; gap: 2.5rem; }
+.quote__bar { width: 0.15rem; background: var(--coral); transform-origin: 0 0; flex: none; }
+.quote__text { max-width: 1400px; line-height: 1.15; }
+
+/* 5. end card */
+.cta .frame { justify-content: center; align-items: flex-start; }
+.cta .label { margin-bottom: 1.5rem; }
+.cta__wrap { position: relative; display: inline-block; isolation: isolate; }
+.cta__btn {
+  position: relative; z-index: 1; display: inline-block; background: var(--coral); color: var(--ink);
+  font-family: "Geist", sans-serif; font-weight: 600; font-size: 1.375rem; line-height: 1; letter-spacing: -0.01em;
+  padding: 1rem 2.5rem; border-radius: 0.625rem;
+}
+.ring, .lead {
+  position: absolute; left: 50%; top: 50%; width: 200px; height: 200px; border: 2px solid var(--coral); border-radius: 9999px;
+  opacity: 0; transform: translate(-50%, -50%) scale(0); z-index: 0;
+}
+.cta__site { margin-top: 1.5rem; font-family: "Geist Mono", monospace; font-weight: 500; font-size: 0.875rem; line-height: 1.2; color: var(--muted); }
+
+/* captions: Raised Surface pill, Paper Ink, Geist 500 */
+#cap {
+  position: absolute; left: 4rem; bottom: 2.5rem; max-width: 1600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--surface); border: 2px solid var(--whisper); border-radius: 9999px; padding: 0.5rem 1.5rem;
+  color: var(--ink); font-family: "Geist", sans-serif; font-weight: 500; font-size: 1rem; line-height: 1.4;
+  opacity: 0;
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="scenes"></div>
+  <div id="cap"></div>
+</div>
+<script>
+(() => {
+  "use strict";
+
+  /* ---------- motion tokens (DESIGN.md front matter: motion) ---------- */
+  const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+  const RING_EASE = "cubic-bezier(0.215, 0.61, 0.355, 1)";   // section 9b CtaWithPulse
+  const BASE = 0.26, SLOW = 0.48, STEP = 0.06;                 // seconds: base, slow, staggerStep
+  const EXIT_LEAD = 0.25;                                      // outgoing scene starts leaving this early
+  const COUNT_SECS = 0.6;                                      // a % number counts up in the first 600 ms of its beat
+  const REM = 40;
+
+  const anims = [];            // every Animation, all paused
+  let scenes = [];             // built scene records
+  let counters = [];           // counting numbers
+  let cues = [];
+  const warnings = [];         // things that did not fit; render.ts prints them
+  let capEl = null;
+  let capIdx = -2;
+
+  /* ---------- small helpers ---------- */
+  const h = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+
+  // A paused animation whose state is a pure function of the clock: delay is the start time in ms on the
+  // page clock, fill both, and seek() sets currentTime. `at` and `dur` are seconds.
+  function anim(target, keyframes, o) {
+    const a = target.animate(keyframes, {
+      delay: o.at * 1000,
+      duration: Math.max(o.dur * 1000, 1),
+      easing: o.ease || EASE,
+      iterations: o.iterations || 1,
+      fill: "both",
+    });
+    a.pause();
+    a.currentTime = 0;       // completes the pending pause synchronously
+    anims.push(a);
+    return a;
+  }
+
+  // Fade + shift in. y defaults to the sm spacing token (0.5rem).
+  function rise(target, at, o = {}) {
+    const dx = o.x || 0, dy = o.y === undefined ? REM * 0.5 : o.y;
+    return anim(target, [
+      { opacity: 0, transform: `translate(${dx}px, ${dy}px)` },
+      { opacity: 1, transform: "translate(0px, 0px)" },
+    ], { at, dur: o.dur || BASE });
+  }
+
+  // Draw a rule or bar: scale from its origin edge.
+  function draw(target, axis, at, dur) {
+    const s0 = axis === "x" ? "scaleX(0)" : "scaleY(0)", s1 = axis === "x" ? "scaleX(1)" : "scaleY(1)";
+    return anim(target, [{ transform: s0 }, { transform: s1 }], { at, dur: dur || SLOW });
+  }
+
+  // One animation through several timed stops. stops: [{ t (s), p: {css}, e: easing for the segment that follows }].
+  function track(target, stops) {
+    const t0 = stops[0].t, t1 = stops[stops.length - 1].t, dur = Math.max(t1 - t0, 0.001);
+    const kf = stops.map((s) => Object.assign({ offset: (s.t - t0) / dur }, s.p, s.e ? { easing: s.e } : {}));
+    return anim(target, kf, { at: t0, dur, ease: "linear" });
+  }
+
+  // cubic-bezier(x1, y1, x2, y2) as a function, same curve the browser uses for EASE (used for counting numbers).
+  function bezier(x1, y1, x2, y2) {
+    const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+    const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+    const X = (s) => ((ax * s + bx) * s + cx) * s;
+    const Y = (s) => ((ay * s + by) * s + cy) * s;
+    return (x) => {
+      if (x <= 0) return 0;
+      if (x >= 1) return 1;
+      let lo = 0, hi = 1, s = x;
+      for (let i = 0; i < 40; i++) {
+        const v = X(s);
+        if (Math.abs(v - x) < 1e-7) break;
+        if (v < x) lo = s; else hi = s;
+        s = (lo + hi) / 2;
+      }
+      return Y(s);
+    };
+  }
+  const easeOut = bezier(0.22, 0.61, 0.36, 1);
+
+  // Split text into masked words (the headline lift of DESIGN animated-headline) inside `container`.
+  function words(container, text, mask) {
+    const parts = text.trim().split(/\s+/);
+    return parts.map((p, i) => {
+      const w = h("span", mask ? "w w--mask" : "w");
+      const wi = h("span", "wi", p);
+      w.appendChild(wi);
+      container.appendChild(w);
+      if (i < parts.length - 1) container.appendChild(document.createTextNode(" "));
+      return wi;
+    });
+  }
+
+  // Words cascade in, 60 ms apart. mode "lift": rise out of the mask; "slide": slide in from the right.
+  function cascade(spans, at, mode, dur) {
+    spans.forEach((s, i) => {
+      const t = at + i * STEP;
+      if (mode === "lift") {
+        anim(s, [{ opacity: 0, transform: "translateY(120%)" }, { opacity: 1, transform: "translateY(0%)" }], { at: t, dur: dur || SLOW });
+      } else {
+        rise(s, t, { x: REM * 1.5, y: 0, dur: dur || SLOW });
+      }
+    });
+    return at + (spans.length - 1) * STEP + (dur || SLOW);
+  }
+
+  // Largest candidate font size (a DESIGN scale value) at which `node` is at most maxH tall. If even the smallest is
+  // too tall the text is kept and a warning is recorded: never silently clipped or overlapping the caption bar.
+  function fit(node, sizes, maxH, label) {
+    for (const s of sizes) {
+      node.style.fontSize = s;
+      if (node.offsetHeight <= maxH) return s;
+    }
+    const last = sizes[sizes.length - 1];
+    node.style.fontSize = last;
+    warnings.push(`${label}: text is ${node.offsetHeight - maxH} px taller than its room even at ${last}`);
+    return last;
+  }
+  const tag = (sc) => `scene ${scenes.indexOf(sc)} (${sc.kind} at ${sc.start}s)`;
+
+  const glowCss = (pos, alpha) => `radial-gradient(2250px 1250px at ${pos}, rgba(255, 107, 74, ${alpha}), transparent 70%)`;
+
+  /* ---------- scene life: visible from its first beat, leaves 0.25 s before the next scene ---------- */
+  function life(root, t0, exitAt) {
+    const total = exitAt == null ? t0 + 1 : exitAt + BASE;
+    const kf = [];
+    if (t0 > 0) kf.push({ offset: 0, opacity: 0, transform: "translateY(0px)", easing: "steps(1, jump-end)" });
+    kf.push({ offset: t0 / total, opacity: 1, transform: "translateY(0px)", easing: "linear" });
+    if (exitAt != null) {
+      kf.push({ offset: exitAt / total, opacity: 1, transform: "translateY(0px)", easing: EASE });
+      kf.push({ offset: 1, opacity: 0, transform: `translateY(${-REM * 0.5}px)` });
+    } else {
+      kf.push({ offset: 1, opacity: 1, transform: "translateY(0px)" });
+    }
+    anim(root, kf, { at: 0, dur: total, ease: "linear" });
+  }
+
+  /* ---------- timeline -> scenes ---------- */
+  const KIND = { title: "title", section_title: "section", content: "list", conclusion: "list", hook: "quote", cta: "cta" };
+
+  function sameChunk(a, b) {
+    return a.type === b.type && (a.title || "") === (b.title || "") && JSON.stringify(a.items || []) === JSON.stringify(b.items || []);
+  }
+
+  function group(beats) {
+    const out = [];
+    beats.forEach((b) => {
+      const kind = KIND[b.type];
+      if (!kind) throw new Error(`unknown beat type: ${b.type}`);
+      const prev = out[out.length - 1];
+      if (kind === "list" && prev && prev.kind === "list" && sameChunk(prev.beats[0], b)) prev.beats.push(b);
+      else out.push({ kind, beats: [b] });
+    });
+    out.forEach((s, k) => {
+      const last = s.beats[s.beats.length - 1];
+      s.start = s.beats[0].startSec;
+      s.end = last.startSec + last.durSec;
+      // a scene shorter than the lead still shows at its start, then leaves at once (keeps keyframe offsets in order)
+      s.exitAt = k + 1 < out.length ? Math.max(out[k + 1].beats[0].startSec - EXIT_LEAD, s.start) : null;
+    });
+    return out;
+  }
+
+  function mount(kind, sc) {
+    const root = h("section", `scene ${kind}`);
+    document.getElementById("scenes").appendChild(root);
+    sc.root = root;
+    return root;
+  }
+
+  /* ---------- 1. title ---------- */
+  function buildTitle(sc) {
+    const b = sc.beats[0], t0 = b.startSec;
+    const root = mount("title", sc);
+    const glow = h("div", "glow");
+    glow.style.background = glowCss("86% 14%", 0.10);
+    const frame = h("div", "frame");
+    const eyebrow = h("div", "label", b.subtitle || "Coherence Daddy");
+    const head = h("h1", "display");
+    const spans = words(head, b.title || b.text, true);
+    const rule = h("div", "rule-coral");
+    frame.append(eyebrow, head, rule);
+    root.append(glow, frame);
+    fit(head, ["4.5rem", "2.75rem", "1.375rem"], 560, tag(sc));
+
+    anim(glow, [{ opacity: 0 }, { opacity: 1 }], { at: t0, dur: SLOW });
+    rise(eyebrow, t0);
+    const end = cascade(spans, t0 + 0.12, "lift", SLOW);
+    draw(rule, "x", end - 0.2, SLOW);
+  }
+
+  /* ---------- 2. section ---------- */
+  function buildSection(sc, n) {
+    const b = sc.beats[0], t0 = b.startSec;
+    const root = mount("section", sc);
+    const frame = h("div", "frame");
+    const row = h("div", "section__row");
+    const index = h("div", "section__index", b.badge || String(n).padStart(2, "0"));
+    const title = h("h2", "display section__title");
+    const spans = words(title, b.title || b.text, false);
+    const rule = h("div", "rule-whisper");
+    row.append(index, title);
+    frame.append(row, rule);
+    root.append(frame);
+    fit(title, ["2.75rem", "1.375rem"], 560, tag(sc));
+
+    rise(index, t0, { x: -REM * 1.5, y: 0, dur: SLOW });
+    const end = cascade(spans, t0 + 0.12, "slide", SLOW);
+    draw(rule, "x", end - 0.3, SLOW);
+  }
+
+  /* ---------- 3. list ---------- */
+  const NUM_RE = /(\d+(?:\.\d+)?)%|(\b\d{1,3}(?:,\d{3})+\b|\b\d{3,}\b)/g;
+
+  // Fill a layer with text; numbers become Geist Mono spans. Returns the % number spans (these count up).
+  function fillLayer(layer, text) {
+    const pct = [];
+    let last = 0, m;
+    NUM_RE.lastIndex = 0;
+    while ((m = NUM_RE.exec(text)) !== null) {
+      if (m.index > last) layer.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const sp = h("span", "num", m[0]);
+      layer.appendChild(sp);
+      if (m[1] !== undefined) pct.push({ el: sp, raw: m[1] });
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) layer.appendChild(document.createTextNode(text.slice(last)));
+    return pct;
+  }
+
+  function buildList(sc) {
+    const first = sc.beats[0], t0 = first.startSec;
+    const items = first.items || [];
+    const root = mount("list", sc);
+    const frame = h("div", "frame");
+    const head = h("div", "list__head");
+    const label = h("div", "label", first.title || "");
+    const hair = h("div", "rule-whisper");
+    head.append(label, hair);
+    const box = h("div", "items");
+    const bar = h("div", "bar");
+    box.appendChild(bar);
+    const nodes = items.map((text) => {
+      const item = h("div", "item");
+      const muted = h("div", "layer layer--muted");
+      const ink = h("div", "layer layer--ink");
+      const pm = fillLayer(muted, text), pi = fillLayer(ink, text);
+      item.append(muted, ink);
+      box.appendChild(item);
+      return { item, muted, ink, pm, pi };
+    });
+    frame.append(head, box);
+    root.appendChild(frame);
+
+    // content lists share one size (body) so consecutive chunks match; the conclusion recap may use h3
+    const room = 17 * REM - head.offsetHeight - 1.5 * REM;
+    sc.fitSize = fit(box, first.type === "conclusion" ? ["1.375rem", "1rem", "0.875rem"] : ["1rem", "0.875rem"], room, tag(sc));
+
+    // geometry of every item inside the box (offsetTop ignores transforms)
+    const geo = nodes.map((n) => ({ y: n.item.offsetTop, h: n.item.offsetHeight }));
+    const last = geo[geo.length - 1];
+    const allGeo = { y: geo[0].y, h: last.y + last.h - geo[0].y };
+    const barAt = (k) => {
+      const hl = sc.beats[k].highlight;
+      const g = hl == null || !geo[hl] ? allGeo : geo[hl];
+      return `translateY(${g.y}px) scaleY(${g.h / 100})`;
+    };
+
+    // entrance: label and hairline, then the items cascade 60 ms apart on the chunk's first beat
+    rise(label, t0);
+    draw(hair, "x", t0, SLOW);
+    nodes.forEach((n, i) => rise(n.item, t0 + STEP * (i + 1)));
+
+    // the coral bar: appears with the first highlighted item, then moves by transform at each beat start
+    const hl0 = first.highlight == null || !geo[first.highlight] ? 0 : first.highlight;
+    const tIn = t0 + STEP * (hl0 + 1);
+    const stops = [
+      { t: t0, p: { opacity: 0, transform: barAt(0) }, e: "linear" },
+      { t: tIn, p: { opacity: 0, transform: barAt(0) }, e: EASE },
+      { t: tIn + BASE, p: { opacity: 1, transform: barAt(0) }, e: "linear" },
+    ];
+    for (let k = 1; k < sc.beats.length; k++) {
+      const s = Math.max(sc.beats[k].startSec, stops[stops.length - 1].t);
+      const e = Math.min(s + BASE, sc.beats[k].startSec + sc.beats[k].durSec);
+      stops.push({ t: s, p: { opacity: 1, transform: barAt(k - 1) }, e: EASE });
+      stops.push({ t: e, p: { opacity: 1, transform: barAt(k) }, e: "linear" });
+    }
+    stops.push({ t: Math.max(sc.end, stops[stops.length - 1].t + 0.001), p: { opacity: 1, transform: barAt(sc.beats.length - 1) } });
+    track(bar, stops);
+
+    // highlight: Paper Ink layer fades in over the Muted Fog layer at the beat start, and back out when it moves on
+    nodes.forEach((n, i) => {
+      const on = (k) => { const hl = sc.beats[k].highlight; return hl == null || hl === i ? 1 : 0; };
+      const inkStops = [{ t: t0, p: { opacity: on(0) }, e: "linear" }];
+      const mutedStops = [{ t: t0, p: { opacity: 1 - on(0) }, e: "linear" }];
+      for (let k = 1; k < sc.beats.length; k++) {
+        const s = Math.max(sc.beats[k].startSec, inkStops[inkStops.length - 1].t);
+        const e = Math.min(s + BASE, sc.beats[k].startSec + sc.beats[k].durSec);
+        inkStops.push({ t: s, p: { opacity: on(k - 1) }, e: EASE }, { t: e, p: { opacity: on(k) }, e: "linear" });
+        mutedStops.push({ t: s, p: { opacity: 1 - on(k - 1) }, e: EASE }, { t: e, p: { opacity: 1 - on(k) }, e: "linear" });
+      }
+      const endT = Math.max(sc.end, inkStops[inkStops.length - 1].t + 0.001);
+      inkStops.push({ t: endT, p: { opacity: on(sc.beats.length - 1) } });
+      mutedStops.push({ t: endT, p: { opacity: 1 - on(sc.beats.length - 1) } });
+      track(n.ink, inkStops);
+      track(n.muted, mutedStops);
+
+      // % numbers: set in Geist Mono, count up in the first 600 ms of each beat that highlights this item
+      n.pm.forEach((p, j) => {
+        const raw = p.raw, dec = raw.includes(".") ? raw.split(".")[1].length : 0;
+        counters.push({
+          sc, item: i, target: parseFloat(raw), dec, digits: raw.split(".")[0].length,
+          a: p.el, b: n.pi[j].el, last: null,
+        });
+      });
+    });
+  }
+
+  /* ---------- 4. quote ---------- */
+  function balance(units, k) {
+    const n = units.length;
+    const pre = [0];
+    units.forEach((u) => pre.push(pre[pre.length - 1] + u.n));
+    const sum = (a, b) => pre[b] - pre[a];
+    let best = null;
+    const consider = (cuts) => {
+      const bounds = [0, ...cuts, n];
+      const sizes = bounds.slice(1).map((c, i) => sum(bounds[i], c));
+      const cost = [Math.max(...sizes), sizes.reduce((s, x) => s + x * x, 0)];
+      if (!best || cost[0] < best.cost[0] || (cost[0] === best.cost[0] && cost[1] < best.cost[1])) best = { cuts, cost };
+    };
+    if (k >= 3 && n >= 3) {
+      for (let i = 1; i < n - 1; i++) for (let j = i + 1; j < n; j++) consider([i, j]);
+    } else {
+      for (let i = 1; i < n; i++) consider([i]);
+    }
+    const bounds = [0, ...best.cuts, n];
+    return bounds.slice(1).map((c, i) => units.slice(bounds[i], c).map((u) => u.s).join(" "));
+  }
+
+  // Split a quote into 2-3 groups: by sentence if possible, else by clause, else halves.
+  function quoteGroups(text) {
+    const wc = (s) => s.trim().split(/\s+/).filter(Boolean).length;
+    const clean = text.trim().replace(/\s+/g, " ");
+    let parts = (clean.match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) || [clean]).map((s) => s.trim()).filter(Boolean);
+    if (parts.length < 2) parts = clean.split(/(?<=[,;:])\s+/).filter(Boolean);
+    if (parts.length < 2) {
+      const w = clean.split(" ");
+      if (w.length < 2) return [clean];
+      const mid = Math.ceil(w.length / 2);
+      parts = [w.slice(0, mid).join(" "), w.slice(mid).join(" ")];
+    }
+    return balance(parts.map((s) => ({ s, n: wc(s) })), parts.length >= 3 ? 3 : 2);
+  }
+
+  function buildQuote(sc) {
+    const b = sc.beats[0], t0 = b.startSec;
+    const text = (b.items && b.items[0]) || b.text;
+    const root = mount("quote", sc);
+    const glow = h("div", "glow");
+    glow.style.background = glowCss("8% 88%", 0.08);
+    const frame = h("div", "frame");
+    const row = h("div", "quote__row");
+    const bar = h("div", "quote__bar");
+    const q = h("blockquote", "display quote__text");
+    q.style.margin = "0";
+    const groups = quoteGroups(text);
+    const spanSets = groups.map((g, i) => {
+      const grp = h("span", "grp");
+      const spans = words(grp, g, true);
+      q.appendChild(grp);
+      if (i < groups.length - 1) q.appendChild(document.createTextNode(" "));
+      return spans;
+    });
+    row.append(bar, q);
+    frame.appendChild(row);
+    root.append(glow, frame);
+    fit(q, ["2.75rem", "1.375rem"], 560, tag(sc));
+
+    anim(glow, [{ opacity: 0 }, { opacity: 1 }], { at: t0, dur: SLOW });
+    draw(bar, "y", t0, SLOW);
+    // groups appear across the spoken part of the beat, in proportion to the words before them
+    const total = groups.reduce((s, g) => s + g.trim().split(/\s+/).length, 0);
+    const spoken = Math.max(b.durSec - 0.6, 0.5);
+    let before = 0;
+    groups.forEach((g, i) => {
+      const tg = i === 0 ? t0 + 0.12 : t0 + spoken * (before / total) - 0.1;
+      cascade(spanSets[i], tg, "lift", SLOW);
+      before += g.trim().split(/\s+/).length;
+    });
+  }
+
+  /* ---------- 5. end card ---------- */
+  function buildCta(sc) {
+    const b = sc.beats[0], t0 = b.startSec;
+    const root = mount("cta", sc);
+    const glow = h("div", "glow");
+    glow.style.background = glowCss("22% 46%", 0.12);
+    const frame = h("div", "frame");
+    const eyebrow = h("div", "label", b.subtitle || "Coherence Daddy");
+    const wrap = h("div", "cta__wrap");
+    const rings = [];
+    ["ring", "ring", "ring", "lead", "lead", "lead"].forEach((c) => { const r = h("span", c); wrap.appendChild(r); rings.push(r); });
+    const btn = h("div", "cta__btn", b.title || "Subscribe");
+    wrap.appendChild(btn);
+    const site = h("div", "cta__site", "evntrace.com");
+    frame.append(eyebrow, wrap, site);
+    root.append(glow, frame);
+
+    anim(glow, [{ opacity: 0 }, { opacity: 1 }], { at: t0, dur: SLOW });
+    rise(eyebrow, t0);
+    rise(btn, t0 + 0.12);
+    rise(site, t0 + 0.24);
+    // section 9b: three staggered sonar rings (peak 0.11, scale 8) and three lead rings (peak 0.066, scale 3), 5.4 s
+    const delays = [0, 4.05, 8.1];
+    const centre = "translate(-50%, -50%)";
+    rings.forEach((r, i) => {
+      const lead = i >= 3;
+      const at = t0 + delays[i % 3];
+      const kf = lead
+        ? [
+            { offset: 0, transform: `${centre} scale(0)`, opacity: 0, easing: RING_EASE },
+            { offset: 0.06, opacity: 0.066, easing: RING_EASE },
+            { offset: 0.4, transform: `${centre} scale(3)`, opacity: 0, easing: RING_EASE },
+            { offset: 1, transform: `${centre} scale(3)`, opacity: 0 },
+          ]
+        : [
+            { offset: 0, transform: `${centre} scale(0)`, opacity: 0, easing: RING_EASE },
+            { offset: 0.05, opacity: 0.11, easing: RING_EASE },
+            { offset: 1, transform: `${centre} scale(8)`, opacity: 0 },
+          ];
+      anim(r, kf, { at, dur: 5.4, ease: "linear", iterations: Infinity });
+    });
+  }
+
+  /* ---------- captions ---------- */
+  function updateCaption(t) {
+    let lo = 0, hi = cues.length - 1, idx = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (cues[mid].start <= t) { idx = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    const live = idx >= 0 && t < cues[idx].end ? idx : -1;
+    if (live !== capIdx) {
+      capIdx = live;
+      if (live >= 0) capEl.textContent = cues[live].text;
+      capEl.style.opacity = live >= 0 ? "1" : "0";
+    }
+  }
+
+  /* ---------- counting numbers ---------- */
+  function updateCounters(t) {
+    for (const c of counters) {
+      const beats = c.sc.beats;
+      let k = -1;
+      for (let j = 0; j < beats.length; j++) if (t >= beats[j].startSec) k = j;
+      let v = c.target;
+      if (k >= 0 && beats[k].highlight === c.item) {
+        const p = (t - beats[k].startSec) / COUNT_SECS;
+        if (p < 1) v = c.target * easeOut(p);
+      }
+      const fixed = c.dec ? v.toFixed(c.dec) : String(Math.round(v));
+      const [i, f] = fixed.split(".");
+      const text = i.padStart(c.digits, "0") + (f ? "." + f : "") + "%";
+      if (text !== c.last) { c.last = text; c.a.textContent = text; c.b.textContent = text; }
+    }
+  }
+
+  /* ---------- public API ---------- */
+  window.seek = (tSec) => {
+    const ms = tSec * 1000;
+    for (let i = 0; i < anims.length; i++) anims[i].currentTime = ms;
+    updateCounters(tSec);
+    updateCaption(tSec);
+  };
+
+  window.loadTimeline = async (timeline, cueList) => {
+    if (scenes.length) throw new Error("loadTimeline was already called on this page");
+    await Promise.all([
+      document.fonts.load('700 1em "Geist"', "Aa0"),
+      document.fonts.load('600 1em "Geist"', "Aa0"),
+      document.fonts.load('500 1em "Geist"', "Aa0"),
+      document.fonts.load('400 1em "Geist"', "Aa0"),
+      document.fonts.load('500 1em "Geist Mono"', "Aa0%"),
+    ]);
+    await document.fonts.ready;
+    capEl = document.getElementById("cap");
+    cues = cueList || [];
+    scenes = group(timeline.beats);
+    let sections = 0;
+    scenes.forEach((sc) => {
+      if (sc.kind === "title") buildTitle(sc);
+      else if (sc.kind === "section") buildSection(sc, ++sections);
+      else if (sc.kind === "list") buildList(sc);
+      else if (sc.kind === "quote") buildQuote(sc);
+      else buildCta(sc);
+      life(sc.root, sc.start, sc.exitAt);
+    });
+    // a cue wider than the caption bar would be cut off with an ellipsis: say so instead
+    let cut = 0, firstCut = null;
+    for (const c of cues) {
+      capEl.textContent = c.text;
+      if (capEl.scrollWidth > capEl.clientWidth) { cut++; firstCut = firstCut || c; }
+    }
+    capEl.textContent = "";
+    if (cut) warnings.push(`${cut} caption cue(s) are wider than the caption bar and would be cut off, first at ${firstCut.start.toFixed(2)} s: "${firstCut.text}"`);
+    window.seek(0);
+    return window.__report();
+  };
+
+  window.__report = () => {
+    const props = new Set();
+    for (const a of document.getAnimations()) {
+      for (const kf of a.effect.getKeyframes()) {
+        for (const k of Object.keys(kf)) if (!["offset", "computedOffset", "easing", "composite"].includes(k)) props.add(k);
+      }
+    }
+    return {
+      scenes: scenes.map((s) => ({ kind: s.kind, start: s.start, end: s.end, exitAt: s.exitAt, beats: s.beats.length, fitSize: s.fitSize || null })),
+      animations: anims.length,
+      pageAnimations: document.getAnimations().length,
+      animatedProperties: [...props].sort(),
+      counters: counters.length,
+      cues: cues.length,
+      warnings: warnings.slice(),
+      fonts: [...document.fonts].map((f) => ({ family: f.family.replace(/"/g, ""), status: f.status })),
+    };
+  };
+})();
+</script>
+</body>
+</html>
