@@ -11,12 +11,27 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildBeats, buildSlidesFromScript } from "../services/youtube/presentation-renderer.js";
-import { EVNTRACE_CTA_LINE, sanitizeScript, type ScriptData } from "../services/youtube/script-writer.js";
+import {
+  DISCLOSURE_LINE,
+  EVNTRACE_CTA_LINE,
+  NOT_ADVICE_LINE,
+  needsDisclosure,
+  needsNotAdvice,
+  sanitizeScript,
+  type ScriptData,
+} from "../services/youtube/script-writer.js";
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "yt-script-2026-10-06.json");
+const MINDSET_FIXTURE = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "yt-script-good-mindset.json");
 
 function loadScript(): ScriptData {
   const raw = JSON.parse(readFileSync(FIXTURE, "utf8")) as ScriptData & { _source?: string };
+  delete raw._source;
+  return sanitizeScript(raw);
+}
+
+function loadMindsetScript(): ScriptData {
+  const raw = JSON.parse(readFileSync(MINDSET_FIXTURE, "utf8")) as ScriptData & { _source?: string };
   delete raw._source;
   return sanitizeScript(raw);
 }
@@ -32,16 +47,20 @@ const words = (s: string): string[] =>
 function expectedSpokenWords(script: ScriptData): string[] {
   const parts: string[] = [
     script.hook.text,
+  ];
+  if (needsDisclosure(script)) parts.push(DISCLOSURE_LINE);
+  parts.push(
     script.introduction.greeting,
     script.introduction.topicIntro,
     script.introduction.valueProposition,
     script.introduction.credibility,
-  ];
+  );
   for (const section of script.mainContent.sections) {
     parts.push(section.title);
     for (const line of section.content) if (!line.startsWith("[")) parts.push(line);
   }
   parts.push(...script.conclusion.recap, script.conclusion.finalThought);
+  if (needsNotAdvice(script)) parts.push(NOT_ADVICE_LINE);
   parts.push(script.callToAction.subscribe, script.callToAction.like, script.callToAction.comment, EVNTRACE_CTA_LINE);
   return words(parts.join(" "));
 }
@@ -50,9 +69,9 @@ describe("buildBeats (fixture: 2026-10-06 script)", () => {
   const script = loadScript();
   const beats = buildBeats(script);
 
-  it("makes 28 beats: 1 title + 3 intro + 21 section + conclusion + finalThought + cta", () => {
-    expect(beats).toHaveLength(1 + 3 + (4 + 5 + 4 + 4 + 4) + 1 + 1 + 1);
-    expect(beats).toHaveLength(28);
+  it("makes 30 beats: 1 title + disclosure + 3 intro + 21 section + conclusion + finalThought + not-advice + cta", () => {
+    expect(beats).toHaveLength(1 + 1 + 3 + (4 + 5 + 4 + 4 + 4) + 1 + 1 + 1 + 1);
+    expect(beats).toHaveLength(30);
   });
 
   it("speaks every spoken word exactly once, in order (and nothing else)", () => {
@@ -79,16 +98,30 @@ describe("buildBeats (fixture: 2026-10-06 script)", () => {
   });
 
   it("puts the greeting in front of the first intro beat, and names Coherence Daddy", () => {
-    expect(beats[1].text).toBe(`${script.introduction.greeting} ${script.introduction.topicIntro}`);
-    expect(beats[1].text).toMatch(/Coherence Daddy/);
-    expect(beats[1].req.title).toBe("In this video");
+    expect(beats[2].text).toBe(`${script.introduction.greeting} ${script.introduction.topicIntro}`);
+    expect(beats[2].text).toMatch(/Coherence Daddy/);
+    expect(beats[2].req.title).toBe("In this video");
   });
 
   it("closes with recap, then the final thought as a quote slide", () => {
     const n = beats.length;
-    expect(beats[n - 3].type).toBe("conclusion");
+    expect(beats[n - 4].type).toBe("conclusion");
+    expect(beats[n - 3].type).toBe("hook");
+    expect(beats[n - 3].text).toBe(script.conclusion.finalThought);
+  });
+
+  it("puts the disclosure quote right after the title beat", () => {
+    expect(beats[1].type).toBe("hook");
+    expect(beats[1].text).toBe(DISCLOSURE_LINE);
+    expect(beats[1].req.content).toEqual([DISCLOSURE_LINE]);
+  });
+
+  it("puts the not-advice quote right before the cta beat", () => {
+    const n = beats.length;
     expect(beats[n - 2].type).toBe("hook");
-    expect(beats[n - 2].text).toBe(script.conclusion.finalThought);
+    expect(beats[n - 2].text).toBe(NOT_ADVICE_LINE);
+    expect(beats[n - 2].req.content).toEqual([NOT_ADVICE_LINE]);
+    expect(beats[n - 1].type).toBe("cta");
   });
 
   it("buildSlidesFromScript is 1:1 with the beats (same length, order, spokenText)", () => {
@@ -121,5 +154,64 @@ describe("buildBeats (fixture: 2026-10-06 script)", () => {
     const b = buildBeats(copy);
     expect(b).toHaveLength(beats.length - 3);
     expect(b[0].text).toBe(`${script.hook.text} ${script.introduction.greeting}`);
+  });
+});
+
+describe("buildBeats (fixture: good-mindset script with onScreen)", () => {
+  const script = loadMindsetScript();
+  const beats = buildBeats(script);
+
+  it("has no disclosure or not-advice beat", () => {
+    expect(beats.some((b) => b.text === DISCLOSURE_LINE)).toBe(false);
+    expect(beats.some((b) => b.text === NOT_ADVICE_LINE)).toBe(false);
+  });
+
+  it("content beats show onScreen bullets while text stays the spoken line", () => {
+    for (const section of script.mainContent.sections) {
+      const lines = section.content.filter((l) => !l.startsWith("[") && l.trim() !== "");
+      const onScreen = section.onScreen!;
+      for (const beat of beats) {
+        if (beat.type !== "content" || beat.req.title !== section.title) continue;
+        if (beat.req.highlightIndex === undefined) continue;
+        const idx = lines.indexOf(beat.text);
+        expect(idx).toBeGreaterThanOrEqual(0);
+        expect(beat.text).toBe(lines[idx]);
+        expect(beat.req.content![beat.req.highlightIndex]).toBe(onScreen[idx]);
+        expect(beat.fallbackHtml).toContain(onScreen[idx]);
+      }
+    }
+  });
+
+  it("every content beat's req.content equals its section's onScreen chunk", () => {
+    for (const section of script.mainContent.sections) {
+      const lines = section.content.filter((l) => !l.startsWith("[") && l.trim() !== "");
+      const onScreen = section.onScreen!;
+      const sectionBeats = beats.filter(
+        (b) => b.type === "content" && b.req.title === section.title && lines.includes(b.text),
+      );
+      expect(sectionBeats.length).toBe(lines.length);
+      // Each section here has <= 3 lines, so the chunk is the whole section.
+      for (const b of sectionBeats) {
+        expect(b.req.content).toEqual(onScreen);
+      }
+    }
+  });
+});
+
+describe("buildBeats (onScreen fallback)", () => {
+  it("falls back to spoken lines when onScreen has the wrong length", () => {
+    const script = loadMindsetScript();
+    script.mainContent.sections[0].onScreen = ["Decide the night before"]; // 1 entry vs 2 spoken lines
+    const beats = buildBeats(script);
+    const section = script.mainContent.sections[0];
+    const lines = section.content.filter((l) => !l.startsWith("[") && l.trim() !== "");
+    const contentBeats = beats.filter(
+      (b) => b.type === "content" && b.req.title === section.title && lines.includes(b.text),
+    );
+    for (const b of contentBeats) {
+      const idx = lines.indexOf(b.text);
+      expect(b.req.content).toEqual(lines); // bullets fall back to the spoken lines
+      expect(b.fallbackHtml).toContain(lines[idx]);
+    }
   });
 });

@@ -14,7 +14,15 @@ import { mkdir } from "fs/promises";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
 import { callOllamaChat } from "../ollama-client.js";
-import { EVNTRACE_CTA_LINE, ensureTerminalPunctuation, type ScriptData } from "./script-writer.js";
+import {
+  DISCLOSURE_LINE,
+  EVNTRACE_CTA_LINE,
+  NOT_ADVICE_LINE,
+  ensureTerminalPunctuation,
+  needsDisclosure,
+  needsNotAdvice,
+  type ScriptData,
+} from "./script-writer.js";
 import {
   type SlideTemplate,
   getTemplate,
@@ -171,6 +179,17 @@ export function buildBeats(script: ScriptData, template?: SlideTemplate): Beat[]
   if (intro.length === 0 && greeting) titleBeat.text = `${titleBeat.text} ${greeting}`.trim();
   beats.push(titleBeat);
 
+  // Disclosure: when the script touches TX/tokns, the spoken disclosure gets its
+  // own quote slide right after the title so it is easy to notice while spoken.
+  if (needsDisclosure(script)) {
+    beats.push({
+      type: "hook",
+      req: { type: "hook", content: [DISCLOSURE_LINE] },
+      fallbackHtml: staticTemplateQuote(t, DISCLOSURE_LINE),
+      text: DISCLOSURE_LINE,
+    });
+  }
+
   // Intro: one content slide per spoken item, greeting in front of the first.
   for (let c = 0; c < intro.length; c += 3) {
     const chunk = intro.slice(c, c + 3);
@@ -201,13 +220,35 @@ export function buildBeats(script: ScriptData, template?: SlideTemplate): Beat[]
     const rawLines = Array.isArray(section.content) ? section.content : [section.content].filter(Boolean);
     const lines = rawLines.filter((l): l is string => typeof l === "string" && !l.startsWith("[") && l.trim() !== "");
 
+    // onScreen gives the short bullet text for each spoken line. Only trust it
+    // when it survived the same filtering (same indexes) as the spoken lines
+    // and every kept entry is a non-empty string; otherwise use the spoken lines.
+    let onScreen: string[] | null = null;
+    const rawOnScreen = Array.isArray(section.onScreen) ? section.onScreen : null;
+    if (rawOnScreen) {
+      const aligned: string[] = [];
+      let alignedOk = true;
+      for (let i = 0; i < rawLines.length; i++) {
+        const line = rawLines[i];
+        if (typeof line !== "string" || line.startsWith("[") || line.trim() === "") continue;
+        const o = rawOnScreen[i];
+        if (typeof o !== "string" || o.trim() === "") {
+          alignedOk = false;
+          break;
+        }
+        aligned.push(o);
+      }
+      if (alignedOk && aligned.length === lines.length) onScreen = aligned;
+    }
+
     for (let c = 0; c < lines.length; c += 3) {
       const chunk = lines.slice(c, c + 3);
+      const screenChunk = onScreen ? onScreen.slice(c, c + 3) : chunk;
       for (let h = 0; h < chunk.length; h++) {
         beats.push({
           type: "content",
-          req: { type: "content", title: section.title || "Details", content: chunk, highlightIndex: h },
-          fallbackHtml: staticTemplateBullets(t, title || "Details", chunk, h),
+          req: { type: "content", title: section.title || "Details", content: screenChunk, highlightIndex: h },
+          fallbackHtml: staticTemplateBullets(t, title || "Details", screenChunk, h),
           text: chunk[h],
         });
       }
@@ -233,6 +274,17 @@ export function buildBeats(script: ScriptData, template?: SlideTemplate): Beat[]
       req: { type: "hook", content: [finalThought] },
       fallbackHtml: staticTemplateQuote(t, finalThought),
       text: finalThought,
+    });
+  }
+
+  // Not-advice line: crypto scripts get the short disclaimer on its own slide
+  // right before the call to action.
+  if (needsNotAdvice(script)) {
+    beats.push({
+      type: "hook",
+      req: { type: "hook", content: [NOT_ADVICE_LINE] },
+      fallbackHtml: staticTemplateQuote(t, NOT_ADVICE_LINE),
+      text: NOT_ADVICE_LINE,
     });
   }
 
