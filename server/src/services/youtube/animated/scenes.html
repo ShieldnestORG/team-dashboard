@@ -133,6 +133,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
 .quote__row { display: flex; gap: 2.5rem; }
 .quote__bar { width: 0.15rem; background: var(--coral); transform-origin: 0 0; flex: none; }
 .quote__text { max-width: 1400px; line-height: 1.15; }
+.quote__follow { width: 1400px; }
 
 /* 5. end card */
 .cta .frame { justify-content: center; align-items: flex-start; }
@@ -756,7 +757,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   function quoteGroups(text) {
     const wc = (s) => s.trim().split(/\s+/).filter(Boolean).length;
     const clean = text.trim().replace(/\s+/g, " ");
-    let parts = (clean.match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) || [clean]).map((s) => s.trim()).filter(Boolean);
+    let parts = clean.split(/(?<=[.!?]["')\]]*)\s+/).map((s) => s.trim()).filter(Boolean);
     if (parts.length < 2) parts = clean.split(/(?<=[,;:])\s+/).filter(Boolean);
     if (parts.length < 2) {
       const w = clean.split(" ");
@@ -776,6 +777,31 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     const frame = h("div", "frame");
     const row = h("div", "quote__row");
     const bar = h("div", "quote__bar");
+    row.append(bar);
+    frame.appendChild(row);
+    root.append(glow, frame);
+
+    anim(glow, [{ opacity: 0 }, { opacity: 1 }], { at: t0, dur: SLOW });
+    draw(bar, "y", t0, SLOW);
+
+    if (b.words && b.words.length) {
+      const box = h("div", "quote__follow");
+      row.appendChild(box);
+      const f = buildFollow(box, b, 136, tag(sc) + " follow-along", { boxH: 560 });
+      if (f) {
+        const at = Math.max(b.startSec, 0);
+        const out = Math.max(sc.end - (sc.exitAt == null ? BASE : 0), at + 0.01);
+        track(f.node, [
+          { t: 0, p: { opacity: 0, transform: "translateY(20px)" }, e: "linear" },
+          { t: at, p: { opacity: 0, transform: "translateY(20px)" }, e: EASE },
+          { t: at + BASE, p: { opacity: 1, transform: "translateY(0px)" }, e: "linear" },
+          { t: out, p: { opacity: 1, transform: "translateY(0px)" }, e: EASE },
+          { t: out + 0.12, p: { opacity: 0, transform: "translateY(-20px)" } },
+        ]);
+      }
+      return;
+    }
+
     const q = h("blockquote", "display quote__text");
     q.style.margin = "0";
     const groups = quoteGroups(text);
@@ -786,13 +812,9 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
       if (i < groups.length - 1) q.appendChild(document.createTextNode(" "));
       return spans;
     });
-    row.append(bar, q);
-    frame.appendChild(row);
-    root.append(glow, frame);
+    row.appendChild(q);
     fit(q, ["2.75rem", "1.375rem"], 560, tag(sc));
 
-    anim(glow, [{ opacity: 0 }, { opacity: 1 }], { at: t0, dur: SLOW });
-    draw(bar, "y", t0, SLOW);
     // groups appear across the spoken part of the beat, in proportion to the words before them
     const total = groups.reduce((s, g) => s + g.trim().split(/\s+/).length, 0);
     const spoken = Math.max(b.durSec - 0.6, 0.5);
