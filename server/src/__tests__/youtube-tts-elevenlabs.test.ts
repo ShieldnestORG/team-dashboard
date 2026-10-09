@@ -64,6 +64,7 @@ beforeEach(() => {
   process.env.ELEVENLABS_VOICE_KEY = "test-voice-key";
   delete process.env.ELEVENLABS_API_KEY;
   delete process.env.YT_TTS_PROVIDER;
+  delete process.env.YT_ELEVENLABS_MODEL;
 });
 
 afterEach(() => {
@@ -85,23 +86,33 @@ describe("generateElevenLabsTTS (mocked fetch)", () => {
     expect(existsSync(out)).toBe(true);
   });
 
-  it("sends eleven_multilingual_v2 with the owner's v2 voice settings", async () => {
+  it("defaults to eleven_v3 Creative (owner's take D) and never sends neighbours, which v3 rejects", async () => {
     mockFetch(() => ok());
-    await tts.generateElevenLabsTTS("Hello there.", join(dataDir, "settings.mp3"));
+    await tts.generateElevenLabsTTS("Hello there.", join(dataDir, "settings.mp3"), { previousText: "Before.", nextText: "After." });
     const body = bodyOf(calls[0]);
     expect(body.text).toBe("Hello there.");
-    expect(body.model_id).toBe("eleven_multilingual_v2");
-    expect(body.voice_settings).toEqual({ stability: 0.45, similarity_boost: 0.8, style: 0.0 });
+    expect(body.model_id).toBe("eleven_v3");
+    expect(body.voice_settings).toEqual({ stability: 0.0, similarity_boost: 0.9, style: 0.0 });
     expect(body).not.toHaveProperty("previous_text");
     expect(body).not.toHaveProperty("next_text");
   });
 
-  it("sends previous_text and next_text when given", async () => {
+  it("YT_ELEVENLABS_MODEL=eleven_multilingual_v2 uses the v2 preset and sends previous_text/next_text", async () => {
+    process.env.YT_ELEVENLABS_MODEL = "eleven_multilingual_v2";
     mockFetch(() => ok());
     await tts.generateElevenLabsTTS("Middle.", join(dataDir, "ctx.mp3"), { previousText: "Before.", nextText: "After." });
     const body = bodyOf(calls[0]);
+    expect(body.model_id).toBe("eleven_multilingual_v2");
+    expect(body.voice_settings).toEqual({ stability: 0.45, similarity_boost: 0.8, style: 0.0 });
     expect(body.previous_text).toBe("Before.");
     expect(body.next_text).toBe("After.");
+  });
+
+  it("an unknown YT_ELEVENLABS_MODEL fails loud before calling ElevenLabs", async () => {
+    process.env.YT_ELEVENLABS_MODEL = "eleven_v9";
+    mockFetch(() => ok());
+    await expect(tts.generateElevenLabsTTS("Hi.", join(dataDir, "bad-model.mp3"))).rejects.toThrow(/YT_ELEVENLABS_MODEL/);
+    expect(calls).toHaveLength(0);
   });
 
   it("with only ELEVENLABS_API_KEY set it throws naming ELEVENLABS_VOICE_KEY and never calls fetch", async () => {
@@ -153,7 +164,8 @@ describe("provider selection", () => {
 });
 
 describe.skipIf(!hasFfmpeg)("generateChunkedTTS with ElevenLabs (mocked fetch, real ffmpeg)", () => {
-  it("passes neighbouring beats as previous_text/next_text and returns a WAV with measured durations", async () => {
+  it("on v2 passes neighbouring beats as previous_text/next_text and returns a WAV with measured durations", async () => {
+    process.env.YT_ELEVENLABS_MODEL = "eleven_multilingual_v2";
     mockFetch(() => ok(toneMp3));
     const result = await tts.generateChunkedTTS(["First beat.", "Second beat.", "Third beat."], "chunked-ok.mp3");
 

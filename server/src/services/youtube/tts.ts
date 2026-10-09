@@ -24,19 +24,34 @@ const GROK_API_KEY = process.env.GROK_API_KEY || "";
 const GROK_TTS_VOICE = process.env.GROK_TTS_VOICE || "rex";
 const GROK_TTS_URL = "https://api.x.ai/v1/tts";
 
-// ElevenLabs — Mark_new_2026 (VOICE_REGISTRY.mark). eleven_multilingual_v2, not
-// eleven_v3: verified 2026-10-07 via GET /v1/voices/n45mfBjBoGc0McY8O2Aw with
-// the server key — it is a *professional* clone fine-tuned for multilingual_v2 /
-// turbo / flash, and eleven_v3 is NOT in its high_quality_base_model_ids.
-// Settings are the owner's tested ZeroEdit "v2" preset
-// (6-2026-new-youtube-automation/tools/tts.py PRESETS["v2"]).
+// ElevenLabs — Mark_new_2026 (VOICE_REGISTRY.mark), on eleven_v3 "Creative"
+// (stability 0.0): the owner's pick on 2026-10-08 (take D) for energy — about
+// 180 wpm vs about 156 on v2; a 12-beat test read back by Whisper had 1.4% word
+// errors and no badly misread clip. The clone is fine-tuned for multilingual_v2 /
+// turbo / flash, not v3 (GET /v1/voices/n45m…, 2026-10-07), and v3 REJECTS
+// previous_text/next_text (HTTP 400 "not yet supported with the 'eleven_v3'
+// model", measured 2026-10-08), so v3 beats are voiced without neighbours.
+// YT_ELEVENLABS_MODEL=eleven_multilingual_v2 restores the steady v2 voice with
+// the owner's ZeroEdit "v2" preset (tools/tts.py PRESETS["v2"]).
 // The key is ELEVENLABS_VOICE_KEY, read at call time, with NO fallback to
 // ELEVENLABS_API_KEY (a different account — see voice-snippets.ts header).
 const ELEVENLABS_TTS_BASE = "https://api.elevenlabs.io/v1/text-to-speech";
-const ELEVENLABS_MODEL_ID = "eleven_multilingual_v2";
+const ELEVENLABS_PRESETS = {
+  eleven_v3: { stability: 0.0, similarity_boost: 0.9, style: 0.0 },
+  eleven_multilingual_v2: { stability: 0.45, similarity_boost: 0.8, style: 0.0 },
+} as const;
+type ElevenLabsModel = keyof typeof ELEVENLABS_PRESETS;
 const ELEVENLABS_OUTPUT_FORMAT = "mp3_44100_128";
-const ELEVENLABS_VOICE_SETTINGS = { stability: 0.45, similarity_boost: 0.8, style: 0.0 };
 const ELEVENLABS_RETRY_BACKOFF_MS = [1000, 3000]; // up to 2 retries on 429 / 5xx
+
+/** YT_ELEVENLABS_MODEL (default eleven_v3); anything else fails loud. Read at call time. */
+function elevenLabsModel(): ElevenLabsModel {
+  const model = process.env.YT_ELEVENLABS_MODEL || "eleven_v3";
+  if (!(model in ELEVENLABS_PRESETS)) {
+    throw new Error(`Unknown YT_ELEVENLABS_MODEL "${model}" (use eleven_v3 or eleven_multilingual_v2)`);
+  }
+  return model as ElevenLabsModel;
+}
 
 const AUDIO_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "audio");
 
@@ -182,16 +197,18 @@ export async function generateElevenLabsTTS(
     );
   }
 
+  const model = elevenLabsModel();
+  const withNeighbours = model !== "eleven_v3"; // v3 answers 400 to previous_text/next_text
   const url = `${ELEVENLABS_TTS_BASE}/${VOICE_REGISTRY.mark.voiceId}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`;
   const body = JSON.stringify({
     text,
-    model_id: ELEVENLABS_MODEL_ID,
-    voice_settings: ELEVENLABS_VOICE_SETTINGS,
-    ...(ctx.previousText ? { previous_text: ctx.previousText } : {}),
-    ...(ctx.nextText ? { next_text: ctx.nextText } : {}),
+    model_id: model,
+    voice_settings: ELEVENLABS_PRESETS[model],
+    ...(withNeighbours && ctx.previousText ? { previous_text: ctx.previousText } : {}),
+    ...(withNeighbours && ctx.nextText ? { next_text: ctx.nextText } : {}),
   });
 
-  logger.info({ voice: "mark", model: ELEVENLABS_MODEL_ID, chars: text.length }, "ElevenLabs TTS: generating audio...");
+  logger.info({ voice: "mark", model, chars: text.length }, "ElevenLabs TTS: generating audio...");
 
   for (let attempt = 0; ; attempt++) {
     let res: Response | undefined;
@@ -215,7 +232,7 @@ export async function generateElevenLabsTTS(
       void logApiUsage({
         provider: "elevenlabs",
         service: "youtube-tts",
-        model: ELEVENLABS_MODEL_ID,
+        model,
         inputTokens: 0,
         outputTokens: 0,
       });
@@ -560,7 +577,7 @@ export function getTTSProviderStatus(): Array<{ name: string; configured: boolea
   }
   return [
     {
-      name: `ElevenLabs (Mark, ${ELEVENLABS_MODEL_ID})`,
+      name: `ElevenLabs (Mark, ${(() => { try { return elevenLabsModel(); } catch { return "invalid YT_ELEVENLABS_MODEL"; } })()})`,
       configured: !!process.env.ELEVENLABS_VOICE_KEY,
       active: active === "elevenlabs",
     },

@@ -47,8 +47,11 @@ with the narration. Word-count estimation remains only for the legacy image mode
 
 - **Mark's ElevenLabs clone** (`VOICE_REGISTRY.mark` in `voice-snippets.ts`, voice `n45mfBjBoGc0McY8O2Aw`
   "Mark_new_2026"), key `ELEVENLABS_VOICE_KEY` (no fallback to `ELEVENLABS_API_KEY`, a different account).
-- Model **`eleven_multilingual_v2`**, settings stability 0.45 · similarity 0.8 · style 0.0, with `previous_text` /
-  `next_text` from the neighbouring beats. Why v2: `GET /v1/voices/n45m…` with the server key (2026-10-07) lists
+- Model **`eleven_v3`, "Creative"** (stability 0.0 · similarity 0.9 · style 0.0) since 2026-10-08 — the owner's pick
+  (take D) for energy: about 180 wpm vs about 156 on v2; a 12-beat test read back by Whisper had 1.4% word errors and no
+  badly misread clip. v3 **rejects** `previous_text`/`next_text` (HTTP 400, measured), so each beat is voiced on its own.
+  `YT_ELEVENLABS_MODEL=eleven_multilingual_v2` restores the steady v2 voice (stability 0.45 · similarity 0.8 · style 0.0,
+  with `previous_text`/`next_text` from the neighbouring beats). Why v2 was first: `GET /v1/voices/n45m…` with the server key (2026-10-07) lists
   the clone as *professional*, fine-tuned for multilingual_v2 / turbo / flash, and `eleven_v3` is **not** in its
   `high_quality_base_model_ids`. Settings are the owner's tested ZeroEdit "v2" preset
   (`6-2026-new-youtube-automation/tools/tts.py`). The Content Hub voice snippets still run this clone on

@@ -21,6 +21,7 @@ Full notes: `docs/products/youtube-pipeline.md`.
 - **Approval** — new videos queue as `pending_review` until approved in the dashboard (`YT_REQUIRE_REVIEW`); Publish Now
   and Reschedule refuse published/failed rows (no duplicate uploads); the time box pre-fills local time, not UTC.
 - **Sync gate** — a drifted, blank or wrong-length video fails the run instead of being queued.
+- **Voice v3 + breaths (2026-10-08, #192)** — Mark's clone now runs on `eleven_v3` "Creative" (owner's pick; `YT_ELEVENLABS_MODEL` switches back to v2); breath/room tone trimmed off every clip; "memecoin" respelled "meem-coin" for the voice.
 - **Exact length** — the finished picture ends with the narration (videos used to run 0.34–1.9 s past their audio).
 ## [2026-06-07] — Dashboard audit + production-readiness fixes
 
