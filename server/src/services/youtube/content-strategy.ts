@@ -2,15 +2,16 @@
  * YouTube Pipeline — Content Strategy service
  *
  * Topic selection, pillar rotation, angle generation.
- * Pillar and topic selection are weighted by yt_keyword_performance so the
- * pipeline naturally gravitates toward what the audience actually watches.
+ * Pillar selection balances toward the owner's target mix (equal thirds for
+ * tx_blockchain, crypto and motivation); topic selection is least-recently-used
+ * within the chosen pillar so the channel stops repeating its closed topic pool.
  * Recent channel insights (persisted by analytics.ts) are injected into the
  * angle prompt to close the feedback loop.
  */
 
 import type { Db } from "@paperclipai/db";
-import { ytContentStrategies, ytAnalytics, ytKeywordPerformance } from "@paperclipai/db";
-import { desc, eq, and, isNotNull } from "drizzle-orm";
+import { ytContentStrategies, ytAnalytics, ytKeywordPerformance, ytPublishQueue, intelReports } from "@paperclipai/db";
+import { desc, eq, and, isNotNull, gte } from "drizzle-orm";
 import { callLlmChat } from "../llm-client.js";
 import { logger } from "../../middleware/logger.js";
 
@@ -20,64 +21,120 @@ const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 // Niche topic pools — the channel's content pillars
 // ---------------------------------------------------------------------------
 
-const NICHE_TOPICS: Record<string, string[]> = {
-  crypto: [
-    "Bitcoin price prediction 2026",
-    "how to buy crypto for beginners",
-    "crypto bull run signals to watch",
-    "best altcoins to buy right now",
-    "crypto portfolio strategy beginners",
-    "Bitcoin vs Ethereum which is better",
-    "DeFi explained simply",
-    "crypto passive income strategies",
-    "how to read crypto charts",
-    "crypto mistakes beginners make",
-  ],
+export const NICHE_TOPICS: Record<string, string[]> = {
   tx_blockchain: [
-    "TX blockchain explained",
-    "TX ecosystem coins to watch",
-    "TX ecosystem hidden gems 2026",
-    "tokns.fi how it works",
-    "TX blockchain vs Ethereum",
-    "TX ecosystem staking guide",
-    "coherencedaddy crypto picks",
-    "TX blockchain use cases real world",
-    "how to stake on TX ecosystem",
-    "TX ecosystem growth potential",
+    "what staking on TX actually means, and what it does not",
+    "how validators and delegators split rewards on TX",
+    "what tokns.fi is for: NFTs, a multi-wallet view and staking in one place",
+    "unbonding periods explained: why staked coins are not instantly liquid",
+    "how to check a validator before you delegate",
+    "how governance votes work on TX",
+    "Cosmos SDK chains in plain English, and where TX fits",
+    "self-custody basics for TX: wallets, keys and seed phrases",
+    "reading a block explorer for TX: transactions, validators, proposals",
+    "staking rewards versus inflation: why the headline rate is not the whole story",
+  ],
+  crypto: [
+    "how to spot a crypto scam before it costs you",
+    "stablecoins explained: what backs them and what can go wrong",
+    "what a crypto exchange listing actually means",
+    "DeFi lending in plain English: collateral, liquidation and risk",
+    "the Bitcoin halving explained without the hype",
+    "hot wallets versus cold wallets: which to use for what",
+    "gas fees explained: why sending crypto costs money",
+    "dollar-cost averaging versus lump sum: how each one feels in a crash",
+    "what a DeFi governance proposal is and who gets to vote",
+    "layer 1 versus layer 2 in plain English",
   ],
   motivation: [
-    "how to stay motivated every day",
-    "morning routine millionaires follow",
-    "mindset shifts that change your life",
-    "discipline over motivation explained",
-    "how successful people think differently",
-    "stop procrastinating for good",
-    "building wealth from zero",
-    "crypto millionaire mindset",
-    "financial freedom roadmap 2026",
-    "how to think like an investor",
+    "discipline beats motivation: small habits that stick",
+    "sleep as a performance tool: what to change tonight",
+    "a two-minute breathing reset for stress",
+    "how a daily walk changes your thinking",
+    "focus in a distracted world: one-task blocks",
+    "money mindset without the hype: patience, habits and avoiding scams",
+    "why your environment beats your willpower",
+    "hard conversations: how to say the true thing kindly",
+    "morning routines that are realistic, not a millionaire fantasy",
+    "coherence: when your thoughts, words and actions line up",
+    "building a friendship circle that makes you better",
+    "rest is not lazy: recovery as part of the work",
   ],
 };
-
-// Keywords that identify a pillar — used for performance-weighted selection
-const PILLAR_SIGNALS: Record<string, RegExp> = {
-  crypto: /bitcoin|ethereum|crypto|defi|altcoin|nft|blockchain|staking|token/i,
-  tx_blockchain: /\btx\b|tokns|coherence/i,
-  motivation: /motivat|mindset|discipline|wealth|freedom|success|millionaire|investor/i,
-};
+export const PILLAR_TARGETS: Record<string, number> = { tx_blockchain: 1 / 3, crypto: 1 / 3, motivation: 1 / 3 };
 
 // ---------------------------------------------------------------------------
 // DB helpers
 // ---------------------------------------------------------------------------
 
-async function getRecentTopics(db: Db): Promise<string[]> {
+async function getTopicHistory(db: Db): Promise<Array<{ topic: string; pillar: string; createdAt: Date }>> {
+  const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
   const rows = await db
-    .select({ topic: ytContentStrategies.topic })
+    .select({ topic: ytContentStrategies.topic, pillar: ytContentStrategies.pillar, createdAt: ytContentStrategies.createdAt })
     .from(ytContentStrategies)
-    .where(eq(ytContentStrategies.companyId, COMPANY_ID))
-    .orderBy(desc(ytContentStrategies.createdAt))
-    .limit(20);
-  return rows.map((r) => r.topic);
+    .where(
+      and(
+        eq(ytContentStrategies.companyId, COMPANY_ID),
+        gte(ytContentStrategies.createdAt, since),
+      ),
+    )
+    .orderBy(desc(ytContentStrategies.createdAt));
+  return rows.map((r) => ({ topic: r.topic, pillar: r.pillar, createdAt: r.createdAt }));
+}
+
+async function getRecentTitles(db: Db): Promise<string[]> {
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({ title: ytPublishQueue.title })
+    .from(ytPublishQueue)
+    .where(
+      and(
+        eq(ytPublishQueue.companyId, COMPANY_ID),
+        gte(ytPublishQueue.createdAt, since),
+      ),
+    )
+    .orderBy(desc(ytPublishQueue.createdAt))
+    .limit(30);
+  return rows.map((r) => r.title);
+}
+
+async function getCryptoSources(db: Db): Promise<Array<{ title: string; source: string; url?: string }>> {
+  const since = new Date(Date.now() - 72 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      headline: intelReports.headline,
+      sourceUrl: intelReports.sourceUrl,
+      companySlug: intelReports.companySlug,
+    })
+    .from(intelReports)
+    .where(
+      and(
+        eq(intelReports.reportType, "news"),
+        gte(intelReports.capturedAt, since),
+      ),
+    )
+    .orderBy(desc(intelReports.capturedAt));
+
+  const keyword = /(bitcoin|ethereum|solana|coinbase|binance|kraken|aave|maker|lido|chainlink|stablecoin|defi|crypto|blockchain|token)/i;
+  const matches = rows.filter(
+    (r) => keyword.test(r.companySlug) || keyword.test(r.headline),
+  );
+
+  return matches.slice(0, 5).map((r) => {
+    let source = "";
+    if (r.sourceUrl) {
+      try {
+        source = new URL(r.sourceUrl).hostname.replace(/^www\./, "");
+      } catch {
+        source = r.sourceUrl;
+      }
+    }
+    return {
+      title: r.headline,
+      source,
+      ...(r.sourceUrl ? { url: r.sourceUrl } : {}),
+    };
+  });
 }
 
 async function getTopKeywords(db: Db): Promise<Array<{ keyword: string; performanceScore: number }>> {
@@ -115,102 +172,99 @@ async function getRecentInsights(db: Db): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Pillar selection — random fallback, performance-weighted when data exists
+// Pillar selection — balance toward the owner's target mix, not random
 // ---------------------------------------------------------------------------
 
-function selectPillar(): string {
-  const pillars = Object.keys(NICHE_TOPICS);
-  return pillars[Math.floor(Math.random() * pillars.length)];
-}
-
-function selectPillarWeighted(
-  topKeywords: Array<{ keyword: string; performanceScore: number }>,
+export function selectPillarBalanced(
+  recentPillars: string[],
+  targets: Record<string, number> = PILLAR_TARGETS,
+  rand: () => number = Math.random,
 ): string {
-  if (topKeywords.length === 0) return selectPillar();
+  const targetPillars = Object.keys(targets);
+  if (targetPillars.length === 0) return "";
 
-  const scores: Record<string, number> = { crypto: 0, tx_blockchain: 0, motivation: 0 };
+  // newest first; only the target pillars count (e.g. "site-walker" runs are ignored)
+  const recent = recentPillars.filter((p) => p in targets).slice(0, 9);
+  const n = recent.length;
 
-  for (const { keyword, performanceScore } of topKeywords) {
-    for (const [pillar, signal] of Object.entries(PILLAR_SIGNALS)) {
-      if (signal.test(keyword)) scores[pillar] += performanceScore;
+  if (n === 0) {
+    return targetPillars[Math.floor(rand() * targetPillars.length)];
+  }
+
+  let best: string[] = [];
+  let bestDeficit = -Infinity;
+  for (const pillar of targetPillars) {
+    const count = recent.filter((p) => p === pillar).length;
+    const deficit = targets[pillar] - count / Math.max(1, n);
+    if (deficit > bestDeficit) {
+      bestDeficit = deficit;
+      best = [pillar];
+    } else if (deficit === bestDeficit) {
+      best.push(pillar);
     }
   }
 
-  const total = Object.values(scores).reduce((a, b) => a + b, 0);
-  if (total === 0) return selectPillar();
-
-  // Weighted random pick — pillars with more proven keywords win more often
-  let rand = Math.random() * total;
-  for (const [pillar, score] of Object.entries(scores)) {
-    rand -= score;
-    if (rand <= 0) return pillar;
-  }
-  return selectPillar();
+  return best[Math.floor(rand() * best.length)];
 }
 
 // ---------------------------------------------------------------------------
-// Topic selection — prefer unused topics, bias toward keyword-proven ones
+// Topic selection — least recently used seed within the pillar
 // ---------------------------------------------------------------------------
 
-function selectTopic(pillar: string, recentTopics: string[]): string {
-  const pool = NICHE_TOPICS[pillar] || NICHE_TOPICS.crypto;
-  const unused = pool.filter((t) => !recentTopics.includes(t));
-  const candidates = unused.length > 0 ? unused : pool;
-  return candidates[Math.floor(Math.random() * candidates.length)];
-}
-
-function selectTopicWeighted(
+export function selectTopicLru(
   pillar: string,
-  recentTopics: string[],
-  topKeywords: Array<{ keyword: string; performanceScore: number }>,
+  history: Array<{ topic: string; createdAt: Date }>,
+  now: Date = new Date(),
 ): string {
   const pool = NICHE_TOPICS[pillar] || NICHE_TOPICS.crypto;
-  const candidates = pool.filter((t) => !recentTopics.includes(t));
-  const topics = candidates.length > 0 ? candidates : pool;
 
-  if (topKeywords.length === 0) {
-    return topics[Math.floor(Math.random() * topics.length)];
+  // Never-used seeds first, in list order.
+  const neverUsed = pool.find((topic) => !history.some((entry) => entry.topic === topic));
+  if (neverUsed !== undefined) return neverUsed;
+
+  // All seeds used: return the one whose most recent use is oldest.
+  // Most recent use = the entry with the latest createdAt for that seed.
+  const mostRecentUse = (topic: string): number => {
+    let latest = Number.NEGATIVE_INFINITY;
+    for (const entry of history) {
+      if (entry.topic === topic && entry.createdAt.getTime() > latest) {
+        latest = entry.createdAt.getTime();
+      }
+    }
+    return latest;
+  };
+
+  let best = pool[0];
+  let bestLatest = mostRecentUse(pool[0]);
+  for (let i = 1; i < pool.length; i++) {
+    const latest = mostRecentUse(pool[i]);
+    if (latest < bestLatest) {
+      best = pool[i];
+      bestLatest = latest;
+    }
   }
 
-  const kwScoreMap = new Map(
-    topKeywords.map((k) => [k.keyword.toLowerCase(), k.performanceScore]),
-  );
-
-  // Score each topic by how many of its words match proven keywords
-  const scored = topics.map((topic) => {
-    const words = topic.toLowerCase().split(/\s+/);
-    const score = words.reduce((sum, word) => sum + (kwScoreMap.get(word) ?? 0), 0);
-    return { topic, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-
-  // Weighted random from top 3 so the best topic wins most often but not always
-  const topN = scored.slice(0, 3);
-  const total = topN.reduce((s, t) => s + t.score + 1, 0);
-  let rand = Math.random() * total;
-  for (const { topic, score } of topN) {
-    rand -= score + 1;
-    if (rand <= 0) return topic;
-  }
-  return topics[0];
+  return best;
 }
 
 // ---------------------------------------------------------------------------
 // Angle generation — includes persisted channel insights as context
 // ---------------------------------------------------------------------------
 
-async function generateAngleWithAI(topic: string, recentInsights: string[] = []): Promise<string> {
+async function generateAngleWithAI(topic: string, recentInsights: string[] = [], recentTitles: string[] = []): Promise<string> {
   try {
     const year = new Date().getFullYear();
     const insightContext = recentInsights.length > 0
       ? `\nChannel performance insights to inform the angle: ${recentInsights.slice(0, 3).join("; ")}`
       : "";
+    const titlesContext = recentTitles.length > 0
+      ? `\nRecent titles (the angle must not resemble any of these): ${recentTitles.join(" | ")}`
+      : "";
     const result = await callLlmChat(
       [
         {
           role: "system",
-          content: `You generate YouTube video angles for the Coherence Daddy channel (TX blockchain ecosystem, tokns.fi, crypto news, self-improvement and mindset). Return ONLY a single-line angle (no quotes, no explanation). Current year: ${year}. The angle should be compelling and click-worthy while being honest.${insightContext}`,
+          content: `You generate YouTube video angles for the Coherence Daddy channel (TX blockchain ecosystem, tokns.fi, crypto news, self-improvement and mindset). Return ONLY a single-line angle (no quotes, no explanation). Current year: ${year}. The angle must be one honest, specific line. No clickbait words (Ultimate, Proven, Secret, Insane). No first-person claims ("I tried", "I tested"). No money promises. No year unless the topic is about that year. It must not resemble any of the recent titles.${insightContext}${titlesContext}`,
         },
         {
           role: "user",
@@ -307,6 +361,8 @@ export interface ContentStrategy {
   keywords: string[];
   estimatedViews: number;
   bestPublishTime: string;
+  recentTitles?: string[];
+  sources?: Array<{ title: string; source: string; url?: string }>;
 }
 
 export async function generateContentStrategy(
@@ -348,23 +404,22 @@ export async function generateContentStrategy(
   }
 
   // Fetch all data-driven signals in parallel
-  const [recentTopics, topKeywords, recentInsights] = await Promise.all([
-    getRecentTopics(db),
-    getTopKeywords(db),
+  const [topicHistory, recentTitles, recentInsights] = await Promise.all([
+    getTopicHistory(db),
+    getRecentTitles(db),
     getRecentInsights(db),
   ]);
 
-  const pillar = topKeywords.length > 0
-    ? selectPillarWeighted(topKeywords)
-    : selectPillar();
+  // Pillar history straight from the stored strategies (newest first).
+  const recentPillars = topicHistory.map((h) => h.pillar);
 
-  const topic = requestedTopic || (
-    topKeywords.length > 0
-      ? selectTopicWeighted(pillar, recentTopics, topKeywords)
-      : selectTopic(pillar, recentTopics)
-  );
+  const pillar = selectPillarBalanced(recentPillars);
 
-  const angle = await generateAngleWithAI(topic, recentInsights);
+  const topic = requestedTopic || selectTopicLru(pillar, topicHistory);
+
+  const sources = pillar === "crypto" ? await getCryptoSources(db) : undefined;
+
+  const angle = await generateAngleWithAI(topic, recentInsights, recentTitles);
 
   const strategy: ContentStrategy = {
     topic,
@@ -375,6 +430,8 @@ export async function generateContentStrategy(
     keywords: extractKeywords(topic),
     estimatedViews: 5000 + Math.floor(Math.random() * 10000),
     bestPublishTime: calculateBestPublishTime(),
+    recentTitles,
+    ...(sources ? { sources } : {}),
   };
 
   await db.insert(ytContentStrategies).values({
@@ -394,7 +451,8 @@ export async function generateContentStrategy(
       topic,
       pillar,
       contentType: strategy.contentType,
-      dataWeighted: topKeywords.length > 0,
+      recentTitles: recentTitles.length,
+      sources: sources?.length ?? 0,
       insightsAvailable: recentInsights.length,
     },
     "Content strategy generated",
