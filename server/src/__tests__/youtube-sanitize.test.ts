@@ -89,15 +89,15 @@ describe("sanitizeScript: evntrace", () => {
 });
 
 describe("sanitizeScript: greeting", () => {
-  it("forces a greeting that does not name Coherence Daddy", () => {
-    const out = sanitizeScript(baseScript()); // fixture says "Welcome back to Tokns.fi."
-    expect(out.introduction.greeting).toBe("What's up everyone, welcome back to Coherence Daddy.");
+  it("forces the fixed greeting whatever the model wrote (fixture says \"What's up everyone? Welcome back to Tokns.fi.\")", () => {
+    const out = sanitizeScript(baseScript());
+    expect(out.introduction.greeting).toBe("This is Coherence Daddy.");
   });
 
-  it("leaves an already-correct greeting untouched (case-insensitive match)", () => {
+  it("overwrites even a greeting that already names Coherence Daddy", () => {
     const s = baseScript();
     s.introduction.greeting = "Hey, it's the coherence daddy channel!";
-    expect(sanitizeScript(s).introduction.greeting).toBe("Hey, it's the coherence daddy channel!");
+    expect(sanitizeScript(s).introduction.greeting).toBe("This is Coherence Daddy.");
   });
 });
 
