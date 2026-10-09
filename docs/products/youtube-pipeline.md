@@ -155,6 +155,13 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   `generateScript` call, `validateScript`): pillar `tx_blockchain` (2 of the last 9), seed "what staking on TX
   actually means, and what it does not", title "What TX Staking Actually Is", greeting "This is Coherence Daddy.",
   4 sections, 0 violations, 26 s on `gemma4:31b`. The first full video from it is the next nightly run.
+- **2026-10-09** — Owner: "remove any old videos from cue". Removed the 4 unpublished rows (all scripted before
+  #194): 2 `scheduled` (2026-10-11 10:00Z "Why Motivation Is a Scam…", 2026-10-15 14:00Z "Stop Losing Your Yield…")
+  and 2 `pending_review` ("Proven Why Motivation Fails…", "How to Buy Crypto in 2026…"). Same delete as the
+  dashboard's Remove; rows backed up to `/root/yt-queue-removed-2026-10-09.json` on VPS4; the 4 MP4s stay on disk
+  until the 30-day cleanup. Queue after: 152 `published`, nothing else. VPS4 then ran `50a56d18` (#196), container
+  up since 2026-10-09 06:48Z; `gemma4:31b` listed, YouTube refresh token OK (`youtube.upload` only); the
+  ElevenLabs key lacks `user_read`, so remaining TTS credit can't be read from the server.
 
 ## Owner decisions, 2026-10-08
 
@@ -205,7 +212,7 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
   1/day stays the owner's call once analytics work (YouTube's "inauthentic content" policy, renamed 2025-07-15,
   targets "mass-produced, generic, repetitive" videos). Rows queued before #194 keep the slot the old code
   proposed (e.g. 2026-10-14 14:00 UTC) unless it is changed at approval.
-- [ ] **Old-timing videos** — 5 were queued on 2026-10-07; pause/remove after the owner approves the new style.
+- [x] **Old-timing videos** — 5 were queued on 2026-10-07; removed 2026-10-09 on the owner's word (see change log).
 - [ ] Exact in-beat captions from ElevenLabs `/with-timestamps` (captions are spread evenly inside each beat today).
 - [ ] Mark's mastering chain (ZeroEdit `aggressive_post`) for a brand-VO sound.
 - [ ] Content Hub snippets drive Mark's clone through `eleven_v3`, which the clone isn't fine-tuned for.
