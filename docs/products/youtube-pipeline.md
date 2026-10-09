@@ -38,7 +38,8 @@ both the slides and the narration, so nothing is shown that isn't spoken and not
 | cta | subscribe card | subscribe + like + comment, then the evntrace line |
 
 Timing is **measured, never estimated**: each beat is voiced separately, decoded to PCM WAV (44.1 kHz mono) and timed
-from the WAV (sample-exact); clips are joined with a 0.6 s gap; slide i lasts `clip_i + 0.6 s`. The slideshow is
+from the WAV (sample-exact) after `trimClipEdgesWav()` cuts breath and room tone off both ends (onset −32 dBFS with a
+60 ms pre-roll, tail −40 dBFS with a 120 ms post-roll); clips are joined with a 0.6 s gap; slide i lasts `clip_i + 0.6 s`. The slideshow is
 built with an `fps=30` filter and an explicit `-t`, and the merge is cut at the audio length, so the picture ends
 with the narration. Word-count estimation remains only for the legacy image mode.
 
@@ -66,7 +67,8 @@ with the narration. Word-count estimation remains only for the legacy image mode
   'de-fi'—"), drops any model-written sentence that mentions evntrace, and replaces a greeting that doesn't name
   Coherence Daddy with "What's up everyone, welcome back to Coherence Daddy."
 - `applyPronunciationFixes()` respells words for the **voice only** (captions and slides keep the real spelling):
-  tokns.fi → "toe-kins dot fye", evntrace.com → "event trace dot com", DeFi → "de-fi", TX ecosystem → "T-X ecosystem".
+  tokns.fi → "toe-kins dot fye", evntrace.com → "event trace dot com", DeFi → "de-fi", TX ecosystem → "T-X ecosystem",
+  meme/memecoin(s) → "meem"/"meem-coin(s)" (Whisper heard "memcoin" before, 2026-10-08).
   Local Whisper on the 2026-10-07 render heard "Welcome back to Coherence Daddy", "DeFi", "tokens.fi",
   "CoherenceDaddy.com", "EventTrace.com".
 
@@ -120,6 +122,9 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   finished video is exactly as long as its narration. Owner decisions the same day: Mark's voice; channel is
   Coherence Daddy; evntrace may be mentioned; new-style videos are approved before they post; old queued videos may
   be removed after approval.
+- **2026-10-08** — #191 merged (`03630f05`) and deployed. Owner heard sighs between slides: every clip of the real
+  render ended in ~0.5 s of breath/room tone (15.0 s in total) → per-clip edge trim; "memecoin" respelled. On the 28
+  real clips the trim changed no first/last word (Whisper). Drafted by an Ollama worker, gated here.
 
 ## Open items
 
