@@ -16,10 +16,11 @@ import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunc
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
-import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, verifySlideSync, type YtAssembleResult } from "./yt-video-assembler.js";
+import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, verifySlideSync, type YtAssembleResult, type SyncReport } from "./yt-video-assembler.js";
 import { buildBeats, buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Beat, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
+import { archiveProduction } from "./archive.js";
 import { getAvailableBackends } from "../visual-backends/index.js";
 import { logger } from "../../middleware/logger.js";
 
@@ -58,6 +59,7 @@ export async function runProductionPipeline(
   visualMode?: string,
 ): Promise<ProductionResult> {
   const mode = visualMode || VISUAL_MODE;
+  const createdAt = new Date();
 
   // 1. Generate content strategy
   logger.info("YT Pipeline: generating content strategy...");
@@ -215,8 +217,9 @@ export async function runProductionPipeline(
     // A drifted or blank video never reaches the publish queue; files stay on
     // disk for inspection.
     let gateError: string | undefined;
+    let syncReport: SyncReport | undefined;
     if (video && beats && perSlideDurations) {
-      const syncReport = await verifySlideSync({
+      syncReport = await verifySlideSync({
         videoPath: video.videoPath,
         slideDurations: perSlideDurations,
         audioDurationSec: tts.durationSec,
@@ -256,6 +259,70 @@ export async function runProductionPipeline(
         updatedAt: new Date(),
       })
       .where(eq(ytProductions.id, productionId));
+
+    // 10b. Archive the script/timeline/slides for the owner's monthly review.
+    // Archiving must never fail the production — a warning is all it gets.
+    let archiveDir: string | undefined;
+    try {
+      const archived = await archiveProduction({
+        productionId,
+        createdAt,
+        script,
+        strategy: {
+          topic: strategy.topic,
+          angle: strategy.angle,
+          pillar: strategy.pillar,
+          contentType: strategy.contentType,
+        },
+        seo: {
+          title: seo.title,
+          description: seo.description,
+          tags: seo.tags,
+          hashtags: seo.hashtags,
+          chapters: seo.chapters,
+        },
+        beats,
+        slideDurations: perSlideDurations,
+        speechDurations: chunkContentDurations,
+        slidePaths: visualAssets,
+        thumbnailPath,
+        captionsPath,
+        videoPath: video?.videoPath,
+        ttsProvider: tts.provider,
+        audioDurationSec: tts.durationSec,
+        syncReport,
+        status: publishable ? "ready" : "failed",
+        error: gateError,
+      });
+      archiveDir = archived.dir;
+    } catch (err) {
+      logger.warn({ productionId, err }, "YT Pipeline: archiving failed (production continues)");
+    }
+
+    // Record the archive location on the row. video-cleanup.ts never touches
+    // scriptPath/archiveDir, so the archive survives the 30-day purge.
+    if (archiveDir) {
+      try {
+        const [row] = await db
+          .select({ assets: ytProductions.assets })
+          .from(ytProductions)
+          .where(eq(ytProductions.id, productionId));
+        const existingAssets = (row?.assets ?? {}) as Record<string, unknown>;
+        await db
+          .update(ytProductions)
+          .set({
+            assets: {
+              ...existingAssets,
+              scriptPath: join(archiveDir, "script.json"),
+              archiveDir,
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(ytProductions.id, productionId));
+      } catch (err) {
+        logger.warn({ productionId, err }, "YT Pipeline: failed to record archive paths on production row");
+      }
+    }
 
     // 11. Queue for publishing (only a video that was assembled AND passed the sync gate)
     if (video && publishable) {
