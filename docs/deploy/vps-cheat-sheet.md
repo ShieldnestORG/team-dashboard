@@ -53,6 +53,8 @@ Both use the same key: `nestd@pm.me` ed25519. If SSH errors, the key isn't insta
 
 > **2026-05-17:** `scripts/predeploy.sh` now runs `pnpm db:migrate` after the DNS check. If you bypass it (raw `ssh ... docker compose up -d`), run `pnpm db:migrate` against the prod `DATABASE_URL` first — `docker compose up -d` reuses the running container and skips boot-time migration. See `docs/handoffs/2026-05-17-migration-0116-diagnosis.md`.
 
+> **2026-10-08:** `predeploy.sh` now exits 1 if `DATABASE_URL` is empty, or if migrate reports `via embedded-postgres` — both mean production was never touched. Export it with `v=$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2-); export DATABASE_URL="$v"` — never `eval` the line (its `&` leaves the variable unset), never print the value.
+
 ```bash
 # 1. Verify you're going to the right box
 dig +short api.coherencedaddy.com   # must be 31.220.61.14

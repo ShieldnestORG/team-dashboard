@@ -46,9 +46,31 @@ echo "✅ predeploy: $EXPECTED_API_HOST → $actual ($EXPECTED_VPS_LABEL)"
 # See docs/handoffs/2026-05-17-migration-0116-diagnosis.md.
 #
 # `pnpm db:migrate` is idempotent — no-op when nothing is pending.
+#
+# 2026-10-08: with DATABASE_URL unset, `pnpm db:migrate` silently falls back
+# to a local embedded Postgres (port 54329) and its failure looks like a prod
+# migration failure. Refuse to run without DATABASE_URL, and refuse an
+# embedded-postgres target even if something else selected it.
 echo ""
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "❌ predeploy: DATABASE_URL is empty — refusing to run migrations"
+  echo "   Without it, pnpm db:migrate migrates a LOCAL embedded Postgres, not production."
+  echo "   Set it from .env without eval (the URL contains '&') and without printing it:"
+  echo ""
+  echo "     v=\$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2-); export DATABASE_URL=\"\$v\""
+  echo ""
+  exit 1
+fi
+
 echo "→ predeploy: applying pending migrations against \$DATABASE_URL"
-if pnpm db:migrate; then
+migrate_log=$(mktemp)
+trap 'rm -f "$migrate_log"' EXIT
+if pnpm db:migrate 2>&1 | tee "$migrate_log"; then
+  if grep -q "via embedded-postgres" "$migrate_log"; then
+    echo "❌ predeploy: migrations ran against a local embedded Postgres, not DATABASE_URL"
+    echo "   Production was NOT migrated. Check DATABASE_URL and re-run."
+    exit 1
+  fi
   echo "✅ predeploy: migrations up to date"
 else
   echo "❌ predeploy: migrations failed — aborting deploy"

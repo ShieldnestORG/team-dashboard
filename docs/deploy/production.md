@@ -46,6 +46,13 @@ script (e.g. raw `ssh ... docker compose up -d`), you must run `pnpm db:migrate`
 manually first — `docker compose up -d` reuses the running container, so
 boot-time migration logic never re-runs.
 
+`DATABASE_URL` must be exported in your shell first — since 2026-10-08 the
+script refuses to migrate without it, because `pnpm db:migrate` otherwise falls
+back to a local embedded Postgres (`Migrating database via embedded-postgres@54329`)
+and its failure looks like a production failure. Set it without `eval` (the URL
+contains `&`) and without printing it:
+`v=$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2-); export DATABASE_URL="$v"`
+
 ```bash
 ssh root@31.220.61.14 'cd /opt/team-dashboard/repo && git pull && cd /opt/team-dashboard && docker compose build && docker compose up -d && docker image prune -f && docker container prune -f && docker builder prune -f'
 ```
