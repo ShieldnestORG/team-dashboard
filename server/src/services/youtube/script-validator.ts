@@ -3,7 +3,8 @@ import type { ScriptData } from "./script-writer.js";
 export type ViolationCode =
   | "GREETING" | "OPENER_FILLER" | "INVENTED" | "PRONUNCIATION_NOTE" | "ADVICE_OR_HYPE" | "BANNED_PHRASE"
   | "UNSUPPORTED_CLAIM" | "EVNTRACE_MENTION" | "NOT_SPEAKABLE" | "LINE_TOO_LONG" | "ONSCREEN_SHAPE"
-  | "TITLE_TOO_LONG" | "TITLE_FALSE_CLAIM" | "TITLE_INCOME_PROMISE" | "TITLE_JUNK" | "COUNT_MISMATCH" | "STRUCTURE";
+  | "TITLE_TOO_LONG" | "TITLE_FALSE_CLAIM" | "TITLE_INCOME_PROMISE" | "TITLE_JUNK" | "COUNT_MISMATCH" | "STRUCTURE"
+  | "TOO_SHORT";
 
 export interface Violation { code: ViolationCode; field: string; message: string; excerpt: string }
 export interface ValidationResult { ok: boolean; violations: Violation[]; warnings: Violation[] }
@@ -73,7 +74,12 @@ function makeReporter() {
   };
 }
 
-export function validateScript(script: ScriptData): ValidationResult {
+export interface ValidateOptions {
+  /** Minimum spoken words (0 = no length rule). The generator sets it; fixtures and unit tests may leave it off. */
+  minSpokenWords?: number;
+}
+
+export function validateScript(script: ScriptData, opts: ValidateOptions = {}): ValidationResult {
   const violations: Violation[] = [];
   const warnings: Violation[] = [];
   const report = makeReporter();
@@ -236,6 +242,15 @@ export function validateScript(script: ScriptData): ValidationResult {
       report(violations, "STRUCTURE", `mainContent.sections[${i}].content`, "section has no content lines", "");
     }
   });
+
+  // Length: the model tends to write ~260 words (~1.5 min) when asked for ~450 (measured 2026-10-08, gemma4:31b).
+  const minWords = opts.minSpokenWords ?? 0;
+  if (minWords > 0) {
+    const words = spoken.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
+    if (words < minWords) {
+      report(violations, "TOO_SHORT", "mainContent", `script is ${words} spoken words; write ${minWords + 40} to ${minWords + 140} (add a section or more lines)`, String(words));
+    }
+  }
 
   return { ok: violations.length === 0, violations, warnings };
 }

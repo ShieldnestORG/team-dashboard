@@ -47,6 +47,7 @@ function strategy(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  process.env.YT_MIN_SCRIPT_WORDS = "0"; // fixtures are short on purpose; the length rule has its own test below
   mockChat.mockReset();
 });
 
@@ -112,5 +113,33 @@ describe("formatScriptPlainText: system-added lines", () => {
     const text = formatScriptPlainText(sanitizeScript(GOOD_FIXTURE));
     expect(text).not.toContain(DISCLOSURE_LINE);
     expect(text).not.toContain(NOT_ADVICE_LINE);
+  });
+});
+describe("length rule (YT_MIN_SCRIPT_WORDS)", () => {
+  it("sends a too-short script back with TOO_SHORT, then accepts it once long enough", async () => {
+    process.env.YT_MIN_SCRIPT_WORDS = "150";
+    const good = JSON.parse(readFileSync(new URL("./fixtures/yt-script-good-mindset.json", import.meta.url), "utf8"));
+    const short = structuredClone(good);
+    short.mainContent.sections = short.mainContent.sections.slice(0, 2).map((sec: { content: string[] }) => ({ ...sec, content: sec.content.slice(0, 1), onScreen: undefined }));
+    short.title = "Discipline beats motivation: small habits that stick";
+    const long = structuredClone(good);
+    long.mainContent.sections.push({ type: "step", title: "Forgive the miss", content: ["Missing one day is normal, so plan the restart before the miss ever happens.", "The habit survives when the second day matters more than the first slip."], onScreen: ["Plan the restart", "Never miss twice"], visuals: [], duration: 0 });
+    long.title = "Discipline beats motivation: four small habits that make it stick";
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce({ content: JSON.stringify(short) } as never).mockResolvedValueOnce({ content: JSON.stringify(long) } as never);
+    const result = await generateScript(strategy());
+    expect(mockChat).toHaveBeenCalledTimes(2);
+    const repair = mockChat.mock.calls[1][0];
+    expect(String(repair[repair.length - 1].content)).toMatch(/TOO_SHORT/);
+    expect(result.validation?.violations).toContain("TOO_SHORT");
+  });
+
+  it("YT_MIN_SCRIPT_WORDS=0 turns the rule off", async () => {
+    process.env.YT_MIN_SCRIPT_WORDS = "0";
+    const good = readFileSync(new URL("./fixtures/yt-script-good-mindset.json", import.meta.url), "utf8");
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce({ content: good } as never);
+    const result = await generateScript(strategy());
+    expect(result.validation?.attempts).toBe(1);
   });
 });

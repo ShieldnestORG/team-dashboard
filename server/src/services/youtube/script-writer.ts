@@ -249,6 +249,13 @@ const DEFAULT_GREETING = "This is Coherence Daddy.";
 
 // Fixed disclosure lines the system adds itself — the model is told never to
 // write either one (prompt rule 8), so they can only appear from here.
+/** Below this many spoken words a script is sent back to be lengthened (about 2.5 min at v3's ~180 wpm).
+ * YT_MIN_SCRIPT_WORDS overrides (read at call time; 0 turns the rule off). */
+export function minScriptWords(): number {
+  const n = Number(process.env.YT_MIN_SCRIPT_WORDS ?? 380);
+  return Number.isFinite(n) && n >= 0 ? n : 380;
+}
+
 export const DISCLOSURE_LINE = "Quick honesty break: we run a TX validator and build tokns.fi, so we gain when you stake.";
 export const NOT_ADVICE_LINE = "This is education, not financial advice.";
 
@@ -454,7 +461,7 @@ export async function generateScript(strategy: GenerateScriptStrategy): Promise<
       duration: estimateDuration({ sections: mainContent?.sections ?? [] }),
       fullScript: "",
     } as ScriptData);
-    result = validateScript(script);
+    result = validateScript(script, { minSpokenWords: minScriptWords() });
 
     if (result.ok) {
       const seenCodes = [...new Set(priorCodes)];
