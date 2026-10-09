@@ -2,7 +2,8 @@
 
 > **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md)
 
-**In plain words:** a robot on VPS4 writes a script every morning, has Mark's cloned voice read it, turns it into
+**In plain words:** a robot on VPS4 writes a script every night (cron `0 6 * * *` UTC = 11 PM PDT, 10 PM PST; it
+starts a few minutes after the hour), has Mark's cloned voice read it, turns it into
 slides, joins them into a video and queues it for the **Coherence Daddy** YouTube channel. Since 2026-10-07 each slide
 is on screen exactly while its own sentence is spoken, and a new video waits for the owner's approval before it posts.
 
@@ -146,6 +147,14 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
 - **2026-10-08** — #191 merged (`03630f05`) and deployed. Owner heard sighs between slides: every clip of the real
   render ended in ~0.5 s of breath/room tone (15.0 s in total) → per-clip edge trim; "memecoin" respelled. On the 28
   real clips the trim changed no first/last word (Whisper). Drafted by an Ollama worker, gated here.
+- **2026-10-08** — #192 merged (`0c1e957b`) and deployed ~22:04 PDT: Mark on `eleven_v3` take D (owner's pick),
+  breath trim, "meem-coin". The 23:03 PDT run on it passed the sync gate (26/26 slide changes ≤ 0.033 s) and queued
+  as `pending_review`; its script still came from the old writer (title "How to Buy Crypto in 2026: The Ultimate…").
+- **2026-10-08** — #194 (script v2) merged (`cf22a901`) and deployed 23:17 PDT, after that run. Predeploy: no pending
+  migrations. Checked on the live container without writing anything (topic picked from read-only queries, one
+  `generateScript` call, `validateScript`): pillar `tx_blockchain` (2 of the last 9), seed "what staking on TX
+  actually means, and what it does not", title "What TX Staking Actually Is", greeting "This is Coherence Daddy.",
+  4 sections, 0 violations, 26 s on `gemma4:31b`. The first full video from it is the next nightly run.
 
 ## Owner decisions, 2026-10-08
 
@@ -169,7 +178,12 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
 [script research](youtube-script-research-2026-10-07.md) (honesty, facts-from-code, format, topic engine, draft prompt).
 
 
-- [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (commit `2a25862c`, not merged):
+- [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (not merged). Since 2026-10-08 it also has
+  the owner's asks: word-by-word follow-along text with a coral underline (`24388b23`), numbers that count up in gold
+  plus follow-along on title/quote/end card (`88ee67f4`), and sentence icons in brand colours chosen by keyword
+  (`cfd61d9d`). 60 s test render: 1,800 frames, exit 0, 10 layout warnings (sentences too long for 4 lines at 48 px;
+  the test timeline is an old long-sentence script — script v2's shorter lines should lower this; re-measure on one).
+  First prototype (`2a25862c`):
   `server/src/services/youtube/animated/` (`scenes.html` driven by one `seek(t)` clock via paused Web Animations,
   `render.ts` frame-stepper → ffmpeg) + `server/scripts/yt-animated-demo.ts`. Five templates (title, section, list
   with moving highlight, quote, end card) from `coherencedaddy-landing/DESIGN.md` tokens, Geist fonts bundled (OFL).
@@ -181,16 +195,16 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
   method); short on-screen text per line (the script redesign's `onScreen`), since full sentences render small.
   The current static slide template is off-brand: `slide-templates.ts` uses the banned cyan `#00d4ff`, coral
   `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
-- [ ] **Scripts and how the channel talks** — the prompt still produces formula titles, near-duplicate topics and
-  invented first-person claims ("I Tested 5 … for 90 Days"); redesign pending research.
+- [x] **Scripts and how the channel talks** — done in script v2 (#194, live 2026-10-08): see "How a script is made".
 - [ ] **Metadata** — the custom thumbnail and the SRT are generated but never uploaded (publisher sends title,
   description, tags, category 28 only); chapters come from script estimates (past the end on 14/14 live videos); tags
   include concatenated junk and `toknsfi` on every video; `yt_analytics` has 0 rows because the OAuth token has only
   `youtube.upload` (daily 403, swallowed — the cron reports success). Owner step: re-consent with `youtube.readonly` +
   `yt-analytics.readonly`; meanwhile Zernio already holds views for 155 videos.
-- [ ] **Publishing cadence** — replace the random slot with N per day; owner wants 3–5/day after approval;
-  recommendation is 1/day for 1–2 weeks with analytics working, then scale (YouTube's "inauthentic content"
-  policy, renamed 2025-07-15, targets "mass-produced, generic, repetitive" videos).
+- [x] **Publishing cadence** — fixed local slots, 1/day by default (`YT_PUBLISH_PER_DAY` 1–5, #194). Scaling past
+  1/day stays the owner's call once analytics work (YouTube's "inauthentic content" policy, renamed 2025-07-15,
+  targets "mass-produced, generic, repetitive" videos). Rows queued before #194 keep the slot the old code
+  proposed (e.g. 2026-10-14 14:00 UTC) unless it is changed at approval.
 - [ ] **Old-timing videos** — 5 were queued on 2026-10-07; pause/remove after the owner approves the new style.
 - [ ] Exact in-beat captions from ElevenLabs `/with-timestamps` (captions are spread evenly inside each beat today).
 - [ ] Mark's mastering chain (ZeroEdit `aggressive_post`) for a brand-VO sound.
