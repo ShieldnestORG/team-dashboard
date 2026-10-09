@@ -58,7 +58,7 @@ server/
         walkthrough-writer.ts       # Ollama walkthrough narration from site-walk results
         site-walker.ts              # Playwright browser agent — visits URLs, captures screenshots
         presentation-renderer.ts    # Playwright slide renderer (branded screenshots)
-        tts.ts                      # Grok TTS (xAI API, Rex voice) — chunked per-slide
+        tts.ts                      # Per-beat TTS: ElevenLabs Mark clone (default) / Grok Rex — WAV, measured
         yt-video-assembler.ts       # FFmpeg assembly with per-slide durations
         seo-optimizer.ts            # YouTube SEO (tags, chapters, descriptions)
         thumbnail.ts                # Thumbnail generation (Grok/Gemini)
@@ -170,7 +170,7 @@ doc/                  # Operational docs (SPEC, PRODUCT, GOAL, plans/)
 | `server/src/services/youtube/` | YouTube automation pipeline (strategy, scripts, TTS, rendering, publishing) |
 | `server/src/services/youtube/site-walker.ts` | Playwright browser agent — visits URLs, scrolls, captures branded screenshots |
 | `server/src/services/youtube/walkthrough-writer.ts` | Ollama walkthrough narration from site-walk results with TTS sanitization |
-| `server/src/services/youtube/tts.ts` | Grok TTS (xAI API, Rex voice) — chunked per-slide with silence gaps |
+| `server/src/services/youtube/tts.ts` | Per-beat TTS — Mark's ElevenLabs clone (default) or Grok Rex (`YT_TTS_PROVIDER=grok`); clips stitched as WAV with silence gaps, durations measured |
 | `server/src/services/youtube/presentation-renderer.ts` | Playwright slide renderer with branded screenshot overlays |
 | `server/src/services/youtube/slide-templates.ts` | Brand color templates (coherencedaddy coral/cyan, tx lime/purple) |
 | `server/src/services/youtube/yt-crons.ts` | 5 YouTube cron jobs (production, publish, analytics, strategy, optimization) |

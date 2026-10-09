@@ -36,7 +36,7 @@ This document provides a mapping of critical files to their purpose within the s
 - `server/src/services/youtube/`: Full YouTube automation pipeline (strategy, scripts, TTS, rendering, publishing).
 - `server/src/services/youtube/site-walker.ts`: Playwright browser agent for branded screenshots.
 - `server/src/services/youtube/presentation-renderer.ts`: Playwright slide renderer.
-- `server/src/services/youtube/tts.ts`: Grok TTS (xAI API, Rex voice).
+- `server/src/services/youtube/tts.ts`: per-beat TTS — Mark's ElevenLabs clone (default) or Grok Rex (`YT_TTS_PROVIDER=grok`), stitched as WAV with measured durations.
 
 ## Database & Schema
 - `packages/db/src/schema/content_items.ts`: Content items table — `slug` + `publish_results` JSONB for per-target blog publish tracking.

@@ -10,9 +10,9 @@ import { stat, readdir } from "fs/promises";
 import { join, basename } from "path";
 import type { Db } from "@paperclipai/db";
 import { ytProductions, ytPublishQueue, ytAnalytics, ytContentStrategies, ytSeoData } from "@paperclipai/db";
-import { desc, eq, and, sql } from "drizzle-orm";
+import { desc, eq, and, sql, inArray } from "drizzle-orm";
 import { runProductionPipeline } from "../services/youtube/production.js";
-import { processPublishQueue, forcePublish } from "../services/youtube/publish-queue.js";
+import { processPublishQueue, forcePublish, PUBLISHABLE_QUEUE_STATUSES } from "../services/youtube/publish-queue.js";
 import { collectAnalytics, generateOptimizationInsights } from "../services/youtube/analytics.js";
 import { generateContentStrategy } from "../services/youtube/content-strategy.js";
 import { getTTSProviderStatus } from "../services/youtube/tts.js";
@@ -113,15 +113,23 @@ export function youtubeRoutes(db: Db): Router {
       if (isNaN(newTime.getTime())) {
         return res.status(400).json({ error: "Invalid date format" });
       }
-      await db
+      // Approving (pending_review) and rescheduling both land here; a published,
+      // publishing or failed row must never be flipped back to "scheduled"
+      // (the queue would upload it again as a duplicate).
+      const updated = await db
         .update(ytPublishQueue)
         .set({ publishTime: newTime, status: "scheduled" })
         .where(
           and(
             eq(ytPublishQueue.id, req.params.id as string),
             eq(ytPublishQueue.companyId, COMPANY_ID),
+            inArray(ytPublishQueue.status, PUBLISHABLE_QUEUE_STATUSES),
           ),
-        );
+        )
+        .returning({ id: ytPublishQueue.id });
+      if (updated.length === 0) {
+        return res.status(409).json({ error: "Only videos awaiting approval, scheduled or paused can be (re)scheduled" });
+      }
       res.json({ success: true, publishTime: newTime.toISOString() });
     } catch (err) {
       res.status(500).json({ error: "Failed to reschedule" });

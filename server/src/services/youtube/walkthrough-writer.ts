@@ -43,7 +43,7 @@ async function generateWithOllama(walkResult: SiteWalkResult): Promise<ScriptDat
   const hostname = extractHostname(walkResult.url);
   const year = new Date().getFullYear();
 
-  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Tokns.fi. You specialize in website walkthrough and review videos. Your narration describes what viewers see on screen as you walk through a website section by section. Be specific about UI elements, features, and design choices you observe. The tone is confident, engaging, and analytical — like a tech reviewer showing off a new platform. The current year is ${year}. Always output valid JSON.
+  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Coherence Daddy. You specialize in website walkthrough and review videos. Your narration describes what viewers see on screen as you walk through a website section by section. Be specific about UI elements, features, and design choices you observe. The tone is confident, engaging, and analytical — like a tech reviewer showing off a new platform. The current year is ${year}. Always output valid JSON.
 
 CRITICAL NARRATION RULES — the script will be read aloud by a voice engine:
 - NEVER include full URLs or links. Use the site name naturally instead (e.g. "Tokns" or "coherence daddy" not "https://tokns.fi")

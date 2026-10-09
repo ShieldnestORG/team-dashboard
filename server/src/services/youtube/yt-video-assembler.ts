@@ -94,22 +94,28 @@ export async function assembleYouTubeVideo(opts: YtAssembleOptions): Promise<YtA
   await writeFile(concatPath, lines.join("\n"));
 
   const silentVideo = join(TEMP_DIR, `silent_${Date.now()}.mp4`);
-  const vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1";
+  // fps=30 as a filter (not output -r) plus an explicit -t: the repeated last
+  // image otherwise holds past the slides' total, and -shortest does not trim a
+  // copied video stream. Measured 2026-10-07: 3 slides totalling 6.234 s came
+  // out 8.233 s; a 256.9 s real render shipped 259.6 s; live videos on VPS4
+  // ran 0.34-1.9 s past their audio. With this, 6.234 s -> 6.233 s.
+  const vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30";
+  const totalSec = audioDurationSec.toFixed(3);
 
   try {
     // Step 1: Build silent slideshow from images
     await execAsync(
-      `ffmpeg -y -f concat -safe 0 -i "${concatPath}" -vf "${vf}" -c:v libx264 -pix_fmt yuv420p -r 30 "${silentVideo}"`,
+      `ffmpeg -y -f concat -safe 0 -i "${concatPath}" -vf "${vf}" -c:v libx264 -pix_fmt yuv420p -t ${totalSec} "${silentVideo}"`,
       { timeout: 300_000 },
     );
 
     // Step 2: Merge with audio
-    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest`;
+    let mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -c:v copy -c:a aac -shortest -t ${totalSec}`;
 
     // Step 3: Optionally burn in captions
     if (captionsPath && existsSync(captionsPath)) {
       // Re-encode video with subtitle filter instead of copy
-      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest`;
+      mergeCmd = `ffmpeg -y -i "${silentVideo}" -i "${audioPath}" -vf "subtitles=${captionsPath.replace(/'/g, "'\\''")}" -c:v libx264 -c:a aac -shortest -t ${totalSec}`;
     }
 
     // Add metadata
@@ -134,6 +140,119 @@ export async function assembleYouTubeVideo(opts: YtAssembleOptions): Promise<YtA
     await unlink(concatPath).catch(() => {});
     await unlink(silentVideo).catch(() => {});
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sync gate — measure the finished video, not the plan
+// ---------------------------------------------------------------------------
+
+export interface SyncReport {
+  ok: boolean;
+  issues: string[];
+  /** Slide changes the plan says should happen (starts of slides 2..N) */
+  expectedCount: number;
+  /** Scene changes ffmpeg actually found in the video (caption band excluded) */
+  detectedCount: number;
+  /** Expected slide starts that have a detection within MATCH_TOLERANCE_SEC */
+  matchedCount: number;
+  /** Median / max distance from each detection to the nearest expected start */
+  medianOffsetSec: number;
+  maxOffsetSec: number;
+}
+
+const SYNC_TOTAL_TOLERANCE_SEC = 0.15; // sum(slide durations) vs audio length
+const SYNC_VIDEO_TOLERANCE_SEC = 0.25; // video length vs audio length
+const SYNC_DRIFT_LIMIT_SEC = 1.0; // a detection further than this from every expected start is real drift
+const SYNC_MATCH_TOLERANCE_SEC = 0.3; // an expected start counts as seen if a detection is this close
+const SYNC_MIN_MATCHED_SHARE = 0.5; // consecutive similar slides may not trigger, hence 50% not 100%
+const SYNC_SCENE_THRESHOLD = 0.02;
+
+/**
+ * Check that the slides in a finished video change when the plan says they do.
+ * Three independent checks: the planned durations add up to the audio, the video
+ * is as long as the audio, and ffmpeg scene detection finds the slide changes
+ * where they were planned (the burned-in caption band, bottom ~26%, is cropped
+ * out so subtitles do not look like scene changes).
+ */
+export async function verifySlideSync(opts: {
+  videoPath: string;
+  slideDurations: number[];
+  audioDurationSec: number;
+}): Promise<SyncReport> {
+  const { videoPath, slideDurations, audioDurationSec } = opts;
+  const issues: string[] = [];
+
+  // Start time of every slide after the first (cumulative sums, excluding 0 and the end).
+  const expectedStarts: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < slideDurations.length - 1; i++) {
+    acc += slideDurations[i];
+    expectedStarts.push(acc);
+  }
+
+  // (a) planned durations vs audio
+  const plannedTotal = slideDurations.reduce((a, b) => a + b, 0);
+  if (Math.abs(plannedTotal - audioDurationSec) > SYNC_TOTAL_TOLERANCE_SEC) {
+    issues.push(
+      `slide durations sum to ${plannedTotal.toFixed(2)}s but audio is ${audioDurationSec.toFixed(2)}s`,
+    );
+  }
+
+  // (b) video length vs audio
+  const { stdout: probeOut } = await execAsync(
+    `ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`,
+  );
+  const videoDurationSec = parseFloat(probeOut.trim());
+  if (!Number.isFinite(videoDurationSec)) {
+    issues.push("could not read video duration");
+  } else if (Math.abs(videoDurationSec - audioDurationSec) > SYNC_VIDEO_TOLERANCE_SEC) {
+    issues.push(`video is ${videoDurationSec.toFixed(2)}s but audio is ${audioDurationSec.toFixed(2)}s`);
+  }
+
+  // (c) where did the picture actually change?
+  const { stderr } = await execAsync(
+    `ffmpeg -hide_banner -i "${videoPath}" -an -vf "crop=iw:ih*0.74:0:0,scale=480:-2,select='gt(scene,${SYNC_SCENE_THRESHOLD})',showinfo" -f null -`,
+    { timeout: 300_000, maxBuffer: 64 * 1024 * 1024 },
+  );
+  const detections = [...stderr.matchAll(/pts_time:([0-9.]+)/g)]
+    .map((m) => parseFloat(m[1]))
+    .filter((t) => Number.isFinite(t) && t > 0.05); // frame 0 is the first slide appearing, not a change
+
+  const offsets = detections.map((t) =>
+    expectedStarts.length > 0 ? Math.min(...expectedStarts.map((e) => Math.abs(e - t))) : t,
+  );
+  const sorted = [...offsets].sort((a, b) => a - b);
+  const medianOffsetSec = sorted.length === 0 ? 0 : sorted[Math.floor((sorted.length - 1) / 2)];
+  const maxOffsetSec = sorted.length === 0 ? 0 : sorted[sorted.length - 1];
+
+  const matchedCount = expectedStarts.filter((e) =>
+    detections.some((t) => Math.abs(t - e) <= SYNC_MATCH_TOLERANCE_SEC),
+  ).length;
+
+  const drifted = detections.filter((_, i) => offsets[i] > SYNC_DRIFT_LIMIT_SEC);
+  if (drifted.length > 0) {
+    issues.push(
+      `${drifted.length} slide change(s) more than ${SYNC_DRIFT_LIMIT_SEC}s from any planned slide start (at ${drifted
+        .slice(0, 5)
+        .map((t) => `${t.toFixed(1)}s`)
+        .join(", ")}); worst offset ${maxOffsetSec.toFixed(2)}s`,
+    );
+  }
+  if (expectedStarts.length > 0 && matchedCount / expectedStarts.length < SYNC_MIN_MATCHED_SHARE) {
+    issues.push(
+      `only ${matchedCount} of ${expectedStarts.length} planned slide changes were seen in the video (broken or blank slides?)`,
+    );
+  }
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    expectedCount: expectedStarts.length,
+    detectedCount: detections.length,
+    matchedCount,
+    medianOffsetSec,
+    maxOffsetSec,
+  };
 }
 
 /**

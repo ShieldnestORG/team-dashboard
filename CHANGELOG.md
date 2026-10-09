@@ -4,6 +4,24 @@ All notable changes to Team Dashboard are documented here. Versioning follows
 calendar-ish dating (YYYY-MM-DD). Unreleased changes sit under `[Unreleased]`
 until they ship to production.
 
+
+## [Unreleased]
+
+### YouTube pipeline — slides in sync, Mark's voice, Coherence Daddy, owner approval (2026-10-07)
+
+Measured on the published 2026-10-06 video: section slides appeared up to 17 s before their words (slide lengths were
+guessed from word counts over a word list that counted the unspoken title and missed the intro and closing thought).
+Full notes: `docs/products/youtube-pipeline.md`.
+
+- **Beats** — `buildBeats()` is the single source for slides and narration; each beat is voiced separately and timed
+  from its decoded WAV; real render: 27/27 slide changes within 0.03 s of plan.
+- **Voice** — Mark's ElevenLabs clone on `eleven_multilingual_v2` (`ELEVENLABS_VOICE_KEY`), Grok via `YT_TTS_PROVIDER=grok`.
+- **Channel** — Coherence Daddy in every prompt; `sanitizeScript()` strips read-aloud pronunciation notes and forces the
+  greeting; claim-free "Also, check out evntrace.com." line.
+- **Approval** — new videos queue as `pending_review` until approved in the dashboard (`YT_REQUIRE_REVIEW`); Publish Now
+  and Reschedule refuse published/failed rows (no duplicate uploads); the time box pre-fills local time, not UTC.
+- **Sync gate** — a drifted, blank or wrong-length video fails the run instead of being queued.
+- **Exact length** — the finished picture ends with the narration (videos used to run 0.34–1.9 s past their audio).
 ## [2026-06-07] — Dashboard audit + production-readiness fixes
 
 Full parallel audit of the control plane (build/test health, routes, UI, crons,

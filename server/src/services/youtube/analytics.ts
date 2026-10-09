@@ -332,7 +332,7 @@ export async function generateOptimizationInsights(db: Db): Promise<string[]> {
       [
         {
           role: "system",
-          content: `You are a YouTube analytics expert for the Tokns.fi channel (crypto, motivation, TX blockchain). You are analyzing ${recent.length} videos. Provide 5-7 actionable insights covering: what topics drive the most views, keyword patterns worth repeating, content gaps to fill, and optimal content types. Be concise — one line per insight.`,
+          content: `You are a YouTube analytics expert for the Coherence Daddy channel (TX blockchain ecosystem, tokns.fi, crypto news, self-improvement and mindset). You are analyzing ${recent.length} videos. Provide 5-7 actionable insights covering: what topics drive the most views, keyword patterns worth repeating, content gaps to fill, and optimal content types. Be concise — one line per insight.`,
         },
         {
           role: "user",

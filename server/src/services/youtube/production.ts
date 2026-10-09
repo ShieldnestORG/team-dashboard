@@ -16,8 +16,8 @@ import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunc
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
-import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, type YtAssembleResult } from "./yt-video-assembler.js";
-import { buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Slide } from "./presentation-renderer.js";
+import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, verifySlideSync, type YtAssembleResult } from "./yt-video-assembler.js";
+import { buildBeats, buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Beat, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
 import { getAvailableBackends } from "../visual-backends/index.js";
@@ -25,6 +25,12 @@ import { logger } from "../../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 const VISUAL_MODE = process.env.YT_VISUAL_MODE || "presentation";
+// New videos wait in the queue as "pending_review" (the repo's approval
+// vocabulary, as in the CreditScore and marketing-draft queues) until the owner approves them
+// (owner, 2026-10-07: approve the new-style videos before they post).
+// Approve = Reschedule or Publish Now in the dashboard; the publish queue only
+// picks up "scheduled" rows. YT_REQUIRE_REVIEW=false restores auto-scheduling.
+const REQUIRE_REVIEW = process.env.YT_REQUIRE_REVIEW !== "false";
 const ASSETS_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "assets");
 
 function ensureDir(dir: string) {
@@ -126,12 +132,29 @@ export async function runProductionPipeline(
     let chunkContentDurations: number[] | undefined;
     let chunkSilenceGapSec: number | undefined;
     let captionChunks: string[] | undefined;
+    let beats: Beat[] | undefined;
 
     if (mode === "site-walker") {
       // Chunked TTS: one chunk per screenshot for cleaner voice output
       const ttsChunks = buildTTSChunks(script);
       captionChunks = buildCaptionChunks(script);
-      const chunkedResult = await generateChunkedTTS(ttsChunks, `audio_${productionId}.mp3`);
+      const chunkedResult = await generateChunkedTTS(ttsChunks, `audio_${productionId}.wav`);
+      tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
+      chunkContentDurations = chunkedResult.contentDurations;
+      chunkSilenceGapSec = chunkedResult.silenceGapSec;
+      perSlideDurations = chunkContentDurations.map((d, i) =>
+        d + (i < chunkContentDurations!.length - 1 ? chunkSilenceGapSec! : 0),
+      );
+    } else if (mode === "presentation") {
+      // One beat = one slide = one voice clip. Slide durations are the measured
+      // clip lengths, so each slide is on screen exactly while its words are spoken.
+      beats = buildBeats(script);
+      captionChunks = beats.map((b) => b.text);
+      const chunkedResult = await generateChunkedTTS(
+        beats.map((b) => applyPronunciationFixes(b.text)),
+        `audio_${productionId}.wav`,
+        { failOnChunkError: true },
+      );
       tts = { audioPath: chunkedResult.audioPath, durationSec: chunkedResult.durationSec, provider: chunkedResult.provider };
       chunkContentDurations = chunkedResult.contentDurations;
       chunkSilenceGapSec = chunkedResult.silenceGapSec;
@@ -145,7 +168,7 @@ export async function runProductionPipeline(
 
     // 7. Generate visual assets (images for slideshow)
     logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
-    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult);
+    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult, beats);
 
     // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text)
     let captionsPath: string;
@@ -179,19 +202,39 @@ export async function runProductionPipeline(
         audioPath: tts.audioPath,
         audioDurationSec: tts.durationSec,
         visualAssets,
-        slideWordCounts,
+        slideWordCounts: beats ? undefined : slideWordCounts, // presentation timing is measured, never estimated
         slideDurations: perSlideDurations,
         captionsPath,
         outputFilename: `video_${productionId}.mp4`,
-        metadata: { title: seo.title, copyright: `${new Date().getFullYear()} Tokns.fi` },
+        metadata: { title: seo.title, copyright: `${new Date().getFullYear()} Coherence Daddy` },
       });
     }
+
+    // 9b. Sync gate (presentation mode): measure where the slides actually
+    // changed in the finished video and compare with the measured clip lengths.
+    // A drifted or blank video never reaches the publish queue; files stay on
+    // disk for inspection.
+    let gateError: string | undefined;
+    if (video && beats && perSlideDurations) {
+      const syncReport = await verifySlideSync({
+        videoPath: video.videoPath,
+        slideDurations: perSlideDurations,
+        audioDurationSec: tts.durationSec,
+      });
+      if (syncReport.ok) {
+        logger.info({ productionId, ...syncReport }, "Slide sync gate passed");
+      } else {
+        gateError = `sync gate: ${syncReport.issues.join("; ")}`;
+        logger.error({ productionId, ...syncReport, videoPath: video.videoPath }, "Slide sync gate FAILED — video not queued");
+      }
+    }
+    const publishable = !!video && !gateError;
 
     // 10. Update production record
     await db
       .update(ytProductions)
       .set({
-        status: video ? "ready" : "failed",
+        status: publishable ? "ready" : "failed",
         estimatedDuration: script.duration,
         assets: {
           audioPath: tts.audioPath,
@@ -209,18 +252,19 @@ export async function runProductionPipeline(
           readyForUpload: video ? new Date().toISOString() : undefined,
         },
         priority: calculatePriority(strategy),
-        error: video ? undefined : "No visual assets or video assembly failed",
+        error: gateError ?? (video ? undefined : "No visual assets or video assembly failed"),
         updatedAt: new Date(),
       })
       .where(eq(ytProductions.id, productionId));
 
-    // 11. Queue for publishing (if video was assembled)
-    if (video) {
+    // 11. Queue for publishing (only a video that was assembled AND passed the sync gate)
+    if (video && publishable) {
       await db.insert(ytPublishQueue).values({
         companyId: COMPANY_ID,
         productionId,
         title: seo.title,
         publishTime: new Date(strategy.bestPublishTime),
+        status: REQUIRE_REVIEW ? "pending_review" : "scheduled",
         priority: calculatePriority(strategy),
         metadata: {
           seoId: seo.id,
@@ -231,10 +275,13 @@ export async function runProductionPipeline(
           description: seo.description,
         },
       });
-      logger.info({ productionId, publishTime: strategy.bestPublishTime }, "Video queued for publishing");
+      logger.info(
+        { productionId, publishTime: strategy.bestPublishTime, awaitingReview: REQUIRE_REVIEW },
+        REQUIRE_REVIEW ? "Video queued for owner review" : "Video queued for publishing",
+      );
     }
 
-    return { productionId, status: video ? "ready" : "failed", strategy, script, seo, thumbnail, tts, video };
+    return { productionId, status: publishable ? "ready" : "failed", strategy, script, seo, thumbnail, tts, video, error: gateError };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     await db
@@ -261,6 +308,7 @@ async function generateVisualAssets(
   productionId: string,
   mode: string,
   walkResult?: SiteWalkResult,
+  beats?: Beat[],
 ): Promise<VisualResult> {
   const dir = join(ASSETS_DIR, productionId);
   ensureDir(dir);
@@ -278,45 +326,38 @@ async function generateVisualAssets(
     return { paths: paths.slice(0, Math.max(paths.length, wordCounts.length)), wordCounts: wordCounts.slice(0, paths.length) };
   }
 
-  // ── Presentation mode: AI-generated slides → static fallback → AI images ─
-  if (mode === "presentation") {
+  // ── Presentation mode: AI-generated slides → static fallback ───────────
+  // Slides are rendered from the SAME beats the narration was voiced from
+  // (1:1, same order). There is deliberately no fall-through to AI-image mode:
+  // it would break the beat <-> slide mapping, so a failure here fails the run.
+  if (mode === "presentation" && beats) {
+    const renderBeatSlides = async (slides: Slide[], label: string): Promise<string[]> => {
+      if (slides.length !== beats.length || slides.some((s, i) => s.spokenText !== beats[i].text)) {
+        throw new Error(`${label} slides do not match the narration beats (${slides.length} vs ${beats.length})`);
+      }
+      const framePaths = await renderSlidesToImages(slides, dir);
+      if (framePaths.length !== beats.length) {
+        throw new Error(`${label} slides rendered ${framePaths.length} images for ${beats.length} beats`);
+      }
+      return framePaths;
+    };
+
     // Try Ollama-generated unique slides first
     try {
       logger.info("Trying AI-generated slides via Ollama...");
-      const aiSlides = await buildSlidesFromScriptAI(script);
-      const framePaths = await renderSlidesToImages(aiSlides, dir);
-      if (framePaths.length > 0) {
-        const wordCounts = aiSlides.map((s: Slide) => {
-          const text = s.spokenText || "";
-          const words = text.split(/\s+/).filter(Boolean).length;
-          if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
-          return Math.max(words, 5);
-        });
-        logger.info({ frames: framePaths.length }, "AI-generated slides rendered successfully");
-        return { paths: framePaths, wordCounts };
-      }
+      const framePaths = await renderBeatSlides(await buildSlidesFromScriptAI(script), "AI");
+      logger.info({ frames: framePaths.length }, "AI-generated slides rendered successfully");
+      return { paths: framePaths, wordCounts: [] };
     } catch (err) {
       logger.warn({ err }, "AI slide generation failed, trying static templates...");
     }
 
     // Fall back to static HTML templates
-    try {
-      const staticSlides = buildSlidesFromScript(script);
-      logger.info({ slideCount: staticSlides.length }, "Built static presentation slides from script");
-      const framePaths = await renderSlidesToImages(staticSlides, dir);
-      if (framePaths.length > 0) {
-        const wordCounts = staticSlides.map((s: Slide) => {
-          const text = s.spokenText || "";
-          const words = text.split(/\s+/).filter(Boolean).length;
-          if (s.type === "title" || s.type === "section_title") return Math.max(words, 3);
-          return Math.max(words, 5);
-        });
-        logger.info({ frames: framePaths.length }, "Static slides rendered successfully");
-        return { paths: framePaths, wordCounts };
-      }
-    } catch (err) {
-      logger.warn({ err }, "Static slide rendering failed, falling back to AI images");
-    }
+    const staticSlides = buildSlidesFromScript(script);
+    logger.info({ slideCount: staticSlides.length }, "Built static presentation slides from script");
+    const framePaths = await renderBeatSlides(staticSlides, "Static");
+    logger.info({ frames: framePaths.length }, "Static slides rendered successfully");
+    return { paths: framePaths, wordCounts: [] };
   }
 
   // ── Image mode (or presentation fallback): AI-generated scene images ───
@@ -373,7 +414,7 @@ function extractVisualPrompts(script: ScriptData): string[] {
   }
   // Conclusion
   prompts.push(
-    "YouTube video outro card, subscribe reminder, professional dark gradient, tokns.fi branding, tech aesthetic",
+    "YouTube video outro card, subscribe reminder, professional dark gradient, Coherence Daddy branding, tech aesthetic",
   );
   return prompts;
 }

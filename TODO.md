@@ -163,6 +163,16 @@ Shipped progressively through 2026-04-22 (blog#9 merge + retry + per-target visi
 
 - [ ] **Onboarding-wizard Playwright flake is now chronic.** Every recent PR run (Apr 22 → Apr 28) shows `e2e fail` on `tests/e2e/onboarding.spec.ts` "completes full wizard flow" — locator times out at 15s with `429 Too Many Requests` warnings on Vite source files. Team has been merging through it, but it makes `e2e` worthless as a signal. Either fix the rate-limit on the dev server during e2e, raise the locator timeout, or quarantine the test.
 
+## YouTube Pipeline (`docs/products/youtube-pipeline.md`)
+
+Open items as of 2026-10-07 (detail and evidence in the doc's "Open items").
+
+- [ ] Animated scene templates from `coherencedaddy-landing/DESIGN.md` (prototype branch `feat/yt-animated-scenes`); current slide template is off-brand (cyan, wrong coral, Inter).
+- [ ] Script/communication redesign: no invented first-person claims, no formula/near-duplicate titles, ground facts in team-dashboard's intel data.
+- [ ] Upload the generated thumbnail and SRT; chapters from measured beat starts; clean tags; fix the empty `yt_analytics` feedback loop.
+- [ ] Publishing cadence: N per day instead of random Tue–Sun slots (owner: 3–5/day after approval; recommendation: 1/day first, scale on metrics).
+- [ ] Pause/remove the five old-timing videos queued on 2026-10-07 once the owner approves the new style.
+
 ## CI / Infra
 
 - [ ] **Dependabot** — GitHub flags 4 moderate vulnerabilities on `team-dashboard` default branch. Review at https://github.com/ShieldnestORG/team-dashboard/security/dependabot and patch or suppress.
