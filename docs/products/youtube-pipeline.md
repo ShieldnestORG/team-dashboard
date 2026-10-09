@@ -129,6 +129,21 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   render ended in ~0.5 s of breath/room tone (15.0 s in total) → per-clip edge trim; "memecoin" respelled. On the 28
   real clips the trim changed no first/last word (Whisper). Drafted by an Ollama worker, gated here.
 
+## Owner decisions, 2026-10-08
+
+| Topic | Decision |
+|---|---|
+| Opening line | "This is Coherence Daddy." (forced by `sanitizeScript`) |
+| Persona | "we" = Coherence Daddy, "you" = viewer, "I" only for a stated opinion — never an invented experience |
+| Disclosure | TX/tokns videos: a short spoken line at normal speed near the start, the same words on screen, plus a description line (FTC: "in the video and not just in the description", "hard to miss"). Wording: "Quick honesty break: we run a TX validator and build tokns.fi, so we gain when you stake." |
+| Mindset videos | Both honest "millionaire mindset" and anti-guru: healthy methods for mind, brain, body, people, coherence; no get-rich promises |
+| Topic mix | 30% TX/tokns · 30% crypto news & education · 30% mindset · 10% our products (evntrace name-only until its video gate clears; cliqs.io and others need an owner-approved fact list first) |
+| Cadence | 1 video/day while new-style videos are approved; scale toward 3–5/day only if retention/views hold (ElevenLabs quota caps ~4/day at today's plan) |
+| Voice | Take D: `eleven_v3` "Creative" (#192) |
+| Archive | Keep every script, timeline, slide, thumbnail and caption file; monthly review |
+| Crypto news | From team-dashboard's own hourly news ingest (sources linked), not other channels' transcripts (YouTube ToS bans scraping; reused-content policy) |
+| Repurposing | Approved videos also become tokns.fi articles (existing `tokns-app` blog target) and X threads (existing Twitter plugin / Zernio) |
+
 ## Open items
 
 Evidence behind these items (2026-10-07): [channel measurements](youtube-channel-measurements-2026-10-07.md) ·
