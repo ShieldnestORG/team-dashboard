@@ -12,6 +12,7 @@ import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
 import { generateContentStrategy, type ContentStrategy } from "./content-strategy.js";
+import { nextPublishSlot } from "./publish-slots.js";
 import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunciationFixes, type ScriptData } from "./script-writer.js";
 import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
@@ -326,11 +327,12 @@ export async function runProductionPipeline(
 
     // 11. Queue for publishing (only a video that was assembled AND passed the sync gate)
     if (video && publishable) {
+      const publishTime = await nextPublishSlot(db);
       await db.insert(ytPublishQueue).values({
         companyId: COMPANY_ID,
         productionId,
         title: seo.title,
-        publishTime: new Date(strategy.bestPublishTime),
+        publishTime,
         status: REQUIRE_REVIEW ? "pending_review" : "scheduled",
         priority: calculatePriority(strategy),
         metadata: {
@@ -343,7 +345,7 @@ export async function runProductionPipeline(
         },
       });
       logger.info(
-        { productionId, publishTime: strategy.bestPublishTime, awaitingReview: REQUIRE_REVIEW },
+        { productionId, publishTime: publishTime.toISOString(), awaitingReview: REQUIRE_REVIEW },
         REQUIRE_REVIEW ? "Video queued for owner review" : "Video queued for publishing",
       );
     }
