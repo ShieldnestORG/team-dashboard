@@ -107,6 +107,9 @@ export function applyPronunciationFixes(text: string): string {
   text = text.replace(/\bNFT\b/g, "N-F-T");
   text = text.replace(/\bDAOs\b/g, "dow-z");
   text = text.replace(/\bDAO\b/g, "dow");
+  text = text.replace(/\b(m)eme(coin)?(s)?\b/gi, (_m, first: string, coin?: string, s?: string) =>
+    `${first}eem${coin ? `-${coin.toLowerCase()}` : ""}${s ? "s" : ""}`,
+  );
   return text;
 }
 

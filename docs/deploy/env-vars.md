@@ -52,6 +52,7 @@ These variables are required for the project to function. **VPS** requires all v
 | `CANVA_MEDIA_FOLDER_ID` | Optional | VPS | Canva folder to pull designs from for media tweets |
 | `YT_PIPELINE_ENABLED` | Optional | VPS | Set to `false` to leave the 5 YouTube crons dormant. Default: enabled |
 | `YT_TTS_PROVIDER` | Optional | VPS | YouTube narration voice: `elevenlabs` (default — Mark's clone via `ELEVENLABS_VOICE_KEY`, model `eleven_multilingual_v2`) or `grok` (Grok "Rex", needs `GROK_API_KEY`). Any other value fails the run. See [YouTube Pipeline](../products/youtube-pipeline.md). |
+| `YT_ELEVENLABS_MODEL` | Optional | VPS | Mark's YouTube voice model: `eleven_v3` (default since 2026-10-08, the owner's energetic pick; no neighbour context) or `eleven_multilingual_v2` (steadier; the clone is fine-tuned for it). Anything else fails the run. |
 | `YT_REQUIRE_REVIEW` | Optional | VPS | Default on: a new YouTube video enters the queue as `pending_review` and posts only after the owner approves it in the dashboard. `false` restores automatic scheduling. |
 | **Video Edit** | | | |
 | `VIDEO_USE_BIN` | Optional | VPS | Absolute path to the `video-use` entry script on the host. Leave unset and jobs queue but won't run (UI shows "Engine not configured"). Used by `server/src/services/video-edit/engine.ts`. |

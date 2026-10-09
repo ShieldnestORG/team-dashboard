@@ -10,7 +10,7 @@
 
 import { exec } from "child_process";
 import { promisify } from "util";
-import { writeFile, unlink, rename } from "fs/promises";
+import { writeFile, unlink, rename, readFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
@@ -24,19 +24,34 @@ const GROK_API_KEY = process.env.GROK_API_KEY || "";
 const GROK_TTS_VOICE = process.env.GROK_TTS_VOICE || "rex";
 const GROK_TTS_URL = "https://api.x.ai/v1/tts";
 
-// ElevenLabs — Mark_new_2026 (VOICE_REGISTRY.mark). eleven_multilingual_v2, not
-// eleven_v3: verified 2026-10-07 via GET /v1/voices/n45mfBjBoGc0McY8O2Aw with
-// the server key — it is a *professional* clone fine-tuned for multilingual_v2 /
-// turbo / flash, and eleven_v3 is NOT in its high_quality_base_model_ids.
-// Settings are the owner's tested ZeroEdit "v2" preset
-// (6-2026-new-youtube-automation/tools/tts.py PRESETS["v2"]).
+// ElevenLabs — Mark_new_2026 (VOICE_REGISTRY.mark), on eleven_v3 "Creative"
+// (stability 0.0): the owner's pick on 2026-10-08 (take D) for energy — about
+// 180 wpm vs about 156 on v2; a 12-beat test read back by Whisper had 1.4% word
+// errors and no badly misread clip. The clone is fine-tuned for multilingual_v2 /
+// turbo / flash, not v3 (GET /v1/voices/n45m…, 2026-10-07), and v3 REJECTS
+// previous_text/next_text (HTTP 400 "not yet supported with the 'eleven_v3'
+// model", measured 2026-10-08), so v3 beats are voiced without neighbours.
+// YT_ELEVENLABS_MODEL=eleven_multilingual_v2 restores the steady v2 voice with
+// the owner's ZeroEdit "v2" preset (tools/tts.py PRESETS["v2"]).
 // The key is ELEVENLABS_VOICE_KEY, read at call time, with NO fallback to
 // ELEVENLABS_API_KEY (a different account — see voice-snippets.ts header).
 const ELEVENLABS_TTS_BASE = "https://api.elevenlabs.io/v1/text-to-speech";
-const ELEVENLABS_MODEL_ID = "eleven_multilingual_v2";
+const ELEVENLABS_PRESETS = {
+  eleven_v3: { stability: 0.0, similarity_boost: 0.9, style: 0.0 },
+  eleven_multilingual_v2: { stability: 0.45, similarity_boost: 0.8, style: 0.0 },
+} as const;
+type ElevenLabsModel = keyof typeof ELEVENLABS_PRESETS;
 const ELEVENLABS_OUTPUT_FORMAT = "mp3_44100_128";
-const ELEVENLABS_VOICE_SETTINGS = { stability: 0.45, similarity_boost: 0.8, style: 0.0 };
 const ELEVENLABS_RETRY_BACKOFF_MS = [1000, 3000]; // up to 2 retries on 429 / 5xx
+
+/** YT_ELEVENLABS_MODEL (default eleven_v3); anything else fails loud. Read at call time. */
+function elevenLabsModel(): ElevenLabsModel {
+  const model = process.env.YT_ELEVENLABS_MODEL || "eleven_v3";
+  if (!(model in ELEVENLABS_PRESETS)) {
+    throw new Error(`Unknown YT_ELEVENLABS_MODEL "${model}" (use eleven_v3 or eleven_multilingual_v2)`);
+  }
+  return model as ElevenLabsModel;
+}
 
 const AUDIO_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "audio");
 
@@ -182,16 +197,18 @@ export async function generateElevenLabsTTS(
     );
   }
 
+  const model = elevenLabsModel();
+  const withNeighbours = model !== "eleven_v3"; // v3 answers 400 to previous_text/next_text
   const url = `${ELEVENLABS_TTS_BASE}/${VOICE_REGISTRY.mark.voiceId}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`;
   const body = JSON.stringify({
     text,
-    model_id: ELEVENLABS_MODEL_ID,
-    voice_settings: ELEVENLABS_VOICE_SETTINGS,
-    ...(ctx.previousText ? { previous_text: ctx.previousText } : {}),
-    ...(ctx.nextText ? { next_text: ctx.nextText } : {}),
+    model_id: model,
+    voice_settings: ELEVENLABS_PRESETS[model],
+    ...(withNeighbours && ctx.previousText ? { previous_text: ctx.previousText } : {}),
+    ...(withNeighbours && ctx.nextText ? { next_text: ctx.nextText } : {}),
   });
 
-  logger.info({ voice: "mark", model: ELEVENLABS_MODEL_ID, chars: text.length }, "ElevenLabs TTS: generating audio...");
+  logger.info({ voice: "mark", model, chars: text.length }, "ElevenLabs TTS: generating audio...");
 
   for (let attempt = 0; ; attempt++) {
     let res: Response | undefined;
@@ -215,7 +232,7 @@ export async function generateElevenLabsTTS(
       void logApiUsage({
         provider: "elevenlabs",
         service: "youtube-tts",
-        model: ELEVENLABS_MODEL_ID,
+        model,
         inputTokens: 0,
         outputTokens: 0,
       });
@@ -295,6 +312,88 @@ export async function applyEdgeFadesWav(wavPath: string, durationSec: number, fa
     { timeout: 60_000 },
   );
   await rename(tmpPath, wavPath);
+}
+
+export const BREATH_TRIM = { onsetDb: -32, tailDb: -40, windowSec: 0.02, prerollSec: 0.06, postrollSec: 0.12 };
+
+/** Trim breath/room tone from both ends of one decoded clip WAV, in place. Returns seconds removed. */
+export async function trimClipEdgesWav(wavPath: string): Promise<{ trimmedStartSec: number; trimmedEndSec: number }> {
+  const buf = await readFile(wavPath);
+
+  // Walk RIFF chunks to find the `fmt ` sample rate and the `data` payload. Do
+  // NOT assume a 44-byte header: ffmpeg may write a LIST chunk before `data`.
+  let sampleRate = WAV_RATE;
+  let dataOffset = -1;
+  let dataLen = 0;
+  let offset = 12; // past "RIFF" + chunk size + "WAVE"
+  while (offset + 8 <= buf.length) {
+    const id = buf.toString("ascii", offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === "fmt ") {
+      sampleRate = buf.readUInt32LE(offset + 12);
+    } else if (id === "data") {
+      dataOffset = offset + 8;
+      dataLen = size;
+    }
+    offset += 8 + size + (size & 1); // chunks are word-aligned
+  }
+
+  if (dataOffset < 0 || dataLen < 2) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  const totalSamples = Math.floor(dataLen / 2);
+  const duration = totalSamples / sampleRate;
+  const winSamples = Math.max(1, Math.round(sampleRate * BREATH_TRIM.windowSec));
+
+  // RMS of one window in dBFS = 20*log10(rms/32768); silence -> -Infinity.
+  const windowDb = (startSample: number): number => {
+    let sum = 0;
+    const end = Math.min(startSample + winSamples, totalSamples);
+    for (let i = startSample; i < end; i++) {
+      const s = buf.readInt16LE(dataOffset + i * 2);
+      sum += s * s;
+    }
+    const rms = Math.sqrt(sum / (end - startSample));
+    return 20 * Math.log10(rms / 32768);
+  };
+
+  const numWindows = Math.floor(totalSamples / winSamples);
+  if (numWindows < 1) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  let onsetSec = -1;
+  for (let w = 0; w < numWindows; w++) {
+    if (windowDb(w * winSamples) >= BREATH_TRIM.onsetDb) {
+      onsetSec = (w * winSamples) / sampleRate;
+      break;
+    }
+  }
+
+  // No window reached the onset level -> nothing to trim.
+  if (onsetSec < 0) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  let endSec = -1;
+  for (let w = numWindows - 1; w >= 0; w--) {
+    if (windowDb(w * winSamples) >= BREATH_TRIM.tailDb) {
+      endSec = ((w + 1) * winSamples) / sampleRate;
+      break;
+    }
+  }
+
+  if (endSec < 0 || endSec - onsetSec < 0.1) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  const keepStart = Math.max(0, onsetSec - BREATH_TRIM.prerollSec);
+  const keepEnd = Math.min(duration, endSec + BREATH_TRIM.postrollSec);
+
+  if (keepStart < 0.005 && duration - keepEnd < 0.005) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  const tmpPath = `${wavPath}.trim.wav`;
+  await execAsync(
+    `ffmpeg -y -hide_banner -loglevel error -i "${wavPath}" -af "atrim=start=${keepStart.toFixed(3)}:end=${keepEnd.toFixed(3)},asetpts=PTS-STARTPTS" -ac 1 -ar ${WAV_RATE} -c:a pcm_s16le "${tmpPath}"`,
+    { timeout: 60_000 },
+  );
+  await rename(tmpPath, wavPath);
+
+  const round3 = (v: number): number => Math.round(v * 1000) / 1000;
+  return { trimmedStartSec: round3(keepStart), trimmedEndSec: round3(duration - keepEnd) };
 }
 
 /** Silence WAV with the same params as the decoded clips. */
@@ -423,6 +522,10 @@ export async function generateChunkedTTS(
           });
         }
         await decodeToWav(rawFile, wavFile);
+        const trimmed = await trimClipEdgesWav(wavFile);
+        if (trimmed.trimmedStartSec > 0 || trimmed.trimmedEndSec > 0) {
+          logger.info({ chunk: i, ...trimmed }, "Trimmed breath/room tone from chunk");
+        }
         await applyEdgeFadesWav(wavFile, await probeDurationStrict(wavFile), FADE_SEC);
         clipWavs.push(wavFile);
       } catch (err) {
@@ -474,7 +577,7 @@ export function getTTSProviderStatus(): Array<{ name: string; configured: boolea
   }
   return [
     {
-      name: `ElevenLabs (Mark, ${ELEVENLABS_MODEL_ID})`,
+      name: `ElevenLabs (Mark, ${(() => { try { return elevenLabsModel(); } catch { return "invalid YT_ELEVENLABS_MODEL"; } })()})`,
       configured: !!process.env.ELEVENLABS_VOICE_KEY,
       active: active === "elevenlabs",
     },
