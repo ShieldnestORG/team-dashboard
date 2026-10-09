@@ -123,6 +123,10 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
 .followcol { position: absolute; left: 660px; top: 180px; width: 1140px; height: 720px; display: grid; }
 .followwrap { grid-area: 1 / 1; display: flex; align-items: center; }
 .followwrap .follow { width: 100%; }
+/* sentence icons: one 24x24 stroke icon per beat, about 7rem tall, right of the follow text */
+.iconcol { position: absolute; right: 80px; top: 180px; width: 240px; height: 720px; display: grid; }
+.beaticon { grid-area: 1 / 1; display: flex; align-items: center; justify-content: center; opacity: 0; }
+.beaticon svg { width: 7rem; height: 7rem; }
 
 /* 4. quote */
 .quote .frame { justify-content: center; }
@@ -192,6 +196,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   let scenes = [];             // built scene records
   let counters = [];           // counting numbers
   let cues = [];
+  let timelineBeats = [];      // flat beats for the followState test hook (data only, never the DOM)
   const warnings = [];         // things that did not fit; render.ts prints them
   let capEl = null;
   let capIdx = -2;
@@ -397,6 +402,37 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     return { node, size };
   }
 
+  /* ---------- sentence icons (section 3): 24x24 stroke, about 7rem, right of the follow text ---------- */
+  const ICONS = {
+    "chart-up": '<path d="M3 20h18M3 20V4M5 17l4-5 3 3 5-7"/>',
+    "chart-down": '<path d="M3 20h18M3 20V4M5 7l4 5 3-3 5 7"/>',
+    "coins": '<ellipse cx="9" cy="7" rx="5" ry="2.2"/><path d="M4 7v4c0 1.2 2.2 2.2 5 2.2s5-1 5-2.2V7"/><ellipse cx="15" cy="13" rx="5" ry="2.2"/><path d="M10 13v4c0 1.2 2.2 2.2 5 2.2s5-1 5-2.2v-4"/>',
+    "shield": '<path d="M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6l7-3z"/>',
+    "calendar": '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>',
+    "brain": '<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3h0zM9 4a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3h0M15 4a3 3 0 0 0-3 3"/>',
+    "heart": '<path d="M12 20s-7-4.4-9-9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c-2 4.6-9 9-9 9z"/>',
+    "people": '<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5a3 3 0 0 1 0 6M15.5 11.5a5.5 5.5 0 0 1 5 8.5"/>',
+    "lightbulb": '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5.9 1.1.9 1.8V16h5.2v-.3c0-.7.3-1.3.9-1.8A6 6 0 0 0 12 3z"/>',
+    "scale": '<path d="M12 4v16M8 20h8M4 8h16M4 8l-2.5 5a2.8 2.8 0 0 0 5 0L4 8zM20 8l-2.5 5a2.8 2.8 0 0 0 5 0L20 8z"/>',
+    "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+    "network": '<circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M11 7l-5 9M13 7l5 9M7.2 18h9.6"/>',
+  };
+  // colour by category, through the CSS variable it belongs to (set once, never animated)
+  const ICON_COLOR = {
+    "chart-up": "var(--dim-direction)", lightbulb: "var(--dim-direction)",
+    coins: "var(--dim-focus)", calendar: "var(--dim-focus)", clock: "var(--dim-focus)",
+    network: "var(--work)", scale: "var(--work)",
+    shield: "var(--coral)", "chart-down": "var(--coral)", brain: "var(--coral)", heart: "var(--coral)", people: "var(--coral)",
+  };
+
+  function iconEl(name) {
+    const wrap = h("div", "beaticon");
+    // the stroke shapes are inline SVG; currentColor resolves to the wrap's colour (set once, never animated)
+    wrap.innerHTML = `<svg viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">${ICONS[name]}</svg>`;
+    wrap.style.color = ICON_COLOR[name] || "var(--ink)";
+    return wrap;
+  }
+
   const glowCss = (pos, alpha) => `radial-gradient(2250px 1250px at ${pos}, rgba(255, 107, 74, ${alpha}), transparent 70%)`;
 
   // Standalone follow-along for title, quote and end-card beats: a band at the bottom of the
@@ -418,6 +454,38 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
       { t: out, p: { opacity: 1, transform: "translateY(0px)" }, e: EASE },
       { t: out + 0.12, p: { opacity: 0, transform: "translateY(-20px)" } },
     ]);
+  }
+
+  /* ---------- sentence icons: one column on the right of content/conclusion scenes ---------- */
+  // Each beat with an `icon` gets one 24x24 stroke icon, drawn about 7rem tall on the right side
+  // (never overlapping the follow text, which ends well left of this column). The icon enters at
+  // beat start + 0.1 s (opacity 0 -> 1, scale 0.85 -> 1 over BASE) and leaves with the scene (the
+  // column is inside the scene root, so `life` fades it out). Two consecutive beats with different
+  // icons cross-fade: the old one's opacity -> 0 and the new one's -> 1 over BASE, starting at the
+  // new beat's start. A beat with the same icon as the previous one keeps the current element.
+  function buildIcons(sc, root) {
+    const icons = sc.beats.map((b) => b.icon || null);
+    if (!icons.some(Boolean)) return;
+    const col = h("div", "iconcol");
+    root.appendChild(col);
+    const shown = [];
+    icons.forEach((name, k) => {
+      if (!name) { shown.push(null); return; }
+      const prev = shown[k - 1];
+      if (prev && prev.name === name) { shown.push(prev); return; }   // same icon: keep it
+      const el = iconEl(name);
+      col.appendChild(el);
+      const at = Math.max(sc.beats[k].startSec + 0.1, 0);
+      anim(el, [{ opacity: 0, transform: "scale(0.85)" }, { opacity: 1, transform: "scale(1)" }], { at, dur: BASE });
+      shown.push({ name, el, at });
+    });
+    // cross-fade between consecutive beats whose icons differ; a beat with no icon clears the old one
+    for (let k = 1; k < shown.length; k++) {
+      const a = shown[k - 1], b = shown[k];
+      if (!a) continue;
+      if (!b) anim(a.el, [{ opacity: 1 }, { opacity: 0 }], { at: sc.beats[k].startSec + 0.1, dur: BASE });
+      else if (a !== b) anim(a.el, [{ opacity: 1 }, { opacity: 0 }], { at: b.at - 0.1, dur: BASE });
+    }
   }
 
   /* ---------- scene life: visible from its first beat, leaves 0.25 s before the next scene ---------- */
@@ -555,6 +623,9 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
         return r;
       });
       col = h("div", "followcol");
+      // when beat icons are present the right side holds the icon column: keep the sentence
+      // clear of it (iconcol starts at 1600 px; text ends at 1540 px), otherwise the follow text owns up to 1800 px
+      if (sc.beats.some((b) => b.icon)) col.style.width = "880px";
       // stage-relative px geometry: append to the scene root, not the offset .frame
       root.append(col, rail);
     }
@@ -573,6 +644,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
       // the follow-along box is 660..1800 px, vertically centred in y 180..900 (720 px tall)
       follows = sc.beats.map((b) => buildFollow(col, b, 76, tag(sc) + " follow-along"));
     }
+    buildIcons(sc, root);
     // content lists share one size (body) so consecutive chunks match; the conclusion recap may use h3
     const room = 17 * REM - head.offsetHeight - 1.5 * REM;
     if (hasWords) {
@@ -862,6 +934,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     await document.fonts.ready;
     capEl = document.getElementById("cap");
     cues = cueList || [];
+    timelineBeats = timeline.beats || [];
     scenes = group(timeline.beats);
     let sections = 0;
     scenes.forEach((sc) => {
@@ -882,6 +955,18 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     if (cut) warnings.push(`${cut} caption cue(s) are wider than the caption bar and would be cut off, first at ${firstCut.start.toFixed(2)} s: "${firstCut.text}"`);
     window.seek(0);
     return window.__report();
+  };
+
+  // Test hook: which beat is on screen at t, and which of its words is being spoken, computed
+  // from the timeline data alone (never the DOM). word is -1 when t is between words.
+  window.followState = (t) => {
+    let beat = -1;
+    timelineBeats.forEach((b, i) => { if (t >= b.startSec && t < b.startSec + b.durSec) beat = i; });
+    if (beat < 0) return { beat: -1, word: -1 };
+    const list = timelineBeats[beat].words || [];
+    let word = -1;
+    list.forEach((wd, i) => { if (t >= wd.s && t < wd.e) word = i; });
+    return { beat, word };
   };
 
   window.__report = () => {
