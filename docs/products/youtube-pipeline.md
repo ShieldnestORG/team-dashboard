@@ -174,6 +174,15 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   animated branch (`cfd61d9d`) on the owner's Mac: 4,877 frames = 162.56 s, 19 scenes, **0 layout warnings** (script
   v2's shorter lines cleared the 10 seen before), 125 s wall time. Animated defect seen: the follow-along splits
   "tokns.fi" into "tokns. fi".
+- **2026-10-09** — Owner heard Mark spell "tokns.fi" as "tokens dot F-Y-E". The respelling IS live
+  (`applyPronunciationFixes`: "tokns.fi" → "toe-kins dot fye"), but `eleven_v3` reads the non-word "fye" as letters
+  (the isolated clip transcribes as "dot f y"). Four candidate respellings voiced on the live settings (`fie`,
+  `phi`, `fy`, `fai`) wait on the owner's ear; Whisper cannot judge them. The owner prefers the animated style.
+  The animated follow-along needs per-word times (`words` on each beat); without them it falls back to caption pills
+  under the slide text ("double captions"). The preview used whisper.cpp word times aligned to the display words
+  (90% matched); production needs its own source (ElevenLabs forced alignment is the prototype's stated plan).
+  Quote scenes drew the sentence twice when words existed (big quote + bottom band) and split "tokns.fi" at the dot:
+  fixed on `feat/yt-animated-scenes` `37d96ac2` (DOM gate 6/15 red before, 15/15 green after).
 
 ## Owner decisions, 2026-10-08
 
