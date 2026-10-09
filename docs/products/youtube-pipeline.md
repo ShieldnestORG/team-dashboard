@@ -162,6 +162,18 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   until the 30-day cleanup. Queue after: 152 `published`, nothing else. VPS4 then ran `50a56d18` (#196), container
   up since 2026-10-09 06:48Z; `gemma4:31b` listed, YouTube refresh token OK (`youtube.upload` only); the
   ElevenLabs key lacks `user_read`, so remaining TTS credit can't be read from the server.
+- **2026-10-09** — First full script-v2 video, run by hand at 16:03 PDT (same `runProductionPipeline(db)` call as the
+  cron; production `d95fef7d`). 240 s end to end; script "What TX Staking Actually Is" (`gemma4:31b`, 2 attempts: the
+  first failed `ADVICE_OR_HYPE` + `TOO_SHORT`); 29 beats, 162.56 s; spoken + on-screen disclosure at 5.2 s; sync gate
+  28/28, max offset 0.033 s; video stream 162.53 s vs audio 162.56 s. Queued `pending_review` for 2026-10-10 14:00Z.
+  **Metadata bugs it exposed** (all in `seo-optimizer.ts`, not yet fixed): (1) chapters print `NaN:NaN`, because
+  script v2 sections carry `duration: "35s"` (a string) and `generateChapters` does `current += section.duration`;
+  (2) title rewritten to "Powerful What Tx Staking Actually Is (2026)" (power-word prefix, "Tx"); (3) the description
+  has no disclosure line (owner decision: spoken, on screen AND in the description); (4) junk tags ("actually",
+  "means", "does") and template filler ("insights about staking, actually, means"). Same beats rendered with the
+  animated branch (`cfd61d9d`) on the owner's Mac: 4,877 frames = 162.56 s, 19 scenes, **0 layout warnings** (script
+  v2's shorter lines cleared the 10 seen before), 125 s wall time. Animated defect seen: the follow-along splits
+  "tokns.fi" into "tokns. fi".
 
 ## Owner decisions, 2026-10-08
 
