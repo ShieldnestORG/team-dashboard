@@ -62,6 +62,24 @@ with the narration. Word-count estimation remains only for the legacy image mode
   resets 2026-10-14. A 4-min video is ~2,900 characters (real render 2026-10-07), so 1/day ≈ 90k a month,
   3/day ≈ 270k, 5/day ≈ 450k (over this cycle's limit).
 
+## How a script is made (script v2)
+
+1. **Topic** (`content-strategy.ts`): pillar balanced to equal thirds (TX/tokns · crypto education · mindset) over the
+   last 9 strategies; topic = the least-recently-used of that pillar's orchestrator-written seeds; the last 30 titles,
+   and for crypto up to 5 recent crypto-ish headlines from `intel_reports`, are passed on.
+2. **Script** (`script-writer.ts`): `SCRIPT_SYSTEM_PROMPT` (voice, honesty and title-contract rules) → JSON → `sanitizeScript`
+   → `validateScript` (`script-validator.ts`). Violations go back to the model with exact reasons, up to 2 repairs; then
+   the run fails with `script_validation` — there is no filler template any more. Scripts under `YT_MIN_SCRIPT_WORDS`
+   (380) spoken words are sent back to be lengthened.
+3. **Beats** add a disclosure slide after the title on TX/tokns scripts and a "not financial advice" slide before the CTA
+   on crypto scripts; content slides show the script's `onScreen` text (≤ 7 words).
+4. **Archive**: `archive/<YYYY-MM>/<id>/` keeps script, timeline, SEO, manifest, slides, thumbnail and captions.
+5. **Slot**: the next free daily slot (`YT_PUBLISH_PER_DAY`, `YT_PUBLISH_HOURS`, `YT_PUBLISH_TZ`; default 1/day at 7 AM PT).
+
+Measured 2026-10-08 with the production model (gemma4:31b via Ollama cloud): three seeds, all passed the checker (one hype
+repair); with the length rule 395–450 words in 2–3 attempts. One full local render (TX seed, voice D, AI slides): 37
+beats, 3:48, sync gate 36/36 within 0.034 s.
+
 ## Channel identity and pronunciation
 
 - Channel: **Coherence Daddy** — TX ecosystem, tokns.fi, crypto news, self-improvement/mindset. Prompts in

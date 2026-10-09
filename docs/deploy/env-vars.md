@@ -53,6 +53,10 @@ These variables are required for the project to function. **VPS** requires all v
 | `YT_PIPELINE_ENABLED` | Optional | VPS | Set to `false` to leave the 5 YouTube crons dormant. Default: enabled |
 | `YT_TTS_PROVIDER` | Optional | VPS | YouTube narration voice: `elevenlabs` (default — Mark's clone via `ELEVENLABS_VOICE_KEY`, model `eleven_multilingual_v2`) or `grok` (Grok "Rex", needs `GROK_API_KEY`). Any other value fails the run. See [YouTube Pipeline](../products/youtube-pipeline.md). |
 | `YT_ELEVENLABS_MODEL` | Optional | VPS | Mark's YouTube voice model: `eleven_v3` (default since 2026-10-08, the owner's energetic pick; no neighbour context) or `eleven_multilingual_v2` (steadier; the clone is fine-tuned for it). Anything else fails the run. |
+| `YT_MIN_SCRIPT_WORDS` | Optional | VPS | Scripts with fewer spoken words are sent back to the model to be lengthened (default 380; 0 turns the rule off). |
+| `YT_PUBLISH_PER_DAY` | Optional | VPS | Proposed YouTube slots per day, 1–5 (default 1). |
+| `YT_PUBLISH_HOURS` | Optional | VPS | Local hours for those slots, comma list (default `7`). |
+| `YT_PUBLISH_TZ` | Optional | VPS | IANA time zone for the slots (default `America/Los_Angeles`). |
 | `YT_REQUIRE_REVIEW` | Optional | VPS | Default on: a new YouTube video enters the queue as `pending_review` and posts only after the owner approves it in the dashboard. `false` restores automatic scheduling. |
 | **Video Edit** | | | |
 | `VIDEO_USE_BIN` | Optional | VPS | Absolute path to the `video-use` entry script on the host. Leave unset and jobs queue but won't run (UI shows "Engine not configured"). Used by `server/src/services/video-edit/engine.ts`. |

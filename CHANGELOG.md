@@ -7,6 +7,14 @@ until they ship to production.
 
 ## [Unreleased]
 
+### YouTube script v2 — honest scripts, owner's topic mix, one a day, archive (2026-10-08)
+
+- New script prompt + deterministic checker (`script-validator.ts`) with up to two repairs and no filler fallback; length
+  rule (`YT_MIN_SCRIPT_WORDS`).
+- Disclosure slide on TX/tokns videos, "not financial advice" slide on crypto videos, short on-screen bullet text.
+- Topic picker: equal thirds TX/crypto/mindset, new seeds, least-recently-used, recent titles + crypto headlines to the prompt.
+- One video per day at a fixed local time (`YT_PUBLISH_*`); every video's script/slides/captions archived for monthly review.
+
 ### YouTube pipeline — slides in sync, Mark's voice, Coherence Daddy, owner approval (2026-10-07)
 
 Measured on the published 2026-10-06 video: section slides appeared up to 17 s before their words (slide lengths were
