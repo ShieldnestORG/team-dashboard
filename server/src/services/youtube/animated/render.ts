@@ -35,6 +35,8 @@ export interface Beat {
   items?: string[];
   highlight?: number;
   badge?: string;
+  words?: { w: string; s: number; e: number }[];
+  icon?: Icon;
   startSec: number;
   durSec: number;
 }
@@ -116,6 +118,22 @@ export const SCENES_HTML = path.join(HERE, "scenes.html");
 const BEAT_TYPES: readonly BeatType[] = ["title", "content", "section_title", "conclusion", "hook", "cta"];
 const STAGE = { width: 1920, height: 1080 } as const;
 
+export const ICONS = [
+  "chart-up",
+  "chart-down",
+  "coins",
+  "shield",
+  "calendar",
+  "brain",
+  "heart",
+  "people",
+  "lightbulb",
+  "scale",
+  "clock",
+  "network",
+] as const;
+export type Icon = typeof ICONS[number];
+
 // ---------------------------------------------------------------------------
 // Timeline: validation, captions
 // ---------------------------------------------------------------------------
@@ -127,6 +145,28 @@ function bad(message: string): never {
 function finite(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) bad(`${label} must be a finite number`);
   return value;
+}
+
+export function pickIcon(text: string): Icon | undefined {
+  const lower = text.toLowerCase();
+  const rules: Array<[RegExp, Icon]> = [
+    [/\b(grow|growth|up|gain|outperform)\b/, "chart-up"],
+    [/\b(drop|crash|lose|fail|risk(?!.*manage))\b/, "chart-down"],
+    [/\b(coin|token|crypto|yield|stake|staking|portfolio|defi)\b/, "coins"],
+    [/\b(risk|safe|safety|protect|principal|scam)\b/, "shield"],
+    [/\b(week|month|quarter|year|date|calendar|schedule)\b/, "calendar"],
+    [/\b(mind|mindset|brain|think|focus|discipline)\b/, "brain"],
+    [/\b(body|health|heart|breath|sleep)\b/, "heart"],
+    [/\b(people|community|friend|family|team)\b/, "people"],
+    [/\b(idea|learn|guide|tip|explain)\b/, "lightbulb"],
+    [/\b(balance|rule|allocation|split)\b/, "scale"],
+    [/\b(time|patient|wait|daily|clock)\b/, "clock"],
+    [/\b(network|ecosystem|chain|infrastructure|developers)\b/, "network"],
+  ];
+  for (const [re, icon] of rules) {
+    if (re.test(lower)) return icon;
+  }
+  return undefined;
 }
 
 export function validateTimeline(raw: unknown): Timeline {
@@ -169,6 +209,42 @@ export function validateTimeline(raw: unknown): Timeline {
         bad(`beat ${i} highlight ${highlight} is outside its ${items?.length ?? 0} items`);
       }
     }
+    // Words validation
+    let words: { w: string; s: number; e: number }[] | undefined;
+    if (x.words !== undefined) {
+      if (!Array.isArray(x.words)) bad(`beat ${i} words must be an array`);
+      words = (x.words as unknown[]).map((wObj, wi) => {
+        if (typeof wObj !== "object" || wObj === null) bad(`beat ${i} words[${wi}] must be an object`);
+        const wo = wObj as Record<string, unknown>;
+        const w = wo.w;
+        const s = wo.s;
+        const e = wo.e;
+        if (typeof w !== "string" || w.length === 0) bad(`beat ${i} words[${wi}].w must be a non-empty string`);
+        if (typeof s !== "number" || !Number.isFinite(s)) bad(`beat ${i} words[${wi}].s must be a finite number`);
+        if (typeof e !== "number" || !Number.isFinite(e)) bad(`beat ${i} words[${wi}].e must be a finite number`);
+        if (s > e) bad(`beat ${i} words[${wi}] s (${s}) > e (${e})`);
+        if (s < startSec - 0.5 || e > startSec + durSec + 0.5) {
+          bad(`beat ${i} words[${wi}] timestamps out of beat span`);
+        }
+        return { w: w as string, s, e };
+      });
+      // Ensure ascending order of start times
+      for (let wi = 1; wi < words.length; wi++) {
+        if (words[wi].s < words[wi - 1].s) {
+          bad(`beat ${i} words are not in ascending order`);
+        }
+      }
+    }
+    // Icon handling
+    let icon: Icon | undefined;
+    if (x.icon !== undefined) {
+      if (typeof x.icon !== "string") bad(`beat ${i} icon must be a string`);
+      if (!ICONS.includes(x.icon as Icon)) bad(`beat ${i} has unknown icon ${x.icon}`);
+      icon = x.icon as Icon;
+    } else {
+      const derived = pickIcon(x.text);
+      if (derived) icon = derived;
+    }
     return {
       type: x.type as BeatType,
       text: x.text,
@@ -177,6 +253,8 @@ export function validateTimeline(raw: unknown): Timeline {
       items,
       highlight,
       badge: x.badge as string | undefined,
+      words,
+      icon,
       startSec,
       durSec,
     };
@@ -235,6 +313,7 @@ function groupWords(words: string[]): string[][] {
 export function deriveCues(beats: Beat[]): Cue[] {
   const cues: Cue[] = [];
   beats.forEach((beat, i) => {
+    if (beat.words && beat.words.length > 0) return; // skip beats with word annotations
     const words = beat.text.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
     const spoken = i === beats.length - 1 ? beat.durSec : Math.max(beat.durSec - 0.6, 0.1);

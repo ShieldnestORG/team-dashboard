@@ -47,6 +47,9 @@
   --muted: #A1A1A6;                        /* Muted Fog */
   --whisper: rgba(255, 255, 255, 0.08);    /* Whisper Line */
   --coral: #FF6B4A;                        /* Rizz Coral, THE accent */
+  --dim-focus: #C8A96E;                    /* Focus gold (DESIGN §2 dimension palette) */
+  --dim-direction: #4A9D7C;                /* Direction green */
+  --work: #5B78B5;                         /* steel blue, business/work only */
 }
 
 html { font-size: 40px; }
@@ -107,6 +110,19 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
 .layer--muted { color: var(--muted); }
 .layer--ink { color: var(--ink); }
 .bar { position: absolute; left: 0; top: 0; width: 0.15rem; height: 100px; background: var(--coral); transform-origin: 0 0; }
+/* list with spoken words: absolute px geometry on the 1920x1080 stage — the sentence is the big thing */
+.rail {
+  position: absolute; left: 120px; top: 220px; width: 460px;
+  padding-left: 20px; display: grid; row-gap: 14px; align-content: start;
+}
+.rail__item {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+  color: var(--muted); font-size: 26px; line-height: 1.35;
+}
+.rail__bar { position: absolute; left: 0; top: 0; width: 6px; height: 100px; background: var(--coral); transform-origin: 0 0; }
+.followcol { position: absolute; left: 660px; top: 180px; width: 1140px; height: 720px; display: grid; }
+.followwrap { grid-area: 1 / 1; display: flex; align-items: center; }
+.followwrap .follow { width: 100%; }
 
 /* 4. quote */
 .quote .frame { justify-content: center; }
@@ -129,6 +145,17 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
 }
 .cta__site { margin-top: 1.5rem; font-family: "Geist Mono", monospace; font-weight: 500; font-size: 0.875rem; line-height: 1.2; color: var(--muted); }
 
+/* 6. follow-along: the spoken sentence LARGE, each word pops as it is read */
+.follow {
+  font-family: "Geist", sans-serif; font-weight: 600; letter-spacing: -0.01em;
+  line-height: 1.18; color: var(--ink); overflow-wrap: break-word;
+}
+.fw { position: relative; display: inline-block; transform-origin: 50% 80%; }
+.fw__bar {
+  position: absolute; left: 0.04em; right: 0.04em; bottom: -0.06em; height: 0.09em;
+  background: var(--coral); transform-origin: 0 50%; opacity: 0; transform: scaleX(0);
+  border-radius: 0.1em;
+}
 /* captions: Raised Surface pill, Paper Ink, Geist 500 */
 #cap {
   position: absolute; left: 4rem; bottom: 2.5rem; max-width: 1600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -271,6 +298,54 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   }
   const tag = (sc) => `scene ${scenes.indexOf(sc)} (${sc.kind} at ${sc.start}s)`;
 
+  /* ---------- follow-along: the spoken sentence, one element per word ---------- */
+  // Build one LARGE follow-along line for a beat's `words` and animate every word:
+  // dim until its `s`, a scale pop (1 -> 1.06 -> 1 over BASE) at `s`, and a coral underline
+  // bar that draws in at `s` and fades out at `e` (the bar is sized in em, so it scales with
+  // the font size). Sizes start at `start` px and step DOWN by 4 px until the sentence fits
+  // the box (720 px tall) in at most 4 lines (scrollHeight vs 4 x line-height); minimum
+  // 48 px; a sentence that never fits records a warning. Returns null when the beat has no words.
+  function buildFollow(parent, beat, start, label) {
+    const list = beat.words;
+    if (!list || !list.length) return null;
+    const node = h("div", "follow");
+    list.forEach((wd, i) => {
+      const s = h("span", "fw", wd.w);
+      const bar = h("span", "fw__bar");
+      s.appendChild(bar);
+      node.appendChild(s);
+      if (i < list.length - 1) node.appendChild(document.createTextNode(" "));
+      const at = wd.s;
+      anim(s, [
+        { opacity: 0.28, transform: "translateY(6px) scale(1)" },
+        { opacity: 0.28, transform: "translateY(6px) scale(1)", offset: 0.0001 },
+        { opacity: 1, transform: "translateY(0px) scale(1.06)" },
+        { opacity: 1, transform: "translateY(0px) scale(1)" },
+      ], { at: Math.max(at, 0), dur: BASE });
+      const barEnd = Math.max(wd.e, at + 0.12);
+      track(bar, [
+        { t: at, p: { opacity: 0, transform: "scaleX(0)" }, e: EASE },
+        { t: at + 0.12, p: { opacity: 1, transform: "scaleX(1)" }, e: "linear" },
+        { t: barEnd, p: { opacity: 1, transform: "scaleX(1)" }, e: "linear" },
+        { t: barEnd + 0.12, p: { opacity: 0, transform: "scaleX(1)" } },
+      ]);
+    });
+    const wrap = h("div", "followwrap");
+    wrap.appendChild(node);
+    parent.appendChild(wrap);
+    // auto-shrink: step DOWN by 4 px from `start` to 48 px until it fits the box in at most 4 lines
+    const boxH = 720;
+    let size = start;
+    node.style.fontSize = size + "px";
+    const fits = () => node.scrollHeight <= Math.min(boxH, 4 * size * 1.18);
+    while (size > 48 && !fits()) {
+      size -= 4;
+      node.style.fontSize = size + "px";
+    }
+    if (!fits()) warnings.push(`${label}: follow-along text does not fit 4 lines in its box even at ${size}px`);
+    return { node, size };
+  }
+
   const glowCss = (pos, alpha) => `radial-gradient(2250px 1250px at ${pos}, rgba(255, 107, 74, ${alpha}), transparent 70%)`;
 
   /* ---------- scene life: visible from its first beat, leaves 0.25 s before the next scene ---------- */
@@ -393,7 +468,23 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     const box = h("div", "items");
     const bar = h("div", "bar");
     box.appendChild(bar);
-    const nodes = items.map((text) => {
+    const hasWords = sc.beats.some((b) => b.words && b.words.length);
+    let rail = null, railBar = null, railItems = [], col = null, follows = [];
+    if (hasWords) {
+      box.removeChild(bar);
+      rail = h("div", "rail");
+      railBar = h("div", "rail__bar");
+      rail.appendChild(railBar);
+      railItems = items.map((text) => {
+        const r = h("div", "rail__item", text);
+        rail.appendChild(r);
+        return r;
+      });
+      col = h("div", "followcol");
+      // stage-relative px geometry: append to the scene root, not the offset .frame
+      root.append(col, rail);
+    }
+    const nodes = hasWords ? [] : items.map((text) => {
       const item = h("div", "item");
       const muted = h("div", "layer layer--muted");
       const ink = h("div", "layer layer--ink");
@@ -404,28 +495,52 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     });
     frame.append(head, box);
     root.appendChild(frame);
-
+    if (hasWords) {
+      // the follow-along box is 660..1800 px, vertically centred in y 180..900 (720 px tall)
+      follows = sc.beats.map((b) => buildFollow(col, b, 76, tag(sc) + " follow-along"));
+    }
     // content lists share one size (body) so consecutive chunks match; the conclusion recap may use h3
     const room = 17 * REM - head.offsetHeight - 1.5 * REM;
-    sc.fitSize = fit(box, first.type === "conclusion" ? ["1.375rem", "1rem", "0.875rem"] : ["1rem", "0.875rem"], room, tag(sc));
+    if (hasWords) {
+      sc.fitSize = null;
+    } else {
+      sc.fitSize = fit(box, first.type === "conclusion" ? ["1.375rem", "1rem", "0.875rem"] : ["1rem", "0.875rem"], room, tag(sc));
+    }
 
-    // geometry of every item inside the box (offsetTop ignores transforms)
-    const geo = nodes.map((n) => ({ y: n.item.offsetTop, h: n.item.offsetHeight }));
-    const last = geo[geo.length - 1];
-    const allGeo = { y: geo[0].y, h: last.y + last.h - geo[0].y };
+    // geometry of every item inside the box (offsetTop ignores transforms); with words, the rail rows
+    const barGeo = nodes.length
+      ? nodes.map((n) => ({ y: n.item.offsetTop, h: n.item.offsetHeight }))
+      : railItems.map((r) => ({ y: r.offsetTop, h: r.offsetHeight }));
+    const last = barGeo[barGeo.length - 1];
+    const allGeo = { y: barGeo[0].y, h: last.y + last.h - barGeo[0].y };
     const barAt = (k) => {
       const hl = sc.beats[k].highlight;
-      const g = hl == null || !geo[hl] ? allGeo : geo[hl];
+      const g = hl == null || !barGeo[hl] ? allGeo : barGeo[hl];
       return `translateY(${g.y}px) scaleY(${g.h / 100})`;
     };
 
-    // entrance: label and hairline, then the items cascade 60 ms apart on the chunk's first beat
+    // entrance: label and hairline, then the items (or rail rows) cascade 60 ms apart
     rise(label, t0);
     draw(hair, "x", t0, SLOW);
-    nodes.forEach((n, i) => rise(n.item, t0 + STEP * (i + 1)));
+    (nodes.length ? nodes.map((n) => n.item) : railItems).forEach((el, i) => rise(el, t0 + STEP * (i + 1)));
+
+    // follow-along: each beat's sentence sits to the right of the rail, visible only for its beat
+    if (hasWords) follows.forEach((f, k) => {
+      if (!f) return;
+      const b = sc.beats[k];
+      const next = k + 1 < sc.beats.length ? sc.beats[k + 1].startSec : sc.end;
+      const at = Math.max(b.startSec, 0), out = Math.max(next - 0.12, at + 0.01);
+      track(f.node, [
+        { t: 0, p: { opacity: 0, transform: "translateY(20px)" }, e: "linear" },
+        { t: at, p: { opacity: 0, transform: "translateY(20px)" }, e: EASE },
+        { t: at + BASE, p: { opacity: 1, transform: "translateY(0px)" }, e: "linear" },
+        { t: out, p: { opacity: 1, transform: "translateY(0px)" }, e: EASE },
+        { t: out + 0.12, p: { opacity: 0, transform: "translateY(-20px)" } },
+      ]);
+    });
 
     // the coral bar: appears with the first highlighted item, then moves by transform at each beat start
-    const hl0 = first.highlight == null || !geo[first.highlight] ? 0 : first.highlight;
+    const hl0 = first.highlight == null || !barGeo[first.highlight] ? 0 : first.highlight;
     const tIn = t0 + STEP * (hl0 + 1);
     const stops = [
       { t: t0, p: { opacity: 0, transform: barAt(0) }, e: "linear" },
@@ -439,7 +554,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
       stops.push({ t: e, p: { opacity: 1, transform: barAt(k) }, e: "linear" });
     }
     stops.push({ t: Math.max(sc.end, stops[stops.length - 1].t + 0.001), p: { opacity: 1, transform: barAt(sc.beats.length - 1) } });
-    track(bar, stops);
+    track(hasWords ? railBar : bar, stops);
 
     // highlight: Paper Ink layer fades in over the Muted Fog layer at the beat start, and back out when it moves on
     nodes.forEach((n, i) => {
@@ -587,13 +702,26 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   }
 
   /* ---------- captions ---------- */
+  // Beats with spoken `words` show that sentence as follow-along text instead: the caption
+  // bar stays hidden for the whole beat. Every beat keeps its cue, so cue -> beat -> words.
+  function beatAt(t) {
+    for (const sc of scenes) {
+      for (const b of sc.beats) if (t >= b.startSec && t < b.startSec + b.durSec) return b;
+    }
+    return null;
+  }
+
   function updateCaption(t) {
     let lo = 0, hi = cues.length - 1, idx = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       if (cues[mid].start <= t) { idx = mid; lo = mid + 1; } else hi = mid - 1;
     }
-    const live = idx >= 0 && t < cues[idx].end ? idx : -1;
+    let live = idx >= 0 && t < cues[idx].end ? idx : -1;
+    if (live >= 0) {
+      const b = beatAt(t);
+      if (b && b.words && b.words.length) live = -1;
+    }
     if (live !== capIdx) {
       capIdx = live;
       if (live >= 0) capEl.textContent = cues[live].text;
