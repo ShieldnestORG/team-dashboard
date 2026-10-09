@@ -156,6 +156,11 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   background: var(--coral); transform-origin: 0 50%; opacity: 0; transform: scaleX(0);
   border-radius: 0.1em;
 }
+/* a word with a digit: Geist Mono; a gold copy sits on top of the ink and fades in at its `s` */
+.fw--num { font-family: "Geist Mono", monospace; font-weight: 500; letter-spacing: 0; }
+.fw__gold { position: absolute; left: 0; top: 0; white-space: nowrap; color: var(--dim-focus); }
+/* standalone follow-along (title, quote, end card): a band below the .frame area */
+.followband { position: absolute; left: 160px; top: 780px; width: 1600px; height: 280px; display: grid; }
 /* captions: Raised Surface pill, Paper Ink, Geist 500 */
 #cap {
   position: absolute; left: 4rem; bottom: 2.5rem; max-width: 1600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -305,12 +310,59 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   // the font size). Sizes start at `start` px and step DOWN by 4 px until the sentence fits
   // the box (720 px tall) in at most 4 lines (scrollHeight vs 4 x line-height); minimum
   // 48 px; a sentence that never fits records a warning. Returns null when the beat has no words.
-  function buildFollow(parent, beat, start, label) {
+  // "$15M" -> { pre: "$", num: "15", suf: "M" }; "50%" -> { pre: "", num: "50", suf: "%" }
+  function splitNumWord(w) {
+    const m = w.match(/^([^0-9]*)([0-9][0-9,]*(?:\.[0-9]+)?)(.*)$/);
+    return m ? { pre: m[1], num: m[2], suf: m[3] } : null;
+  }
+
+  // A YEAR: the token's digits (surrounding punctuation and an optional leading "'" ignored) form a
+  // 4-digit number from 1900 to 2099, with no %, $, M, K, B and no decimal point. Years only pop.
+  function isYearWord(w) {
+    if (/[%$MKB]/.test(w) || /\d\.\d/.test(w)) return false;
+    const digits = w.replace(/[^0-9]/g, "");
+    if (digits.length !== 4) return false;
+    const n = parseInt(digits, 10);
+    return n >= 1900 && n <= 2099;
+  }
+
+  // several numbers joined by "/" or "-" ("50/30/20"): pops, never counts either
+  const multiNumWord = /\d\s*[-/–]\s*\d/;
+
+  function buildFollow(parent, beat, start, label, opts) {
     const list = beat.words;
     if (!list || !list.length) return null;
+    const boxH = (opts && opts.boxH) || 720;
     const node = h("div", "follow");
     list.forEach((wd, i) => {
-      const s = h("span", "fw", wd.w);
+      const s = h("span", "fw");
+      const parts = splitNumWord(wd.w);
+      let numInk = null, numGold = null;
+      if (parts) {
+        // a digit word: Geist Mono, with a gold copy on top that fades in as it is read
+        s.className = "fw fw--num";
+        numInk = h("span", null, parts.num);
+        s.append(parts.pre, numInk, parts.suf);
+        const gold = h("span", "fw__gold");
+        numGold = h("span", null, parts.num);
+        gold.append(parts.pre, numGold, parts.suf);
+        s.appendChild(gold);
+        anim(gold, [
+          { opacity: 0 }, { opacity: 0, offset: 0.0001 }, { opacity: 1 },
+        ], { at: Math.max(wd.s, 0), dur: BASE });
+        if (!isYearWord(wd.w) && !multiNumWord.test(wd.w)) {
+          // counts up from its `s` (years just pop, as do joined numbers like "50/30/20")
+          const raw = parts.num.replace(/,/g, "");
+          counters.push({
+            word: true, target: parseFloat(raw), dec: raw.includes(".") ? raw.split(".")[1].length : 0,
+            digits: raw.split(".")[0].length, commas: parts.num.includes(","),
+            at: wd.s, dur: Math.min(COUNT_SECS, wd.e - wd.s + 0.2),
+            a: numInk, b: numGold, last: null,
+          });
+        }
+      } else {
+        s.textContent = wd.w;
+      }
       const bar = h("span", "fw__bar");
       s.appendChild(bar);
       node.appendChild(s);
@@ -334,7 +386,6 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     wrap.appendChild(node);
     parent.appendChild(wrap);
     // auto-shrink: step DOWN by 4 px from `start` to 48 px until it fits the box in at most 4 lines
-    const boxH = 720;
     let size = start;
     node.style.fontSize = size + "px";
     const fits = () => node.scrollHeight <= Math.min(boxH, 4 * size * 1.18);
@@ -347,6 +398,27 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   }
 
   const glowCss = (pos, alpha) => `radial-gradient(2250px 1250px at ${pos}, rgba(255, 107, 74, ${alpha}), transparent 70%)`;
+
+  // Standalone follow-along for title, quote and end-card beats: a band at the bottom of the
+  // stage holding the spoken sentence, visible only while its beat is on screen. `root` is the
+  // scene root (stage-relative px geometry), `start` is the starting px font size.
+  function buildFollowBand(sc, root, start) {
+    const b = sc.beats[0];
+    if (!b.words || !b.words.length) return;
+    const band = h("div", "followband");
+    root.appendChild(band);
+    const f = buildFollow(band, b, start, tag(sc) + " follow-along", { boxH: 280 });
+    if (!f) return;
+    const at = Math.max(b.startSec, 0);
+    const out = Math.max(sc.end - (sc.exitAt == null ? BASE : 0), at + 0.01);
+    track(f.node, [
+      { t: 0, p: { opacity: 0, transform: "translateY(20px)" }, e: "linear" },
+      { t: at, p: { opacity: 0, transform: "translateY(20px)" }, e: EASE },
+      { t: at + BASE, p: { opacity: 1, transform: "translateY(0px)" }, e: "linear" },
+      { t: out, p: { opacity: 1, transform: "translateY(0px)" }, e: EASE },
+      { t: out + 0.12, p: { opacity: 0, transform: "translateY(-20px)" } },
+    ]);
+  }
 
   /* ---------- scene life: visible from its first beat, leaves 0.25 s before the next scene ---------- */
   function life(root, t0, exitAt) {
@@ -415,6 +487,8 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     rise(eyebrow, t0);
     const end = cascade(spans, t0 + 0.12, "lift", SLOW);
     draw(rule, "x", end - 0.2, SLOW);
+    // follow-along for the spoken words, below the title (smaller start size)
+    buildFollowBand(sc, root, 104);
   }
 
   /* ---------- 2. section ---------- */
@@ -656,6 +730,8 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
       cascade(spanSets[i], tg, "lift", SLOW);
       before += g.trim().split(/\s+/).length;
     });
+    // follow-along for the spoken words, under the quote
+    buildFollowBand(sc, root, 136);
   }
 
   /* ---------- 5. end card ---------- */
@@ -699,6 +775,8 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
           ];
       anim(r, kf, { at, dur: 5.4, ease: "linear", iterations: Infinity });
     });
+    // follow-along for the spoken words, below the end card
+    buildFollowBand(sc, root, 104);
   }
 
   /* ---------- captions ---------- */
@@ -730,8 +808,25 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   }
 
   /* ---------- counting numbers ---------- */
+  // group integer digits with "," every three, keeping the original digit count un-padded
+  function commaGroup(intStr) {
+    return intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
   function updateCounters(t) {
     for (const c of counters) {
+      if (c.word) {
+        // a digit word inside follow-along text: counts up over `dur` from its own `s`
+        let v = c.target;
+        const p = (t - c.at) / c.dur;
+        if (p < 1) v = c.target * easeOut(Math.max(p, 0));
+        const fixed = c.dec ? v.toFixed(c.dec) : String(Math.round(v));
+        const [i, f] = fixed.split(".");
+        // never add separators the original token did not have ("$1,200" may show "$600", never "1,200" for "1200")
+        const text = (c.commas ? commaGroup(i) : i) + (f ? "." + f : "");
+        if (text !== c.last) { c.last = text; c.a.textContent = text; c.b.textContent = text; }
+        continue;
+      }
       const beats = c.sc.beats;
       let k = -1;
       for (let j = 0; j < beats.length; j++) if (t >= beats[j].startSec) k = j;
