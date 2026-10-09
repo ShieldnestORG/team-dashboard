@@ -10,7 +10,7 @@
 
 import { exec } from "child_process";
 import { promisify } from "util";
-import { writeFile, unlink, rename } from "fs/promises";
+import { writeFile, unlink, rename, readFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { logger } from "../../middleware/logger.js";
@@ -297,6 +297,88 @@ export async function applyEdgeFadesWav(wavPath: string, durationSec: number, fa
   await rename(tmpPath, wavPath);
 }
 
+export const BREATH_TRIM = { onsetDb: -32, tailDb: -40, windowSec: 0.02, prerollSec: 0.06, postrollSec: 0.12 };
+
+/** Trim breath/room tone from both ends of one decoded clip WAV, in place. Returns seconds removed. */
+export async function trimClipEdgesWav(wavPath: string): Promise<{ trimmedStartSec: number; trimmedEndSec: number }> {
+  const buf = await readFile(wavPath);
+
+  // Walk RIFF chunks to find the `fmt ` sample rate and the `data` payload. Do
+  // NOT assume a 44-byte header: ffmpeg may write a LIST chunk before `data`.
+  let sampleRate = WAV_RATE;
+  let dataOffset = -1;
+  let dataLen = 0;
+  let offset = 12; // past "RIFF" + chunk size + "WAVE"
+  while (offset + 8 <= buf.length) {
+    const id = buf.toString("ascii", offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === "fmt ") {
+      sampleRate = buf.readUInt32LE(offset + 12);
+    } else if (id === "data") {
+      dataOffset = offset + 8;
+      dataLen = size;
+    }
+    offset += 8 + size + (size & 1); // chunks are word-aligned
+  }
+
+  if (dataOffset < 0 || dataLen < 2) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  const totalSamples = Math.floor(dataLen / 2);
+  const duration = totalSamples / sampleRate;
+  const winSamples = Math.max(1, Math.round(sampleRate * BREATH_TRIM.windowSec));
+
+  // RMS of one window in dBFS = 20*log10(rms/32768); silence -> -Infinity.
+  const windowDb = (startSample: number): number => {
+    let sum = 0;
+    const end = Math.min(startSample + winSamples, totalSamples);
+    for (let i = startSample; i < end; i++) {
+      const s = buf.readInt16LE(dataOffset + i * 2);
+      sum += s * s;
+    }
+    const rms = Math.sqrt(sum / (end - startSample));
+    return 20 * Math.log10(rms / 32768);
+  };
+
+  const numWindows = Math.floor(totalSamples / winSamples);
+  if (numWindows < 1) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  let onsetSec = -1;
+  for (let w = 0; w < numWindows; w++) {
+    if (windowDb(w * winSamples) >= BREATH_TRIM.onsetDb) {
+      onsetSec = (w * winSamples) / sampleRate;
+      break;
+    }
+  }
+
+  // No window reached the onset level -> nothing to trim.
+  if (onsetSec < 0) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  let endSec = -1;
+  for (let w = numWindows - 1; w >= 0; w--) {
+    if (windowDb(w * winSamples) >= BREATH_TRIM.tailDb) {
+      endSec = ((w + 1) * winSamples) / sampleRate;
+      break;
+    }
+  }
+
+  if (endSec < 0 || endSec - onsetSec < 0.1) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  const keepStart = Math.max(0, onsetSec - BREATH_TRIM.prerollSec);
+  const keepEnd = Math.min(duration, endSec + BREATH_TRIM.postrollSec);
+
+  if (keepStart < 0.005 && duration - keepEnd < 0.005) return { trimmedStartSec: 0, trimmedEndSec: 0 };
+
+  const tmpPath = `${wavPath}.trim.wav`;
+  await execAsync(
+    `ffmpeg -y -hide_banner -loglevel error -i "${wavPath}" -af "atrim=start=${keepStart.toFixed(3)}:end=${keepEnd.toFixed(3)},asetpts=PTS-STARTPTS" -ac 1 -ar ${WAV_RATE} -c:a pcm_s16le "${tmpPath}"`,
+    { timeout: 60_000 },
+  );
+  await rename(tmpPath, wavPath);
+
+  const round3 = (v: number): number => Math.round(v * 1000) / 1000;
+  return { trimmedStartSec: round3(keepStart), trimmedEndSec: round3(duration - keepEnd) };
+}
+
 /** Silence WAV with the same params as the decoded clips. */
 export async function makeSilenceWav(wavPath: string, durationSec: number): Promise<void> {
   await execAsync(
@@ -423,6 +505,10 @@ export async function generateChunkedTTS(
           });
         }
         await decodeToWav(rawFile, wavFile);
+        const trimmed = await trimClipEdgesWav(wavFile);
+        if (trimmed.trimmedStartSec > 0 || trimmed.trimmedEndSec > 0) {
+          logger.info({ chunk: i, ...trimmed }, "Trimmed breath/room tone from chunk");
+        }
         await applyEdgeFadesWav(wavFile, await probeDurationStrict(wavFile), FADE_SEC);
         clipWavs.push(wavFile);
       } catch (err) {
