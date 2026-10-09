@@ -53,20 +53,23 @@ server/
         instagram.ts                # Instagram Reels (stub — needs public URL)
         index.ts                    # Publisher registry
       youtube/                      # YouTube automation pipeline
-        content-strategy.ts         # Ollama-powered content strategy generation
-        script-writer.ts            # Ollama script generation for standard videos
+        content-strategy.ts         # Topic picker: balanced TX/crypto/mindset seeds, least-recently-used, recent titles
+        script-writer.ts            # Script prompt + check-and-repair loop (no template fallback)
+        script-validator.ts         # Deterministic script/title rules (honesty, hype, filler, length)
+        archive.ts                  # archive/<YYYY-MM>/<id>/ — script, timeline, slides, captions (monthly review)
+        publish-slots.ts            # Next free daily publish slot (YT_PUBLISH_PER_DAY/_HOURS/_TZ)
         walkthrough-writer.ts       # Ollama walkthrough narration from site-walk results
         site-walker.ts              # Playwright browser agent — visits URLs, captures screenshots
         presentation-renderer.ts    # Playwright slide renderer (branded screenshots)
         tts.ts                      # Per-beat TTS: ElevenLabs Mark clone (default) / Grok Rex — WAV, measured
-        yt-video-assembler.ts       # FFmpeg assembly with per-slide durations
+        yt-video-assembler.ts       # FFmpeg assembly with measured per-slide durations + sync gate
         seo-optimizer.ts            # YouTube SEO (tags, chapters, descriptions)
         thumbnail.ts                # Thumbnail generation (Grok/Gemini)
         production.ts               # Production orchestration
         publish-queue.ts            # Auto-upload queue to YouTube
         analytics.ts                # YouTube API analytics + Ollama insights
         slide-templates.ts          # Branded slide layout templates
-        yt-crons.ts                 # 5 scheduled jobs (daily-production, publish, analytics, strategy, optimization)
+        yt-crons.ts                 # 6 scheduled jobs (daily-production, publish-queue, analytics, weekly-strategy, optimization, cleanup)
     storage/              # Pluggable storage service (S3, local disk)
     content-templates/  # Personality prompt templates (blaze, cipher, spark, prism, vanguard, forge)
     routes/

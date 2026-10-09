@@ -1,0 +1,23 @@
+{
+  "_source": "Hand-written 2026-10-08 by the orchestrator as the target voice for script v2: owner-approved greeting, no invented experience, no hype, one idea per line, short on-screen text, the title's count delivered.",
+  "title": "Discipline beats motivation: three small habits that make it stick",
+  "hook": { "type": "question", "text": "Motivation fades by Wednesday. So what gets you to the gym, the desk, or the hard conversation on a bad day?", "duration": "" },
+  "introduction": {
+    "greeting": "This is Coherence Daddy.",
+    "topicIntro": "Here are three small habits that turn effort into something you can repeat.",
+    "valueProposition": "Each one takes less than ten minutes, and none of them runs on willpower.",
+    "credibility": "",
+    "duration": ""
+  },
+  "mainContent": {
+    "sections": [
+      { "type": "step", "title": "Decide once", "content": ["Pick the time and the place the night before, so the morning has no decision left in it.", "A choice you already made costs nothing to keep."], "onScreen": ["Decide the night before", "No decision left"], "visuals": ["calendar"], "duration": 0 },
+      { "type": "step", "title": "Make it small", "content": ["Start with a version so small it feels silly, like two minutes of reading.", "Small wins on bad days protect the habit until the good days come back."], "onScreen": ["Start silly small", "Protect the habit"], "visuals": ["lightbulb"], "duration": 0 },
+      { "type": "step", "title": "Track the streak", "content": ["Mark each day you show up, on paper you can see.", "A visible streak gives you a reason to keep going that does not depend on your mood."], "onScreen": ["Mark every day", "Streak beats mood"], "visuals": ["chart-up"], "duration": 0 }
+    ],
+    "totalDuration": 0
+  },
+  "conclusion": { "type": "conclusion", "title": "Takeaways", "recap": ["Decide once.", "Make it small.", "Track the streak."], "finalThought": "Motivation is the spark. Discipline is the wiring that keeps the lights on.", "duration": "" },
+  "callToAction": { "type": "call_to_action", "subscribe": "Subscribe for one practical habit for mind and body every week.", "like": "", "comment": "Which of the three will you start tonight?", "nextVideo": "", "duration": "" },
+  "tone": "direct", "pacing": "steady", "keywords": ["discipline", "habits", "motivation"], "duration": "", "fullScript": ""
+}

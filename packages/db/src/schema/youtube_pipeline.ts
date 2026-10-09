@@ -92,6 +92,7 @@ export const ytProductions = pgTable(
       videoPath?: string;
       captionsPath?: string;
       visualAssets?: string[];
+      archiveDir?: string; // archive/<YYYY-MM>/<id>/ — kept for the monthly review, never purged
     }>(),
     timeline: jsonb("timeline").$type<{
       created?: string;

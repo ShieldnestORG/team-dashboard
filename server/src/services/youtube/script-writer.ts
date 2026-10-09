@@ -6,8 +6,10 @@
  */
 
 import { callOllamaChat } from "../ollama-client.js";
+import type { OllamaChatMessage } from "../ollama-client.js";
 import { logger } from "../../middleware/logger.js";
 import type { ContentStrategy } from "./content-strategy.js";
+import { validateScript, formatViolations } from "./script-validator.js";
 
 // ---------------------------------------------------------------------------
 // Script structure types
@@ -23,6 +25,7 @@ export interface ScriptSection {
   type: string;
   title: string;
   content: string[];
+  onScreen?: string[];
   visuals?: string[];
   duration: number;
 }
@@ -61,6 +64,10 @@ export interface ScriptData {
   keywords: string[];
   duration: string;
   fullScript: string;
+  pillar?: string;
+  promise?: string;
+  format?: string;
+  validation?: { attempts: number; violations: string[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +81,71 @@ const TEMPLATES: Record<string, { tone: string; pacing: string }> = {
   review: { tone: "analytical", pacing: "detailed" },
   story: { tone: "narrative", pacing: "dynamic" },
 };
+
+// ---------------------------------------------------------------------------
+// The script prompt (verbatim per owner decisions 2026-10-08)
+// ---------------------------------------------------------------------------
+
+export const SCRIPT_SYSTEM_PROMPT = `You write narration for the Coherence Daddy YouTube channel (@coherencedaddy). A cloned human voice reads every spoken line aloud, one line per slide, and the slide shows a short version of it. Return ONE JSON object and nothing else.
+
+WHO WE ARE: Coherence Daddy teaches practical skills for mind, brain, body, people and money, and covers the TX blockchain ecosystem, tokns.fi and crypto news. We build tokns.fi and run a TX validator, so we are not neutral about TX and never pretend to be. Describe a product only with facts given to you in FACTS; if it is not there, you do not know it.
+
+VOICE: confident, direct, plain, warm, a little playful. A smart friend explaining one thing, not a guru, not hype. Short sentences. Contractions are fine. "We" is Coherence Daddy, "you" is the viewer, "I" only for a stated opinion such as "I think", never for something that happened.
+
+RULES (a script that breaks one is rejected and rewritten):
+1. START WITH THE POINT. hook.text is one concrete claim, question or scene, at most 25 words, that restates the title's promise. introduction.greeting is exactly "This is Coherence Daddy." Never write "welcome back", "what's up" or "today we".
+2. NO INVENTED LIFE OR RESEARCH. You did not test, try, buy, sell, earn, lose, interview or survey anything. Never write "I tested", "we found", "our research", "my portfolio", "in my experience", "studies show", "research shows" or "experts say". Name a source only if it is listed in SOURCES or FACTS.
+3. NO ADVICE, NO PREDICTIONS, NO HYPE. Never tell the viewer to buy, sell, hold or stake a named asset. Never say what a price will do. Never write "guaranteed", "risk-free", "to the moon", "get rich", "financial freedom" or "10x". Explain how it works, what can go wrong, and what we do not know.
+4. NUMBERS: use a number only if it is in SOURCES or FACTS, or it counts your own parts ("three steps"), or it is a clearly hypothetical example in a sentence that starts with "Say" or "Imagine". Never invent a statistic, price, return or date.
+5. THE TITLE IS A CONTRACT. At most 65 characters. No year unless the topic is about that year. No clickbait words such as Ultimate, Proven, Secret or Insane. If the title counts items, deliver exactly that many sections, in that order. Fill "promise" with one sentence saying what the viewer will know at the end, and deliver it.
+6. ONE IDEA PER LINE. Each content line is one or two short spoken sentences, 8 to 22 words, using only commas and full stops. No lists, brackets, colons, URLs, emoji, stage directions or pronunciation notes. Write DeFi, TX and tokns.fi as normal text.
+7. THE SCREEN IS NOT A TRANSCRIPT. For every content line write one onScreen entry of at most 7 words: the key idea or number, never the whole sentence.
+8. Never mention evntrace and never write a disclosure or "not financial advice" line; the system adds those.
+9. Do not reuse an opening or a title pattern from RECENT_TITLES.
+
+PILLARS:
+- tx_blockchain: the TX ecosystem, staking and tokns.fi features. Explain the mechanics and the risks plainly.
+- crypto: news and education. Say what happened, naming the source from SOURCES, why it matters, and what we do not know yet.
+- motivation: healthy, practical methods for mind, brain, body, people and coherence. Money mindset is welcome when it is honest about habits, patience and avoiding scams, never as a get-rich promise.`;
+
+/** ContentStrategy plus the extra inputs the v2 prompt takes (do not edit content-strategy.ts). */
+export type GenerateScriptStrategy = ContentStrategy & {
+  recentTitles?: string[];
+  sources?: Array<{ title: string; source: string; url?: string }>;
+  format?: string;
+};
+
+function buildUserPrompt(strategy: GenerateScriptStrategy): string {
+  const format = strategy.format || "explainer";
+  const sections = strategy.contentType === "List" || strategy.contentType === "Tutorial" ? 4 : 3;
+  const lines: string[] = [];
+  const add = (label: string, value: string): void => {
+    if (value !== "") lines.push(`${label}: ${value}`);
+  };
+  add("TOPIC", strategy.topic || "");
+  add("ANGLE", strategy.angle || "");
+  add("PILLAR", strategy.pillar || "");
+  add("FORMAT", format);
+  lines.push(`LENGTH: ${sections} sections of 2 to 4 content lines each, about 450 spoken words in total.`);
+  if (Array.isArray(strategy.sources) && strategy.sources.length > 0) {
+    lines.push(
+      `SOURCES:\n${strategy.sources
+        .map((s) => `- ${s.title} (${s.source})${s.url ? ` ${s.url}` : ""}`)
+        .join("\n")}`,
+    );
+  }
+  if (Array.isArray(strategy.recentTitles) && strategy.recentTitles.length > 0) {
+    lines.push(`RECENT_TITLES:\n${strategy.recentTitles.join("\n")}`);
+  }
+  lines.push(`Return JSON with exactly this shape:
+{ "title": "", "promise": "", "hook": { "type": "question|number|myth|scenario|change", "text": "", "duration": "" },
+  "introduction": { "greeting": "This is Coherence Daddy.", "topicIntro": "", "valueProposition": "", "credibility": "", "duration": "" },
+  "mainContent": { "sections": [ { "type": "fact|step|myth|example|compare|risk|takeaway", "title": "", "content": [""], "onScreen": [""], "visuals": [""], "duration": 0 } ], "totalDuration": 0 },
+  "conclusion": { "type": "conclusion", "title": "Takeaways", "recap": [""], "finalThought": "", "duration": "" },
+  "callToAction": { "type": "call_to_action", "subscribe": "", "like": "", "comment": "", "nextVideo": "", "duration": "" },
+  "tone": "", "pacing": "", "keywords": [""], "duration": "", "fullScript": "" }`);
+  return lines.join("\n");
+}
 
 // ---------------------------------------------------------------------------
 // Pronunciation fixes for TTS
@@ -173,13 +245,66 @@ function dropEvntraceSentences(text: string): string {
     .trim();
 }
 
-const DEFAULT_GREETING = "What's up everyone, welcome back to Coherence Daddy.";
+const DEFAULT_GREETING = "This is Coherence Daddy.";
+
+// Fixed disclosure lines the system adds itself — the model is told never to
+// write either one (prompt rule 8), so they can only appear from here.
+/** Below this many spoken words a script is sent back to be lengthened (about 2.5 min at v3's ~180 wpm).
+ * YT_MIN_SCRIPT_WORDS overrides (read at call time; 0 turns the rule off). */
+export function minScriptWords(): number {
+  const n = Number(process.env.YT_MIN_SCRIPT_WORDS ?? 380);
+  return Number.isFinite(n) && n >= 0 ? n : 380;
+}
+
+export const DISCLOSURE_LINE = "Quick honesty break: we run a TX validator and build tokns.fi, so we gain when you stake.";
+export const NOT_ADVICE_LINE = "This is education, not financial advice.";
+
+/** Every spoken string in the script (the same set the validator reads). */
+function spokenStrings(script: ScriptData): string[] {
+  const out: string[] = [];
+  const push = (v: unknown): void => {
+    if (typeof v === "string") out.push(v);
+  };
+  if (script.hook) push(script.hook.text);
+  if (script.introduction) {
+    push(script.introduction.greeting);
+    push(script.introduction.topicIntro);
+    push(script.introduction.valueProposition);
+    push(script.introduction.credibility);
+  }
+  for (const section of script.mainContent?.sections || []) {
+    push(section.title);
+    if (Array.isArray(section.content)) section.content.forEach(push);
+  }
+  if (Array.isArray(script.conclusion?.recap)) script.conclusion.recap.forEach(push);
+  if (script.conclusion) push(script.conclusion.finalThought);
+  if (script.callToAction) {
+    push(script.callToAction.subscribe);
+    push(script.callToAction.like);
+    push(script.callToAction.comment);
+  }
+  return out;
+}
+
+/** True when the script talks about TX or tokns — needs the stake-disclosure line. */
+export function needsDisclosure(script: ScriptData): boolean {
+  if (script.pillar === "tx_blockchain") return true;
+  return spokenStrings(script).some((s) => /\b(TX|tokns(\.fi)?)\b/i.test(s));
+}
+
+/** True when the script touches crypto — needs the "not financial advice" line. */
+export function needsNotAdvice(script: ScriptData): boolean {
+  if (script.pillar === "tx_blockchain" || script.pillar === "crypto") return true;
+  return spokenStrings(script).some((s) =>
+    /\b(crypto|bitcoin|ethereum|defi|staking|stake|token|tokens|portfolio|invest(ing|ment)?)\b/i.test(s),
+  );
+}
 
 /**
  * Deterministic clean-up of LLM output before narration and slides are built:
  *  1. strip spoken pronunciation asides ("DeFi, pronounced de-fi, allows" -> "DeFi allows"),
  *  2. drop any sentence that mentions evntrace (the system adds its own fixed line),
- *  3. force the greeting to name Coherence Daddy.
+ *  3. ALWAYS set the greeting to the fixed line, whatever the model wrote.
  * Returns a copy; the input is not mutated.
  */
 export function sanitizeScript(script: ScriptData): ScriptData {
@@ -196,7 +321,7 @@ export function sanitizeScript(script: ScriptData): ScriptData {
     intro.topicIntro = spoken(intro.topicIntro);
     intro.valueProposition = spoken(intro.valueProposition);
     intro.credibility = spoken(intro.credibility);
-    if (!/coherence daddy/i.test(intro.greeting || "")) intro.greeting = DEFAULT_GREETING;
+    intro.greeting = DEFAULT_GREETING;
   }
   for (const section of out.mainContent?.sections || []) {
     section.title = spoken(section.title);
@@ -230,7 +355,10 @@ export function sanitizeScript(script: ScriptData): ScriptData {
  */
 export function formatScriptPlainText(script: ScriptData): string {
   let text = "";
-  if (script.hook) text += `${script.hook.text}\n\n`;
+  if (script.hook) {
+    text += `${script.hook.text}\n\n`;
+    if (needsDisclosure(script)) text += `${DISCLOSURE_LINE}\n\n`;
+  }
   if (script.introduction) {
     text += `${script.introduction.greeting}\n`;
     text += `${script.introduction.topicIntro}\n`;
@@ -257,6 +385,7 @@ export function formatScriptPlainText(script: ScriptData): string {
     text += `\n${script.conclusion.finalThought}\n\n`;
   }
   if (script.callToAction) {
+    if (needsNotAdvice(script)) text += `${NOT_ADVICE_LINE}\n`;
     text += `${script.callToAction.subscribe}\n`;
     text += `${script.callToAction.like}\n`;
     text += `${script.callToAction.comment}\n`;
@@ -274,169 +403,93 @@ export function formatScriptForTTS(script: ScriptData): string {
 }
 
 // ---------------------------------------------------------------------------
-// AI script generation via Ollama
+// AI script generation via Ollama — generate, sanitize, validate, repair
 // ---------------------------------------------------------------------------
 
-export async function generateScript(strategy: ContentStrategy): Promise<ScriptData> {
-  const template = TEMPLATES[strategy.contentType.toLowerCase()] || TEMPLATES.explainer;
-  let script: ScriptData;
-
-  try {
-    script = await generateScriptWithOllama(strategy, template);
-  } catch (err) {
-    logger.warn({ err }, "Ollama script generation failed, using template fallback");
-    script = generateScriptFromTemplate(strategy, template);
-  }
-
-  script = sanitizeScript(script);
-  script.fullScript = formatFullScript(script);
-  logger.info({ title: script.title }, "YouTube script generated");
-  return script;
-}
-
-async function generateScriptWithOllama(
-  strategy: ContentStrategy,
-  template: { tone: string; pacing: string },
-): Promise<ScriptData> {
-  const year = new Date().getFullYear();
-
-  const systemPrompt = `You are a professional YouTube scriptwriter for the channel Coherence Daddy — a crypto, blockchain, and self-improvement channel. The channel covers the TX blockchain ecosystem (social handle: @txecosystem), tokns.fi, crypto news (Bitcoin, altcoins, DeFi), and self-improvement and mindset. Related sites: tokns.fi and coherencedaddy.com. The greeting must welcome viewers to Coherence Daddy. IMPORTANT: Always write "TX ecosystem" as two separate words. Never include pronunciation guides, phonetic spellings, or stage directions in spoken lines — write every spoken line exactly as it should be read aloud. Do not mention evntrace; the system adds that line itself. The tone is confident, energetic, and approachable. Occasionally reference tokns.fi or coherencedaddy.com naturally. Always output valid JSON. The current year is ${year}. Always use ${year} when referencing the current year.`;
-
-  const userPrompt = `Write a complete YouTube video script for the following:
-
-Topic: ${strategy.topic}
-Angle: ${strategy.angle}
-Content Type: ${strategy.contentType}
-Target Audience: ${strategy.targetAudience}
-Tone: ${template.tone}
-Keywords to include: ${strategy.keywords.join(", ")}
-
-Return a JSON object with this structure:
-{
-  "title": "compelling video title",
-  "hook": { "type": "question|statistic|statement", "text": "first 5 seconds", "duration": "0:00-0:05" },
-  "introduction": { "greeting": "opening", "topicIntro": "intro", "valueProposition": "value", "credibility": "credibility", "duration": "0:05-0:20" },
-  "mainContent": {
-    "sections": [{ "type": "section_type", "title": "Title", "content": ["line1", "line2"], "visuals": ["visual"], "duration": 60 }],
-    "totalDuration": 300
-  },
-  "conclusion": { "type": "conclusion", "title": "Wrapping Up", "recap": ["point1", "point2"], "finalThought": "closing", "duration": "30 seconds" },
-  "callToAction": { "type": "call_to_action", "subscribe": "sub prompt", "like": "like prompt", "comment": "comment prompt", "nextVideo": "tease", "duration": "15 seconds" },
-  "tone": "${template.tone}",
-  "pacing": "${template.pacing}",
-  "keywords": ${JSON.stringify(strategy.keywords)}
-}
-
-Write 3-4 main content sections. Total video length should be 4-5 minutes.`;
-
-  const result = await callOllamaChat(
-    [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    { temperature: 0.8, maxTokens: 8192, timeoutMs: 600_000 },
-  );
-
-  // Extract JSON from response
-  let rawText = result.content;
+/** First `{` to last `}` of the model output, parsed. Throws when unparseable. */
+function parseScriptJson(content: string): Record<string, unknown> {
+  let rawText = content;
   const jsonStart = rawText.indexOf("{");
   const jsonEnd = rawText.lastIndexOf("}");
   if (jsonStart !== -1 && jsonEnd !== -1) {
     rawText = rawText.slice(jsonStart, jsonEnd + 1);
   }
-
-  const parsed = JSON.parse(rawText);
-  return {
-    ...parsed,
-    duration: estimateDuration(parsed.mainContent),
-    fullScript: "",
-  };
+  return JSON.parse(rawText) as Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
-// Template-based fallback
-// ---------------------------------------------------------------------------
+export async function generateScript(strategy: GenerateScriptStrategy): Promise<ScriptData> {
+  const baseMessages: OllamaChatMessage[] = [
+    { role: "system", content: SCRIPT_SYSTEM_PROMPT },
+    { role: "user", content: buildUserPrompt(strategy) },
+  ];
+  const options = { temperature: 0.7, maxTokens: 8192, timeoutMs: 600_000 };
 
-function generateScriptFromTemplate(
-  strategy: ContentStrategy,
-  template: { tone: string; pacing: string },
-): ScriptData {
-  return {
-    title: `${strategy.angle}`,
-    hook: {
-      type: "statement",
-      text: `${strategy.topic} is about to change everything, and here's why...`,
-      duration: "0:00-0:05",
-    },
-    introduction: {
-      greeting: "Hey everyone, welcome back to Coherence Daddy!",
-      topicIntro: `Today, we're diving deep into ${strategy.topic}.`,
-      valueProposition: `By the end of this video, you'll understand everything about ${strategy.topic}.`,
-      credibility: "Based on the latest research and data",
-      duration: "0:05-0:20",
-    },
-    mainContent: {
-      sections: [
+  let messages = baseMessages;
+  let result: ReturnType<typeof validateScript> | null = null;
+  const priorCodes: string[] = [];
+
+  for (let attempts = 1; attempts <= 3; attempts++) {
+    // callOllamaChat: one retry on a failed call, then give up (no template).
+    let content: string;
+    try {
+      content = (await callOllamaChat(messages, options)).content;
+    } catch {
+      try {
+        content = (await callOllamaChat(messages, options)).content;
+      } catch (err2) {
+        throw new Error(`script_generation: ${err2 instanceof Error ? err2.message : String(err2)}`);
+      }
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = parseScriptJson(content);
+    } catch {
+      try {
+        content = (await callOllamaChat(messages, options)).content;
+        parsed = parseScriptJson(content);
+      } catch (err2) {
+        throw new Error(`script_generation: ${err2 instanceof Error ? err2.message : String(err2)}`);
+      }
+    }
+
+    const mainContent = (parsed as { mainContent?: { sections?: ScriptSection[] } }).mainContent;
+    const script = sanitizeScript({
+      ...parsed,
+      pillar: strategy.pillar,
+      format: strategy.format || "explainer",
+      duration: estimateDuration({ sections: mainContent?.sections ?? [] }),
+      fullScript: "",
+    } as ScriptData);
+    result = validateScript(script, { minSpokenWords: minScriptWords() });
+
+    if (result.ok) {
+      const seenCodes = [...new Set(priorCodes)];
+      script.validation = { attempts, violations: seenCodes };
+      script.fullScript = formatFullScript(script);
+      logger.info({ title: script.title, attempts }, "YouTube script generated");
+      return script;
+    }
+
+    priorCodes.push(...result.violations.map((v) => v.code));
+
+    if (attempts < 3) {
+      // Repair: show the model what it returned and what broke.
+      messages = [
+        ...messages,
+        { role: "assistant", content },
         {
-          type: "explanation",
-          title: "What You Need to Know",
-          content: [
-            `Let's break down ${strategy.topic} into its core components.`,
-            "First, we need to understand the fundamental principles.",
-            `This is why ${strategy.topic} works so effectively.`,
-          ],
-          visuals: ["Diagrams", "Infographics"],
-          duration: 90,
+          role: "user",
+          content:
+            "Your script broke these rules:\n" +
+            formatViolations(result) +
+            "\nReturn the complete corrected JSON. Change only what is needed to fix these.",
         },
-        {
-          type: "examples",
-          title: "Real-World Applications",
-          content: [
-            `Let's look at some real examples of ${strategy.topic} in action.`,
-            "Example 1: A practical case study",
-            "Example 2: How this is being used today",
-          ],
-          visuals: ["Case study graphics"],
-          duration: 90,
-        },
-        {
-          type: "implications",
-          title: "What This Means for You",
-          content: [
-            `The implications of ${strategy.topic} are far-reaching.`,
-            "Early adopters will have a significant advantage.",
-            "The potential for growth is enormous.",
-          ],
-          duration: 60,
-        },
-      ],
-      totalDuration: 240,
-    },
-    conclusion: {
-      type: "conclusion",
-      title: "Wrapping Up",
-      recap: [
-        `So that's everything you need to know about ${strategy.topic}.`,
-        "We covered the fundamentals and practical applications.",
-        "Now you have the knowledge to take action.",
-      ],
-      finalThought: `Remember, ${strategy.topic} is a journey, not a destination. Keep learning!`,
-      duration: "30 seconds",
-    },
-    callToAction: {
-      type: "call_to_action",
-      subscribe: "If you found this helpful, make sure to subscribe and hit the notification bell!",
-      like: "Give this video a thumbs up if you learned something new.",
-      comment: `Let me know in the comments: What's your experience with ${strategy.topic}?`,
-      nextVideo: "Check out this related video for more insights.",
-      duration: "15 seconds",
-    },
-    tone: template.tone,
-    pacing: template.pacing,
-    keywords: strategy.keywords,
-    duration: "4:00",
-    fullScript: "",
-  };
+      ];
+    }
+  }
+
+  throw new Error(`script_validation: ${result ? formatViolations(result) : "no result"}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -35,7 +35,9 @@ This document provides a mapping of critical files to their purpose within the s
 - `server/src/services/video-assembler.ts`: FFmpeg video pipeline (overlays, watermark, metadata).
 - `server/src/services/youtube/`: Full YouTube automation pipeline (strategy, scripts, TTS, rendering, publishing).
 - `server/src/services/youtube/site-walker.ts`: Playwright browser agent for branded screenshots.
-- `server/src/services/youtube/presentation-renderer.ts`: Playwright slide renderer.
+- `server/src/services/youtube/presentation-renderer.ts`: `buildBeats()` — one beat = one slide = one voice clip (+ disclosure / not-advice slides) — and the Playwright slide renderer.
+- `server/src/services/youtube/script-validator.ts`: deterministic script rules; `script-writer.ts` repairs or rejects.
+- `server/src/services/youtube/archive.ts`, `publish-slots.ts`: monthly-review archive; one-a-day publish slots.
 - `server/src/services/youtube/tts.ts`: per-beat TTS — Mark's ElevenLabs clone (default) or Grok Rex (`YT_TTS_PROVIDER=grok`), stitched as WAV with measured durations.
 
 ## Database & Schema
