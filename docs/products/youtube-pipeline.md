@@ -89,7 +89,7 @@ beats, 3:48, sync gate 36/36 within 0.034 s.
   'de-fi'—"), drops any model-written sentence that mentions evntrace, and replaces a greeting that doesn't name
   Coherence Daddy with "What's up everyone, welcome back to Coherence Daddy."
 - `applyPronunciationFixes()` respells words for the **voice only** (captions and slides keep the real spelling):
-  tokns.fi → "toe-kins dot fye", evntrace.com → "event trace dot com", DeFi → "de-fi", TX ecosystem → "T-X ecosystem",
+  tokns.fi → "tokens dot phi" (until 2026-10-09 "toe-kins dot fye", which eleven_v3 spelled out as F-Y-E), evntrace.com → "event trace dot com", DeFi → "de-fi", TX ecosystem → "T-X ecosystem",
   meme/memecoin(s) → "meem"/"meem-coin(s)" (Whisper heard "memcoin" before, 2026-10-08).
   Local Whisper on the 2026-10-07 render heard "Welcome back to Coherence Daddy", "DeFi", "tokens.fi",
   "CoherenceDaddy.com", "EventTrace.com".
@@ -183,6 +183,10 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   (90% matched); production needs its own source (ElevenLabs forced alignment is the prototype's stated plan).
   Quote scenes drew the sentence twice when words existed (big quote + bottom band) and split "tokns.fi" at the dot:
   fixed on `feat/yt-animated-scenes` `37d96ac2` (DOM gate 6/15 red before, 15/15 green after).
+- **2026-10-09** — Owner picked take B ("phi") of the four voiced respellings: `applyPronunciationFixes` now says
+  "tokens dot phi". Metadata fixes above (`youtube-seo-v2.test.ts`, 16 tests on the real d95fef7d script and its
+  measured durations; breaking the chapter parse or the disclosure line turns the matching tests red). Drafted by an
+  Ollama worker (nestd), the domain-keyword tag line and production step 8c written here.
 
 ## Owner decisions, 2026-10-08
 
@@ -225,8 +229,11 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
   `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
 - [x] **Scripts and how the channel talks** — done in script v2 (#194, live 2026-10-08): see "How a script is made".
 - [ ] **Metadata** — the custom thumbnail and the SRT are generated but never uploaded (publisher sends title,
-  description, tags, category 28 only); chapters come from script estimates (past the end on 14/14 live videos); tags
-  include concatenated junk and `toknsfi` on every video; `yt_analytics` has 0 rows because the OAuth token has only
+  description, tags, category 28 only). Fixed 2026-10-09 (`fix/yt-seo-voice-2026-10-09`): chapters now come from the
+  measured beat times (step 8c, `chaptersFromBeats` + `withChapters`; until then script estimates, past the end on 14/14
+  live videos and `NaN:NaN` on the first script-v2 video), the script's title is kept as written (no power word, year
+  or keyword suffix), TX/tokns videos carry `DISCLOSURE_LINE` near the top of the description, and stopword/sentence
+  /`toknsfi` tags are gone. Still open: thumbnail + SRT upload; `yt_analytics` has 0 rows because the OAuth token has only
   `youtube.upload` (daily 403, swallowed — the cron reports success). Owner step: re-consent with `youtube.readonly` +
   `yt-analytics.readonly`; meanwhile Zernio already holds views for 155 videos.
 - [x] **Publishing cadence** — fixed local slots, 1/day by default (`YT_PUBLISH_PER_DAY` 1–5, #194). Scaling past

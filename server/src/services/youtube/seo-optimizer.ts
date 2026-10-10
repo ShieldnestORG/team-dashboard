@@ -10,6 +10,7 @@ import { ytSeoData } from "@paperclipai/db";
 import { callOllamaChat } from "../ollama-client.js";
 import { logger } from "../../middleware/logger.js";
 import type { ContentStrategy } from "./content-strategy.js";
+import { DISCLOSURE_LINE, needsDisclosure, needsNotAdvice } from "./script-writer.js";
 import type { ScriptData } from "./script-writer.js";
 import { getAeoCta } from "../aeo-cta.js";
 
@@ -58,10 +59,36 @@ export function sanitizeTags(rawTags: string[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Duration / time helpers
+// ---------------------------------------------------------------------------
+
+export function parseDurationSec(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    const secs = trimmed.match(/^(\d+)s?$/);
+    if (secs) {
+      const n = Number(secs[1]);
+      if (n > 0) return n;
+    }
+    const mm = trimmed.match(/^(\d+):(\d{2})$/);
+    if (mm) return Number(mm[1]) * 60 + Number(mm[2]);
+  }
+  return 60;
+}
+
+export function fmtTime(sec: number): string {
+  const s = Math.floor(sec);
+  const m = Math.floor(s / 60).toString().padStart(2, "0");
+  const r = (s % 60).toString().padStart(2, "0");
+  return `${m}:${r}`;
+}
+
+// ---------------------------------------------------------------------------
 // Title optimization
 // ---------------------------------------------------------------------------
 
-function optimizeTitle(originalTitle: string, strategy: ContentStrategy): string {
+export function optimizeTitle(originalTitle: string, strategy: ContentStrategy): string {
   // Site-walker: walkthrough-specific title pattern
   if (strategy.pillar === "site-walker") {
     let hostname: string;
@@ -76,27 +103,13 @@ function optimizeTitle(originalTitle: string, strategy: ContentStrategy): string
     return titleCase(title);
   }
 
-  let title = originalTitle;
-  const powerWords = ["Ultimate", "Complete", "Essential", "Proven", "Secret", "Amazing", "Powerful"];
-  const hasPowerWord = powerWords.some((w) => title.toLowerCase().includes(w.toLowerCase()));
-
-  if (!hasPowerWord && title.length < 60) {
-    const pw = powerWords[Math.floor(Math.random() * powerWords.length)];
-    title = `${pw} ${title}`;
-  }
-
-  const year = new Date().getFullYear().toString();
-  if (!title.includes(year) && title.length < 70) {
-    title = `${title} (${year})`;
-  }
-
-  const pk = strategy.keywords[0];
-  if (pk && !title.toLowerCase().includes(pk.toLowerCase())) {
-    title = `${title} - ${pk}`;
-  }
-
-  if (title.length > 100) title = title.substring(0, 97) + "...";
-  return titleCase(title);
+  // Script-v2: keep the script's honest title as written.
+  let title = originalTitle.replace(/\s+/g, " ").trim();
+  if (title.length <= 100) return title;
+  const cut = title.slice(0, 99);
+  const idx = cut.lastIndexOf(" ");
+  const prefix = (idx >= 0 ? cut.slice(0, idx) : cut).trimEnd();
+  return `${prefix}…`;
 }
 
 function titleCase(str: string): string {
@@ -116,7 +129,7 @@ function titleCase(str: string): string {
 // Description generation
 // ---------------------------------------------------------------------------
 
-function generateDescription(script: ScriptData, strategy: ContentStrategy): string {
+export function generateDescription(script: ScriptData, strategy: ContentStrategy): string {
   // Site-walker: walkthrough-specific description
   if (strategy.pillar === "site-walker") {
     let hostname: string;
@@ -136,7 +149,7 @@ function generateDescription(script: ScriptData, strategy: ContentStrategy): str
         const m = Math.floor(ts / 60).toString().padStart(2, "0");
         const s = (ts % 60).toString().padStart(2, "0");
         desc += `${m}:${s} ${section.title || "Section"}\n`;
-        ts += section.duration || 45;
+        ts += parseDurationSec(section.duration ?? 45);
       }
     }
     desc += "\n";
@@ -150,7 +163,15 @@ function generateDescription(script: ScriptData, strategy: ContentStrategy): str
     return desc;
   }
 
-  let desc = `${script.title} - In this video, you'll discover ${strategy.angle.toLowerCase()}.\n\n`;
+  let desc = `${script.title}\n`;
+  if (typeof script.promise === "string" && script.promise.trim() !== "") {
+    desc += `${script.promise.trim()}\n`;
+  }
+  desc += "\n";
+
+  if (needsDisclosure(script)) {
+    desc += `${DISCLOSURE_LINE}\n\n`;
+  }
 
   desc += "WHAT YOU'LL LEARN:\n";
   if (script.mainContent?.sections) {
@@ -161,27 +182,17 @@ function generateDescription(script: ScriptData, strategy: ContentStrategy): str
   desc += "\n";
 
   // Timestamps
-  desc += "TIMESTAMPS:\n00:00 Introduction\n";
-  let ts = 20;
-  if (script.mainContent?.sections) {
-    for (const section of script.mainContent.sections) {
-      const m = Math.floor(ts / 60).toString().padStart(2, "0");
-      const s = (ts % 60).toString().padStart(2, "0");
-      desc += `${m}:${s} ${section.title || "Section"}\n`;
-      ts += section.duration || 60;
-    }
+  desc += "TIMESTAMPS:\n";
+  for (const c of generateChapters(script)) {
+    desc += `${c.time} ${c.title}\n`;
   }
   desc += "\n";
-
-  desc += "ABOUT THIS VIDEO:\n";
-  desc += `This comprehensive guide on ${strategy.topic} covers everything you need to know. `;
-  desc += `Whether you're a beginner or advanced, you'll find valuable insights about ${strategy.keywords.slice(0, 3).join(", ")}. `;
-  desc += `Perfect for ${strategy.targetAudience}.\n\n`;
 
   desc += "LINKS:\n";
   desc += "- tokns.fi\n- coherencedaddy.com\n- evntrace.com\n\n";
 
-  desc += "DISCLAIMER:\nThis video is for educational purposes only.\n\n";
+  desc += "DISCLAIMER:\n";
+  desc += needsNotAdvice(script) ? "This is education, not financial advice.\n\n" : "This video is for educational purposes only.\n\n";
   desc += `(c) ${new Date().getFullYear()} Coherence Daddy. All Rights Reserved.\n`;
 
   return desc;
@@ -191,11 +202,29 @@ function generateDescription(script: ScriptData, strategy: ContentStrategy): str
 // Tag generation
 // ---------------------------------------------------------------------------
 
-function generateTags(script: ScriptData, strategy: ContentStrategy): string[] {
+const TAG_STOPWORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "do", "does",
+  "doing", "for", "from", "has", "have", "how", "if", "in", "into", "is", "it",
+  "its", "it's", "just", "means", "mean", "not", "of", "on", "or", "so", "than",
+  "that", "the", "their", "them", "then", "there", "this", "to", "was", "what",
+  "when", "where", "which", "who", "why", "will", "with", "you", "your",
+  "actually", "really", "very", "about",
+]);
+
+export function generateTags(script: ScriptData, strategy: ContentStrategy): string[] {
   const tags = new Set<string>();
-  for (const kw of strategy.keywords) tags.add(kw);
-  tags.add(strategy.topic.toLowerCase());
-  tags.add(strategy.topic.toLowerCase().replace(/\s+/g, ""));
+  for (const kw of strategy.keywords) {
+    if (TAG_STOPWORDS.has(kw.toLowerCase()) || kw.length < 3) continue;
+    tags.add(kw);
+  }
+
+  const topic = strategy.topic.toLowerCase();
+  const topicWordCount = topic.trim().split(/\s+/).length;
+  if (topicWordCount <= 5) {
+    tags.add(topic);
+    tags.add(topic.replace(/\s+/g, ""));
+    tags.add(`${topic} ${new Date().getFullYear()}`);
+  }
 
   const typeTagMap: Record<string, string[]> = {
     Tutorial: ["how to", "tutorial", "guide", "step by step"],
@@ -205,12 +234,7 @@ function generateTags(script: ScriptData, strategy: ContentStrategy): string[] {
   };
   for (const t of typeTagMap[strategy.contentType] || []) tags.add(t);
 
-  const year = new Date().getFullYear().toString();
-  tags.add(year);
-  tags.add(`${strategy.topic.toLowerCase()} ${year}`);
-
   // Niche-specific
-  const topic = strategy.topic.toLowerCase();
   if (strategy.pillar === "site-walker") {
     let hostname: string;
     try { hostname = new URL(strategy.topic).hostname.replace(/^www\./, ""); } catch { hostname = strategy.topic; }
@@ -222,11 +246,15 @@ function generateTags(script: ScriptData, strategy: ContentStrategy): string[] {
   if (/motivat|mindset|discipline|wealth/.test(topic)) {
     for (const t of ["motivation", "mindset", "self improvement", "success"]) tags.add(t);
   }
-  tags.add("tokns.fi");
-  tags.add("coherencedaddy");
-  tags.add("TX ecosystem");
 
-  if (script.keywords) for (const kw of script.keywords) tags.add(kw);
+  tags.add("coherence daddy");
+  if (needsDisclosure(script)) {
+    tags.add("tokns");
+    tags.add("TX ecosystem");
+  }
+
+  // a domain keyword ("tokns.fi") would be squashed to "toknsfi" by sanitizeTags: tag the name instead
+  if (script.keywords) for (const kw of script.keywords) tags.add(kw.replace(/^([a-z0-9-]+)\.(fi|com|io|org|ai)$/i, "$1"));
 
   return Array.from(tags);
 }
@@ -287,22 +315,68 @@ function generateHashtags(strategy: ContentStrategy): string[] {
 // Chapters
 // ---------------------------------------------------------------------------
 
-function generateChapters(script: ScriptData): Array<{ time: string; title: string; seconds: number }> {
+export function generateChapters(script: ScriptData): Array<{ time: string; title: string; seconds: number }> {
   const chapters: Array<{ time: string; title: string; seconds: number }> = [];
   chapters.push({ time: "00:00", title: "Introduction", seconds: 0 });
   let current = 20;
   if (script.mainContent?.sections) {
     for (const section of script.mainContent.sections) {
-      const m = Math.floor(current / 60).toString().padStart(2, "0");
-      const s = (current % 60).toString().padStart(2, "0");
-      chapters.push({ time: `${m}:${s}`, title: section.title || "Section", seconds: current });
-      current += section.duration || 60;
+      chapters.push({ time: fmtTime(current), title: section.title || "Section", seconds: current });
+      current += parseDurationSec(section.duration);
     }
   }
-  const cm = Math.floor(current / 60).toString().padStart(2, "0");
-  const cs = (current % 60).toString().padStart(2, "0");
-  chapters.push({ time: `${cm}:${cs}`, title: "Conclusion & Next Steps", seconds: current });
+  chapters.push({ time: fmtTime(current), title: "Conclusion & Next Steps", seconds: current });
   return chapters;
+}
+
+export function chaptersFromBeats(
+  beats: Array<{ type: string; req?: { title?: string } }>,
+  slideDurations: number[],
+): Array<{ time: string; title: string; seconds: number }> {
+  const candidates: Array<{ title: string; seconds: number }> = [{ title: "Introduction", seconds: 0 }];
+
+  let start = 0;
+  for (let i = 0; i < beats.length; i++) {
+    const beat = beats[i];
+    if (beat.type === "section_title") {
+      const title = beat.req?.title;
+      if (typeof title === "string" && title.trim() !== "") {
+        candidates.push({ title, seconds: Math.floor(start) });
+      }
+    } else if (beat.type === "conclusion") {
+      candidates.push({ title: "Takeaways", seconds: Math.floor(start) });
+    }
+    start += slideDurations[i] || 0;
+  }
+
+  const kept: Array<{ time: string; title: string; seconds: number }> = [];
+  for (const c of candidates) {
+    const last = kept[kept.length - 1];
+    if (last && c.seconds < last.seconds + 10) continue;
+    kept.push({ time: fmtTime(c.seconds), title: c.title, seconds: c.seconds });
+  }
+
+  return kept.length < 3 ? [] : kept;
+}
+
+export function withChapters(
+  description: string,
+  chapters: Array<{ time: string; title: string }>,
+): string {
+  const marker = "TIMESTAMPS:\n";
+  const i = description.indexOf(marker);
+  if (i < 0) return description;
+
+  const after = description.slice(i + marker.length);
+  const end = after.indexOf("\n\n");
+  const blockEnd = i + marker.length + (end < 0 ? after.length : end + "\n\n".length);
+
+  if (chapters.length === 0) {
+    return description.slice(0, i) + description.slice(blockEnd);
+  }
+
+  const lines = chapters.map((c) => `${c.time} ${c.title}\n`).join("");
+  return description.slice(0, i) + marker + lines + "\n" + description.slice(blockEnd);
 }
 
 // ---------------------------------------------------------------------------
