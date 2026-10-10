@@ -13,7 +13,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 |---|---|
 | Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `animated-video.ts` + `word-timings.ts` + `animated/` (animated mode), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
 | Runs in | VPS4 (`31.220.61.14`), container `team-dashboard-server-1`, container clock UTC |
-| Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them |
+| Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them. Since 2026-10-10 (`DEV-117`) `yt:cleanup-videos` also purges slide PNGs, the thumbnail, and `timeline_<id>.json` / `video_<id>.animated.failed`; the `archive/` review copy is never touched |
 | Mode | **`YT_VISUAL_MODE=animated` on VPS4 since 2026-10-09 19:02 PDT** (owner: "make animated the default"; env backup `.env.production.bak-yt-animated-1791597734`; container recreated, env read back inside it): the nightly cron makes **animated** videos, slides only as the render-error fallback. *This row said until that evening:* `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
 | Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
@@ -112,7 +112,10 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
 2. **Script** (`script-writer.ts`): `SCRIPT_SYSTEM_PROMPT` (voice, honesty and title-contract rules) → JSON → `sanitizeScript`
    → `validateScript` (`script-validator.ts`). Violations go back to the model with exact reasons, up to 2 repairs; then
    the run fails with `script_validation` — there is no filler template any more. Scripts under `YT_MIN_SCRIPT_WORDS`
-   (380) spoken words are sent back to be lengthened.
+   (380) spoken words are sent back to be lengthened. For `tx_blockchain` scripts the prompt is extended with a FACTS
+   block from `facts/tx-facts.json` (only re-checked, <30-day facts, via `tx-facts.ts`), and the validator adds
+   `TX_CLAIM_OUTSIDE_FACTS`: every TX number/percentage/duration must be in the pack, and exact/exactly/always/
+   guaranteed/fixed are banned.
 3. **Beats** add a disclosure slide after the title on TX/tokns scripts and a "not financial advice" slide before the CTA
    on crypto scripts; content slides show the script's `onScreen` text (≤ 7 words).
 4. **Archive**: `archive/<YYYY-MM>/<id>/` keeps script, timeline, SEO, manifest, slides, thumbnail and captions.
@@ -152,6 +155,13 @@ Both actions only work on `pending_review`, `scheduled` or `paused` rows (route 
 published or failed video can't be uploaded twice. The time box is pre-filled in local time (it used to pre-fill UTC into
 a local picker, so an unchanged approval moved the video 7 hours later in PDT). A `pending_review` video older than
 30 days is still purged by `yt:cleanup-videos` — approve within a month.
+
+Before approving, the title or description of a queued video can be edited via `PATCH /api/youtube/queue/:id`
+(`{ title?, description? }`): at least one field, title 1–100 chars, description ≤ 5,000 chars; updates both the
+queue row (`title` + `metadata.description`, other metadata keys kept) and the linked `yt_seo_data` row so the
+publisher and re-queue path stay on the same text. Same status rule as above — only `pending_review`, `scheduled`
+or `paused` rows answer 200, otherwise 409 — and it never changes status or publish time. The dashboard edit
+field itself is a later front ticket (the YouTube area spec); the route is server-only.
 
 ## The sync gate
 
@@ -247,6 +257,16 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   on that video, all smooth fades (two section_title to content at 20.54 s and 48.64 s, one content to content at
   120.18 s); see Open items.
 
+- **2026-10-10** — DEV-115: TX scripts must be written from a verified TX facts pack. The first cron-made animated video
+  (c42a126f "How TX Reward Splits Work") described staking rewards as a "split between two parties" and never mentioned the
+  5% community-pool tax or PSE, because the `tx_blockchain` pillar got no TX facts and the model filled in generic
+  Cosmos-SDK behaviour. Now `facts/tx-facts.json` (short, dated, sourced statements; 4 re-checked shown, 4 `needsRecheck`
+  never shown) + `tx-facts.ts` (`loadTxFacts` drops unverified and >30-day-stale facts with a logged warning) feed a FACTS
+  block into the prompt, and the validator gains `TX_CLAIM_OUTSIDE_FACTS` (TX numbers/percentages/durations must be in the
+  pack; exact/exactly/always/guaranteed/fixed banned). Tests on the real c42a126f script (reconstructed fixture) fail the
+  rule; a corrected version passes. Refreshing the pack from the chain is a later ticket (`tx/tools/tx_facts_check.py` in
+  the TX repo is the model).
+
 ## Owner decisions, 2026-10-08
 
 | Topic | Decision |
@@ -299,7 +319,7 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
 - [ ] Icon keyword picks are crude on non-crypto scripts (e.g. coins on "reward" in a habits video).
 - [ ] Tags still contain single topic words like "beats", "small", "stick".
 - [ ] Forced-alignment cost per ElevenLabs call is unmeasured (42 calls on `d6d30d70`).
-- [ ] `timeline_<id>.json` files in the videos folder are not purged by `yt:cleanup-videos`.
+- [x] `timeline_<id>.json` files in the videos folder are not purged by `yt:cleanup-videos` — fixed 2026-10-10 (`DEV-117`): the 30-day cleanup now also deletes slide PNGs, the thumbnail, and `timeline_<id>.json` / `video_<id>.animated.failed`.
 - [x] **Scripts and how the channel talks** — done in script v2 (#194, live 2026-10-08): see "How a script is made".
 - [ ] **Metadata** — the custom thumbnail and the SRT are generated but never uploaded (publisher sends title,
   description, tags, category 28 only). Fixed 2026-10-09 (`fix/yt-seo-voice-2026-10-09`, merged as #197 `b036b39d`, live on VPS4): chapters now come from the

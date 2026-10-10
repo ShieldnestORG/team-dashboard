@@ -87,8 +87,10 @@ export function startYouTubeCrons(db: Db): void {
   });
 
   // 30-day video file cleanup — 2 AM daily
-  // Deletes .mp4 / .mp3 / .srt files for productions older than 30 days.
-  // Thumbnails and slide images are kept. DB records are never deleted.
+  // Deletes video/audio/captions, slide images, the thumbnail, and the
+  // per-production timeline/anim-failure files for productions older than 30
+  // days. The monthly archive under <YT_DATA_DIR>/archive/ is never touched.
+  // DB records are never deleted.
   registerCronJob({
     jobName: "yt:cleanup-videos",
     schedule: "0 2 * * *",

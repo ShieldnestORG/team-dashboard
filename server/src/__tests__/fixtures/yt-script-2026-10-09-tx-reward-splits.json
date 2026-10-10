@@ -1,0 +1,56 @@
+{
+  "_source": "Reconstructed from the ticket's description of production c42a126f 'How TX Reward Splits Work' (2026-10-09 23:03 PDT). The exact published text is not in this repo; the failing lines quoted by the fact-checker are reproduced verbatim here: 'split between two parties', 'exact take home', 'delegate ten tokens or ten thousand, the percentage of the pool remains the same'.",
+  "title": "How TX Reward Splits Work",
+  "pillar": "tx_blockchain",
+  "hook": { "type": "question", "text": "Who actually gets paid when you stake on TX?", "duration": "" },
+  "introduction": {
+    "greeting": "This is Coherence Daddy.",
+    "topicIntro": "Rewards do not simply land in your wallet.",
+    "valueProposition": "Here is how TX splits staking rewards, and what comes off the top first.",
+    "credibility": "We run a TX validator, so we see this every day.",
+    "duration": ""
+  },
+  "mainContent": {
+    "sections": [
+      {
+        "type": "fact",
+        "title": "The Split",
+        "content": ["When you stake on TX, your rewards split between two parties: you and the validator."],
+        "duration": 0
+      },
+      {
+        "type": "fact",
+        "title": "Your Take",
+        "content": ["Your exact take home depends on the validator's commission."],
+        "duration": 0
+      },
+      {
+        "type": "fact",
+        "title": "Pool Share",
+        "content": ["Delegate ten tokens or ten thousand, the percentage of the pool remains the same."],
+        "duration": 0
+      }
+    ],
+    "totalDuration": 0
+  },
+  "conclusion": {
+    "type": "conclusion",
+    "title": "Takeaways",
+    "recap": ["Rewards split in more than one way.", "The community pool takes its share first."],
+    "finalThought": "Check the details before you assume a clean split.",
+    "duration": ""
+  },
+  "callToAction": {
+    "type": "call_to_action",
+    "subscribe": "Subscribe for plain talk on the TX ecosystem.",
+    "like": "",
+    "comment": "Ask us how the community pool works.",
+    "nextVideo": "",
+    "duration": ""
+  },
+  "tone": "direct",
+  "pacing": "steady",
+  "keywords": ["TX blockchain", "staking rewards"],
+  "duration": "",
+  "fullScript": ""
+}

@@ -136,6 +136,79 @@ export function youtubeRoutes(db: Db): Router {
     }
   });
 
+  // Edit a queued video's title / description before approving it. Only rows a
+  // human may still touch (pending_review / scheduled / paused) are editable; a
+  // published, publishing or failed row must never be flipped back to a draft.
+  router.patch("/queue/:id", async (req, res) => {
+    try {
+      const { title, description } = req.body as { title?: string; description?: string };
+
+      const trimmedTitle = typeof title === "string" ? title.trim() : undefined;
+      const trimmedDescription = typeof description === "string" ? description.trim() : undefined;
+
+      if (trimmedTitle === undefined && trimmedDescription === undefined) {
+        return res.status(400).json({ error: "Provide title or description to update" });
+      }
+      if (trimmedTitle !== undefined && (trimmedTitle.length < 1 || trimmedTitle.length > 100)) {
+        return res.status(400).json({ error: "Title must be 1-100 characters" });
+      }
+      if (trimmedDescription !== undefined && trimmedDescription.length > 5000) {
+        return res.status(400).json({ error: "Description must be at most 5000 characters" });
+      }
+
+      const [row] = await db
+        .select()
+        .from(ytPublishQueue)
+        .where(
+          and(
+            eq(ytPublishQueue.id, req.params.id as string),
+            eq(ytPublishQueue.companyId, COMPANY_ID),
+          ),
+        )
+        .limit(1);
+
+      if (!row) {
+        return res.status(404).json({ error: "Queue item not found" });
+      }
+      if (!PUBLISHABLE_QUEUE_STATUSES.includes(row.status)) {
+        return res.status(409).json({ error: "Only videos awaiting approval, scheduled or paused can be edited" });
+      }
+
+      const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+      const newTitle = trimmedTitle ?? row.title;
+      const newDescription = trimmedDescription ?? (metadata.description as string | undefined);
+
+      const newMetadata: Record<string, unknown> = { ...metadata };
+      if (trimmedDescription !== undefined) newMetadata.description = trimmedDescription;
+
+      await db
+        .update(ytPublishQueue)
+        .set({
+          title: newTitle,
+          metadata: newMetadata,
+        })
+        .where(eq(ytPublishQueue.id, row.id));
+
+      // Keep the linked SEO row's title / description in step so the publisher and
+      // re-queue path never drift apart from what the owner edited.
+      const seoId = metadata.seoId as string | undefined;
+      if (seoId) {
+        await db
+          .update(ytSeoData)
+          .set({
+            ...(trimmedTitle !== undefined ? { title: trimmedTitle } : {}),
+            ...(trimmedDescription !== undefined ? { description: trimmedDescription } : {}),
+          })
+          .where(eq(ytSeoData.id, seoId));
+      }
+
+      res.json({ success: true, title: newTitle, description: newDescription });
+    } catch (err) {
+      logger.error({ err }, "Failed to edit queue item");
+      res.status(500).json({ error: "Failed to edit queue item" });
+    }
+  });
+
   router.delete("/queue/:id", async (req, res) => {
     try {
       await db

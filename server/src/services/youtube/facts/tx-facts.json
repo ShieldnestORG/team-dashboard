@@ -1,0 +1,64 @@
+{
+  "pillar": "tx_blockchain",
+  "facts": [
+    {
+      "statement": "A 5% community-pool tax comes off staking rewards before validators and delegators split what is left.",
+      "value": "0.05",
+      "numbers": ["5%", "0.05", "5"],
+      "source": "GET /cosmos/distribution/v1beta1/params -> community_tax",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": false
+    },
+    {
+      "statement": "PSE (x/pse, Proof of Support Emission) distributes to stakers monthly by score, with no validator commission.",
+      "value": "monthly",
+      "source": "tx-chain v7.0.0 x/pse/spec/README.md (score-based monthly distribution) and x/pse/keeper/distribute.go:228,390,424 (amount = total x score / total score, sent to the delegator and auto-delegated; no commission term)",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": false
+    },
+    {
+      "statement": "A validator's minimum commission rate is 5%.",
+      "value": "0.05",
+      "numbers": ["5%", "0.05", "5"],
+      "source": "live chain query -> min_commission_rate",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": false
+    },
+    {
+      "statement": "Unbonding takes 7 days (604800 seconds).",
+      "value": "604800",
+      "numbers": ["7 days", "7", "604800 seconds", "604800"],
+      "source": "live chain query -> unbonding_time",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": false
+    },
+    {
+      "statement": "PSE is roughly 10.8x the inflation staking pool right now.",
+      "value": "10.8",
+      "source": "tx-chain-analyst derived number (not re-checked)",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": true
+    },
+    {
+      "statement": "Slashing is 5% for double-signing and 0.01% for downtime.",
+      "value": "5% / 0.01%",
+      "source": "live chain query (not re-checked)",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": true
+    },
+    {
+      "statement": "Proposer rewards are currently 0.",
+      "value": "0",
+      "source": "live chain query (not re-checked)",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": true
+    },
+    {
+      "statement": "Proposal 47 (v8 upgrade, voting until 2026-10-14) may change inflation and PSE timing.",
+      "value": "",
+      "source": "tx-chain v7.0.0 governance (not re-checked)",
+      "checkedAt": "2026-10-10",
+      "needsRecheck": true
+    }
+  ]
+}

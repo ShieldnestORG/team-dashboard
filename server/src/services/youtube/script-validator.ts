@@ -1,10 +1,11 @@
 import type { ScriptData } from "./script-writer.js";
+import type { TxFact } from "./tx-facts.js";
 
 export type ViolationCode =
   | "GREETING" | "OPENER_FILLER" | "INVENTED" | "PRONUNCIATION_NOTE" | "ADVICE_OR_HYPE" | "BANNED_PHRASE"
   | "UNSUPPORTED_CLAIM" | "EVNTRACE_MENTION" | "NOT_SPEAKABLE" | "LINE_TOO_LONG" | "ONSCREEN_SHAPE"
   | "TITLE_TOO_LONG" | "TITLE_FALSE_CLAIM" | "TITLE_INCOME_PROMISE" | "TITLE_JUNK" | "COUNT_MISMATCH" | "STRUCTURE"
-  | "TOO_SHORT";
+  | "TOO_SHORT" | "TX_CLAIM_OUTSIDE_FACTS";
 
 export interface Violation { code: ViolationCode; field: string; message: string; excerpt: string }
 export interface ValidationResult { ok: boolean; violations: Violation[]; warnings: Violation[] }
@@ -30,6 +31,13 @@ const TITLE_YEAR_RE = /\(\d{4}\)/;
 const COUNT_RE = /\b(2|3|4|5|6|7|8|9|10|two|three|four|five|six|seven|eight|nine|ten)\s+[a-z-]*\s*[a-z]+s\b/gi;
 
 const WORD_NUMBERS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+
+// TX mechanics honesty rule (TX_CLAIM_OUTSIDE_FACTS). Any TX sentence that
+// makes a number/percentage/duration claim must restate a value from the facts
+// pack; "absolute certainty" words are never allowed in a TX mechanics sentence.
+const TX_TOPIC_RE = /\b(TX|tokns(\.fi)?|staking|stake|validator|delegat(e|or|ing)|reward|unbond(ing)?|slash(ing)?|commission|community pool|PSE)\b/i;
+const TX_MECH_NUMBER_RE = /\b\d+(?:\.\d+)?\s*(?:%|percent)?\b|(?:\d+(?:\.\d+)?)\s*(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b|\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|hundred|thousand)\b/gi;
+const TX_ABS_RE = /\bexact(ly)?\b|\balways\b|\bguaranteed?\b|\bfixed\b/i;
 
 function clip(text: string): string {
   return text.length <= 80 ? text : text.slice(0, 80);
@@ -57,6 +65,17 @@ function notSpeakableExcerpt(text: string): string | null {
   return null;
 }
 
+// A TX sentence's number/percentage/duration claim is allowed only when it
+// restates one of the pack's exact numeric spellings ("5%", "7 days", "0.05").
+function txNumberOutsideFacts(text: string, facts: TxFact[]): string | null {
+  const allowed = facts.flatMap((f) => f.numbers ?? []);
+  for (const m of text.matchAll(TX_MECH_NUMBER_RE)) {
+    const token = m[0].trim();
+    if (token !== "" && !allowed.includes(token)) return token;
+  }
+  return null;
+}
+
 // Report each (code, field) pair at most once across violations and warnings.
 function makeReporter() {
   const seen = new Set<string>();
@@ -77,6 +96,8 @@ function makeReporter() {
 export interface ValidateOptions {
   /** Minimum spoken words (0 = no length rule). The generator sets it; fixtures and unit tests may leave it off. */
   minSpokenWords?: number;
+  /** Verified, fresh TX facts from the facts pack. When set, every TX mechanics sentence must stay within them. */
+  txFacts?: TxFact[];
 }
 
 export function validateScript(script: ScriptData, opts: ValidateOptions = {}): ValidationResult {
@@ -153,6 +174,25 @@ export function validateScript(script: ScriptData, opts: ValidateOptions = {}): 
 
     const ns = notSpeakableExcerpt(text);
     if (ns) report(violations, "NOT_SPEAKABLE", field, "not speakable as written", ns);
+  }
+
+  // 9b. TX_CLAIM_OUTSIDE_FACTS — only when the caller supplied the TX facts
+  // pack (a TX/tokns script). Numbers, percentages and durations in a TX
+  // sentence must come from the pack, and "absolute certainty" words are
+  // banned from TX mechanics sentences.
+  // An EMPTY pack (file missing, every fact stale) still applies the rule: the script then may not state any TX number.
+  if (opts.txFacts) {
+    for (const { field, text } of spoken) {
+      if (!TX_TOPIC_RE.test(text)) continue;
+      const abs = text.match(TX_ABS_RE)?.[0];
+      if (abs) {
+        report(violations, "TX_CLAIM_OUTSIDE_FACTS", field, "TX mechanics must not claim certainty", abs);
+      }
+      const num = txNumberOutsideFacts(text, opts.txFacts);
+      if (num) {
+        report(violations, "TX_CLAIM_OUTSIDE_FACTS", field, "TX number not in the verified facts pack", num);
+      }
+    }
   }
 
   // 10. LINE_TOO_LONG (content lines only)
