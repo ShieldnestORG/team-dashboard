@@ -38,6 +38,8 @@ vi.mock("../services/youtube/content-strategy.js", () => ({
 vi.mock("../services/youtube/publish-slots.js", () => ({ nextPublishSlot: vi.fn(async () => new Date()) }));
 vi.mock("../services/youtube/seo-optimizer.js", () => ({
   optimizeSEO: vi.fn(async () => ({ id: "seo-1", title: "T", description: "D", tags: [], hashtags: [], chapters: [] })),
+  chaptersFromBeats: vi.fn(() => []),
+  withChapters: vi.fn((d: string) => d),
 }));
 vi.mock("../services/youtube/thumbnail.js", () => ({ generateThumbnail: vi.fn(async () => ({})) }));
 vi.mock("../services/youtube/archive.js", () => ({

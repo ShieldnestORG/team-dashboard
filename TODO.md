@@ -168,8 +168,8 @@ Shipped progressively through 2026-04-22 (blog#9 merge + retry + per-target visi
 Updated 2026-10-08 (detail and evidence in the doc's "Open items").
 
 - [x] Slides in sync with narration, Mark's voice (v3), owner approval, exact video length (#191, #192).
-- [x] Script v2: rule checker + repair, honest prompt, disclosure slides, topic mix, 1/day slots, archive (#194).
-- [ ] Animated scenes into production (prototype branch `feat/yt-animated-scenes`: follow-along words, counting numbers; icons in progress) — current static template is off-brand (cyan, wrong coral, Inter).
+- [x] Script v2: rule checker + repair, honest prompt, disclosure slides, topic mix, 1/day slots, archive (#194, live 2026-10-08 23:17 PDT).
+- [ ] Animated scenes into production (prototype branch `feat/yt-animated-scenes`: follow-along words, counting numbers, sentence icons) — current static template is off-brand (cyan, wrong coral, Inter).
 - [ ] Metadata: upload the generated thumbnail and SRT; chapters from measured beat starts; clean tags/titles in `seo-optimizer.ts` (still adds power words, year and a junk suffix); `yt_analytics` empty (token has only `youtube.upload`; use Zernio views meanwhile).
 - [ ] Crypto news sources (owner decision): `intel_reports` news is mostly AI/dev-tool blogs.
 - [ ] Products pillar (10%): owner-approved fact sheets for cliqs.io etc.; evntrace name-only until its video gate clears.
