@@ -18,6 +18,7 @@ record of the day.
 | 18:24–18:35 | **First animated production on VPS4** (`d6d30d70`), mode passed explicitly. Log below. |
 | 19:01 | Owner: "make animated the default and remove the old test". Test row `d95fef7d` removed from the queue (backup `/root/yt-queue-removed-2026-10-09-test-d95.log`). |
 | 19:02 | `YT_VISUAL_MODE=animated` in `/opt/team-dashboard/.env.production` (backup `.env.production.bak-yt-animated-1791597734`), applied with `docker compose up -d`; container started 2026-10-10T02:02:24Z, value read back inside it; "YouTube pipeline crons registered (6 jobs)". |
+| 19:28 | **Deploy of #200** (`cd5ea13e`, animated gate bar 0.9 → 0.75): container started 2026-10-10T02:28:32Z, healthy, `YT_VISUAL_MODE=animated` read back, the 0.75 constant present in `dist`. The deployed gate re-run read-only on `d6d30d70`: ok, 38 of 41 (92.7%). |
 
 ## Run log of the first animated production on VPS4 (`d6d30d70`, times UTC)
 
@@ -65,17 +66,23 @@ at 20.54 s and 48.64 s, one content→content at 120.18 s).
   (`https://api.coherencedaddy.com/socials/youtube`, queue card; `/youtube/videos` to watch or download); the tower
   request is ticket DEV-112 (the tower's merge-check service serves MDB_3.0 only today).
 
-**Not yet heard from the owner:** whether "tokens dot phi" SOUNDS right; a verdict on the first VPS-made animated
-video (`d6d30d70`, "Discipline Over Motivation: Small Habits That Stick"); whether an animated video that fails the
-sync gate should fall back to slides.
+- ~19:20 PDT, after watching the first VPS-made animated video (`d6d30d70`): "this video is nice... would like to make
+  a todo to make a workbook about this and other disiplines" → to-do filed in the marketing repo (`TODO.md` §0,
+  2026-10-09 entry). And on the pronunciation: "i thought we agreed on the phi already i think in was 'say b'" —
+  **"tokens dot phi" is confirmed; do not ask again.**
+
+**Still open with the owner:** the approval click for `d6d30d70` in the dashboard (liked in words, not yet approved
+there when this was written); whether an animated video that fails the sync gate should fall back to slides.
+*(Until ~19:20 PDT this paragraph listed "whether tokens dot phi SOUNDS right" and "a verdict on the first VPS-made
+animated video" as not yet heard.)*
 
 ## Next steps
 
-1. Merge and deploy #200 (animated gate bar 0.9 → 0.75) before the 23:00 PDT nightly run; never deploy between
-   23:00 and the end of that run.
+1. ~~Merge and deploy #200 before the 23:00 PDT nightly run~~ — done 19:28 PDT (timeline above). Standing rule:
+   never deploy between 23:00 and the end of the nightly run.
 2. Read the nightly run's result the next morning: `assets.visualMode`, the gate line, the queue row. It is the
    first cron-started animated video.
-3. Owner: approve or reject `d6d30d70` in the dashboard; say whether "phi" is right.
+3. Owner: approve `d6d30d70` in the dashboard when ready ("phi" is confirmed).
 4. Open items in the canonical doc: icon picks on non-crypto scripts, single-word tags, forced-alignment cost,
    `timeline_<id>.json` purge, thumbnail + SRT upload, analytics scopes.
 5. DEV-112: team-dashboard's PR checks on the office tower.
