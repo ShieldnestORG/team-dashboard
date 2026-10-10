@@ -870,5 +870,5 @@ affiliate-facing pages carry their own `STATUS_PILL` map too.
   the owner can overturn. Known gap if it is ever needed: the primitives draw focus as a ring, which is a shadow
   (`button.tsx:8`), and that mode discards shadows.
 - **The stream route's seeking** was verified by reading its test, not by running it (section 5.4).
-- **Registered:** this document is listed under "Reference Docs" in the repo's root `CLAUDE.md`. The YouTube area spec
-  it points to is a separate change; link it from here once it merges.
+- **Registered:** this document is listed under "Reference Docs" in the repo's root `CLAUDE.md`, next to the
+  [YouTube area spec](youtube-area-spec.md), which landed in the same change.

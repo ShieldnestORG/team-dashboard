@@ -1,6 +1,6 @@
 # YouTube area — UX spec (one tab inside Socials & Content to review, schedule and look back)
 
-> **Cluster:** UX · **Tags:** youtube, review, approval, queue, library, ux-spec, socials-tab · **Related:** [YouTube pipeline](../products/youtube-pipeline.md), [Socials hub](../products/socials-hub.md); the design system (`docs/ux/design-system.md`) is its own change and is named here without a link until it lands
+> **Cluster:** UX · **Tags:** youtube, review, approval, queue, library, ux-spec, socials-tab · **Related:** [YouTube pipeline](../products/youtube-pipeline.md), [Design system](design-system.md), [Socials hub](../products/socials-hub.md)
 
 ## Owner decisions — answered 2026-10-10
 
