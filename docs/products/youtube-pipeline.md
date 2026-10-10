@@ -14,7 +14,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 | Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `animated-video.ts` + `word-timings.ts` + `animated/` (animated mode), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
 | Runs in | VPS4 (`31.220.61.14`), container `team-dashboard-server-1`, container clock UTC |
 | Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them |
-| Mode | `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
+| Mode | **`YT_VISUAL_MODE=animated` on VPS4 since 2026-10-09 19:02 PDT** (owner: "make animated the default"; env backup `.env.production.bak-yt-animated-1791597734`; container recreated, env read back inside it): the nightly cron makes **animated** videos, slides only as the render-error fallback. *This row said until that evening:* `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
 | Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
 | Admin UI | `/socials/youtube` (`YouTubePipeline.tsx`): queue cards with Publish Now, Reschedule / Approve & schedule, Remove · `youtube/videos` (`YouTubeVideos.tsx`): watch/download finished videos |
@@ -61,7 +61,8 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
   (`generateVisualAssets` + `assembleYouTubeVideo`), so a video still ships. `yt_productions.assets.visualMode`
   records which path made it: `animated`, `presentation` or `presentation-fallback`.
 - **Sync gate** (`verifySlideSync(..., { mode: "animated" })`): the two duration checks are unchanged; changes inside
-  a beat (words lighting up) are not reported as drift, and 90% of the planned beat changes must be seen (slides: 50%).
+  a beat (words lighting up) are not reported as drift, and 75% of the planned beat changes must be seen (slides: 50%;
+  the bar was 90% from #198 until the evening of 2026-10-09, see Open items).
   A video that fails the gate fails the day; it does not fall back to slides (owner decision pending, Open items).
   Known weakness: smooth fades can read as "no change" to the scene score (measured 2026-10-09, Open items).
 - Needs Playwright Chromium (the production image already ships build 1217 at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, so nothing is installed on VPS4; the container's `/app` is read-only, output goes to `/paperclip/youtube/`) and
@@ -277,16 +278,19 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
   the owner's Mac.
   The static slide template (fallback path) is still off-brand: `slide-templates.ts` uses the banned cyan `#00d4ff`,
   coral `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
-- [ ] **Animated sync gate vs smooth fades** (found 2026-10-09) — the 3 unmatched changes on `d6d30d70` were gentle fades:
+- [x] **Animated sync gate vs smooth fades** (found 2026-10-09; bar lowered to 75% the same evening, below) — the 3 unmatched changes on `d6d30d70` were gentle fades:
   ffmpeg's frame-to-frame scene score stays under 0.02 on a fade. With a 90% bar and about 4% misses per boundary (3 of
   69 over two videos) a good video would fail roughly 1 night in 30 (Poisson estimate from two samples only). Proposed
   fix: in animated mode compare a frame just before and just after each planned boundary instead of frame-to-frame scene
-  scores; or lower the bar. Not done.
-- [ ] **Owner decision: nightly mode** — make `YT_VISUAL_MODE=animated` the nightly default on VPS4, or keep slides. Today
+  scores; or lower the bar. *Done 2026-10-09:* the bar is 75%. A frame-pair check was measured first on `d6d30d70` and
+  rejected: frames 0.9 s apart differ by 4.5–18.7 grey levels across a real boundary but up to 3.0 inside one beat
+  (words lighting up), too thin a gap for a second test. Good videos scored 100% and 92.7%; the blank and shifted
+  controls in `youtube-sync-gate-animated.test.ts` score 0 of 5 and 2 of 5.
+- [x] **Owner decision: nightly mode** (decided 2026-10-09: animated is the default, see the Mode row) — make `YT_VISUAL_MODE=animated` the nightly default on VPS4, or keep slides. Today
   the cron makes slide videos. Weigh render time (about 8.5 min of wall time for a 3-minute video on 4 cores) and the gate item above.
 - [ ] **Owner decision: gate failure in animated mode** — an animated video that renders but FAILS the sync gate fails the
   day (no slide fallback); only a render ERROR falls back. Decide whether a gate failure should fall back too.
-- [ ] **Do not approve `d95fef7d` as is** — the first script-v2 test video (title "Powerful What Tx Staking Actually Is
+- [x] **Do not approve `d95fef7d` as is** (removed from the queue 2026-10-09 19:01 PDT on the owner's word; row backed up in `/root/yt-queue-removed-2026-10-09-test-d95.log` on VPS4; its MP4 stays until the 30-day cleanup) — the first script-v2 test video (title "Powerful What Tx Staking Actually Is
   (2026)", `NaN:NaN` chapters in its stored description, made before #197) is still `pending_review` for 2026-10-10 14:00Z.
   Remove it, or fix the stored title/description first. (The animated `d6d30d70` is `pending_review` for 2026-10-11 14:00Z.)
 - [ ] Icon keyword picks are crude on non-crypto scripts (e.g. coins on "reward" in a habits video).
