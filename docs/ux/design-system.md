@@ -567,7 +567,7 @@ Columns: what it is for, the variants allowed, its states, and what is banned.
 | Action worked | A toast (success) or a change you can see | Silence |
 | Part of the page stale or offline | `Notice` (warn) at the top | A hand-built banner (`Dashboard.tsx:206-215, 227`; `VideoEdit.tsx:123-136`) |
 
-### 5.4 NEW components (described, not built)
+### 5.4 NEW components (described, not built — except `VideoPreview`, built by DEV-119)
 
 **PageHeader** — NEW.
 *For:* the top of every page (section 4.2). *Parts:* title, one line of purpose, an optional `HelpTip`, one main
@@ -584,7 +584,7 @@ or in a tooltip. *Unknown key:* the neutral kind with the key shown, so a new st
 *Banned:* any status-to-colour map in a page or component file. Section 7 lists them. *Check:* the map has a test
 that every status the server can send has an entry (INFERRED).
 
-**VideoPreview** (a general `MediaPlayer` is the same part with an audio mode) — NEW.
+**VideoPreview** (a general `MediaPlayer` is the same part with an audio mode) — BUILT (DEV-119, 2026-10-10).
 *For:* any place a video or audio file is reviewed, approved or listed.
 **Rule: a review surface shows the thing being approved.** No approve or publish control without the preview in the
 same card. *Parts:* a box with a set aspect ratio (16:9, 9:16 or 1:1, the three `VideoEdit.tsx:178-180` already
@@ -821,7 +821,7 @@ variant of `PageTabBar`.
 |---|---|---|---|
 | **W1** | **Fix the radius trap:** set `--radius-lg` and `--radius-xl` to 16px (they are 0 today) | `ui/src/index.css:41-42` | The owner chose rounded cards. Until this is done `rounded-lg` and `rounded-xl` draw square corners (3.5) |
 | W2 | Add the `variant` prop (`line`, `pill`) to `PageTabBar` | `ui/src/components/PageTabBar.tsx:41` | The YouTube area's second-level row (4.2, 5.2) |
-| W3 | Collapse `status-colors.ts` to the five kinds and add `pending_review` and `processing` | `ui/src/lib/status-colors.ts:54-117` | The owner chose five colours (3.2) |
+| W3 | Collapse `status-colors.ts` to the five kinds and add `pending_review` and `processing` | `ui/src/lib/status-colors.ts:54-117` | The owner chose five colours (3.2). `pending_review` was added by DEV-119 (2026-10-10); the five-kind collapse and `processing` are still open |
 | W4 | Roomier spacing: `EntityRow` to `py-3`; stop `p-4` overrides on `CardContent` | `EntityRow.tsx:30`; `card.tsx:10, 68` | The owner chose roomier (3.4, 4.4) |
 
 ### Order

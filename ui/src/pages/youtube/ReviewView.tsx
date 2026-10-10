@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Youtube } from "lucide-react";
 import { youtubeApi } from "../../api/youtube";
 import { EmptyState } from "../../components/EmptyState";
-import { QueueItemCard } from "./QueueItemCard";
+import { ReviewCard } from "./ReviewCard";
 
 export function ReviewView() {
   const qc = useQueryClient();
@@ -13,6 +13,7 @@ export function ReviewView() {
   });
 
   const queue = (data as { queue: Array<Record<string, unknown>> } | undefined)?.queue || [];
+  // Newest first — the queue route already orders by createdAt desc.
   const review = queue.filter((item) => item.status === "pending_review");
   const refresh = () => qc.invalidateQueries({ queryKey: ["yt-queue"] });
 
@@ -23,7 +24,7 @@ export function ReviewView() {
   ) : (
     <div className="space-y-3">
       {review.map((item) => (
-        <QueueItemCard key={item.id as string} item={item} onRefresh={refresh} />
+        <ReviewCard key={item.id as string} item={item} onRefresh={refresh} />
       ))}
     </div>
   );

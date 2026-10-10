@@ -81,6 +81,9 @@ export const statusBadge: Record<string, string> = {
   approved: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
   rejected: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
 
+  // YouTube queue statuses — warn kind ("needs you"), like pending_approval.
+  pending_review: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+
   // Issue statuses — consistent hues with issueStatusIcon above
   backlog: "bg-muted text-muted-foreground",
   todo: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
