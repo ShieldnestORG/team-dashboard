@@ -10,6 +10,7 @@ import type { OllamaChatMessage } from "../ollama-client.js";
 import { logger } from "../../middleware/logger.js";
 import type { ContentStrategy } from "./content-strategy.js";
 import { validateScript, formatViolations } from "./script-validator.js";
+import { loadTxFacts, factsToPromptBlock } from "./tx-facts.js";
 
 // ---------------------------------------------------------------------------
 // Script structure types
@@ -126,6 +127,11 @@ function buildUserPrompt(strategy: GenerateScriptStrategy): string {
   add("ANGLE", strategy.angle || "");
   add("PILLAR", strategy.pillar || "");
   add("FORMAT", format);
+  // TX scripts get the verified facts pack; the writer may not go outside it.
+  if (strategy.pillar === "tx_blockchain") {
+    const txFactsBlock = factsToPromptBlock(loadTxFacts());
+    if (txFactsBlock !== "") lines.push(txFactsBlock);
+  }
   lines.push(`LENGTH: ${sections} sections of 2 to 4 content lines each, about 450 spoken words in total.`);
   if (Array.isArray(strategy.sources) && strategy.sources.length > 0) {
     lines.push(
@@ -462,7 +468,10 @@ export async function generateScript(strategy: GenerateScriptStrategy): Promise<
       duration: estimateDuration({ sections: mainContent?.sections ?? [] }),
       fullScript: "",
     } as ScriptData);
-    result = validateScript(script, { minSpokenWords: minScriptWords() });
+    result = validateScript(script, {
+      minSpokenWords: minScriptWords(),
+      ...(strategy.pillar === "tx_blockchain" || needsDisclosure(script) ? { txFacts: loadTxFacts() } : {}),
+    });
 
     if (result.ok) {
       const seenCodes = [...new Set(priorCodes)];

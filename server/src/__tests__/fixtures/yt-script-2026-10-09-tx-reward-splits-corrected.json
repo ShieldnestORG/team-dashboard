@@ -1,0 +1,62 @@
+{
+  "_source": "Corrected rewrite of c42a126f 'How TX Reward Splits Work' using only re-checked facts from the TX facts pack (5% community tax, 5% min commission, PSE monthly no-commission, 7-day unbonding).",
+  "title": "How TX Reward Splits Work",
+  "pillar": "tx_blockchain",
+  "hook": { "type": "question", "text": "Who actually gets paid when you stake on TX?", "duration": "" },
+  "introduction": {
+    "greeting": "This is Coherence Daddy.",
+    "topicIntro": "Rewards do not simply land in your wallet.",
+    "valueProposition": "Here is how TX splits staking rewards, and what is taken out first.",
+    "credibility": "We run a TX validator, so we see this every day.",
+    "duration": ""
+  },
+  "mainContent": {
+    "sections": [
+      {
+        "type": "fact",
+        "title": "The Community Tax",
+        "content": ["Staking rewards on TX pass through a 5% community-pool tax before validators and delegators split what is left."],
+        "duration": 0
+      },
+      {
+        "type": "fact",
+        "title": "Validator Commission",
+        "content": ["A validator's minimum commission rate is 5%."],
+        "duration": 0
+      },
+      {
+        "type": "fact",
+        "title": "Proof of Support Emission",
+        "content": ["PSE, the Proof of Support Emission, pays stakers monthly by score, with no validator commission."],
+        "duration": 0
+      },
+      {
+        "type": "fact",
+        "title": "Unbonding",
+        "content": ["When you unstake, your tokens unbond over 7 days."],
+        "duration": 0
+      }
+    ],
+    "totalDuration": 0
+  },
+  "conclusion": {
+    "type": "conclusion",
+    "title": "Takeaways",
+    "recap": ["A 5% community tax comes off first.", "PSE pays stakers monthly with no commission."],
+    "finalThought": "Check the details before you assume a clean split.",
+    "duration": ""
+  },
+  "callToAction": {
+    "type": "call_to_action",
+    "subscribe": "Subscribe for plain talk on the TX ecosystem.",
+    "like": "",
+    "comment": "Ask us how the community pool works.",
+    "nextVideo": "",
+    "duration": ""
+  },
+  "tone": "direct",
+  "pacing": "steady",
+  "keywords": ["TX blockchain", "staking rewards"],
+  "duration": "",
+  "fullScript": ""
+}

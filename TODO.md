@@ -176,10 +176,10 @@ Updated 2026-10-09 (detail and evidence in the doc's "Open items").
 - [x] **Owner decision (2026-10-10: "gatefail: Make a regular slide video instead"):** an animated video that renders but FAILS the sync gate now falls back to a presentation slide video the same night (no skipped day), re-runs the gate in `slides` mode, keeps the failed file as `video_<id>.animated.failed`, and stores the first gate's issues in `assets.animatedGateIssues`. *This line said until 2026-10-10:* "an animated video that renders but FAILS the sync gate fails the day (no slide fallback) — add a fallback?"
 - [x] (2026-10-09: bar lowered to 75%) Animated sync gate misses smooth fades (3 of 41 changes on `d6d30d70`; roughly 1 failed night in 30 at the 90% bar, two samples): compare a frame before/after each planned boundary instead of frame-to-frame scene scores, or lower the bar.
 - [x] (removed from the queue 2026-10-09) Do NOT approve test video `d95fef7d` as is (title "Powerful What Tx Staking Actually Is (2026)", `NaN:NaN` chapters; `pending_review` for 2026-10-10 14:00Z). The animated `d6d30d70` is `pending_review` for 2026-10-11 14:00Z.
-- [ ] Animated polish: icon keyword picks crude on non-crypto scripts (coins on "reward"); forced-alignment cost per call unmeasured; `timeline_<id>.json` files not purged by `yt:cleanup-videos`.
+- [ ] Animated polish: icon keyword picks crude on non-crypto scripts (coins on "reward"); forced-alignment cost per call unmeasured. (`timeline_<id>.json` files not purged by `yt:cleanup-videos` — fixed 2026-10-10, DEV-117.)
 - [ ] Crypto news sources (owner decision): `intel_reports` news is mostly AI/dev-tool blogs.
 - [ ] Products pillar (10%): owner-approved fact sheets for cliqs.io etc.; evntrace name-only until its video gate clears.
-- [ ] FACTS packet: chain numbers from code (TX_LCD_URL) instead of model-written numbers.
+- [ ] FACTS packet: refresh it from the chain (TX_LCD_URL) automatically — the hand-authored `facts/tx-facts.json` pack + `TX_CLAIM_OUTSIDE_FACTS` rule landed 2026-10-10 (DEV-115); auto-refresh from the chain is still open (`tx/tools/tx_facts_check.py` in the TX repo is the model). (This line said "chain numbers from code (TX_LCD_URL) instead of model-written numbers" until 2026-10-10.)
 - [ ] Monthly review report from `archive/` + Zernio views; repurpose approved videos to tokns.fi articles and X threads.
 - [x] Old-timing videos removed from the queue 2026-10-09 on the owner's word (4 unpublished rows; this line said "pause/remove … once the owner approves the new style").
 

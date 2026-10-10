@@ -56,6 +56,8 @@ server/
         content-strategy.ts         # Topic picker: balanced TX/crypto/mindset seeds, least-recently-used, recent titles
         script-writer.ts            # Script prompt + check-and-repair loop (no template fallback)
         script-validator.ts         # Deterministic script/title rules (honesty, hype, filler, length)
+        tx-facts.ts                 # TX facts pack loader: drops needsRecheck + >30-day-stale facts, builds the FACTS block
+        facts/                      # tx-facts.json — verified, dated, sourced TX statements (4 re-checked, 4 needsRecheck hidden)
         archive.ts                  # archive/<YYYY-MM>/<id>/ — script, timeline, slides, captions (monthly review)
         publish-slots.ts            # Next free daily publish slot (YT_PUBLISH_PER_DAY/_HOURS/_TZ)
         walkthrough-writer.ts       # Ollama walkthrough narration from site-walk results
