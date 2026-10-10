@@ -2,7 +2,8 @@
 
 > **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md)
 
-**In plain words:** a robot on VPS4 writes a script every morning, has Mark's cloned voice read it, turns it into
+**In plain words:** a robot on VPS4 writes a script every night (cron `0 6 * * *` UTC = 11 PM PDT, 10 PM PST; it
+starts a few minutes after the hour), has Mark's cloned voice read it, turns it into
 slides, joins them into a video and queues it for the **Coherence Daddy** YouTube channel. Since 2026-10-07 each slide
 is on screen exactly while its own sentence is spoken, and a new video waits for the owner's approval before it posts.
 
@@ -146,6 +147,42 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
 - **2026-10-08** — #191 merged (`03630f05`) and deployed. Owner heard sighs between slides: every clip of the real
   render ended in ~0.5 s of breath/room tone (15.0 s in total) → per-clip edge trim; "memecoin" respelled. On the 28
   real clips the trim changed no first/last word (Whisper). Drafted by an Ollama worker, gated here.
+- **2026-10-08** — #192 merged (`0c1e957b`) and deployed ~22:04 PDT: Mark on `eleven_v3` take D (owner's pick),
+  breath trim, "meem-coin". The 23:03 PDT run on it passed the sync gate (26/26 slide changes ≤ 0.033 s) and queued
+  as `pending_review`; its script still came from the old writer (title "How to Buy Crypto in 2026: The Ultimate…").
+- **2026-10-08** — #194 (script v2) merged (`cf22a901`) and deployed 23:17 PDT, after that run. Predeploy: no pending
+  migrations. Checked on the live container without writing anything (topic picked from read-only queries, one
+  `generateScript` call, `validateScript`): pillar `tx_blockchain` (2 of the last 9), seed "what staking on TX
+  actually means, and what it does not", title "What TX Staking Actually Is", greeting "This is Coherence Daddy.",
+  4 sections, 0 violations, 26 s on `gemma4:31b`. The first full video from it is the next nightly run.
+- **2026-10-09** — Owner: "remove any old videos from cue". Removed the 4 unpublished rows (all scripted before
+  #194): 2 `scheduled` (2026-10-11 10:00Z "Why Motivation Is a Scam…", 2026-10-15 14:00Z "Stop Losing Your Yield…")
+  and 2 `pending_review` ("Proven Why Motivation Fails…", "How to Buy Crypto in 2026…"). Same delete as the
+  dashboard's Remove; rows backed up to `/root/yt-queue-removed-2026-10-09.json` on VPS4; the 4 MP4s stay on disk
+  until the 30-day cleanup. Queue after: 152 `published`, nothing else. VPS4 then ran `50a56d18` (#196), container
+  up since 2026-10-09 06:48Z; `gemma4:31b` listed, YouTube refresh token OK (`youtube.upload` only); the
+  ElevenLabs key lacks `user_read`, so remaining TTS credit can't be read from the server.
+- **2026-10-09** — First full script-v2 video, run by hand at 16:03 PDT (same `runProductionPipeline(db)` call as the
+  cron; production `d95fef7d`). 240 s end to end; script "What TX Staking Actually Is" (`gemma4:31b`, 2 attempts: the
+  first failed `ADVICE_OR_HYPE` + `TOO_SHORT`); 29 beats, 162.56 s; spoken + on-screen disclosure at 5.2 s; sync gate
+  28/28, max offset 0.033 s; video stream 162.53 s vs audio 162.56 s. Queued `pending_review` for 2026-10-10 14:00Z.
+  **Metadata bugs it exposed** (all in `seo-optimizer.ts`, not yet fixed): (1) chapters print `NaN:NaN`, because
+  script v2 sections carry `duration: "35s"` (a string) and `generateChapters` does `current += section.duration`;
+  (2) title rewritten to "Powerful What Tx Staking Actually Is (2026)" (power-word prefix, "Tx"); (3) the description
+  has no disclosure line (owner decision: spoken, on screen AND in the description); (4) junk tags ("actually",
+  "means", "does") and template filler ("insights about staking, actually, means"). Same beats rendered with the
+  animated branch (`cfd61d9d`) on the owner's Mac: 4,877 frames = 162.56 s, 19 scenes, **0 layout warnings** (script
+  v2's shorter lines cleared the 10 seen before), 125 s wall time. Animated defect seen: the follow-along splits
+  "tokns.fi" into "tokns. fi".
+- **2026-10-09** — Owner heard Mark spell "tokns.fi" as "tokens dot F-Y-E". The respelling IS live
+  (`applyPronunciationFixes`: "tokns.fi" → "toe-kins dot fye"), but `eleven_v3` reads the non-word "fye" as letters
+  (the isolated clip transcribes as "dot f y"). Four candidate respellings voiced on the live settings (`fie`,
+  `phi`, `fy`, `fai`) wait on the owner's ear; Whisper cannot judge them. The owner prefers the animated style.
+  The animated follow-along needs per-word times (`words` on each beat); without them it falls back to caption pills
+  under the slide text ("double captions"). The preview used whisper.cpp word times aligned to the display words
+  (90% matched); production needs its own source (ElevenLabs forced alignment is the prototype's stated plan).
+  Quote scenes drew the sentence twice when words existed (big quote + bottom band) and split "tokns.fi" at the dot:
+  fixed on `feat/yt-animated-scenes` `37d96ac2` (DOM gate 6/15 red before, 15/15 green after).
 
 ## Owner decisions, 2026-10-08
 
@@ -169,7 +206,12 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
 [script research](youtube-script-research-2026-10-07.md) (honesty, facts-from-code, format, topic engine, draft prompt).
 
 
-- [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (commit `2a25862c`, not merged):
+- [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (not merged). Since 2026-10-08 it also has
+  the owner's asks: word-by-word follow-along text with a coral underline (`24388b23`), numbers that count up in gold
+  plus follow-along on title/quote/end card (`88ee67f4`), and sentence icons in brand colours chosen by keyword
+  (`cfd61d9d`). 60 s test render: 1,800 frames, exit 0, 10 layout warnings (sentences too long for 4 lines at 48 px;
+  the test timeline is an old long-sentence script — script v2's shorter lines should lower this; re-measure on one).
+  First prototype (`2a25862c`):
   `server/src/services/youtube/animated/` (`scenes.html` driven by one `seek(t)` clock via paused Web Animations,
   `render.ts` frame-stepper → ffmpeg) + `server/scripts/yt-animated-demo.ts`. Five templates (title, section, list
   with moving highlight, quote, end card) from `coherencedaddy-landing/DESIGN.md` tokens, Geist fonts bundled (OFL).
@@ -181,17 +223,17 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
   method); short on-screen text per line (the script redesign's `onScreen`), since full sentences render small.
   The current static slide template is off-brand: `slide-templates.ts` uses the banned cyan `#00d4ff`, coral
   `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
-- [ ] **Scripts and how the channel talks** — the prompt still produces formula titles, near-duplicate topics and
-  invented first-person claims ("I Tested 5 … for 90 Days"); redesign pending research.
+- [x] **Scripts and how the channel talks** — done in script v2 (#194, live 2026-10-08): see "How a script is made".
 - [ ] **Metadata** — the custom thumbnail and the SRT are generated but never uploaded (publisher sends title,
   description, tags, category 28 only); chapters come from script estimates (past the end on 14/14 live videos); tags
   include concatenated junk and `toknsfi` on every video; `yt_analytics` has 0 rows because the OAuth token has only
   `youtube.upload` (daily 403, swallowed — the cron reports success). Owner step: re-consent with `youtube.readonly` +
   `yt-analytics.readonly`; meanwhile Zernio already holds views for 155 videos.
-- [ ] **Publishing cadence** — replace the random slot with N per day; owner wants 3–5/day after approval;
-  recommendation is 1/day for 1–2 weeks with analytics working, then scale (YouTube's "inauthentic content"
-  policy, renamed 2025-07-15, targets "mass-produced, generic, repetitive" videos).
-- [ ] **Old-timing videos** — 5 were queued on 2026-10-07; pause/remove after the owner approves the new style.
+- [x] **Publishing cadence** — fixed local slots, 1/day by default (`YT_PUBLISH_PER_DAY` 1–5, #194). Scaling past
+  1/day stays the owner's call once analytics work (YouTube's "inauthentic content" policy, renamed 2025-07-15,
+  targets "mass-produced, generic, repetitive" videos). Rows queued before #194 keep the slot the old code
+  proposed (e.g. 2026-10-14 14:00 UTC) unless it is changed at approval.
+- [x] **Old-timing videos** — 5 were queued on 2026-10-07; removed 2026-10-09 on the owner's word (see change log).
 - [ ] Exact in-beat captions from ElevenLabs `/with-timestamps` (captions are spread evenly inside each beat today).
 - [ ] Mark's mastering chain (ZeroEdit `aggressive_post`) for a brand-VO sound.
 - [ ] Content Hub snippets drive Mark's clone through `eleven_v3`, which the clone isn't fine-tuned for.
