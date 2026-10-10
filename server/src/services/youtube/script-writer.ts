@@ -424,6 +424,11 @@ function parseScriptJson(content: string): Record<string, unknown> {
   return JSON.parse(rawText) as Record<string, unknown>;
 }
 
+// One first draft plus up to four repairs. It was 3 until 2026-10-10: measured on VPS4 with the TX facts rule
+// live, 13 of 15 TX scripts passed and nearly every pass used the third attempt (TOO_SHORT first, then the facts
+// rule), and 2 failed outright, which means no video that night. A try takes about 6 s on gemma4:31b.
+const MAX_SCRIPT_ATTEMPTS = 5;
+
 export async function generateScript(strategy: GenerateScriptStrategy): Promise<ScriptData> {
   const baseMessages: OllamaChatMessage[] = [
     { role: "system", content: SCRIPT_SYSTEM_PROMPT },
@@ -435,7 +440,7 @@ export async function generateScript(strategy: GenerateScriptStrategy): Promise<
   let result: ReturnType<typeof validateScript> | null = null;
   const priorCodes: string[] = [];
 
-  for (let attempts = 1; attempts <= 3; attempts++) {
+  for (let attempts = 1; attempts <= MAX_SCRIPT_ATTEMPTS; attempts++) {
     // callOllamaChat: one retry on a failed call, then give up (no template).
     let content: string;
     try {
@@ -483,7 +488,7 @@ export async function generateScript(strategy: GenerateScriptStrategy): Promise<
 
     priorCodes.push(...result.violations.map((v) => v.code));
 
-    if (attempts < 3) {
+    if (attempts < MAX_SCRIPT_ATTEMPTS) {
       // Repair: show the model what it returned and what broke.
       messages = [
         ...messages,
