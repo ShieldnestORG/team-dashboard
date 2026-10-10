@@ -90,8 +90,11 @@ const AutoReply = lazy(() => import("./pages/AutoReply").then((m) => ({ default:
 const CronManagement = lazy(() => import("./pages/CronManagement").then((m) => ({ default: m.CronManagement })));
 const AgentOps = lazy(() => import("./pages/AgentOps").then((m) => ({ default: m.AgentOps })));
 const ApiDashboard = lazy(() => import("./pages/ApiDashboard").then((m) => ({ default: m.ApiDashboard })));
-const YouTubePipeline = lazy(() => import("./pages/YouTubePipeline").then((m) => ({ default: m.YouTubePipeline })));
-const YouTubeVideos = lazy(() => import("./pages/YouTubeVideos").then((m) => ({ default: m.YouTubeVideos })));
+const YouTubeArea = lazy(() => import("./pages/youtube/YouTubeArea").then((m) => ({ default: m.YouTubeArea })));
+const YouTubeReview = lazy(() => import("./pages/youtube/ReviewView").then((m) => ({ default: m.ReviewView })));
+const YouTubeScheduled = lazy(() => import("./pages/youtube/ScheduledView").then((m) => ({ default: m.ScheduledView })));
+const YouTubePosted = lazy(() => import("./pages/youtube/PostedView").then((m) => ({ default: m.PostedView })));
+const YouTubeFiles = lazy(() => import("./pages/youtube/FilesView").then((m) => ({ default: m.FilesView })));
 const VideoEdit = lazy(() => import("./pages/VideoEdit").then((m) => ({ default: m.VideoEdit })));
 const MarketingPushes = lazy(() => import("./pages/MarketingPushes").then((m) => ({ default: m.MarketingPushes })));
 const Partners = lazy(() => import("./pages/Partners").then((m) => ({ default: m.Partners })));
@@ -256,7 +259,13 @@ function boardRoutes() {
         <Route path="analytics" element={<ContentAnalytics />} />
         <Route path="twitter" element={<TwitterDashboard />} />
         <Route path="discord" element={<Discord />} />
-        <Route path="youtube" element={<YouTubePipeline />} />
+        <Route path="youtube" element={<YouTubeArea />}>
+          <Route index element={<Navigate to="/socials/youtube/review" replace />} />
+          <Route path="review" element={<YouTubeReview />} />
+          <Route path="scheduled" element={<YouTubeScheduled />} />
+          <Route path="posted" element={<YouTubePosted />} />
+          <Route path="files" element={<YouTubeFiles />} />
+        </Route>
         <Route path="pushes" element={<MarketingPushes />} />
         <Route path="house-ads" element={<HouseAdsAdmin />} />
         <Route path="auto-reply" element={<AutoReply />} />
@@ -303,7 +312,7 @@ function boardRoutes() {
       <Route path="partners/:slug" element={<PartnerDetail />} />
       <Route path="partners/:slug/:tab" element={<PartnerDetail />} />
       <Route path="youtube" element={<Navigate to="/socials/youtube" replace />} />
-      <Route path="youtube/videos" element={<YouTubeVideos />} />
+      <Route path="youtube/videos" element={<Navigate to="/socials/youtube/files" replace />} />
       <Route path="video-edit" element={<VideoEdit />} />
       <Route path="intel" element={<Intel />} />
       <Route path="intel/:tab" element={<Intel />} />
