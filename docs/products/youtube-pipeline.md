@@ -4,7 +4,7 @@
 
 **In plain words:** a robot on VPS4 writes a script every night (cron `0 6 * * *` UTC = 11 PM PDT, 10 PM PST; it
 starts a few minutes after the hour), has Mark's cloned voice read it, turns it into
-slides, joins them into a video and queues it for the **Coherence Daddy** YouTube channel. Since 2026-10-07 each slide
+slides (or, in animated mode, a word-by-word animated picture), joins them into a video and queues it for the **Coherence Daddy** YouTube channel. Since 2026-10-07 each slide
 is on screen exactly while its own sentence is spoken, and a new video waits for the owner's approval before it posts.
 
 ## What it is and where it runs
@@ -14,7 +14,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 | Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `animated-video.ts` + `word-timings.ts` + `animated/` (animated mode), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
 | Runs in | VPS4 (`31.220.61.14`), container `team-dashboard-server-1`, container clock UTC |
 | Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them |
-| Mode | `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07); `animated` is built and opt-in, see [Animated mode](#animated-mode-yt_visual_modeanimated) |
+| Mode | `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
 | Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
 | Admin UI | `/socials/youtube` (`YouTubePipeline.tsx`): queue cards with Publish Now, Reschedule / Approve & schedule, Remove · `youtube/videos` (`YouTubeVideos.tsx`): watch/download finished videos |
@@ -46,8 +46,9 @@ with the narration. Word-count estimation remains only for the legacy image mode
 
 ## Animated mode (`YT_VISUAL_MODE=animated`)
 
-Same script, beats, voice and measured slide durations as the presentation mode; only the picture differs. Built
-2026-10-09 on branch `feat/yt-animated-production`; **not yet run on VPS4** (local proof only, below).
+Same script, beats, voice and measured slide durations as the presentation mode; only the picture differs. Merged
+2026-10-09 as #198 (`3a23e0e3`), deployed to VPS4 the same evening (18:23 PDT) and run there once by hand (below).
+This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until that run.
 
 - `production.ts` voices the beats exactly as in presentation mode, then calls `renderAnimatedVideo()`
   (`animated-video.ts`) **before** any slide is rendered. It cuts each beat's speech out of the track, asks
@@ -61,13 +62,23 @@ Same script, beats, voice and measured slide durations as the presentation mode;
   records which path made it: `animated`, `presentation` or `presentation-fallback`.
 - **Sync gate** (`verifySlideSync(..., { mode: "animated" })`): the two duration checks are unchanged; changes inside
   a beat (words lighting up) are not reported as drift, and 90% of the planned beat changes must be seen (slides: 50%).
-  A video that fails the gate fails the day; it does not fall back to slides.
-- Needs Playwright Chromium (the production image has it at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`) and
+  A video that fails the gate fails the day; it does not fall back to slides (owner decision pending, Open items).
+  Known weakness: smooth fades can read as "no change" to the scene score (measured 2026-10-09, Open items).
+- Needs Playwright Chromium (the production image already ships build 1217 at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, so nothing is installed on VPS4; the container's `/app` is read-only, output goes to `/paperclip/youtube/`) and
   `scenes.html` + `animated/assets/` next to the compiled `render.js` (the `server` build script copies them to
   `dist/services/youtube/animated/`). `YT_ANIMATED_CHROMIUM` overrides the browser path.
 - Local proof 2026-10-09 (Mac, estimated word times, real audio of a live 29-beat video): 4,877 frames in 141.7 s wall
   (about 35 frames/s); video stream 162.533 s against 162.560 s of audio; the animated gate matched 28 of 28 planned
-  beat changes. VPS4 speed is unmeasured.
+  beat changes.
+- **On VPS4** (2026-10-09, container started 2026-10-10T01:23:50Z, repo `3a23e0e3`): before the deploy the render ran inside
+  the live container at 10.2 frames/s on a 30 s window. First full animated production `d6d30d70-2ba7-4187-ba81-f76ea832aae9`,
+  started 18:24 PDT, **619 s end to end**: script "Discipline Over Motivation: Small Habits That Stick" (pillar motivation,
+  `gemma4:31b`, 3 attempts), 42 beats; forced alignment 42 aligned / 0 estimated in about 3 s; 5,311 frames = 177.04 s;
+  render wall time 510.8 s (about 10.4 frames/s on 4 cores, roughly a third of the Mac's speed); 0 layout warnings; video
+  stream 177.033 s vs audio 177.029 s; animated sync gate passed with 38 of 41 planned changes matched (92.7%, bar 90%),
+  max offset 0.233 s; queued `pending_review` for 2026-10-11 14:00Z; `assets.visualMode = animated`; stored chapters
+  00:00 Introduction, 00:18, 00:47, 01:15, 01:43, 02:07, 02:33 Takeaways.
+- **No migration:** the only schema-adjacent change is the type of the `assets` jsonb column (adds `visualMode`).
 
 ## Voice
 
@@ -139,7 +150,7 @@ a local picker, so an unchanged approval moved the video 7 hours later in PDT). 
 
 ## The sync gate
 
-`verifySlideSync()` (`yt-video-assembler.ts`) runs after assembly in presentation mode. It fails the run (status
+`verifySlideSync()` (`yt-video-assembler.ts`) runs after assembly in presentation mode (and, with `mode: "animated"`, on the animated render; see Animated mode for its relaxed rules). It fails the run (status
 `failed`, error `sync gate: …`, not queued, files kept) when: slide durations don't add up to the audio (> 0.15 s);
 the **video stream** is not as long as the audio (> 0.25 s — `format=duration` would hide it behind the audio); any
 detected slide change is > 1 s from every planned start; or fewer than half the planned changes are detected
@@ -191,7 +202,7 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   cron; production `d95fef7d`). 240 s end to end; script "What TX Staking Actually Is" (`gemma4:31b`, 2 attempts: the
   first failed `ADVICE_OR_HYPE` + `TOO_SHORT`); 29 beats, 162.56 s; spoken + on-screen disclosure at 5.2 s; sync gate
   28/28, max offset 0.033 s; video stream 162.53 s vs audio 162.56 s. Queued `pending_review` for 2026-10-10 14:00Z.
-  **Metadata bugs it exposed** (all in `seo-optimizer.ts`, not yet fixed): (1) chapters print `NaN:NaN`, because
+  **Metadata bugs it exposed** (all in `seo-optimizer.ts`; "not yet fixed" until #197, 2026-10-09 evening, see below): (1) chapters print `NaN:NaN`, because
   script v2 sections carry `duration: "35s"` (a string) and `generateChapters` does `current += section.duration`;
   (2) title rewritten to "Powerful What Tx Staking Actually Is (2026)" (power-word prefix, "Tx"); (3) the description
   has no disclosure line (owner decision: spoken, on screen AND in the description); (4) junk tags ("actually",
@@ -202,16 +213,34 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
 - **2026-10-09** — Owner heard Mark spell "tokns.fi" as "tokens dot F-Y-E". The respelling IS live
   (`applyPronunciationFixes`: "tokns.fi" → "toe-kins dot fye"), but `eleven_v3` reads the non-word "fye" as letters
   (the isolated clip transcribes as "dot f y"). Four candidate respellings voiced on the live settings (`fie`,
-  `phi`, `fy`, `fai`) wait on the owner's ear; Whisper cannot judge them. The owner prefers the animated style.
+  `phi`, `fy`, `fai`) waited on the owner's ear (settled the same day: take B, next entry); Whisper cannot judge them. The owner prefers the animated style.
   The animated follow-along needs per-word times (`words` on each beat); without them it falls back to caption pills
   under the slide text ("double captions"). The preview used whisper.cpp word times aligned to the display words
-  (90% matched); production needs its own source (ElevenLabs forced alignment is the prototype's stated plan).
+  (90% matched); production needs its own source (ElevenLabs forced alignment was the prototype's stated plan; built in #198, below).
   Quote scenes drew the sentence twice when words existed (big quote + bottom band) and split "tokns.fi" at the dot:
   fixed on `feat/yt-animated-scenes` `37d96ac2` (DOM gate 6/15 red before, 15/15 green after).
 - **2026-10-09** — Owner picked take B ("phi") of the four voiced respellings: `applyPronunciationFixes` now says
   "tokens dot phi". Metadata fixes above (`youtube-seo-v2.test.ts`, 16 tests on the real d95fef7d script and its
   measured durations; breaking the chapter parse or the disclosure line turns the matching tests red). Drafted by an
   Ollama worker (nestd), the domain-keyword tag line and production step 8c written here.
+- **2026-10-09** — **#197 merged (`b036b39d`) and #198 merged (`3a23e0e3`); both deployed to VPS4 at 18:23 PDT** (container
+  started 2026-10-10T01:23:50Z, repo on the VPS at `3a23e0e3`). Predeploy: DNS ok, "Migrating database via DATABASE_URL",
+  no pending migrations. `YT_VISUAL_MODE` on VPS4 is still `presentation`; the animated production below passed the mode
+  explicitly. **#197:** `applyPronunciationFixes` says "tokens dot phi" for tokns.fi (owner picked take B of four voiced
+  respellings; `eleven_v3` spelled the old "toe-kins dot fye" as the letters F-Y-E); `seo-optimizer.ts` keeps the script's
+  title as written, has `parseDurationSec`, `chaptersFromBeats` + `withChapters`, `DISCLOSURE_LINE` near the top of the
+  description for TX/tokns videos, "This is education, not financial advice." for crypto, no filler paragraph, no
+  stopword/sentence tags; `production.ts` step 8c rewrites the description's chapters from measured beat times and updates
+  `yt_seo_data`. **#198:** animated mode (new files `animated/{scenes.html,render.ts,assets/fonts}`, `animated-video.ts`
+  with `buildAnimatedTimeline` + `renderAnimatedVideo`, `word-timings.ts` with `alignBeatWords` / `mapAlignedWords` /
+  `estimateWords`, `server/scripts/yt-animated-demo.ts`); `verifySlideSync({mode:"animated"})`; `production.ts` mode
+  `animated` with slide fallback on a render ERROR and `assets.visualMode`; the server build copies `scenes.html` + assets
+  into `dist`. Read-only check of the deployed dist on the archived d95fef7d script: "we build tokens dot phi, so we
+  gain"; title "What TX Staking Actually Is"; description with the promise line, the disclosure as its second paragraph and
+  chapters 00:00 / 00:25 / 00:54 / 01:23 / 01:50 / 02:17; tags without "actually", "means", "does", "toknsfi". First
+  animated production on VPS4: see Animated mode ("On VPS4"). **Finding:** the sync gate missed 3 of 41 planned changes
+  on that video, all smooth fades (two section_title to content at 20.54 s and 48.64 s, one content to content at
+  120.18 s); see Open items.
 
 ## Owner decisions, 2026-10-08
 
@@ -235,26 +264,38 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
 [script research](youtube-script-research-2026-10-07.md) (honesty, facts-from-code, format, topic engine, draft prompt).
 
 
-- [ ] **Animated scenes** — prototype on branch `feat/yt-animated-scenes` (not merged). Since 2026-10-08 it also has
-  the owner's asks: word-by-word follow-along text with a coral underline (`24388b23`), numbers that count up in gold
-  plus follow-along on title/quote/end card (`88ee67f4`), and sentence icons in brand colours chosen by keyword
-  (`cfd61d9d`). 60 s test render: 1,800 frames, exit 0, 10 layout warnings (sentences too long for 4 lines at 48 px;
-  the test timeline is an old long-sentence script — script v2's shorter lines should lower this; re-measure on one).
-  First prototype (`2a25862c`):
-  `server/src/services/youtube/animated/` (`scenes.html` driven by one `seek(t)` clock via paused Web Animations,
-  `render.ts` frame-stepper → ffmpeg) + `server/scripts/yt-animated-demo.ts`. Five templates (title, section, list
-  with moving highlight, quote, end card) from `coherencedaddy-landing/DESIGN.md` tokens, Geist fonts bundled (OFL).
-  Measured 2026-10-07 on the real Mark-voice timeline: 7,707 frames = 256.90 s (matches the audio), all 27 sentence
-  boundaries change the picture (median 6.1 grey levels) while frames hold still inside a sentence (max 0.27); 0 layout
-  warnings; 147 s wall time on the owner's Mac (VPS4 speed unmeasured). Exits start 0.25 s before the next beat by
-  design. Before production: the server build must copy `scenes.html` + `assets/` into `dist`; Chromium on VPS4;
-  render time on VPS4; the sync gate's scene threshold vs smooth fades (the prototype measured with a pixel-change
-  method); short on-screen text per line (the script redesign's `onScreen`), since full sentences render small.
-  The current static slide template is off-brand: `slide-templates.ts` uses the banned cyan `#00d4ff`, coral
-  `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
+- [x] **Animated scenes** — merged (#198, `3a23e0e3`), deployed and run once on VPS4 on 2026-10-09 (see Animated mode and the
+  change log). Superseded text of this item (until 2026-10-09): "prototype on branch `feat/yt-animated-scenes` (not merged)";
+  "Before production: the server build must copy `scenes.html` + `assets/` into `dist`; Chromium on VPS4; render time on VPS4;
+  the sync gate's scene threshold vs smooth fades; short on-screen text per line". Status of those: build copy done; Chromium
+  was already in the image; VPS4 render time measured (10.4 frames/s); script v2's short `onScreen` lines gave 0 layout
+  warnings on two videos; the smooth-fade question is open (next item). Prototype history: first prototype `2a25862c`
+  (`scenes.html` driven by one `seek(t)` clock via paused Web Animations, `render.ts` frame-stepper to ffmpeg; five
+  templates from `coherencedaddy-landing/DESIGN.md` tokens, Geist fonts bundled, OFL); follow-along words with a coral
+  underline (`24388b23`), counting numbers (`88ee67f4`), keyword-chosen icons (`cfd61d9d`). Measured 2026-10-07 on the
+  real Mark-voice timeline: 7,707 frames = 256.90 s, all 27 sentence boundaries change the picture, 147 s wall time on
+  the owner's Mac.
+  The static slide template (fallback path) is still off-brand: `slide-templates.ts` uses the banned cyan `#00d4ff`,
+  coral `#FF876D` (brand is `#FF6B4A`) and Inter (brand is Geist).
+- [ ] **Animated sync gate vs smooth fades** (found 2026-10-09) — the 3 unmatched changes on `d6d30d70` were gentle fades:
+  ffmpeg's frame-to-frame scene score stays under 0.02 on a fade. With a 90% bar and about 4% misses per boundary (3 of
+  69 over two videos) a good video would fail roughly 1 night in 30 (Poisson estimate from two samples only). Proposed
+  fix: in animated mode compare a frame just before and just after each planned boundary instead of frame-to-frame scene
+  scores; or lower the bar. Not done.
+- [ ] **Owner decision: nightly mode** — make `YT_VISUAL_MODE=animated` the nightly default on VPS4, or keep slides. Today
+  the cron makes slide videos. Weigh render time (about 8.5 min of wall time for a 3-minute video on 4 cores) and the gate item above.
+- [ ] **Owner decision: gate failure in animated mode** — an animated video that renders but FAILS the sync gate fails the
+  day (no slide fallback); only a render ERROR falls back. Decide whether a gate failure should fall back too.
+- [ ] **Do not approve `d95fef7d` as is** — the first script-v2 test video (title "Powerful What Tx Staking Actually Is
+  (2026)", `NaN:NaN` chapters in its stored description, made before #197) is still `pending_review` for 2026-10-10 14:00Z.
+  Remove it, or fix the stored title/description first. (The animated `d6d30d70` is `pending_review` for 2026-10-11 14:00Z.)
+- [ ] Icon keyword picks are crude on non-crypto scripts (e.g. coins on "reward" in a habits video).
+- [ ] Tags still contain single topic words like "beats", "small", "stick".
+- [ ] Forced-alignment cost per ElevenLabs call is unmeasured (42 calls on `d6d30d70`).
+- [ ] `timeline_<id>.json` files in the videos folder are not purged by `yt:cleanup-videos`.
 - [x] **Scripts and how the channel talks** — done in script v2 (#194, live 2026-10-08): see "How a script is made".
 - [ ] **Metadata** — the custom thumbnail and the SRT are generated but never uploaded (publisher sends title,
-  description, tags, category 28 only). Fixed 2026-10-09 (`fix/yt-seo-voice-2026-10-09`): chapters now come from the
+  description, tags, category 28 only). Fixed 2026-10-09 (`fix/yt-seo-voice-2026-10-09`, merged as #197 `b036b39d`, live on VPS4): chapters now come from the
   measured beat times (step 8c, `chaptersFromBeats` + `withChapters`; until then script estimates, past the end on 14/14
   live videos and `NaN:NaN` on the first script-v2 video), the script's title is kept as written (no power word, year
   or keyword suffix), TX/tokns videos carry `DISCLOSURE_LINE` near the top of the description, and stopword/sentence

@@ -50,10 +50,12 @@ These variables are required for the project to function. **VPS** requires all v
 | `CANVA_CLIENT_SECRET` | Optional | VPS | Canva Connect API client secret |
 | `CANVA_CALLBACK_URL` | Optional | VPS | Canva OAuth callback URL |
 | `CANVA_MEDIA_FOLDER_ID` | Optional | VPS | Canva folder to pull designs from for media tweets |
-| `YT_PIPELINE_ENABLED` | Optional | VPS | Set to `false` to leave the 5 YouTube crons dormant. Default: enabled |
+| `YT_PIPELINE_ENABLED` | Optional | VPS | Set to `false` to leave the 6 YouTube crons dormant (this said 5 until 2026-10-09; `yt:cleanup-videos` was never counted). Default: enabled |
 | `YT_TTS_PROVIDER` | Optional | VPS | YouTube narration voice: `elevenlabs` (default — Mark's clone via `ELEVENLABS_VOICE_KEY`, model `eleven_multilingual_v2`) or `grok` (Grok "Rex", needs `GROK_API_KEY`). Any other value fails the run. See [YouTube Pipeline](../products/youtube-pipeline.md). |
 | `YT_ELEVENLABS_MODEL` | Optional | VPS | Mark's YouTube voice model: `eleven_v3` (default since 2026-10-08, the owner's energetic pick; no neighbour context) or `eleven_multilingual_v2` (steadier; the clone is fine-tuned for it). Anything else fails the run. |
 | `YT_MIN_SCRIPT_WORDS` | Optional | VPS | Scripts with fewer spoken words are sent back to the model to be lengthened (default 380; 0 turns the rule off). |
+| `YT_VISUAL_MODE` | Optional | VPS | What the daily YouTube video looks like: `presentation` (default; branded slides, one per beat) or `animated` (word-by-word animated scenes, 1920x1080 30 fps, rendered in Chromium; about 8.5 min of render for a 3-minute video on VPS4; needs `ELEVENLABS_VOICE_KEY` for forced alignment, which falls back to estimated word times per beat; a render error falls back to slides, a failed sync gate does not). `runProductionPipeline(db, …, "animated")` overrides it for one run. VPS4 is still `presentation` (2026-10-09). The value is recorded as `yt_productions.assets.visualMode` (`animated` / `presentation` / `presentation-fallback`). `site-walker` (browser walkthrough) is also recognised; any other value takes the legacy AI-image path. See [YouTube Pipeline](../products/youtube-pipeline.md). |
+| `YT_ANIMATED_CHROMIUM` | Optional | VPS | Path of a Chromium executable for the animated renderer. Unset: the Playwright Chromium in the image (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, build 1217) is used. Read in `animated/render.ts`; also by `server/scripts/yt-animated-demo.ts`. |
 | `YT_PUBLISH_PER_DAY` | Optional | VPS | Proposed YouTube slots per day, 1–5 (default 1). |
 | `YT_PUBLISH_HOURS` | Optional | VPS | Local hours for those slots, comma list (default `7`). |
 | `YT_PUBLISH_TZ` | Optional | VPS | IANA time zone for the slots (default `America/Los_Angeles`). |
