@@ -93,6 +93,7 @@ export const ytProductions = pgTable(
       captionsPath?: string;
       visualAssets?: string[];
       archiveDir?: string; // archive/<YYYY-MM>/<id>/ — kept for the monthly review, never purged
+      visualMode?: string; // which path made the video: animated | presentation | presentation-fallback (type only, no migration)
     }>(),
     timeline: jsonb("timeline").$type<{
       created?: string;

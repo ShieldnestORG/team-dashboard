@@ -18,6 +18,7 @@ import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, verifySlideSync, type YtAssembleResult, type SyncReport } from "./yt-video-assembler.js";
+import { renderAnimatedVideo } from "./animated-video.js";
 import { buildBeats, buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Beat, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
@@ -34,6 +35,8 @@ const VISUAL_MODE = process.env.YT_VISUAL_MODE || "presentation";
 // picks up "scheduled" rows. YT_REQUIRE_REVIEW=false restores auto-scheduling.
 const REQUIRE_REVIEW = process.env.YT_REQUIRE_REVIEW !== "false";
 const ASSETS_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "assets");
+// Same folder the assembler writes video_<id>.mp4 into (yt-video-assembler.ts VIDEO_DIR).
+const VIDEO_DIR = join(process.env.YT_DATA_DIR || "/paperclip/youtube", "videos");
 
 function ensureDir(dir: string) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -148,7 +151,7 @@ export async function runProductionPipeline(
       perSlideDurations = chunkContentDurations.map((d, i) =>
         d + (i < chunkContentDurations!.length - 1 ? chunkSilenceGapSec! : 0),
       );
-    } else if (mode === "presentation") {
+    } else if (mode === "presentation" || mode === "animated") {
       // One beat = one slide = one voice clip. Slide durations are the measured
       // clip lengths, so each slide is on screen exactly while its words are spoken.
       beats = buildBeats(script);
@@ -169,9 +172,43 @@ export async function runProductionPipeline(
       tts = await generateTTSAudio(ttsText, `audio_${productionId}.mp3`);
     }
 
-    // 7. Generate visual assets (images for slideshow)
-    logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
-    const { paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(script, productionId, mode, siteWalkResult, beats);
+    // 7. Animated mode renders the finished video itself (scenes.html, frame by frame). If that fails for any
+    // reason the day still gets the normal slide video: fall through to the presentation path below.
+    let video: YtAssembleResult | undefined;
+    let visualModeUsed: string = mode; // recorded as assets.visualMode: animated | presentation | presentation-fallback | <other mode>
+    if (mode === "animated" && beats && perSlideDurations && chunkContentDurations) {
+      try {
+        logger.info({ productionId, beats: beats.length }, "YT Pipeline: rendering animated video...");
+        const animated = await renderAnimatedVideo({
+          productionId,
+          beats,
+          slideDurations: perSlideDurations,
+          speechDurations: chunkContentDurations,
+          audioPath: tts.audioPath,
+          outDir: VIDEO_DIR,
+          log: (line) => logger.info({ productionId }, `animated: ${line}`),
+        });
+        video = { videoPath: animated.videoPath, durationSec: animated.durationSec, fileSizeBytes: animated.fileSizeBytes };
+        visualModeUsed = "animated";
+        logger.info(
+          { productionId, wallSec: animated.wallSec, aligned: animated.aligned, estimated: animated.estimated, warnings: animated.warnings },
+          "YT Pipeline: animated video rendered",
+        );
+      } catch (err) {
+        visualModeUsed = "presentation-fallback";
+        logger.error({ productionId, err }, "YT Pipeline: animated render failed — falling back to presentation slides");
+      }
+    }
+
+    // 7b. Generate visual assets (images for slideshow); skipped when the animated render made the video
+    let visualAssets: string[] = [];
+    let slideWordCounts: number[] = [];
+    if (!video) {
+      logger.info({ productionId, mode }, "YT Pipeline: generating visual assets...");
+      ({ paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(
+        script, productionId, mode === "animated" ? "presentation" : mode, siteWalkResult, beats,
+      ));
+    }
 
     // 8. Generate captions (use plain text — NOT pronunciation-mangled TTS text)
     let captionsPath: string;
@@ -197,9 +234,8 @@ export async function runProductionPipeline(
       logger.warn({ productionId, ...captionCheck }, "Caption alignment drift detected");
     }
 
-    // 9. Assemble video
-    let video: YtAssembleResult | undefined;
-    if (visualAssets.length > 0) {
+    // 9. Assemble video (unless the animated render already made it)
+    if (!video && visualAssets.length > 0) {
       logger.info({ productionId, slides: visualAssets.length }, "YT Pipeline: assembling video...");
       video = await assembleYouTubeVideo({
         audioPath: tts.audioPath,
@@ -224,6 +260,7 @@ export async function runProductionPipeline(
         videoPath: video.videoPath,
         slideDurations: perSlideDurations,
         audioDurationSec: tts.durationSec,
+        mode: visualModeUsed === "animated" ? "animated" : "slides",
       });
       if (syncReport.ok) {
         logger.info({ productionId, ...syncReport }, "Slide sync gate passed");
@@ -246,6 +283,7 @@ export async function runProductionPipeline(
           videoPath: video?.videoPath,
           captionsPath,
           visualAssets,
+          visualMode: visualModeUsed,
         },
         timeline: {
           created: new Date().toISOString(),

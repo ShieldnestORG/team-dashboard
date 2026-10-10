@@ -35,7 +35,7 @@
     "dev": "tsx src/index.ts",
     "dev:watch": "cross-env PAPERCLIP_MIGRATION_PROMPT=never PAPERCLIP_MIGRATION_AUTO_APPLY=true tsx ./scripts/dev-watch.ts",
     "prepare:ui-dist": "bash ../scripts/prepare-server-ui-dist.sh",
-    "build": "pnpm --filter @paperclipai/plugin-sdk build && tsc && mkdir -p dist/onboarding-assets && cp -R src/onboarding-assets/. dist/onboarding-assets/ && mkdir -p dist/content-templates && find src/content-templates -name '*.json' -exec cp {} dist/content-templates/ \\;",
+    "build": "pnpm --filter @paperclipai/plugin-sdk build && tsc && mkdir -p dist/onboarding-assets && cp -R src/onboarding-assets/. dist/onboarding-assets/ && mkdir -p dist/content-templates && find src/content-templates -name '*.json' -exec cp {} dist/content-templates/ \\; && mkdir -p dist/services/youtube/animated/assets && cp src/services/youtube/animated/scenes.html dist/services/youtube/animated/ && cp -R src/services/youtube/animated/assets/. dist/services/youtube/animated/assets/",
     "prepack": "pnpm run prepare:ui-dist",
     "postpack": "rm -rf ui-dist",
     "clean": "rm -rf dist",

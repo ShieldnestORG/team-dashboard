@@ -1,6 +1,6 @@
 # YouTube Pipeline (daily videos)
 
-> **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md)
+> **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats, animated · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md)
 
 **In plain words:** a robot on VPS4 writes a script every morning, has Mark's cloned voice read it, turns it into
 slides, joins them into a video and queues it for the **Coherence Daddy** YouTube channel. Since 2026-10-07 each slide
@@ -10,10 +10,10 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 
 | Thing | Where |
 |---|---|
-| Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
+| Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `animated-video.ts` + `word-timings.ts` + `animated/` (animated mode), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
 | Runs in | VPS4 (`31.220.61.14`), container `team-dashboard-server-1`, container clock UTC |
 | Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them |
-| Mode | `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07) |
+| Mode | `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07); `animated` is built and opt-in, see [Animated mode](#animated-mode-yt_visual_modeanimated) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
 | Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
 | Admin UI | `/socials/youtube` (`YouTubePipeline.tsx`): queue cards with Publish Now, Reschedule / Approve & schedule, Remove · `youtube/videos` (`YouTubeVideos.tsx`): watch/download finished videos |
@@ -42,6 +42,31 @@ from the WAV (sample-exact) after `trimClipEdgesWav()` cuts breath and room tone
 60 ms pre-roll, tail −40 dBFS with a 120 ms post-roll); clips are joined with a 0.6 s gap; slide i lasts `clip_i + 0.6 s`. The slideshow is
 built with an `fps=30` filter and an explicit `-t`, and the merge is cut at the audio length, so the picture ends
 with the narration. Word-count estimation remains only for the legacy image mode.
+
+## Animated mode (`YT_VISUAL_MODE=animated`)
+
+Same script, beats, voice and measured slide durations as the presentation mode; only the picture differs. Built
+2026-10-09 on branch `feat/yt-animated-production`; **not yet run on VPS4** (local proof only, below).
+
+- `production.ts` voices the beats exactly as in presentation mode, then calls `renderAnimatedVideo()`
+  (`animated-video.ts`) **before** any slide is rendered. It cuts each beat's speech out of the track, asks
+  ElevenLabs forced alignment (`POST /v1/forced-alignment`, key `ELEVENLABS_VOICE_KEY`) for per-word times on the
+  beat's display text (`word-timings.ts`; up to 4 beats at once), writes `timeline_<id>.json` next to the video and
+  renders `animated/scenes.html` frame by frame in Playwright Chromium (`animated/render.ts`, 1920x1080, 30 fps),
+  muxing the voice track. A beat whose alignment fails, or returns a different word count, gets estimated word
+  times for that beat only.
+- **Any error in the animated render** is logged (`logger.error`) and the day falls through to the normal slide path
+  (`generateVisualAssets` + `assembleYouTubeVideo`), so a video still ships. `yt_productions.assets.visualMode`
+  records which path made it: `animated`, `presentation` or `presentation-fallback`.
+- **Sync gate** (`verifySlideSync(..., { mode: "animated" })`): the two duration checks are unchanged; changes inside
+  a beat (words lighting up) are not reported as drift, and 90% of the planned beat changes must be seen (slides: 50%).
+  A video that fails the gate fails the day; it does not fall back to slides.
+- Needs Playwright Chromium (the production image has it at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`) and
+  `scenes.html` + `animated/assets/` next to the compiled `render.js` (the `server` build script copies them to
+  `dist/services/youtube/animated/`). `YT_ANIMATED_CHROMIUM` overrides the browser path.
+- Local proof 2026-10-09 (Mac, estimated word times, real audio of a live 29-beat video): 4,877 frames in 141.7 s wall
+  (about 35 frames/s); video stream 162.533 s against 162.560 s of audio; the animated gate matched 28 of 28 planned
+  beat changes. VPS4 speed is unmeasured.
 
 ## Voice
 
