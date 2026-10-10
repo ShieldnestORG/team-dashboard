@@ -860,8 +860,10 @@ data the queue route already sends and on the stream route that #202 added.
    will be sent; chapters as a list (`youtube_pipeline.ts:59`); how it was made (`assets.visualMode`); made-on time;
    posting time; status; YouTube link; posted-on time; error; **is the file still there**; the date the file will
    delete itself; a cover-picture address. The preview text and the real upload must come from the **same**
-   function, so the preview can never drift from what is posted (`publish-queue.ts:67-92` builds it at posting
-   time today). The edit dialog (5.4) depends on this function.
+   function, so the preview can never drift from what is posted — that shared function landed as
+   `server/src/services/youtube/final-text.ts` (DEV-120), so upload and edit already call one source of truth
+   for the hashtag line, the finished description and the byte limit. The rest of this gap (the joined
+   answer itself) is still open. The edit dialog (5.4) depends on this function.
 3. **A cover-picture route.** None exists; the pictures sit in a folder the routes file names and never uses (`R:24`).
 4. **Lists by kind, in the right order, in pages.** Waiting; scheduled by posting time; posted by posted-on time,
    newest first. Today: the 50 most recently made rows of every kind (`R:84-90`).

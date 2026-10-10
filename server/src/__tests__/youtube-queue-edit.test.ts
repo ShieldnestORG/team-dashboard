@@ -113,16 +113,45 @@ describe("PATCH /queue/:id", () => {
     expect(res.status).toBe(400);
   });
 
-  it("400 for a 5001-character description", async () => {
-    const app = makeApp("board", makeDb([]));
+  it("400 for a 5001-character description (new byte-based sentence)", async () => {
+    const app = makeApp("board", makeDb([
+      { id: "q1", status: "pending_review", title: "Old Title", metadata: { description: "Old desc", tags: [] } },
+    ]));
     const res = await patch(app, "q1", { description: "a".repeat(5001) });
     expect(res.status).toBe(400);
+    // 5001 ASCII chars + the blank line ("\n\n") = 5003 bytes, 3 over YouTube's 5000.
+    expect(res.body.error).toBe("Description is too long for YouTube by 3 bytes");
   });
 
   it("400 for an empty body", async () => {
     const app = makeApp("board", makeDb([]));
     const res = await patch(app, "q1", {});
     expect(res.status).toBe(400);
+  });
+
+  it("400 for < in a title, and nothing is written", async () => {
+    const db = makeDb([{ id: "q1", status: "pending_review", title: "Old", metadata: { description: "d", tags: [] } }]);
+    const res = await patch(makeApp("board", db), "q1", { title: "a < b" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Title and description cannot contain < or >");
+    expect(db.__updates).toHaveLength(0);
+  });
+
+  it("the row's tags count toward the description limit", async () => {
+    // 4,998 letters + the blank line = 5,000 bytes: fits with no tags, 4 bytes over with "#tag".
+    const row = (tags: string[]) => ({ id: "q1", status: "pending_review", title: "Old", metadata: { description: "d", tags } });
+    const description = "a".repeat(4998);
+    expect((await patch(makeApp("board", makeDb([row([])])), "q1", { description })).status).toBe(200);
+    const res = await patch(makeApp("board", makeDb([row(["tag"])])), "q1", { description });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Description is too long for YouTube by 4 bytes");
+  });
+
+  it("a title-only edit is not refused for the description it did not touch", async () => {
+    const db = makeDb([{ id: "q1", status: "pending_review", title: "Old", metadata: { description: "a > b", tags: [] } }]);
+    const res = await patch(makeApp("board", db), "q1", { title: "New" });
+    expect(res.status).toBe(200);
+    expect(db.__updates[0].title).toBe("New");
   });
 
   it("409 for a published row", async () => {
