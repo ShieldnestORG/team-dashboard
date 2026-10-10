@@ -165,6 +165,9 @@ const SYNC_VIDEO_TOLERANCE_SEC = 0.25; // video length vs audio length
 const SYNC_DRIFT_LIMIT_SEC = 1.0; // a detection further than this from every expected start is real drift
 const SYNC_MATCH_TOLERANCE_SEC = 0.3; // an expected start counts as seen if a detection is this close
 const SYNC_MIN_MATCHED_SHARE = 0.5; // consecutive similar slides may not trigger, hence 50% not 100%
+// Animated renders change the picture on every beat boundary on purpose (28 of 28 matched within 0.3 s on a real
+// 29-beat video, 2026-10-09), so the bar is higher; changes inside a beat (words lighting up) are by design.
+const SYNC_MIN_MATCHED_SHARE_ANIMATED = 0.9;
 const SYNC_SCENE_THRESHOLD = 0.02;
 
 /**
@@ -178,8 +181,16 @@ export async function verifySlideSync(opts: {
   videoPath: string;
   slideDurations: number[];
   audioDurationSec: number;
+  /**
+   * "slides" (default): static slides, any picture change far from a planned start is drift.
+   * "animated": the picture also moves inside a beat (word-by-word light-up), so drifted detections are not
+   * reported, and the share of planned changes that must be seen rises to 90%.
+   */
+  mode?: "slides" | "animated";
 }): Promise<SyncReport> {
   const { videoPath, slideDurations, audioDurationSec } = opts;
+  const animated = opts.mode === "animated";
+  const minMatchedShare = animated ? SYNC_MIN_MATCHED_SHARE_ANIMATED : SYNC_MIN_MATCHED_SHARE;
   const issues: string[] = [];
 
   // Start time of every slide after the first (cumulative sums, excluding 0 and the end).
@@ -230,7 +241,7 @@ export async function verifySlideSync(opts: {
   ).length;
 
   const drifted = detections.filter((_, i) => offsets[i] > SYNC_DRIFT_LIMIT_SEC);
-  if (drifted.length > 0) {
+  if (!animated && drifted.length > 0) {
     issues.push(
       `${drifted.length} slide change(s) more than ${SYNC_DRIFT_LIMIT_SEC}s from any planned slide start (at ${drifted
         .slice(0, 5)
@@ -238,7 +249,7 @@ export async function verifySlideSync(opts: {
         .join(", ")}); worst offset ${maxOffsetSec.toFixed(2)}s`,
     );
   }
-  if (expectedStarts.length > 0 && matchedCount / expectedStarts.length < SYNC_MIN_MATCHED_SHARE) {
+  if (expectedStarts.length > 0 && matchedCount / expectedStarts.length < minMatchedShare) {
     issues.push(
       `only ${matchedCount} of ${expectedStarts.length} planned slide changes were seen in the video (broken or blank slides?)`,
     );
