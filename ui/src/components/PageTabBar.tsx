@@ -13,9 +13,11 @@ interface PageTabBarProps {
   value?: string;
   onValueChange?: (value: string) => void;
   align?: "center" | "start";
+  /** "line" (default) is today's underlined row; "pill" is the quieter second-level segmented row. */
+  variant?: "line" | "pill";
 }
 
-export function PageTabBar({ items, value, onValueChange, align = "center" }: PageTabBarProps) {
+export function PageTabBar({ items, value, onValueChange, align = "center", variant = "line" }: PageTabBarProps) {
   const { isMobile } = useSidebar();
 
   if (isMobile && value !== undefined && onValueChange) {
@@ -38,7 +40,7 @@ export function PageTabBar({ items, value, onValueChange, align = "center" }: Pa
     // A long row wraps onto a second line instead of making the page scroll sideways: the ten
     // Socials tabs are 1,150 px wide and pushed <main> 158 px sideways at a 1280 px window (2026-10-09).
     <TabsList
-      variant="line"
+      variant={variant === "pill" ? "default" : "line"}
       className={cn(
         "max-w-full flex-wrap gap-y-1 group-data-[orientation=horizontal]/tabs:h-auto",
         align === "start" && "justify-start",
