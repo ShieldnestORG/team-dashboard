@@ -153,9 +153,10 @@ function buildUserPrompt(strategy: GenerateScriptStrategy): string {
 
 export function applyPronunciationFixes(text: string): string {
   const fixes: Record<string, string> = {
-    "tokns.fi": "toe-kins dot fye",
-    "Tokns.fi": "Toe-kins dot fye",
-    "TOKNS.FI": "TOE-KINS DOT FYE",
+    // eleven_v3 spelled "fye" out as F-Y-E (2026-10-09); "phi" is the owner's pick of four voiced takes
+    "tokns.fi": "tokens dot phi",
+    "Tokns.fi": "Tokens dot phi",
+    "TOKNS.FI": "TOKENS DOT PHI",
     "coherencedaddy.com": "coherence daddy dot com",
     "evntrace.com": "event trace dot com",
     "HODL": "hoddle",

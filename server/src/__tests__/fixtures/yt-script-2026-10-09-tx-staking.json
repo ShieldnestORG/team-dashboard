@@ -1,0 +1,152 @@
+{
+  "title": "What TX Staking Actually Is",
+  "promise": "You will understand the technical difference between network security and yield farming on TX.",
+  "hook": {
+    "type": "myth",
+    "text": "Staking is not just a way to earn rewards. It is the engine that keeps the network alive.",
+    "duration": "8s"
+  },
+  "introduction": {
+    "greeting": "This is Coherence Daddy.",
+    "topicIntro": "Many people treat staking like a savings account. That is a mistake.",
+    "valueProposition": "We will break down what happens under the hood when you stake on TX.",
+    "credibility": "We run a TX validator, so we see how this works every day.",
+    "duration": "15s"
+  },
+  "mainContent": {
+    "sections": [
+      {
+        "type": "fact",
+        "title": "The Security Engine",
+        "content": [
+          "Staking means locking tokens to support the network. This process helps the chain reach agreement on which transactions are valid.",
+          "Validators use these staked tokens as collateral. It ensures they act honestly to keep the network secure.",
+          "When you stake, you are essentially voting for a validator to handle the ledger. This distributes trust across the network.",
+          "The more tokens that are staked, the more expensive it becomes for a bad actor to attack the system."
+        ],
+        "onScreen": [
+          "Locking for security",
+          "Validator collateral",
+          "Voting for trust",
+          "Network attack cost"
+        ],
+        "visuals": [
+          "Animation of tokens locking into a shield",
+          "Diagram of validators agreeing on a block",
+          "User selecting a validator",
+          "Graph showing security increasing with stake"
+        ],
+        "duration": "35s"
+      },
+      {
+        "type": "compare",
+        "title": "Staking vs Yield Farming",
+        "content": [
+          "Yield farming usually involves providing liquidity to a pool. It is about trading volume and market making.",
+          "TX staking is about network integrity. You are not providing a trading pair, you are securing the infrastructure.",
+          "In farming, you often face impermanent loss. This happens when the price of your paired assets diverges.",
+          "Staking does not involve a liquidity pair. You hold one asset that performs a technical job for the chain."
+        ],
+        "onScreen": [
+          "Yield farming vs Staking",
+          "Securing infrastructure",
+          "Impermanent loss",
+          "Single asset role"
+        ],
+        "visuals": [
+          "Split screen: Liquidity pool vs Network shield",
+          "Comparison table of goals",
+          "Chart showing price divergence",
+          "Simple token icon performing a task"
+        ],
+        "duration": "35s"
+      },
+      {
+        "type": "fact",
+        "title": "The Role of Validators",
+        "content": [
+          "Validators are the nodes that actually do the work. They process transactions and propose new blocks.",
+          "They require a minimum amount of tokens to be eligible. This ensures they have skin in the game.",
+          "If a validator goes offline, they might miss rewards. This encourages high uptime and professional hardware.",
+          "We run one of these validators. Our job is to stay online and follow the protocol rules exactly."
+        ],
+        "onScreen": [
+          "Processing transactions",
+          "Skin in the game",
+          "Uptime requirements",
+          "Our validator role"
+        ],
+        "visuals": [
+          "Server rack animation",
+          "Minimum stake threshold graphic",
+          "Uptime percentage meter",
+          "Coherence Daddy logo next to a server"
+        ],
+        "duration": "35s"
+      },
+      {
+        "type": "risk",
+        "title": "The Real Risks",
+        "content": [
+          "Staking has specific technical risks. If a validator acts maliciously, they can lose a portion of their stake.",
+          "This is called slashing. It is a penalty designed to punish those who try to cheat the network.",
+          "You also face liquidity risk. Your tokens are locked and cannot be sold instantly during a price drop.",
+          "Depending on the settings, there is an unbonding period. You must wait before your tokens are usable again."
+        ],
+        "onScreen": [
+          "Slashing risk",
+          "Cheating penalties",
+          "Liquidity risk",
+          "Unbonding period"
+        ],
+        "visuals": [
+          "Warning icon with tokens disappearing",
+          "Penalty hammer hitting a token",
+          "Clock showing unlock period",
+          "Calendar showing days to unbond"
+        ],
+        "duration": "35s"
+      }
+    ],
+    "totalDuration": "140s"
+  },
+  "conclusion": {
+    "type": "conclusion",
+    "title": "Takeaways",
+    "recap": [
+      "Staking secures the TX blockchain.",
+      "It is different from yield farming.",
+      "It involves slashing and liquidity risks."
+    ],
+    "finalThought": "Understand the function before you look at the rewards.",
+    "duration": "15s"
+  },
+  "callToAction": {
+    "type": "call_to_action",
+    "subscribe": "Subscribe for more plain talk on the TX ecosystem.",
+    "like": "Like this video if you prefer facts over hype.",
+    "comment": "Ask us about validators in the comments.",
+    "nextVideo": "Check out our guide on tokns.fi features.",
+    "duration": "12s"
+  },
+  "tone": "confident, direct, plain",
+  "pacing": "steady",
+  "keywords": [
+    "TX blockchain",
+    "staking",
+    "validators",
+    "network security",
+    "tokns.fi"
+  ],
+  "duration": "NaN:NaN",
+  "fullScript": "TITLE: What TX Staking Actually Is\n\n══════════════════════════════════════════════════\n\n[8s] HOOK\nStaking is not just a way to earn rewards. It is the engine that keeps the network alive.\n\n[15s] INTRODUCTION\nThis is Coherence Daddy.\nMany people treat staking like a savings account. That is a mistake.\nWe will break down what happens under the hood when you stake on TX.\nWe run a TX validator, so we see how this works every day.\n\nMAIN CONTENT\n──────────────────────────────\n\n[NaN:NaN] THE SECURITY ENGINE\nStaking means locking tokens to support the network. This process helps the chain reach agreement on which transactions are valid.\nValidators use these staked tokens as collateral. It ensures they act honestly to keep the network secure.\nWhen you stake, you are essentially voting for a validator to handle the ledger. This distributes trust across the network.\nThe more tokens that are staked, the more expensive it becomes for a bad actor to attack the system.\n\n[VISUALS: Animation of tokens locking into a shield, Diagram of validators agreeing on a block, User selecting a validator, Graph showing security increasing with stake]\n\n[NaN:NaN] STAKING VS YIELD FARMING\nYield farming usually involves providing liquidity to a pool. It is about trading volume and market making.\nTX staking is about network integrity. You are not providing a trading pair, you are securing the infrastructure.\nIn farming, you often face impermanent loss. This happens when the price of your paired assets diverges.\nStaking does not involve a liquidity pair. You hold one asset that performs a technical job for the chain.\n\n[VISUALS: Split screen: Liquidity pool vs Network shield, Comparison table of goals, Chart showing price divergence, Simple token icon performing a task]\n\n[NaN:NaN] THE ROLE OF VALIDATORS\nValidators are the nodes that actually do the work. They process transactions and propose new blocks.\nThey require a minimum amount of tokens to be eligible. This ensures they have skin in the game.\nIf a validator goes offline, they might miss rewards. This encourages high uptime and professional hardware.\nWe run one of these validators. Our job is to stay online and follow the protocol rules exactly.\n\n[VISUALS: Server rack animation, Minimum stake threshold graphic, Uptime percentage meter, Coherence Daddy logo next to a server]\n\n[NaN:NaN] THE REAL RISKS\nStaking has specific technical risks. If a validator acts maliciously, they can lose a portion of their stake.\nThis is called slashing. It is a penalty designed to punish those who try to cheat the network.\nYou also face liquidity risk. Your tokens are locked and cannot be sold instantly during a price drop.\nDepending on the settings, there is an unbonding period. You must wait before your tokens are usable again.\n\n[VISUALS: Warning icon with tokens disappearing, Penalty hammer hitting a token, Clock showing unlock period, Calendar showing days to unbond]\n\n[15s] CONCLUSION\nStaking secures the TX blockchain.\nIt is different from yield farming.\nIt involves slashing and liquidity risks.\n\nUnderstand the function before you look at the rewards.\n\n[12s] CALL TO ACTION\nSubscribe for more plain talk on the TX ecosystem.\nLike this video if you prefer facts over hype.\nAsk us about validators in the comments.\nCheck out our guide on tokns.fi features.\n\n══════════════════════════════════════════════════\nDURATION: NaN:NaN\nTONE: confident, direct, plain\nPACING: steady\nKEYWORDS: TX blockchain, staking, validators, network security, tokns.fi\n",
+  "pillar": "tx_blockchain",
+  "format": "explainer",
+  "validation": {
+    "attempts": 2,
+    "violations": [
+      "ADVICE_OR_HYPE",
+      "TOO_SHORT"
+    ]
+  }
+}

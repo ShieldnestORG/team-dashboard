@@ -5,7 +5,7 @@
  */
 
 import type { Db } from "@paperclipai/db";
-import { ytProductions, ytPublishQueue } from "@paperclipai/db";
+import { ytProductions, ytPublishQueue, ytSeoData } from "@paperclipai/db";
 import { eq, sql } from "drizzle-orm";
 import { writeFile, mkdir } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
@@ -14,7 +14,7 @@ import { join } from "path";
 import { generateContentStrategy, type ContentStrategy } from "./content-strategy.js";
 import { nextPublishSlot } from "./publish-slots.js";
 import { generateScript, formatScriptForTTS, formatScriptPlainText, applyPronunciationFixes, type ScriptData } from "./script-writer.js";
-import { optimizeSEO, type SeoData } from "./seo-optimizer.js";
+import { optimizeSEO, chaptersFromBeats, withChapters, type SeoData } from "./seo-optimizer.js";
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, verifySlideSync, type YtAssembleResult, type SyncReport } from "./yt-video-assembler.js";
@@ -195,6 +195,15 @@ export async function runProductionPipeline(
       logger.info({ productionId, ...captionCheck }, "Caption alignment OK");
     } else {
       logger.warn({ productionId, ...captionCheck }, "Caption alignment drift detected");
+    }
+
+    // 8c. Chapters at the measured beat times (the description's chapters were estimates from the script)
+    if (beats && perSlideDurations) {
+      seo.chapters = chaptersFromBeats(beats, perSlideDurations);
+      seo.description = withChapters(seo.description, seo.chapters);
+      if (seo.id) {
+        await db.update(ytSeoData).set({ description: seo.description, chapters: seo.chapters }).where(eq(ytSeoData.id, seo.id));
+      }
     }
 
     // 9. Assemble video
