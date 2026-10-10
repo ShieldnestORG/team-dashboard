@@ -165,9 +165,12 @@ const SYNC_VIDEO_TOLERANCE_SEC = 0.25; // video length vs audio length
 const SYNC_DRIFT_LIMIT_SEC = 1.0; // a detection further than this from every expected start is real drift
 const SYNC_MATCH_TOLERANCE_SEC = 0.3; // an expected start counts as seen if a detection is this close
 const SYNC_MIN_MATCHED_SHARE = 0.5; // consecutive similar slides may not trigger, hence 50% not 100%
-// Animated renders change the picture on every beat boundary on purpose (28 of 28 matched within 0.3 s on a real
-// 29-beat video, 2026-10-09), so the bar is higher; changes inside a beat (words lighting up) are by design.
-const SYNC_MIN_MATCHED_SHARE_ANIMATED = 0.9;
+// Animated renders change the picture on every beat boundary on purpose, so the bar is higher than for slides;
+// changes inside a beat (words lighting up) are by design. Measured 2026-10-09 on two good videos: 28 of 28 and
+// 38 of 41 (92.7%) — the 3 misses were gentle fades, whose frame-to-frame scene score stays under the threshold.
+// A blank or shifted render scores far lower (0 of 5 and 2 of 5 in the tests). The bar was 0.9 for one evening:
+// one or two more missed fades would have failed a good video.
+const SYNC_MIN_MATCHED_SHARE_ANIMATED = 0.75;
 const SYNC_SCENE_THRESHOLD = 0.02;
 
 /**
@@ -184,7 +187,7 @@ export async function verifySlideSync(opts: {
   /**
    * "slides" (default): static slides, any picture change far from a planned start is drift.
    * "animated": the picture also moves inside a beat (word-by-word light-up), so drifted detections are not
-   * reported, and the share of planned changes that must be seen rises to 90%.
+   * reported, and the share of planned changes that must be seen rises to 75%.
    */
   mode?: "slides" | "animated";
 }): Promise<SyncReport> {

@@ -2,7 +2,7 @@
 // Sync gate, animated mode. Same synthetic-video approach as youtube-sync-gate.test.ts
 // (real ffmpeg, no network). Animated renders move the picture inside a beat on
 // purpose (words lighting up), so mode "animated" does not report drifted changes,
-// but it needs 90% of the planned changes seen (slides: 50%). Skipped, loudly
+// but it needs 75% of the planned changes seen (slides: 50%). Skipped, loudly
 // named, when ffmpeg is missing.
 // ---------------------------------------------------------------------------
 
@@ -72,20 +72,31 @@ describe.skipIf(!hasFfmpeg)("verifySlideSync mode animated (real ffmpeg, synthet
     expect(animated.maxOffsetSec).toBeGreaterThan(1.0);
   });
 
-  it("NEGATIVE CONTROL: 4 of 5 planned changes seen is 80%: fine for slides (50%), not for animated (90%)", async () => {
+  it("one missed change (a gentle fade) does not fail a good animated video: 4 of 5 is 80%, over the 75% bar", async () => {
     // Slides 3 and 4 share a colour, so the change planned at 9 s never happens in the picture.
     const video = join(dir, "four-of-five.mp4");
     makeVideo(video, [["red", 2], ["lime", 3], ["blue", 2.5], ["blue", 1.5], ["black", 3], ["magenta", 2]]);
 
+    const animated = await verifySlideSync({ videoPath: video, slideDurations: DURATIONS, audioDurationSec: TOTAL, mode: "animated" });
+    expect(animated.matchedCount).toBe(4);
+    expect(animated.issues).toEqual([]);
+    expect(animated.ok).toBe(true);
+  });
+
+  it("NEGATIVE CONTROL: 3 of 5 planned changes seen is 60%: fine for slides (50%), not for animated (75%)", async () => {
+    // Slides 2-3-4 share a colour, so the changes planned at 7.5 s and 9 s never happen in the picture.
+    const video = join(dir, "three-of-five.mp4");
+    makeVideo(video, [["red", 2], ["lime", 3], ["blue", 2.5], ["blue", 1.5], ["blue", 3], ["magenta", 2]]);
+
     const slides = await verifySlideSync({ videoPath: video, slideDurations: DURATIONS, audioDurationSec: TOTAL });
     expect(slides.issues).toEqual([]);
     expect(slides.ok).toBe(true);
-    expect(slides.matchedCount).toBe(4);
+    expect(slides.matchedCount).toBe(3);
 
     const animated = await verifySlideSync({ videoPath: video, slideDurations: DURATIONS, audioDurationSec: TOTAL, mode: "animated" });
-    expect(animated.matchedCount).toBe(4);
+    expect(animated.matchedCount).toBe(3);
     expect(animated.ok).toBe(false);
-    expect(animated.issues.join(" ")).toMatch(/only 4 of 5 planned slide changes/);
+    expect(animated.issues.join(" ")).toMatch(/only 3 of 5 planned slide changes/);
   });
 
   it("NEGATIVE CONTROL: boundaries shifted +1.5 s (total unchanged) still fail animated mode, on the matched share", async () => {
