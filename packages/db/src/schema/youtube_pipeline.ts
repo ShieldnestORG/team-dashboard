@@ -94,6 +94,7 @@ export const ytProductions = pgTable(
       visualAssets?: string[];
       archiveDir?: string; // archive/<YYYY-MM>/<id>/ — kept for the monthly review, never purged
       visualMode?: string; // which path made the video: animated | presentation | presentation-fallback (type only, no migration)
+      animatedGateIssues?: string[]; // the first gate's issues when an animated video failed its gate and fell back to slides (type only, no migration)
     }>(),
     timeline: jsonb("timeline").$type<{
       created?: string;

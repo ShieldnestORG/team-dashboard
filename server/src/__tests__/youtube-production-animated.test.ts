@@ -186,14 +186,41 @@ describe("runProductionPipeline animated wiring", () => {
     expect(result.status).toBe("ready");
   });
 
-  it("a failed sync gate on the animated video fails the day and queues nothing", async () => {
-    m.verifySlideSync.mockResolvedValue({ ok: false, issues: ["only 3 of 29 planned slide changes were seen"], expectedCount: 29, detectedCount: 3, matchedCount: 3, medianOffsetSec: 0, maxOffsetSec: 0 });
+  it("animated gate fails but slides gate passes: falls back to presentation slides and queues", async () => {
+    m.verifySlideSync
+      .mockResolvedValueOnce({ ok: false, issues: ["only 3 of 29 planned slide changes were seen"], expectedCount: 29, detectedCount: 3, matchedCount: 3, medianOffsetSec: 0, maxOffsetSec: 0 })
+      .mockResolvedValueOnce({ ok: true, issues: [], expectedCount: 29, detectedCount: 29, matchedCount: 29, medianOffsetSec: 0, maxOffsetSec: 0 });
     const { db, sets, inserts } = makeDb();
     const result = await production.runProductionPipeline(db as never, "topic", "animated");
+
+    expect(m.renderAnimatedVideo).toHaveBeenCalledTimes(1);
+    expect(m.verifySlideSync).toHaveBeenCalledTimes(2);
     expect(m.verifySlideSync.mock.calls[0][0].mode).toBe("animated");
+    expect(m.verifySlideSync.mock.calls[1][0].mode).toBe("slides");
+    expect(m.renderSlidesToImages).toHaveBeenCalledTimes(1);
+    expect(m.assembleYouTubeVideo).toHaveBeenCalledTimes(1);
+
+    const assets = assetsOf(sets);
+    expect(assets.visualMode).toBe("presentation-fallback");
+    expect(assets.animatedGateIssues).toEqual(["only 3 of 29 planned slide changes were seen"]);
+    expect(result.status).toBe("ready");
+    expect(result.error).toBeUndefined();
+    expect(inserts.some((v) => v.productionId === "prod-1" && v.status === "pending_review")).toBe(true);
+  });
+
+  it("animated gate fails AND slides gate fails: production failed, error from the second gate, no queue row", async () => {
+    m.verifySlideSync
+      .mockResolvedValueOnce({ ok: false, issues: ["only 3 of 29 planned slide changes were seen"], expectedCount: 29, detectedCount: 3, matchedCount: 3, medianOffsetSec: 0, maxOffsetSec: 0 })
+      .mockResolvedValueOnce({ ok: false, issues: ["slides blank"], expectedCount: 29, detectedCount: 0, matchedCount: 0, medianOffsetSec: 0, maxOffsetSec: 0 });
+    const { db, sets, inserts } = makeDb();
+    const result = await production.runProductionPipeline(db as never, "topic", "animated");
+
+    expect(m.verifySlideSync).toHaveBeenCalledTimes(2);
+    expect(m.verifySlideSync.mock.calls[0][0].mode).toBe("animated");
+    expect(m.verifySlideSync.mock.calls[1][0].mode).toBe("slides");
     expect(result.status).toBe("failed");
-    expect(result.error).toMatch(/sync gate/);
-    expect(assetsOf(sets).visualMode).toBe("animated");
+    expect(result.error).toMatch(/slides blank/);
+    expect(assetsOf(sets).visualMode).toBe("presentation-fallback");
     expect(inserts.some((v) => v.productionId === "prod-1")).toBe(false);
   });
 });

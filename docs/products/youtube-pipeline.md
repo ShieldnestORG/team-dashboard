@@ -63,7 +63,11 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
 - **Sync gate** (`verifySlideSync(..., { mode: "animated" })`): the two duration checks are unchanged; changes inside
   a beat (words lighting up) are not reported as drift, and 75% of the planned beat changes must be seen (slides: 50%;
   the bar was 90% from #198 until the evening of 2026-10-09, see Open items).
-  A video that fails the gate fails the day; it does not fall back to slides (owner decision pending, Open items).
+  A video that fails the gate falls back to a presentation slide video the same night (owner decision 2026-10-10:
+  "gatefail: Make a regular slide video instead"), then re-runs the gate in `slides` mode; the failed animated file is
+  kept as `video_<id>.animated.failed` and the first gate's issues are stored in `assets.animatedGateIssues`.
+  *This line said until 2026-10-10:* "A video that fails the gate fails the day; it does not fall back to slides
+  (owner decision pending, Open items)."
   Known weakness: smooth fades can read as "no change" to the scene score (measured 2026-10-09, Open items).
 - Needs Playwright Chromium (the production image already ships build 1217 at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, so nothing is installed on VPS4; the container's `/app` is read-only, output goes to `/paperclip/youtube/`) and
   `scenes.html` + `animated/assets/` next to the compiled `render.js` (the `server` build script copies them to
@@ -288,8 +292,7 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
   controls in `youtube-sync-gate-animated.test.ts` score 0 of 5 and 2 of 5.
 - [x] **Owner decision: nightly mode** (decided 2026-10-09: animated is the default, see the Mode row) — make `YT_VISUAL_MODE=animated` the nightly default on VPS4, or keep slides. Today
   the cron makes slide videos. Weigh render time (about 8.5 min of wall time for a 3-minute video on 4 cores) and the gate item above.
-- [ ] **Owner decision: gate failure in animated mode** — an animated video that renders but FAILS the sync gate fails the
-  day (no slide fallback); only a render ERROR falls back. Decide whether a gate failure should fall back too.
+- [x] **Owner decision: gate failure in animated mode** (decided 2026-10-10: "gatefail: Make a regular slide video instead") — an animated video that renders but FAILS the sync gate now falls back to a presentation slide video the same night (no skipped day), re-runs the gate in `slides` mode, and keeps the failed file as `video_<id>.animated.failed`. *Until 2026-10-10 this item read:* "an animated video that renders but FAILS the sync gate fails the day (no slide fallback); only a render ERROR falls back. Decide whether a gate failure should fall back too."
 - [x] **Do not approve `d95fef7d` as is** (removed from the queue 2026-10-09 19:01 PDT on the owner's word; row backed up in `/root/yt-queue-removed-2026-10-09-test-d95.log` on VPS4; its MP4 stays until the 30-day cleanup) — the first script-v2 test video (title "Powerful What Tx Staking Actually Is
   (2026)", `NaN:NaN` chapters in its stored description, made before #197) is still `pending_review` for 2026-10-10 14:00Z.
   Remove it, or fix the stored title/description first. (The animated `d6d30d70` is `pending_review` for 2026-10-11 14:00Z.)
