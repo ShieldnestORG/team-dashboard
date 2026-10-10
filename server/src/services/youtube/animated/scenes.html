@@ -121,12 +121,17 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
 }
 .rail__bar { position: absolute; left: 0; top: 0; width: 6px; height: 100px; background: var(--coral); transform-origin: 0 0; }
 .followcol { position: absolute; left: 660px; top: 180px; width: 1140px; height: 720px; display: grid; }
-.followwrap { grid-area: 1 / 1; display: flex; align-items: center; }
+/* one beat = one column, centred in the box: the icon tile (if the beat has one) above its sentence, left edges together */
+.followwrap { grid-area: 1 / 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1rem; }
 .followwrap .follow { width: 100%; }
-/* sentence icons: one 24x24 stroke icon per beat, about 7rem tall, right of the follow text */
-.iconcol { position: absolute; right: 80px; top: 180px; width: 240px; height: 720px; display: grid; }
-.beaticon { grid-area: 1 / 1; display: flex; align-items: center; justify-content: center; opacity: 0; }
-.beaticon svg { width: 7rem; height: 7rem; }
+/* sentence icon: a DESIGN section 4 card tile (Raised Surface, Whisper Line, radius lg, no shadow) holding a 24x24 stroke icon;
+   the colour comes from ICON_COLOR and is set once, never animated */
+.beaticon {
+  flex: none; width: 3.5rem; height: 3.5rem; display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 2px solid var(--whisper); border-radius: 1rem;
+  opacity: 0; transform-origin: 0 100%;
+}
+.beaticon svg { width: 1.8rem; height: 1.8rem; }
 
 /* 4. quote */
 .quote .frame { justify-content: center; }
@@ -403,7 +408,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     return { node, size };
   }
 
-  /* ---------- sentence icons (section 3): 24x24 stroke, about 7rem, right of the follow text ---------- */
+  /* ---------- sentence icons: 24x24 stroke icons (lucide style), drawn 1.8rem inside a 3.5rem card tile ---------- */
   const ICONS = {
     "chart-up": '<path d="M3 20h18M3 20V4M5 17l4-5 3 3 5-7"/>',
     "chart-down": '<path d="M3 20h18M3 20V4M5 7l4 5 3-3 5 7"/>',
@@ -417,21 +422,27 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     "scale": '<path d="M12 4v16M8 20h8M4 8h16M4 8l-2.5 5a2.8 2.8 0 0 0 5 0L4 8zM20 8l-2.5 5a2.8 2.8 0 0 0 5 0L20 8z"/>',
     "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
     "network": '<circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M11 7l-5 9M13 7l5 9M7.2 18h9.6"/>',
+    "lock": '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4M12 15v2"/>',
+    "server": '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/>',
+    "check": '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
+    "alert": '<path d="M12 4l9 16H3L12 4z"/><path d="M12 10v4M12 17h.01"/>',
+    "swap": '<path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/>',
+    "vote": '<rect x="3" y="12" width="18" height="9" rx="2"/><path d="M7 12V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v7M9.5 7.5l2 2 3-3.5"/>',
+    "hourglass": '<path d="M6 3h12M6 21h12M8 3v4c0 2 1.3 3.2 4 5-2.7 1.8-4 3-4 5v4M16 3v4c0 2-1.3 3.2-4 5 2.7 1.8 4 3 4 5v4"/>',
   };
-  // colour by category, through the CSS variable it belongs to (set once, never animated)
+  // colour by meaning (DESIGN section 2), through the CSS variable it belongs to: gold for money and time, green for
+  // growth and validation, coral for everything else. Never --work: steel blue is reserved for Work/Business topics.
   const ICON_COLOR = {
-    "chart-up": "var(--dim-direction)", lightbulb: "var(--dim-direction)",
-    coins: "var(--dim-focus)", calendar: "var(--dim-focus)", clock: "var(--dim-focus)",
-    network: "var(--work)", scale: "var(--work)",
-    shield: "var(--coral)", "chart-down": "var(--coral)", brain: "var(--coral)", heart: "var(--coral)", people: "var(--coral)",
+    coins: "var(--dim-focus)", calendar: "var(--dim-focus)", clock: "var(--dim-focus)", hourglass: "var(--dim-focus)",
+    "chart-up": "var(--dim-direction)", lightbulb: "var(--dim-direction)", check: "var(--dim-direction)",
   };
 
+  // One icon tile. The stroke shapes are inline SVG; currentColor resolves to the tile's colour.
   function iconEl(name) {
-    const wrap = h("div", "beaticon");
-    // the stroke shapes are inline SVG; currentColor resolves to the wrap's colour (set once, never animated)
-    wrap.innerHTML = `<svg viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">${ICONS[name]}</svg>`;
-    wrap.style.color = ICON_COLOR[name] || "var(--ink)";
-    return wrap;
+    const tile = h("div", "beaticon");
+    tile.innerHTML = `<svg viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">${ICONS[name]}</svg>`;
+    tile.style.color = ICON_COLOR[name] || "var(--coral)";
+    return tile;
   }
 
   const glowCss = (pos, alpha) => `radial-gradient(2250px 1250px at ${pos}, rgba(255, 107, 74, ${alpha}), transparent 70%)`;
@@ -457,36 +468,41 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     ]);
   }
 
-  /* ---------- sentence icons: one column on the right of content/conclusion scenes ---------- */
-  // Each beat with an `icon` gets one 24x24 stroke icon, drawn about 7rem tall on the right side
-  // (never overlapping the follow text, which ends well left of this column). The icon enters at
-  // beat start + 0.1 s (opacity 0 -> 1, scale 0.85 -> 1 over BASE) and leaves with the scene (the
-  // column is inside the scene root, so `life` fades it out). Two consecutive beats with different
-  // icons cross-fade: the old one's opacity -> 0 and the new one's -> 1 over BASE, starting at the
-  // new beat's start. A beat with the same icon as the previous one keeps the current element.
-  function buildIcons(sc, root) {
-    const icons = sc.beats.map((b) => b.icon || null);
-    if (!icons.some(Boolean)) return;
-    const col = h("div", "iconcol");
-    root.appendChild(col);
-    const shown = [];
-    icons.forEach((name, k) => {
-      if (!name) { shown.push(null); return; }
-      const prev = shown[k - 1];
-      if (prev && prev.name === name) { shown.push(prev); return; }   // same icon: keep it
-      const el = iconEl(name);
-      col.appendChild(el);
-      const at = Math.max(sc.beats[k].startSec + 0.1, 0);
-      anim(el, [{ opacity: 0, transform: "scale(0.85)" }, { opacity: 1, transform: "scale(1)" }], { at, dur: BASE });
-      shown.push({ name, el, at });
-    });
-    // cross-fade between consecutive beats whose icons differ; a beat with no icon clears the old one
-    for (let k = 1; k < shown.length; k++) {
-      const a = shown[k - 1], b = shown[k];
-      if (!a) continue;
-      if (!b) anim(a.el, [{ opacity: 1 }, { opacity: 0 }], { at: sc.beats[k].startSec + 0.1, dur: BASE });
-      else if (a !== b) anim(a.el, [{ opacity: 1 }, { opacity: 0 }], { at: b.at - 0.1, dur: BASE });
+  /* ---------- sentence icon: one tile per beat, inside the beat's own .followwrap ---------- */
+  // The tile sits directly above its sentence (1rem gap, left edges together), so it is only on screen while
+  // that sentence is. It follows the sentence's own motion (rise in from 20 px, leave 20 px up) and adds a
+  // 0.92 -> 1 scale about its bottom-left corner, so the left edge never moves. `popIn` false (the previous
+  // beat of this scene shows the same symbol) = no entrance, the tile is just there; `popOut` false (the next
+  // beat shows the same symbol) = the tile holds until that beat starts instead of fading with its sentence.
+  // Only opacity and transform are animated.
+  function sentenceIcon(f, name, at, out, next, popIn, popOut) {
+    const tile = iconEl(name);
+    f.node.parentNode.insertBefore(tile, f.node);
+    const HIDE = "translateY(20px) scale(0.92)", SHOW = "translateY(0px) scale(1)", GONE = "translateY(-20px) scale(1)";
+    const stops = popIn
+      ? [
+          { t: 0, p: { opacity: 0, transform: HIDE }, e: "linear" },
+          { t: at, p: { opacity: 0, transform: HIDE }, e: EASE },
+          { t: at + BASE, p: { opacity: 1, transform: SHOW }, e: "linear" },
+        ]
+      : [
+          { t: 0, p: { opacity: 0, transform: SHOW }, e: "linear" },
+          { t: at, p: { opacity: 0, transform: SHOW }, e: "linear" },
+          { t: at + 0.001, p: { opacity: 1, transform: SHOW }, e: "linear" },
+        ];
+    if (popOut) {
+      stops.push(
+        { t: out, p: { opacity: 1, transform: SHOW }, e: EASE },
+        { t: out + 0.12, p: { opacity: 0, transform: GONE } },
+      );
+    } else {
+      const hold = Math.max(next, at + 0.003);
+      stops.push(
+        { t: hold - 0.001, p: { opacity: 1, transform: SHOW }, e: "linear" },
+        { t: hold, p: { opacity: 0, transform: SHOW } },
+      );
     }
+    track(tile, stops);
   }
 
   /* ---------- scene life: visible from its first beat, leaves 0.25 s before the next scene ---------- */
@@ -624,9 +640,6 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
         return r;
       });
       col = h("div", "followcol");
-      // when beat icons are present the right side holds the icon column: keep the sentence
-      // clear of it (iconcol starts at 1600 px; text ends at 1540 px), otherwise the follow text owns up to 1800 px
-      if (sc.beats.some((b) => b.icon)) col.style.width = "880px";
       // stage-relative px geometry: append to the scene root, not the offset .frame
       root.append(col, rail);
     }
@@ -645,7 +658,6 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
       // the follow-along box is 660..1800 px, vertically centred in y 180..900 (720 px tall)
       follows = sc.beats.map((b) => buildFollow(col, b, 76, tag(sc) + " follow-along"));
     }
-    buildIcons(sc, root);
     // content lists share one size (body) so consecutive chunks match; the conclusion recap may use h3
     const room = 17 * REM - head.offsetHeight - 1.5 * REM;
     if (hasWords) {
@@ -684,6 +696,12 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
         { t: out, p: { opacity: 1, transform: "translateY(0px)" }, e: EASE },
         { t: out + 0.12, p: { opacity: 0, transform: "translateY(-20px)" } },
       ]);
+      // the beat's icon tile goes above its sentence, inside the same .followwrap
+      if (b.icon && ICONS[b.icon]) {
+        const prev = k > 0 && follows[k - 1] ? sc.beats[k - 1] : null;
+        const nxt = k + 1 < sc.beats.length && follows[k + 1] ? sc.beats[k + 1] : null;
+        sentenceIcon(f, b.icon, at, out, next, !(prev && prev.icon === b.icon), !(nxt && nxt.icon === b.icon));
+      }
     });
 
     // the coral bar: appears with the first highlighted item, then moves by transform at each beat start

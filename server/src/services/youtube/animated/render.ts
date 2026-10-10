@@ -131,6 +131,13 @@ export const ICONS = [
   "scale",
   "clock",
   "network",
+  "lock",
+  "server",
+  "check",
+  "alert",
+  "swap",
+  "vote",
+  "hourglass",
 ] as const;
 export type Icon = typeof ICONS[number];
 
@@ -147,21 +154,35 @@ function finite(value: unknown, label: string): number {
   return value;
 }
 
+// The icon for one sentence: the FIRST rule whose words appear in it wins, so the rules run from the most
+// specific idea to the most generic. Specific (what the sentence is about) comes first, then the older
+// general rules, and coins is the fallback for money words when nothing else matched.
 export function pickIcon(text: string): Icon | undefined {
   const lower = text.toLowerCase();
   const rules: Array<[RegExp, Icon]> = [
+    // specific ideas
+    [/\b(waits?|waiting|periods?|days|delays?|cooldown)\b/, "hourglass"],
+    [/\b(lock|locks|locked|locking|unlock\w*|unbond\w*|withdraw\w*)\b/, "lock"],
+    [/\b(vot(?:e|es|ed|ing|er|ers)|delegat\w*|governance)\b/, "vote"],
+    // risks(?!...manage): "risk management" stays a shield (below), every other risk is an alert
+    [/\b(risks?\b(?!.*manage)|slash(?:es|ed|ing)?|penalt(?:y|ies)|malicious(?:ly)?|attack(?:s|ed|er|ers)?|scams?|loss|losses)\b/, "alert"],
+    [/\b(valid|verif(?:y|ies|ied|ication)|honest(?:y|ly)?|agree(?:s|d|ment)?|consensus)\b/, "check"],
+    [/\b(farming|liquidity|pools?|trading|swaps?|swapping|pair|pairs|paired)\b/, "swap"],
+    [/\b(validators?|nodes?|uptime|hardware|blocks?|servers?)\b/, "server"],
+    // general rules (unchanged order)
     [/\b(grow|growth|up|gain|outperform)\b/, "chart-up"],
-    [/\b(drop|crash|lose|fail|risk(?!.*manage))\b/, "chart-down"],
-    [/\b(coin|token|crypto|yield|stake|staking|portfolio|defi)\b/, "coins"],
-    [/\b(risk|safe|safety|protect|principal|scam)\b/, "shield"],
+    [/\b(drop|crash|lose|fail)\b/, "chart-down"],
+    [/\b(risk|safe|safety|protect|principal)\b/, "shield"],
     [/\b(week|month|quarter|year|date|calendar|schedule)\b/, "calendar"],
     [/\b(mind|mindset|brain|think|focus|discipline)\b/, "brain"],
     [/\b(body|health|heart|breath|sleep)\b/, "heart"],
     [/\b(people|community|friend|family|team)\b/, "people"],
     [/\b(idea|learn|guide|tip|explain)\b/, "lightbulb"],
     [/\b(balance|rule|allocation|split)\b/, "scale"],
-    [/\b(time|patient|wait|daily|clock)\b/, "clock"],
+    [/\b(time|patient|daily|clock)\b/, "clock"],
     [/\b(network|ecosystem|chain|infrastructure|developers)\b/, "network"],
+    // money words, only when nothing more specific matched
+    [/\b(coins?|tokens?|crypto|yields?|stakes?|staked|staking|rewards?|earn(?:s|ed|ing)?|portfolio|defi)\b/, "coins"],
   ];
   for (const [re, icon] of rules) {
     if (re.test(lower)) return icon;
