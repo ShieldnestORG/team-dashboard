@@ -1,6 +1,6 @@
 # YouTube Pipeline (daily videos)
 
-> **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats, animated · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md)
+> **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats, animated · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md), [2026-10-09 animated go-live record](../handoffs/2026-10-09-youtube-animated-live.md)
 
 **In plain words:** a robot on VPS4 writes a script every night (cron `0 6 * * *` UTC = 11 PM PDT, 10 PM PST; it
 starts a few minutes after the hour), has Mark's cloned voice read it, turns it into
