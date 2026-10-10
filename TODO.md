@@ -185,7 +185,12 @@ Updated 2026-10-09 (detail and evidence in the doc's "Open items").
 
 ## CI / Infra
 
-- [ ] **Dependabot** — GitHub flags 4 moderate vulnerabilities on `team-dashboard` default branch. Review at https://github.com/ShieldnestORG/team-dashboard/security/dependabot and patch or suppress.
+- [ ] **Dependabot** — 2026-10-08: GitHub showed 133 open alerts (3 critical, 56 high), but that list is frozen: the repo's dependency graph reports 0 manifests and no alert has ever auto-closed, so it never re-reads `pnpm-lock.yaml` (the vitest and better-auth "criticals" were already patched). Ground truth is `pnpm audit`: 3 critical / 55 high, cut to 2 critical / 6 high by the `chore/dependabot-highs-2026-10-08` PR. Still open:
+  - [ ] **tinypool** (2 critical, dev/test only): vitest 3.x pins `tinypool ^1.1.1`, which has no fix. Needs the vitest 4 major.
+  - [ ] **adm-zip** (5 high): pulled in by crawlee's header generator, which pins `^0.5` and only opens its own bundled zip. Only a crawlee / header-generator release that moves to adm-zip 0.6 clears it.
+  - [ ] **http-cache-semantics** (1 high): no fixed release exists yet (via crawlee → got).
+  - [ ] Owner: find out why the dependency graph lists 0 manifests (its SBOM export also returns 404) and get it re-reading the lockfile, so alerts close by themselves again.
+  - *(Until 2026-10-08 this line read: "GitHub flags 4 moderate vulnerabilities on `team-dashboard` default branch.")*
 - [ ] **NPM_TOKEN for canary publish** — release canary publish gated on `NPM_PUBLISH_ENABLED` repo variable (currently `false`). When token lands, flip variable to `true`.
 
 ---
