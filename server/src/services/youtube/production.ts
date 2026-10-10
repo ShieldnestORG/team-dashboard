@@ -7,7 +7,7 @@
 import type { Db } from "@paperclipai/db";
 import { ytProductions, ytPublishQueue, ytSeoData } from "@paperclipai/db";
 import { eq, sql } from "drizzle-orm";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, rename } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
@@ -258,12 +258,15 @@ export async function runProductionPipeline(
       });
     }
 
-    // 9b. Sync gate (presentation mode): measure where the slides actually
-    // changed in the finished video and compare with the measured clip lengths.
-    // A drifted or blank video never reaches the publish queue; files stay on
-    // disk for inspection.
+    // 9b. Sync gate: measure where the slides actually changed in the finished
+    // video and compare with the measured clip lengths. A drifted or blank
+    // video never reaches the publish queue; files stay on disk for inspection.
+    // An animated video that renders but FAILS its gate is kept for inspection
+    // and the day falls back to the normal slide video (owner, 2026-10-10:
+    // "gatefail: make a regular slide video instead").
     let gateError: string | undefined;
     let syncReport: SyncReport | undefined;
+    let animatedGateIssues: string[] | undefined;
     if (video && beats && perSlideDurations) {
       syncReport = await verifySlideSync({
         videoPath: video.videoPath,
@@ -273,6 +276,50 @@ export async function runProductionPipeline(
       });
       if (syncReport.ok) {
         logger.info({ productionId, ...syncReport }, "Slide sync gate passed");
+      } else if (visualModeUsed === "animated") {
+        animatedGateIssues = syncReport.issues;
+        logger.error(
+          { productionId, issues: syncReport.issues, videoPath: video.videoPath },
+          "animated video failed the sync gate — falling back to presentation slides",
+        );
+
+        // Keep the failed animated file for inspection, out of the videos list
+        // (no .mp4 extension). A rename failure is a warning, not a day loss.
+        const failedVideoPath = join(VIDEO_DIR, `video_${productionId}.mp4`);
+        try {
+          await rename(failedVideoPath, join(VIDEO_DIR, `video_${productionId}.animated.failed`));
+        } catch (err) {
+          logger.warn({ productionId, err }, "YT Pipeline: failed to rename animated video for inspection (continuing)");
+        }
+
+        // Fall back to the normal presentation path, then re-check the gate on
+        // the new slide video. The SECOND gate decides publishable.
+        visualModeUsed = "presentation-fallback";
+        ({ paths: visualAssets, wordCounts: slideWordCounts } = await generateVisualAssets(
+          script, productionId, "presentation", siteWalkResult, beats,
+        ));
+        video = await assembleYouTubeVideo({
+          audioPath: tts.audioPath,
+          audioDurationSec: tts.durationSec,
+          visualAssets,
+          slideWordCounts: beats ? undefined : slideWordCounts, // presentation timing is measured, never estimated
+          slideDurations: perSlideDurations,
+          captionsPath,
+          outputFilename: `video_${productionId}.mp4`,
+          metadata: { title: seo.title, copyright: `${new Date().getFullYear()} Coherence Daddy` },
+        });
+        syncReport = await verifySlideSync({
+          videoPath: video.videoPath,
+          slideDurations: perSlideDurations,
+          audioDurationSec: tts.durationSec,
+          mode: "slides",
+        });
+        if (syncReport.ok) {
+          logger.info({ productionId, ...syncReport }, "Slide sync gate passed (fallback)");
+        } else {
+          gateError = `sync gate: ${syncReport.issues.join("; ")}`;
+          logger.error({ productionId, ...syncReport, videoPath: video.videoPath }, "Slide sync gate FAILED — video not queued");
+        }
       } else {
         gateError = `sync gate: ${syncReport.issues.join("; ")}`;
         logger.error({ productionId, ...syncReport, videoPath: video.videoPath }, "Slide sync gate FAILED — video not queued");
@@ -293,6 +340,7 @@ export async function runProductionPipeline(
           captionsPath,
           visualAssets,
           visualMode: visualModeUsed,
+          animatedGateIssues,
         },
         timeline: {
           created: new Date().toISOString(),
