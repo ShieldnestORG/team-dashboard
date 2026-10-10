@@ -38,6 +38,7 @@ This document provides a mapping of critical files to their purpose within the s
 - `server/src/services/youtube/presentation-renderer.ts`: `buildBeats()` — one beat = one slide = one voice clip (+ disclosure / not-advice slides) — and the Playwright slide renderer.
 - `server/src/services/youtube/script-validator.ts`: deterministic script rules; `script-writer.ts` repairs or rejects.
 - `server/src/services/youtube/archive.ts`, `publish-slots.ts`: monthly-review archive; one-a-day publish slots.
+- `server/src/services/youtube/animated-video.ts`, `word-timings.ts`, `animated/` (`scenes.html`, `render.ts`): animated mode (`YT_VISUAL_MODE=animated`, #198): timeline + frame-by-frame Chromium render, ElevenLabs forced-alignment word times; a render error falls back to slides.
 - `server/src/services/youtube/tts.ts`: per-beat TTS — Mark's ElevenLabs clone (default) or Grok Rex (`YT_TTS_PROVIDER=grok`), stitched as WAV with measured durations.
 
 ## Database & Schema

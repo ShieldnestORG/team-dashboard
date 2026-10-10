@@ -69,6 +69,9 @@ server/
         publish-queue.ts            # Auto-upload queue to YouTube
         analytics.ts                # YouTube API analytics + Ollama insights
         slide-templates.ts          # Branded slide layout templates
+        animated-video.ts           # Animated mode: buildAnimatedTimeline + renderAnimatedVideo (YT_VISUAL_MODE=animated)
+        word-timings.ts             # Per-word times: ElevenLabs forced alignment per beat (ELEVENLABS_VOICE_KEY), estimated fallback
+        animated/                   # Animated scenes: scenes.html + render.ts (Playwright frame-stepper -> FFmpeg) + assets/fonts
         yt-crons.ts                 # 6 scheduled jobs (daily-production, publish-queue, analytics, weekly-strategy, optimization, cleanup)
     storage/              # Pluggable storage service (S3, local disk)
     content-templates/  # Personality prompt templates (blaze, cipher, spark, prism, vanguard, forge)
@@ -176,7 +179,10 @@ doc/                  # Operational docs (SPEC, PRODUCT, GOAL, plans/)
 | `server/src/services/youtube/tts.ts` | Per-beat TTS — Mark's ElevenLabs clone (default) or Grok Rex (`YT_TTS_PROVIDER=grok`); clips stitched as WAV with silence gaps, durations measured |
 | `server/src/services/youtube/presentation-renderer.ts` | Playwright slide renderer with branded screenshot overlays |
 | `server/src/services/youtube/slide-templates.ts` | Brand color templates (coherencedaddy coral/cyan, tx lime/purple) |
-| `server/src/services/youtube/yt-crons.ts` | 5 YouTube cron jobs (production, publish, analytics, strategy, optimization) |
+| `server/src/services/youtube/animated-video.ts` | Animated mode (`YT_VISUAL_MODE=animated`, added 2026-10-09, #198): `buildAnimatedTimeline` + `renderAnimatedVideo`; a render error falls back to the slide path |
+| `server/src/services/youtube/word-timings.ts` | `alignBeatWords`: per-beat word times via ElevenLabs `POST /v1/forced-alignment` (`ELEVENLABS_VOICE_KEY`), `estimateWords` fallback |
+| `server/src/services/youtube/animated/` | `scenes.html` (scene templates, one `seek(t)` clock), `render.ts` (Playwright Chromium frame-stepper, 1920x1080 30 fps, piped to FFmpeg), `assets/fonts`; the server build copies them into `dist` |
+| `server/src/services/youtube/yt-crons.ts` | 6 YouTube cron jobs (production, publish, analytics, strategy, optimization, cleanup; the 5-job count was stale, six are in the file) |
 | `server/src/services/blog-slideshow-generator.ts` | Slideshow blog generator — reuses presentation renderer for interactive HTML blog posts |
 | `server/src/routes/public-reels.ts` | Public reels API (no auth) for coherencedaddy.com |
 | `scripts/canva-generator.py` | Canva visual backend Python bridge (legacy) |

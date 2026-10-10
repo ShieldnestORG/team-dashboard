@@ -165,17 +165,23 @@ Shipped progressively through 2026-04-22 (blog#9 merge + retry + per-target visi
 
 ## YouTube Pipeline (`docs/products/youtube-pipeline.md`)
 
-Updated 2026-10-08 (detail and evidence in the doc's "Open items").
+Updated 2026-10-09 (detail and evidence in the doc's "Open items").
 
 - [x] Slides in sync with narration, Mark's voice (v3), owner approval, exact video length (#191, #192).
 - [x] Script v2: rule checker + repair, honest prompt, disclosure slides, topic mix, 1/day slots, archive (#194, live 2026-10-08 23:17 PDT).
-- [ ] Animated scenes into production (prototype branch `feat/yt-animated-scenes`: follow-along words, counting numbers, sentence icons) — current static template is off-brand (cyan, wrong coral, Inter).
-- [ ] Metadata: upload the generated thumbnail and SRT; chapters from measured beat starts; clean tags/titles in `seo-optimizer.ts` (still adds power words, year and a junk suffix); `yt_analytics` empty (token has only `youtube.upload`; use Zernio views meanwhile).
+- [x] Animated scenes into production — merged #198 (`3a23e0e3`), deployed to VPS4 2026-10-09 18:23 PDT, first run 619 s end to end, gate passed 38/41. (This line said "prototype branch `feat/yt-animated-scenes` … current static template is off-brand (cyan, wrong coral, Inter)" until 2026-10-09; the static fallback template is still off-brand.)
+- [x] Metadata fixes — chapters from measured beat starts, title kept, disclosure line, clean tags (#197 `b036b39d`, live 2026-10-09; this line said "still adds power words, year and a junk suffix" until then).
+- [ ] Metadata still open: upload the generated thumbnail and SRT; `yt_analytics` empty (token has only `youtube.upload`; use Zernio views meanwhile); tags still include single topic words ("beats", "small", "stick").
+- [ ] **Owner decision:** make `YT_VISUAL_MODE=animated` the nightly default on VPS4? (Now `presentation`; animated needs about 8.5 min of render per 3-minute video.)
+- [ ] **Owner decision:** an animated video that renders but FAILS the sync gate fails the day (no slide fallback) — add a fallback?
+- [ ] Animated sync gate misses smooth fades (3 of 41 changes on `d6d30d70`; roughly 1 failed night in 30 at the 90% bar, two samples): compare a frame before/after each planned boundary instead of frame-to-frame scene scores, or lower the bar.
+- [ ] Do NOT approve test video `d95fef7d` as is (title "Powerful What Tx Staking Actually Is (2026)", `NaN:NaN` chapters; `pending_review` for 2026-10-10 14:00Z). The animated `d6d30d70` is `pending_review` for 2026-10-11 14:00Z.
+- [ ] Animated polish: icon keyword picks crude on non-crypto scripts (coins on "reward"); forced-alignment cost per call unmeasured; `timeline_<id>.json` files not purged by `yt:cleanup-videos`.
 - [ ] Crypto news sources (owner decision): `intel_reports` news is mostly AI/dev-tool blogs.
 - [ ] Products pillar (10%): owner-approved fact sheets for cliqs.io etc.; evntrace name-only until its video gate clears.
 - [ ] FACTS packet: chain numbers from code (TX_LCD_URL) instead of model-written numbers.
 - [ ] Monthly review report from `archive/` + Zernio views; repurpose approved videos to tokns.fi articles and X threads.
-- [ ] Pause/remove the old-timing videos still queued from before 2026-10-08 once the owner approves the new style.
+- [x] Old-timing videos removed from the queue 2026-10-09 on the owner's word (4 unpublished rows; this line said "pause/remove … once the owner approves the new style").
 
 ## CI / Infra
 
