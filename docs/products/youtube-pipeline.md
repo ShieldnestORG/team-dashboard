@@ -17,7 +17,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 | Mode | **`YT_VISUAL_MODE=animated` on VPS4 since 2026-10-09 19:02 PDT** (owner: "make animated the default"; env backup `.env.production.bak-yt-animated-1791597734`; container recreated, env read back inside it): the nightly cron makes **animated** videos, slides only as the render-error fallback. *This row said until that evening:* `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
 | Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
-| Admin UI | **Since 2026-10-10:** one area at `/socials/youtube`, a tab inside Socials & Content, with four views: `/review` (default; videos waiting for the owner, one card each: player, title, description, tags, the status label "Needs your OK", and **Approve** / **Change time** / **Post now** / **Remove**, since #208), `/scheduled`, `/posted`, `/files` ("Files & settings": the file list, Make a video now, recent runs, numbers, settings). Code: `ui/src/pages/youtube/` (`YouTubeArea`, `ReviewView` + `ReviewCard`, `ScheduledView`, `PostedView`, `FilesView`, `QueueItemCard`, `youtube-status.ts` = the one status → label/colour table), player in `ui/src/components/VideoPreview.tsx`. `/youtube` and `/youtube/videos` redirect into it. Server: `GET /videos/:filename/stream` (Range-capable), `PATCH /queue/:id` (title/description, no edit box in the UI yet). Plan and remaining slices: [YouTube area spec](../ux/youtube-area-spec.md). *Until 2026-10-10 this row described two pages, `/socials/youtube` (`YouTubePipeline.tsx`, tabs Pipeline/Queue/Analytics/Config) and `/youtube/videos` (`YouTubeVideos.tsx`, a download list); until 2026-10-09 it also said "watch/download finished videos" though neither page had a player.* |
+| Admin UI | **Since 2026-10-10:** one area at `/socials/youtube`, a tab inside Socials & Content, with four views: `/review` (default; videos waiting for the owner, one card each: player, title, description, tags, the status label "Needs your OK", and **Approve** / **Change time** / **Post now** / **Remove**, since #208), `/scheduled`, `/posted`, `/files` ("Files & settings": the file list, Make a video now, recent runs, numbers, settings). Code: `ui/src/pages/youtube/` (`YouTubeArea`, `ReviewView` + `ReviewCard`, `ScheduledView`, `PostedView`, `FilesView`, `QueueItemCard`, `youtube-status.ts` = the one status → label/colour table), player in `ui/src/components/VideoPreview.tsx`. `/youtube` and `/youtube/videos` redirect into it. Server: `GET /videos/:filename/stream` (Range-capable), `PATCH /queue/:id` (title/description, edit dialog on the review card since DEV-121). Plan and remaining slices: [YouTube area spec](../ux/youtube-area-spec.md). *Until 2026-10-10 this row described two pages, `/socials/youtube` (`YouTubePipeline.tsx`, tabs Pipeline/Queue/Analytics/Config) and `/youtube/videos` (`YouTubeVideos.tsx`, a download list); until 2026-10-09 it also said "watch/download finished videos" though neither page had a player.* |
 
 `yt_publish_queue.publishTime` comes from `calculateBestPublishTime()` (`content-strategy.ts`): a **random** Tue–Sun
 slot 1–7 days ahead. Several videos can land in one slot and Mondays get none (on 2026-10-07 three queued videos
@@ -164,8 +164,13 @@ hashtag line ≤ 5,000 UTF-8 bytes (no `<` or `>`) — this line said "descripti
 when DEV-120 made the route enforce YouTube's real byte limit on the final text via the shared
 `final-text.ts` function; updates both the queue row (`title` + `metadata.description`, other metadata keys kept)
 and the linked `yt_seo_data` row so the publisher and re-queue path stay on the same text. Same status rule as above — only `pending_review`, `scheduled`
-or `paused` rows answer 200, otherwise 409 — and it never changes status or publish time. The dashboard edit
-field itself is a later front ticket (the YouTube area spec); the route is server-only.
+or `paused` rows answer 200, otherwise 409 — and it never changes status or publish time. In the dashboard the review card has an **Edit** button beside the title and one beside the
+description (DEV-121, 2026-10-10): one dialog with a title counter, a byte counter on the final text, a live preview
+"Exactly what will go on YouTube" (hashtag line included) and **Save changes**, which sends only the fields that
+changed and does not approve. The dialog's rules are a mirror of `final-text.ts`
+(`ui/src/pages/youtube/youtube-final-text.ts`); a UI test runs both on the same inputs so they cannot drift.
+*Until 2026-10-10 this sentence read:* "The dashboard edit field itself is a later front ticket (the YouTube area
+spec); the route is server-only."
 
 ## The sync gate
 
@@ -281,6 +286,15 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   edited, so a title-only edit is never refused for a description it did not touch. The day's record, with the
   owner's clean-up run and the TX fact-check, is in
   [the 2026-10-10 record](../handoffs/2026-10-10-youtube-dashboard-and-facts.md).
+- **2026-10-10** — DEV-121: the edit dialog on the review card (`EditVideoTextDialog.tsx`, `youtube-final-text.ts`,
+  `youtubeApi.editQueueItem`). Built by an Agent Ops Ollama worker; the first run wrote nothing because the lane guard
+  judged paths from the worker's current folder (`ui/`) and refused its `.ts` files. Review fixes here: the dialog and
+  its text box are capped in height and scroll (with a normal description the Save button sat about 430 px below a
+  768 px window, unreachable), only the changed fields are judged, the Edit button sits beside the heading instead of
+  inside it, a refused save's sentence clears on the next keystroke, and the parity test compares hashtags too.
+  Checked in a browser against a fake API: three saves, each sent only what changed; a refused save keeps the
+  dialog open with the server's sentence; no sideways scroll. Not covered by a unit test: the dialog's own
+  "which fields changed" wiring (browser-checked only).
 
 ## Owner decisions, 2026-10-08
 

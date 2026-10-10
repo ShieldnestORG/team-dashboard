@@ -26,11 +26,13 @@ import {
   CheckCircle2,
   ChevronRight,
   Loader2,
+  Pencil,
   Trash2,
   Upload,
   XCircle,
 } from "lucide-react";
 import { youtubeApi } from "../../api/youtube";
+import { EditVideoTextDialog } from "./EditVideoTextDialog";
 import { youtubeStatusKind, youtubeStatusLabel } from "./youtube-status";
 
 // "Sun, Oct 11, 7:00 AM PDT" — the viewer's own time zone.
@@ -80,6 +82,8 @@ export function ReviewCard({
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmPostNow, setConfirmPostNow] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const approve = useMutation({
     mutationFn: () => youtubeApi.rescheduleQueueItem(id, publishTime ?? ""),
@@ -124,7 +128,22 @@ export function ReviewCard({
         {/* Title, status and actions */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h3 className="break-words text-base font-semibold leading-snug">{title}</h3>
+            {/* The Edit button sits beside the heading, not inside it, so the heading reads as the title alone. */}
+            <div className="flex flex-wrap items-baseline gap-x-1">
+              <h3 className="min-w-0 break-words text-base font-semibold leading-snug">{title}</h3>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-auto px-1 py-0"
+                onClick={() => {
+                  setSaved(false);
+                  setEditOpen(true);
+                }}
+              >
+                <Pencil className="h-3 w-3" />
+                Edit
+              </Button>
+            </div>
             <StatusBadge status={youtubeStatusKind(status)} label={youtubeStatusLabel(status)} />
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -225,6 +244,10 @@ export function ReviewCard({
           <p className="break-words text-sm text-destructive">{actionError}</p>
         )}
 
+        {saved && (
+          <p className="text-sm text-muted-foreground">Saved. Not approved yet.</p>
+        )}
+
         {/* Player */}
         {videoFile && (
           <VideoPreview src={youtubeApi.getVideoStreamUrl(videoFile)} title={title} />
@@ -239,6 +262,21 @@ export function ReviewCard({
         {/* Description, capped at about 8 lines with Show all */}
         {meta?.description && (
           <div>
+            <div className="flex items-center gap-1">
+              <p className="text-sm font-medium">Description</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-auto px-1 py-0"
+                onClick={() => {
+                  setSaved(false);
+                  setEditOpen(true);
+                }}
+              >
+                <Pencil className="h-3 w-3" />
+                Edit
+              </Button>
+            </div>
             <Collapsible open={showAll} onOpenChange={setShowAll}>
               {!showAll && (
                 <p className="line-clamp-8 whitespace-pre-wrap break-words text-sm text-muted-foreground">
@@ -268,6 +306,20 @@ export function ReviewCard({
             ))}
           </div>
         )}
+
+        {/* Edit title and description */}
+        <EditVideoTextDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          id={id}
+          title={title}
+          description={meta?.description ?? ""}
+          tags={tags ?? []}
+          onSaved={() => {
+            setSaved(true);
+            onRefresh();
+          }}
+        />
 
         {/* Post now confirm */}
         <AlertDialog open={confirmPostNow} onOpenChange={setConfirmPostNow}>

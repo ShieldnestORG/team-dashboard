@@ -8,6 +8,8 @@ export const youtubeApi = {
   publishNow: (id: string) => api.post(`/youtube/queue/${id}/publish-now`, {}),
   rescheduleQueueItem: (id: string, publishTime: string) =>
     api.patch(`/youtube/queue/${id}/schedule`, { publishTime }),
+  editQueueItem: (id: string, body: { title?: string; description?: string }) =>
+    api.patch(`/youtube/queue/${id}`, body),
   deleteQueueItem: (id: string) => api.delete(`/youtube/queue/${id}`),
   getAnalytics: () => api.get("/youtube/analytics"),
   collectAnalytics: () => api.post("/youtube/analytics/collect", {}),
