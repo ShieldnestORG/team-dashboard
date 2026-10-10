@@ -1,4 +1,5 @@
 import { logger } from "../../middleware/logger.js";
+import { finalYoutubeDescription } from "../youtube/final-text.js";
 import type { PlatformPublisher, PublishOptions, PublishResult } from "./types.js";
 
 const YOUTUBE_CLIENT_ID = process.env.YOUTUBE_CLIENT_ID || "";
@@ -51,7 +52,7 @@ export const youtubePublisher: PlatformPublisher = {
           body: JSON.stringify({
             snippet: {
               title: opts.title.slice(0, 100),
-              description: `${opts.description}\n\n${opts.hashtags.join(" ")}`,
+              description: finalYoutubeDescription(opts.description, opts.hashtags),
               tags: tags.split(",").slice(0, 30),
               categoryId: "28", // Science & Technology
             },

@@ -11,6 +11,7 @@ import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { youtubePublisher } from "../platform-publishers/youtube.js";
 import { sanitizeTags } from "./seo-optimizer.js";
+import { youtubeHashtags } from "./final-text.js";
 import { logger } from "../../middleware/logger.js";
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
@@ -88,7 +89,7 @@ async function publishItem(db: Db, item: typeof ytPublishQueue.$inferSelect): Pr
     contentType: "video/mp4",
     title: item.title.slice(0, 100),
     description,
-    hashtags: tags.map((t) => `#${t.replace(/\s+/g, "")}`),
+    hashtags: youtubeHashtags(tags),
   });
 
   if (!result.success) {

@@ -15,6 +15,8 @@ import { runProductionPipeline } from "../services/youtube/production.js";
 import { processPublishQueue, forcePublish, PUBLISHABLE_QUEUE_STATUSES } from "../services/youtube/publish-queue.js";
 import { collectAnalytics, generateOptimizationInsights } from "../services/youtube/analytics.js";
 import { generateContentStrategy } from "../services/youtube/content-strategy.js";
+import { checkYoutubeText } from "../services/youtube/final-text.js";
+import { sanitizeTags } from "../services/youtube/seo-optimizer.js";
 import { getTTSProviderStatus } from "../services/youtube/tts.js";
 import { getBackendSummary } from "../services/visual-backends/index.js";
 import { logger } from "../middleware/logger.js";
@@ -149,11 +151,10 @@ export function youtubeRoutes(db: Db): Router {
       if (trimmedTitle === undefined && trimmedDescription === undefined) {
         return res.status(400).json({ error: "Provide title or description to update" });
       }
+      // Title length needs no row/tags, so it is validated before the lookup
+      // (keeps a bad title on a missing row answering 400, not 404).
       if (trimmedTitle !== undefined && (trimmedTitle.length < 1 || trimmedTitle.length > 100)) {
         return res.status(400).json({ error: "Title must be 1-100 characters" });
-      }
-      if (trimmedDescription !== undefined && trimmedDescription.length > 5000) {
-        return res.status(400).json({ error: "Description must be at most 5000 characters" });
       }
 
       const [row] = await db
@@ -177,6 +178,18 @@ export function youtubeRoutes(db: Db): Router {
       const metadata = (row.metadata ?? {}) as Record<string, unknown>;
       const newTitle = trimmedTitle ?? row.title;
       const newDescription = trimmedDescription ?? (metadata.description as string | undefined);
+
+      // Check the fields being edited against YouTube's real limits, using the
+      // row's own tags so the hashtag line counts toward the byte limit exactly
+      // as the publisher will send it.
+      const textError = checkYoutubeText({
+        title: trimmedTitle,
+        description: trimmedDescription,
+        tags: sanitizeTags((metadata.tags as string[]) || []),
+      });
+      if (textError) {
+        return res.status(400).json({ error: textError });
+      }
 
       const newMetadata: Record<string, unknown> = { ...metadata };
       if (trimmedDescription !== undefined) newMetadata.description = trimmedDescription;

@@ -1,6 +1,6 @@
 # YouTube Pipeline (daily videos)
 
-> **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats, animated · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md), [2026-10-09 animated go-live record](../handoffs/2026-10-09-youtube-animated-live.md)
+> **Cluster:** youtube · **Tags:** youtube, tts, elevenlabs, slides, sync, beats, animated · **Related:** [Video Edit](video-edit.md), [Env vars](../deploy/env-vars.md), [Cron inventory](../operations/cron-inventory.md), [2026-10-09 animated go-live record](../handoffs/2026-10-09-youtube-animated-live.md), [2026-10-10 dashboard, clean-up and TX facts record](../handoffs/2026-10-10-youtube-dashboard-and-facts.md)
 
 **In plain words:** a robot on VPS4 writes a script every night (cron `0 6 * * *` UTC = 11 PM PDT, 10 PM PST; it
 starts a few minutes after the hour), has Mark's cloned voice read it, turns it into
@@ -17,7 +17,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 | Mode | **`YT_VISUAL_MODE=animated` on VPS4 since 2026-10-09 19:02 PDT** (owner: "make animated the default"; env backup `.env.production.bak-yt-animated-1791597734`; container recreated, env read back inside it): the nightly cron makes **animated** videos, slides only as the render-error fallback. *This row said until that evening:* `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
 | Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
-| Admin UI | **Since 2026-10-10:** one area at `/socials/youtube`, a tab inside Socials & Content, with four views: `/review` (default; videos waiting for the owner, each with a player and the description that will post), `/scheduled`, `/posted`, `/files` ("Files & settings": the file list, Make a video now, recent runs, numbers, settings). Code: `ui/src/pages/youtube/` (`YouTubeArea`, `ReviewView`, `ScheduledView`, `PostedView`, `FilesView`, `QueueItemCard`). `/youtube` and `/youtube/videos` redirect into it. Server: `GET /videos/:filename/stream` (Range-capable), `PATCH /queue/:id` (title/description, no edit box in the UI yet). Plan and remaining slices: [YouTube area spec](../ux/youtube-area-spec.md). *Until 2026-10-10 this row described two pages, `/socials/youtube` (`YouTubePipeline.tsx`, tabs Pipeline/Queue/Analytics/Config) and `/youtube/videos` (`YouTubeVideos.tsx`, a download list); until 2026-10-09 it also said "watch/download finished videos" though neither page had a player.* |
+| Admin UI | **Since 2026-10-10:** one area at `/socials/youtube`, a tab inside Socials & Content, with four views: `/review` (default; videos waiting for the owner, one card each: player, title, description, tags, the status label "Needs your OK", and **Approve** / **Change time** / **Post now** / **Remove**, since #208), `/scheduled`, `/posted`, `/files` ("Files & settings": the file list, Make a video now, recent runs, numbers, settings). Code: `ui/src/pages/youtube/` (`YouTubeArea`, `ReviewView` + `ReviewCard`, `ScheduledView`, `PostedView`, `FilesView`, `QueueItemCard`, `youtube-status.ts` = the one status → label/colour table), player in `ui/src/components/VideoPreview.tsx`. `/youtube` and `/youtube/videos` redirect into it. Server: `GET /videos/:filename/stream` (Range-capable), `PATCH /queue/:id` (title/description, no edit box in the UI yet). Plan and remaining slices: [YouTube area spec](../ux/youtube-area-spec.md). *Until 2026-10-10 this row described two pages, `/socials/youtube` (`YouTubePipeline.tsx`, tabs Pipeline/Queue/Analytics/Config) and `/youtube/videos` (`YouTubeVideos.tsx`, a download list); until 2026-10-09 it also said "watch/download finished videos" though neither page had a player.* |
 
 `yt_publish_queue.publishTime` comes from `calculateBestPublishTime()` (`content-strategy.ts`): a **random** Tue–Sun
 slot 1–7 days ahead. Several videos can land in one slot and Mondays get none (on 2026-10-07 three queued videos
@@ -110,7 +110,7 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
    last 9 strategies; topic = the least-recently-used of that pillar's orchestrator-written seeds; the last 30 titles,
    and for crypto up to 5 recent crypto-ish headlines from `intel_reports`, are passed on.
 2. **Script** (`script-writer.ts`): `SCRIPT_SYSTEM_PROMPT` (voice, honesty and title-contract rules) → JSON → `sanitizeScript`
-   → `validateScript` (`script-validator.ts`). Violations go back to the model with exact reasons, up to 4 repairs (2 until 2026-10-10: with the TX facts rule live, 13 of 15 TX scripts passed on VPS4 and nearly every pass used the last attempt; 2 failed outright); then
+   → `validateScript` (`script-validator.ts`). Violations go back to the model with exact reasons, up to 4 repairs (2 until 2026-10-10: with the TX facts rule live, 13 of 15 TX scripts passed on VPS4 and nearly every pass used the last attempt; 2 failed outright; re-measured with five attempts on 2026-10-10 03:22 PDT: 10 of 10, one script used the 4th attempt); then
    the run fails with `script_validation` — there is no filler template any more. Scripts under `YT_MIN_SCRIPT_WORDS`
    (380) spoken words are sent back to be lengthened. For `tx_blockchain` scripts the prompt is extended with a FACTS
    block from `facts/tx-facts.json` (only re-checked, <30-day facts, via `tx-facts.ts`), and the validator adds
@@ -149,17 +149,21 @@ wording only after that gate clears, with a claim ID from the register.
 ## Owner approval
 
 `YT_REQUIRE_REVIEW` (default on): a finished video enters the queue as `pending_review` with a proposed time; the publish
-queue only takes `scheduled` rows. Approve in the dashboard with **Approve & schedule** (sets the time and
-`scheduled`) or **Publish Now**. `YT_REQUIRE_REVIEW=false` restores automatic scheduling.
+queue only takes `scheduled` rows. Approve in the dashboard's Review view (#208, 2026-10-10): **Approve** schedules at the proposed time in one click,
+**Change time** picks another, **Post now** uploads at once and **Remove** takes the row out of the queue; Post now
+and Remove ask first in a dialog and call the server only after the confirm. (*Until 2026-10-10 the buttons were*
+**Approve & schedule** *and* **Publish Now**; the Scheduled and Posted views still use the older card.) `YT_REQUIRE_REVIEW=false` restores automatic scheduling.
 Both actions only work on `pending_review`, `scheduled` or `paused` rows (route answers 409, `forcePublish` throws), so a
 published or failed video can't be uploaded twice. The time box is pre-filled in local time (it used to pre-fill UTC into
 a local picker, so an unchanged approval moved the video 7 hours later in PDT). A `pending_review` video older than
 30 days is still purged by `yt:cleanup-videos` — approve within a month.
 
 Before approving, the title or description of a queued video can be edited via `PATCH /api/youtube/queue/:id`
-(`{ title?, description? }`): at least one field, title 1–100 chars, description ≤ 5,000 chars; updates both the
-queue row (`title` + `metadata.description`, other metadata keys kept) and the linked `yt_seo_data` row so the
-publisher and re-queue path stay on the same text. Same status rule as above — only `pending_review`, `scheduled`
+(`{ title?, description? }`): at least one field, title 1–100 chars (no `<` or `>`), and the description plus its
+hashtag line ≤ 5,000 UTF-8 bytes (no `<` or `>`) — this line said "description ≤ 5,000 chars" until 2026-10-10,
+when DEV-120 made the route enforce YouTube's real byte limit on the final text via the shared
+`final-text.ts` function; updates both the queue row (`title` + `metadata.description`, other metadata keys kept)
+and the linked `yt_seo_data` row so the publisher and re-queue path stay on the same text. Same status rule as above — only `pending_review`, `scheduled`
 or `paused` rows answer 200, otherwise 409 — and it never changes status or publish time. The dashboard edit
 field itself is a later front ticket (the YouTube area spec); the route is server-only.
 
@@ -266,6 +270,17 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   pack; exact/exactly/always/guaranteed/fixed banned). Tests on the real c42a126f script (reconstructed fixture) fail the
   rule; a corrected version passes. Refreshing the pack from the chain is a later ticket (`tx/tools/tx_facts_check.py` in
   the TX repo is the model).
+- **2026-10-10** — Dashboard area. #206 (`6a80158c`, DEV-118): the two YouTube pages became one area with four
+  views inside the Socials YouTube tab. #208 (`7f216c6c`, DEV-119): the review card (player, plain labels, one-click
+  Approve at the proposed time, Post now and Remove behind a dialog). #207 (`0aa38f68`): the script writer gets five
+  attempts. #206 + #207 deployed 03:19 PDT (container started 10:19:36Z); #208 deployed 03:31 PDT (container started
+  10:31:08Z, "Needs your OK" read back in the served UI bundle). Both UI slices were built by an Agent Ops Ollama
+  worker and gated here (types, 239 UI tests, a browser run against a fake API). DEV-120: `final-text.ts` is the one
+  function for the hashtag line and the finished description (upload and edit route both call it), and
+  `PATCH /queue/:id` now refuses `<` / `>` and counts UTF-8 bytes of the final text; it checks only the fields being
+  edited, so a title-only edit is never refused for a description it did not touch. The day's record, with the
+  owner's clean-up run and the TX fact-check, is in
+  [the 2026-10-10 record](../handoffs/2026-10-10-youtube-dashboard-and-facts.md).
 
 ## Owner decisions, 2026-10-08
 
@@ -316,6 +331,10 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
 - [x] **Do not approve `d95fef7d` as is** (removed from the queue 2026-10-09 19:01 PDT on the owner's word; row backed up in `/root/yt-queue-removed-2026-10-09-test-d95.log` on VPS4; its MP4 stays until the 30-day cleanup) — the first script-v2 test video (title "Powerful What Tx Staking Actually Is
   (2026)", `NaN:NaN` chapters in its stored description, made before #197) is still `pending_review` for 2026-10-10 14:00Z.
   Remove it, or fix the stored title/description first. (The animated `d6d30d70` is `pending_review` for 2026-10-11 14:00Z.)
+- [ ] First drafts come back `TOO_SHORT` almost every time (10 of 10 TX scripts on 2026-10-10), so each script costs at
+  least one repair call. Ask for the length up front in the prompt, then re-measure.
+- [ ] **Owner:** "How TX Reward Splits Work" (`c42a126f`) is `pending_review`; the fact-check says do not post it as is
+  (see the 2026-10-10 record). Remove it or post it with a correction.
 - [ ] Icon keyword picks are crude on non-crypto scripts (e.g. coins on "reward" in a habits video).
 - [ ] Tags still contain single topic words like "beats", "small", "stick".
 - [ ] Forced-alignment cost per ElevenLabs call is unmeasured (42 calls on `d6d30d70`).
