@@ -110,7 +110,7 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
    last 9 strategies; topic = the least-recently-used of that pillar's orchestrator-written seeds; the last 30 titles,
    and for crypto up to 5 recent crypto-ish headlines from `intel_reports`, are passed on.
 2. **Script** (`script-writer.ts`): `SCRIPT_SYSTEM_PROMPT` (voice, honesty and title-contract rules) → JSON → `sanitizeScript`
-   → `validateScript` (`script-validator.ts`). Violations go back to the model with exact reasons, up to 2 repairs; then
+   → `validateScript` (`script-validator.ts`). Violations go back to the model with exact reasons, up to 4 repairs (2 until 2026-10-10: with the TX facts rule live, 13 of 15 TX scripts passed on VPS4 and nearly every pass used the last attempt; 2 failed outright); then
    the run fails with `script_validation` — there is no filler template any more. Scripts under `YT_MIN_SCRIPT_WORDS`
    (380) spoken words are sent back to be lengthened. For `tx_blockchain` scripts the prompt is extended with a FACTS
    block from `facts/tx-facts.json` (only re-checked, <30-day facts, via `tx-facts.ts`), and the validator adds

@@ -68,10 +68,25 @@ describe("generateScript v2", () => {
     expect(script.introduction.greeting).toBe("This is Coherence Daddy.");
   });
 
-  it("rejects after 2 failed repairs (no template fallback)", async () => {
+  it("rejects after 4 failed repairs (no template fallback)", async () => {
     mockChat.mockResolvedValue({ content: JSON.stringify(BAD_FIXTURE) } as never);
     await expect(generateScript(strategy())).rejects.toThrow(/script_validation/);
-    expect(mockChat).toHaveBeenCalledTimes(3);
+    expect(mockChat).toHaveBeenCalledTimes(5);
+  });
+
+  // 2026-10-10: on VPS4, 13 of 15 TX scripts passed and nearly every pass used the last of 3 attempts
+  // (TOO_SHORT first, then the TX facts rule); 2 failed outright = no video that night. A try costs ~6 s.
+  it("a script that only comes right on the fifth try is still returned", async () => {
+    mockChat
+      .mockResolvedValueOnce({ content: JSON.stringify(BAD_FIXTURE) } as never)
+      .mockResolvedValueOnce({ content: JSON.stringify(BAD_FIXTURE) } as never)
+      .mockResolvedValueOnce({ content: JSON.stringify(BAD_FIXTURE) } as never)
+      .mockResolvedValueOnce({ content: JSON.stringify(BAD_FIXTURE) } as never)
+      .mockResolvedValueOnce({ content: JSON.stringify(GOOD_FIXTURE) } as never);
+    const script = await generateScript(strategy());
+    expect(mockChat).toHaveBeenCalledTimes(5);
+    expect(script.validation?.attempts).toBe(5);
+    expect(script.title).toBe(GOOD_FIXTURE.title);
   });
 
   it("rejects with script_generation when the model fails twice", async () => {
