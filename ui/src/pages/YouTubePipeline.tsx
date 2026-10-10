@@ -155,6 +155,8 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
   const isReview = status === "pending_review";
   const isScheduled = status === "scheduled" || isReview;
   const isPublished = status === "published";
+  const meta = (item.metadata ?? null) as { videoPath?: string; description?: string } | null;
+  const videoFile = meta?.videoPath ? meta.videoPath.split("/").pop() : undefined;
 
   return (
     <Card>
@@ -180,6 +182,22 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
           </div>
           {statusBadge(status)}
         </div>
+
+        {/* Watch it where you approve it (stopgap until the review view of docs/ux/youtube-area-spec.md) */}
+        {videoFile && !isPublished && (
+          <video
+            controls
+            preload="metadata"
+            className="w-full max-w-3xl aspect-video rounded-md border border-border bg-muted"
+            src={youtubeApi.getVideoStreamUrl(videoFile)}
+          />
+        )}
+        {meta?.description && !isPublished && (
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none text-foreground/80">Description that will post</summary>
+            <p className="mt-2 whitespace-pre-wrap break-words">{meta.description}</p>
+          </details>
+        )}
 
         {/* Actions for scheduled items */}
         {isScheduled && (
