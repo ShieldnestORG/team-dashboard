@@ -204,7 +204,10 @@ function QueueItemCard({ item, onRefresh }: { item: Record<string, unknown>; onR
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
-              onClick={() => publishMutation.mutate()}
+              onClick={() => {
+                // Posts publicly at once; it had no confirm until 2026-10-09, when one click published a video by surprise.
+                if (confirm("Post this video publicly on YouTube right now?")) publishMutation.mutate();
+              }}
               disabled={publishMutation.isPending}
             >
               {publishMutation.isPending ? (
