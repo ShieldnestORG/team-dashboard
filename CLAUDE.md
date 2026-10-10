@@ -116,6 +116,7 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Stripe Products](docs/deploy/stripe-products.md) — Per-product spec (price IDs, webhook events, fulfillment behavior).
 - [Structure Diagram Policy](docs/architecture/structure-diagram-policy.md) — Mermaid maintenance.
 - [Blog Distribution](docs/products/blog-distribution.md) — Target surfaces, cron → target map, current wiring status.
+- [Design System](docs/ux/design-system.md) — v1 rulebook for the admin UI under `ui/src` (black-and-coral, dark first, roomier, rounded, five status colours): tokens, layout rules, component catalog, working rules, drift list with file:line, rollout order and work items W1-W4 (including the `--radius-lg`/`--radius-xl` = 0 trap). **Read before any UI change.**
 - [Socials Hub](docs/products/socials-hub.md) — Unified `/socials` view: account registry + automation mirror + release calendar.
 - [Funnel Library](docs/products/funnels-library.md) — Standing library of comment→DM funnel drafts per Zernio-capable account; AI drafts, an admin approves/arms, keeps every account at ≥5 "ready" funnels.
 - [Shop Sharers](docs/products/shop-sharers.md) — Email capture on shop.coherencedaddy.com → referral code + QR + shareable link + opt-in affiliate approval queue.
