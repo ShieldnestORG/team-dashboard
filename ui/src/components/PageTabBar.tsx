@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSidebar } from "../context/SidebarContext";
+import { cn } from "../lib/utils";
 
 export interface PageTabItem {
   value: string;
@@ -34,9 +35,17 @@ export function PageTabBar({ items, value, onValueChange, align = "center" }: Pa
   }
 
   return (
-    <TabsList variant="line" className={align === "start" ? "justify-start" : undefined}>
+    // A long row wraps onto a second line instead of making the page scroll sideways: the ten
+    // Socials tabs are 1,150 px wide and pushed <main> 158 px sideways at a 1280 px window (2026-10-09).
+    <TabsList
+      variant="line"
+      className={cn(
+        "max-w-full flex-wrap gap-y-1 group-data-[orientation=horizontal]/tabs:h-auto",
+        align === "start" && "justify-start",
+      )}
+    >
       {items.map((item) => (
-        <TabsTrigger key={item.value} value={item.value}>
+        <TabsTrigger key={item.value} value={item.value} className="flex-none">
           {item.label}
         </TabsTrigger>
       ))}

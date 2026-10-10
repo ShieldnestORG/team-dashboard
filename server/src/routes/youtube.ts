@@ -391,5 +391,36 @@ export function youtubeRoutes(db: Db): Router {
     }
   });
 
+  // Inline playback for the review card: sendFile answers Range requests (seeking, Safari).
+  router.get("/videos/:filename/stream", (req, res) => {
+    const filename = req.params.filename as string;
+
+    // Security: no path traversal
+    if (filename.includes("/") || filename.includes("..") || !filename.endsWith(".mp4")) {
+      res.status(400).json({ error: "Invalid filename" });
+      return;
+    }
+
+    const filePath = join(VIDEO_DIR, filename);
+    if (!existsSync(filePath)) {
+      res.status(404).json({ error: "Video not found" });
+      return;
+    }
+
+    res.sendFile(
+      filePath,
+      {
+        dotfiles: "allow",
+        headers: {
+          "Content-Type": "video/mp4",
+          "Cache-Control": "private, max-age=3600",
+        },
+      },
+      (err) => {
+        if (err && !res.headersSent) res.status(500).json({ error: "Stream failed" });
+      },
+    );
+  });
+
   return router;
 }

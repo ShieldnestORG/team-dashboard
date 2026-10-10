@@ -46,4 +46,6 @@ export const youtubeApi = {
     }>("/youtube/videos"),
   getVideoDownloadUrl: (filename: string) =>
     `/api/youtube/videos/${encodeURIComponent(filename)}/download`,
+  getVideoStreamUrl: (filename: string) =>
+    `/api/youtube/videos/${encodeURIComponent(filename)}/stream`,
 };
