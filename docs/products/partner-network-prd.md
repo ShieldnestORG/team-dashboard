@@ -131,3 +131,19 @@ Premium  | 8/mo   | 6/mo  | 4/mo  | 2/mo  | 1x     | 1x
 - Partner white-labeling (agency manages clients under one account)
 - Multi-location support (chain businesses with >1 microsite)
 - Real-time AI engine monitoring (live alerts when partner is mentioned by AI)
+
+---
+
+## Free (comped) partners
+
+Some partners are on the Proof tier for free: `tier='proof'`, `status='active'`, `monthly_fee` NULL,
+no Stripe ids, `featured=true`. They get the Proof content mentions (2/month via
+`partner-fulfillment-crons.ts`) and a `/partners-home/<slug>` page on coherencedaddy.com. That page
+comes from the featured list, so a partner that isn't featured gets no page. No microsite is built
+for them: `deployPartnerMicrosite` runs only from the manual `partner-site` admin route.
+
+| Seeded | Script | Partners |
+|---|---|---|
+| 2026-04-24 | `server/scripts/seed-partners-2026-04-24.ts` (ran the AI onboarding) | sacred-wild, artisan-metal-works, tokns, mark-joseph-jr-co, house-of-exegesis, exegesis-ventures, get-probed |
+| 2026-10-11 | `server/scripts/seed-ecosystem-partners-2026-10-11.ts` (copy from each company's own site; onboarding marked complete without the AI pass) | starwise-ventures, upright-prospects |
+

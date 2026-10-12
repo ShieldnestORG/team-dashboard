@@ -156,6 +156,15 @@ PR for the source list).
 
 ## Changelog
 
+- **2026-10-11** — **Four comped ecosystem subscriptions** (owner: "put them on the watchtower
+  for free"): Starwise Ventures, Exegesis Ventures, Mark Joseph Jr Co, Upright Prospects. Seeded by
+  `server/scripts/seed-ecosystem-partners-2026-10-11.ts` (dry run by default, `--apply` to write,
+  idempotent per domain): status `active`, plan `watchtower_monthly`, weekly, no Stripe ids (the
+  same shape as the Rogue Defender subscription, comped since 2026-06-01), prompt version 1 minted
+  the way the webhook does, digests to each brand's info@ inbox. The prompts are discovery
+  questions that never name the brand: detection is brand-name/domain substring, so a question
+  naming the brand would count the engine echoing it. A comped subscription is one with
+  `stripe_subscription_id IS NULL`; nothing bills it and the Stripe webhooks never touch it.
 - **2026-07-13** — **Price change $29 → $49/mo** (owner decision). New Stripe
   Price `price_1TseofQvkbvTR7OgrYdGUBNL` created on `prod_UUNfgdeWldCIQS`
   with `lookup_key=watchtower_monthly`
