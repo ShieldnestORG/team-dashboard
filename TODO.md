@@ -250,3 +250,41 @@ Strategy: [`docs/products/knowledge-graph-positioning.md`](docs/products/knowled
 - ❌ Programmatic "X vs Y / alternatives" SEO landing pages
 - ❌ Standalone KG SaaS product
 - ❌ KG embedding licensing
+
+## Ecosystem partners + free Watchtower (2026-10-11)
+
+Owner, 2026-10-11: "make all of these partner companies on our coherencedaddy put them on the
+watchtower for free, partner network". Script: team-dashboard
+`server/scripts/seed-ecosystem-partners-2026-10-11.ts` (dry run by default, `--apply` writes,
+idempotent).
+
+- [x] Partner Network: `starwise-ventures` (#9) and `upright-prospects` (#10) added as free, featured
+  Proof partners, with copy from their own sites. `exegesis-ventures` and `mark-joseph-jr-co` were
+  already free featured partners (2026-04-24 seed) and were left as they were.
+- [x] Watchtower: four comped subscriptions (Starwise Ventures, Exegesis Ventures, Mark Joseph Jr Co,
+  Upright Prospects), weekly, 5 discovery prompts each, digests to each brand's info@ inbox.
+- [ ] Check the first Watchtower runs for those four (cron Monday 2026-10-12 09:00 UTC) at
+  `/watchtower`, and that each digest lands in its info@ inbox.
+- [ ] Review the first AI "partner spotlight" posts (Proof = 1 blog + 1 Discord per partner per
+  month) for Starwise, Exegesis, Mark Joseph Jr Co and Upright: no invented claims; dates say
+  "building since 2023" / "working since 2017", never "established"; Upright carries no cash-offer or
+  speed promises, and stays Equal Housing Opportunity.
+- [ ] Duplicate partner row `artisanmetalworks` (industry `other`, not featured, website
+  `https://artisanmetal.works/`) duplicates `artisan-metal-works`, and it shows in the full partner
+  directory on coherencedaddy.com. Delete or merge it (owner's call).
+- [ ] Listed partners with no logo: `bulk-bark` (featured #1, homepage banner), `evntrace-com`,
+  `iron-haven-fitness`, `roguedefender-law`. Run `server/scripts/synthesize-partner-logos.ts` or set
+  `logo_url`.
+- [ ] `mark-joseph-jr-co`'s partner tagline "Empowering Communities, Securing Futures" comes from the
+  old Hostinger site; the new site says "Safer communities, secure futures." Update it if wanted.
+- [ ] Rogue Defender's Watchtower subscription has no `watchtower_prompt_versions` row, so its runs
+  record `prompt_version_id` NULL. Insert version 1.
+- [ ] coherencedaddy-landing `lib/partner-directory.ts`: the fallback `API_BASE` (and the file's
+  comment) still say `http://31.220.61.12:3200` (VPS1), but team-dashboard runs on VPS4 behind
+  `https://api.coherencedaddy.com`. Prod works only because `TEAM_DASHBOARD_URL` is set in all
+  Vercel environments; point the fallback at `https://api.coherencedaddy.com`.
+- [ ] Owner decision: should Starwise Ventures, Exegesis Ventures, Mark Joseph Jr Co and Upright
+  Prospects also be listed on `/ecosystem` (`lib/ecosystem-sites.ts`)? Today they're partners only.
+- [ ] Optional: `server/scripts/retry-partner-onboarding.ts` for `starwise-ventures` and
+  `upright-prospects`, to get Firecrawl competitor baselines. It overwrites the tagline with an AI
+  one, so re-check it afterwards.
