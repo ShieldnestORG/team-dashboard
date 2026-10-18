@@ -131,3 +131,7 @@ Production is split across Vercel (frontend), VPS (backend + admin), and Neon (D
 - [Eagan Desktop Setup](docs/eagan-desktop-setup.md) — Give-to-Eagan doc: install the marketing MCPB extension in Claude Desktop + the custom-instructions block (team guidelines, escalation-to-Mark clause, owner content-guidelines placeholder).
 - [Eagan Access Runbook](docs/eagan-access-runbook.md) — Owner ops for the external-marketing board key: 90-day mint (two-step bootstrap — approval binds the key to the approver), revoke/rotate, audit-log queries, .mcpb build.
 - [Marketing Content Hub Handoff](docs/marketing-content-hub-handoff.md) — Self-contained handoff for the Content Hub build: funnel-kit surface with live Zernio status, `/CD` path fixes, Tokns project switcher, ElevenLabs voice-snippet factory.
+
+## Videos and animations (pointer, 2026-10-17)
+**Videos, animations and explainers** outside the daily YouTube robot: the owner's local motion-lab hub and its `motion-lab` skill (not part of this repo; never copy it here).
+**The daily videos stay here** (`server/src/services/youtube/`); motion-lab's teaser template reads this pipeline's `timeline.json`, and the channel's look is motion-lab's Coherence Daddy kit.
