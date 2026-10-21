@@ -31,6 +31,7 @@ cd ui && npx tsc --noEmit
 - Stage specific files only. Do not use `git add -A`.
 - Cast `req.params.*` as `string` in Express routes.
 - Never interpolate a JS array into `= ANY(${arr})` — it renders `ANY(($1,$2))` → Postgres `malformed array literal`. Use drizzle `inArray()` or `= ANY(ARRAY[...]::text[])`. See [PG array-binding footgun](docs/guides/pg-array-binding-footgun.md).
+- Production's database (Neon us-east-1) is 55 ms from VPS4, and every drizzle query with parameters costs two round trips (~110 ms), so a request's time is the number of queries it waits for one after another. Put independent queries in one `Promise.all`, never make a request wait for a bookkeeping write (`lastUsedAt`), and prefer one query to lookup-then-query. See [DB round trips](docs/guides/db-round-trips.md) (measured 2026-10-21).
 
 ## GitHub Identity Map
 
