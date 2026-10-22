@@ -82,11 +82,26 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       return;
     }
 
-    const boardKey = await boardAuth.findBoardApiKeyByToken(token);
+    // The database is a network hop away (Neon us-east-1 from VPS4: 55 ms a
+    // round trip, two per query), so look the token up as a board key and as
+    // an agent key (with its agent) at the same time, and never wait for the
+    // lastUsedAt writes. A board key still wins when both match.
+    const tokenHash = hashToken(token);
+    const [boardKey, agentKeyRow] = await Promise.all([
+      boardAuth.findBoardApiKeyByToken(token),
+      db
+        .select({ key: agentApiKeys, agent: agents })
+        .from(agentApiKeys)
+        .leftJoin(agents, eq(agents.id, agentApiKeys.agentId))
+        .where(and(eq(agentApiKeys.keyHash, tokenHash), isNull(agentApiKeys.revokedAt)))
+        .then((rows) => rows[0] ?? null),
+    ]);
     if (boardKey) {
       const access = await boardAuth.resolveBoardAccess(boardKey.userId);
       if (access.user) {
-        await boardAuth.touchBoardApiKey(boardKey.id);
+        void boardAuth.touchBoardApiKey(boardKey.id).catch((err) => {
+          logger.warn({ err, keyId: boardKey.id }, "Failed to record board API key use");
+        });
         req.actor = {
           type: "board",
           userId: boardKey.userId,
@@ -101,12 +116,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       }
     }
 
-    const tokenHash = hashToken(token);
-    const key = await db
-      .select()
-      .from(agentApiKeys)
-      .where(and(eq(agentApiKeys.keyHash, tokenHash), isNull(agentApiKeys.revokedAt)))
-      .then((rows) => rows[0] ?? null);
+    const key = agentKeyRow?.key ?? null;
 
     if (!key) {
       const claims = verifyLocalAgentJwt(token);
@@ -143,16 +153,15 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       return;
     }
 
-    await db
+    void db
       .update(agentApiKeys)
       .set({ lastUsedAt: new Date() })
-      .where(eq(agentApiKeys.id, key.id));
+      .where(eq(agentApiKeys.id, key.id))
+      .catch((err) => {
+        logger.warn({ err, keyId: key.id }, "Failed to record agent API key use");
+      });
 
-    const agentRecord = await db
-      .select()
-      .from(agents)
-      .where(eq(agents.id, key.agentId))
-      .then((rows) => rows[0] ?? null);
+    const agentRecord = agentKeyRow?.agent ?? null;
 
     if (!agentRecord || agentRecord.status === "terminated" || agentRecord.status === "pending_approval") {
       next();

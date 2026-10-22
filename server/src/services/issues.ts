@@ -392,7 +392,7 @@ const ACTIVE_RUN_STATUSES = ["queued", "running"];
 
 async function activeRunMapForIssues(
   dbOrTx: any,
-  issueRows: IssueWithLabels[],
+  issueRows: Array<Pick<IssueRow, "executionRunId">>,
 ): Promise<Map<string, IssueActiveRunRow>> {
   const map = new Map<string, IssueActiveRunRow>();
   const runIds = issueRows
@@ -651,12 +651,16 @@ export function issueService(db: Db) {
       if (filters?.originKind) conditions.push(eq(issues.originKind, filters.originKind));
       if (filters?.originId) conditions.push(eq(issues.originId, filters.originId));
       if (filters?.labelId) {
-        const labeledIssueIds = await db
-          .select({ issueId: issueLabels.issueId })
-          .from(issueLabels)
-          .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
-        if (labeledIssueIds.length === 0) return [];
-        conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
+        // A subquery, not a separate lookup first: each query is a network round trip to the database.
+        conditions.push(
+          inArray(
+            issues.id,
+            db
+              .select({ issueId: issueLabels.issueId })
+              .from(issueLabels)
+              .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId))),
+          ),
+        );
       }
       if (hasSearch) {
         conditions.push(
@@ -690,8 +694,11 @@ export function issueService(db: Db) {
         .from(issues)
         .where(and(...conditions))
         .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt));
-      const withLabels = await withIssueLabels(db, rows);
-      const runMap = await activeRunMapForIssues(db, withLabels);
+      // Labels and active runs both need only the rows, so fetch them together.
+      const [withLabels, runMap] = await Promise.all([
+        withIssueLabels(db, rows),
+        activeRunMapForIssues(db, rows),
+      ]);
       const withRuns = withActiveRuns(withLabels, runMap);
       if (!contextUserId || withRuns.length === 0) {
         return withRuns;
