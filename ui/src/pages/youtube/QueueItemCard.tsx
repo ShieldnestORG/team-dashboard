@@ -15,6 +15,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
+import { ApiError } from "../../api/client";
 import { youtubeApi } from "../../api/youtube";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -58,6 +59,13 @@ export function QueueItemCard({ item, onRefresh }: { item: Record<string, unknow
       onRefresh();
     },
   });
+  // The server refuses (409) a time within 30 minutes of another video; say why.
+  const rescheduleError =
+    rescheduleMutation.error instanceof ApiError && rescheduleMutation.error.status === 409
+      ? rescheduleMutation.error.message
+      : rescheduleMutation.error
+        ? "That did not save. Nothing was changed. Try again."
+        : null;
 
   const deleteMutation = useMutation({
     mutationFn: () => youtubeApi.deleteQueueItem(item.id as string),
@@ -188,6 +196,7 @@ export function QueueItemCard({ item, onRefresh }: { item: Record<string, unknow
             </Button>
           </div>
         )}
+        {rescheduleError && <p className="break-words text-sm text-destructive">{rescheduleError}</p>}
       </CardContent>
     </Card>
   );

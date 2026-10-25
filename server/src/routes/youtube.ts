@@ -13,6 +13,7 @@ import { ytProductions, ytPublishQueue, ytAnalytics, ytContentStrategies, ytSeoD
 import { desc, eq, and, sql, inArray } from "drizzle-orm";
 import { runProductionPipeline } from "../services/youtube/production.js";
 import { processPublishQueue, forcePublish, PUBLISHABLE_QUEUE_STATUSES } from "../services/youtube/publish-queue.js";
+import { resolvePublishTime, slotConfigFromEnv, takenPublishTimes } from "../services/youtube/publish-slots.js";
 import { collectAnalytics, generateOptimizationInsights } from "../services/youtube/analytics.js";
 import { generateContentStrategy } from "../services/youtube/content-strategy.js";
 import { checkYoutubeText } from "../services/youtube/final-text.js";
@@ -115,15 +116,25 @@ export function youtubeRoutes(db: Db): Router {
       if (isNaN(newTime.getTime())) {
         return res.status(400).json({ error: "Invalid date format" });
       }
+      // A time already past moves to the next free slot (a stale approval would
+      // otherwise post at once); one clashing with another queued video is refused.
+      const id = req.params.id as string;
+      const now = new Date();
+      const slot = resolvePublishTime(newTime, now, await takenPublishTimes(db, now, id), slotConfigFromEnv());
+      if ("conflictWith" in slot) {
+        return res.status(409).json({
+          error: `Another video already goes out at ${slot.conflictWith.toISOString()}. Pick a time at least 30 minutes away from it.`,
+        });
+      }
       // Approving (pending_review) and rescheduling both land here; a published,
       // publishing or failed row must never be flipped back to "scheduled"
       // (the queue would upload it again as a duplicate).
       const updated = await db
         .update(ytPublishQueue)
-        .set({ publishTime: newTime, status: "scheduled" })
+        .set({ publishTime: slot.publishTime, status: "scheduled" })
         .where(
           and(
-            eq(ytPublishQueue.id, req.params.id as string),
+            eq(ytPublishQueue.id, id),
             eq(ytPublishQueue.companyId, COMPANY_ID),
             inArray(ytPublishQueue.status, PUBLISHABLE_QUEUE_STATUSES),
           ),
@@ -132,7 +143,7 @@ export function youtubeRoutes(db: Db): Router {
       if (updated.length === 0) {
         return res.status(409).json({ error: "Only videos awaiting approval, scheduled or paused can be (re)scheduled" });
       }
-      res.json({ success: true, publishTime: newTime.toISOString() });
+      res.json({ success: true, publishTime: slot.publishTime.toISOString(), moved: slot.moved });
     } catch (err) {
       res.status(500).json({ error: "Failed to reschedule" });
     }

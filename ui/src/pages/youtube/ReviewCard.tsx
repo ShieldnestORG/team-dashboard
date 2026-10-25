@@ -31,6 +31,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
+import { ApiError } from "../../api/client";
 import { youtubeApi } from "../../api/youtube";
 import { EditVideoTextDialog } from "./EditVideoTextDialog";
 import { youtubeStatusKind, youtubeStatusLabel } from "./youtube-status";
@@ -84,11 +85,20 @@ export function ReviewCard({
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [saved, setSaved] = useState(false);
+  // A proposed time that has passed is not used: the server moves it to the next free slot.
+  const stale = publishTime ? new Date(publishTime).getTime() <= Date.now() : false;
+  // 409 carries the server's reason (a clash with another video); show it as written.
+  const saveError = (err: unknown) =>
+    setActionError(
+      err instanceof ApiError && err.status === 409
+        ? err.message
+        : "That did not save. Nothing was changed. Try again.",
+    );
 
   const approve = useMutation({
     mutationFn: () => youtubeApi.rescheduleQueueItem(id, publishTime ?? ""),
     onSuccess: onRefresh,
-    onError: () => setActionError("That did not save. Nothing was changed. Try again."),
+    onError: saveError,
   });
 
   const reschedule = useMutation({
@@ -97,7 +107,7 @@ export function ReviewCard({
       setEditingDate(false);
       onRefresh();
     },
-    onError: () => setActionError("That did not save. Nothing was changed. Try again."),
+    onError: saveError,
   });
 
   const publishNow = useMutation({
@@ -236,7 +246,9 @@ export function ReviewCard({
 
         {publishTime && (
           <p className="text-xs text-muted-foreground">
-            Approve schedules it for {formatWhen(publishTime)}. Nothing posts before then.
+            {stale
+              ? "Its proposed time has passed. Approve schedules it for the next free daily slot."
+              : `Approve schedules it for ${formatWhen(publishTime)}. Nothing posts before then.`}
           </p>
         )}
 
@@ -253,7 +265,7 @@ export function ReviewCard({
           <VideoPreview src={youtubeApi.getVideoStreamUrl(videoFile)} title={title} />
         )}
 
-        {publishTime && (
+        {publishTime && !stale && (
           <p className="text-sm text-muted-foreground">
             Goes out: {formatGoesOut(publishTime)}
           </p>

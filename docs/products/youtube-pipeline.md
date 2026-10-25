@@ -13,7 +13,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 |---|---|
 | Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `animated-video.ts` + `word-timings.ts` + `animated/` (animated mode), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
 | Runs in | VPS4 (`31.220.61.14`), container `team-dashboard-server-1`, container clock UTC |
-| Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them. Since 2026-10-10 (`DEV-117`) `yt:cleanup-videos` also purges slide PNGs, the thumbnail, and `timeline_<id>.json` / `video_<id>.animated.failed`; the `archive/` review copy is never touched |
+| Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min, one due video per run (*until 2026-10-25: up to 5 per run*) · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them. Since 2026-10-10 (`DEV-117`) `yt:cleanup-videos` also purges slide PNGs, the thumbnail, and `timeline_<id>.json` / `video_<id>.animated.failed`; the `archive/` review copy is never touched |
 | Mode | **`YT_VISUAL_MODE=animated` on VPS4 since 2026-10-09 19:02 PDT** (owner: "make animated the default"; env backup `.env.production.bak-yt-animated-1791597734`; container recreated, env read back inside it): the nightly cron makes **animated** videos, slides only as the render-error fallback. *This row said until that evening:* `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
 | Files | `/paperclip/youtube/audio/audio_<id>.wav`, `/paperclip/youtube/assets/<id>/pres_NNN_<type>.png`, `/paperclip/youtube/videos/video_<id>.mp4`; captions in `/tmp/yt-temp/` (tmpfs, gone on restart) |
 | Queue | `yt_publish_queue.status`: `pending_review` → (owner approves) `scheduled` → `publishing` → `published` · or `failed` / `paused` |
@@ -157,6 +157,17 @@ Both actions only work on `pending_review`, `scheduled` or `paused` rows (route 
 published or failed video can't be uploaded twice. The time box is pre-filled in local time (it used to pre-fill UTC into
 a local picker, so an unchanged approval moved the video 7 hours later in PDT). A `pending_review` video older than
 30 days is still purged by `yt:cleanup-videos` — approve within a month.
+
+**A proposed time that has passed is never used (since 2026-10-25).** The proposed time is fixed when the video is made, so
+a video that waits in review longer than that keeps a time in the past. `PATCH /queue/:id/schedule` now runs
+`resolvePublishTime` (`publish-slots.ts`): a time already past moves to the next free slot (same rules as
+`nextPublishSlot`: `YT_PUBLISH_*`, default one a day at 07:00 Los Angeles), and the answer carries `moved: true` and the time
+used; a future time within 30 minutes of another queued video is refused with 409 and the clashing time, and both cards
+show that message. The review card says "Its proposed time has passed…" instead of a past date. *Until 2026-10-25 the
+route wrote whatever time it was sent:* on 2026-10-25 between 22:47 and 22:49 UTC the owner approved 15 videos that had
+waited 1–15 days, 14 of them with past times, so all 14 were due at once and the queue would have posted them five per
+run from 23:00 UTC. They were re-spaced by hand at 22:51 UTC, one a day at 07:00 Los Angeles from Oct 27 to Nov 9
+(old times backed up in `/root/yt-queue-before-respace-2026-10-25.jsonl` on VPS4).
 
 Before approving, the title or description of a queued video can be edited via `PATCH /api/youtube/queue/:id`
 (`{ title?, description? }`): at least one field, title 1–100 chars (no `<` or `>`), and the description plus its

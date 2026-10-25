@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   localWallTimeToUtc,
   nextFreeSlot,
+  resolvePublishTime,
   slotConfigFromEnv,
 } from "../services/youtube/publish-slots.js";
 
@@ -72,5 +73,43 @@ describe("slotConfigFromEnv", () => {
     expect(slotConfigFromEnv({ YT_PUBLISH_TZ: "Mars/Olympus" }).timeZone).toBe(
       "America/Los_Angeles",
     );
+  });
+});
+
+describe("resolvePublishTime", () => {
+  const now = new Date("2026-10-25T22:47:00Z"); // Oct 25 15:47 PDT
+
+  it("moves a time that has already passed to the next free slot", () => {
+    const res = resolvePublishTime(new Date("2026-10-12T14:00:00Z"), now, [], DEFAULT_CFG);
+    expect(res).toEqual({ publishTime: new Date("2026-10-26T14:00:00Z"), moved: true });
+  });
+
+  it("gives a batch of stale approvals one day each, never the same time", () => {
+    const taken: Date[] = [];
+    for (const stale of ["2026-10-10T14:00:00Z", "2026-10-12T14:00:00Z", "2026-10-13T14:00:00Z"]) {
+      const res = resolvePublishTime(new Date(stale), now, taken, DEFAULT_CFG);
+      if (!("publishTime" in res)) throw new Error("expected a slot");
+      taken.push(res.publishTime);
+    }
+    expect(taken.map((t) => t.toISOString())).toEqual([
+      "2026-10-26T14:00:00.000Z",
+      "2026-10-27T14:00:00.000Z",
+      "2026-10-28T14:00:00.000Z",
+    ]);
+  });
+
+  it("keeps a free future time as asked", () => {
+    const asked = new Date("2026-10-30T18:00:00Z");
+    expect(resolvePublishTime(asked, now, [new Date("2026-10-30T14:00:00Z")], DEFAULT_CFG)).toEqual({
+      publishTime: asked,
+      moved: false,
+    });
+  });
+
+  it("refuses a future time within 30 minutes of another queued video", () => {
+    const other = new Date("2026-10-30T14:00:00Z");
+    expect(resolvePublishTime(new Date("2026-10-30T14:20:00Z"), now, [other], DEFAULT_CFG)).toEqual({
+      conflictWith: other,
+    });
   });
 });

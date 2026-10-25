@@ -8,7 +8,7 @@
 
 import type { Db } from "@paperclipai/db";
 import { ytPublishQueue } from "@paperclipai/db";
-import { and, gte, inArray } from "drizzle-orm";
+import { and, gte, inArray, ne } from "drizzle-orm";
 
 export interface SlotConfig {
   perDay: number;
@@ -19,6 +19,8 @@ export interface SlotConfig {
 const DEFAULT_PER_DAY = 1;
 const DEFAULT_HOURS = [7];
 const DEFAULT_TIME_ZONE = "America/Los_Angeles";
+/** Two queued videos may not go out closer together than this. */
+const TOO_CLOSE_MS = 30 * 60 * 1000;
 
 function isValidTimeZone(tz: string): boolean {
   try {
@@ -112,7 +114,6 @@ export function localWallTimeToUtc(
 
 export function nextFreeSlot(now: Date, taken: Date[], cfg: SlotConfig): Date {
   const minTime = now.getTime() + 60 * 60 * 1000;
-  const tooCloseMs = 30 * 60 * 1000;
 
   const localDayKey = (d: Date): string => {
     const p = readLocalWallTime(d, cfg.timeZone);
@@ -136,7 +137,7 @@ export function nextFreeSlot(now: Date, taken: Date[], cfg: SlotConfig): Date {
       const takenInDay = taken.filter((t) => localDayKey(t) === dayKey).length;
       if (takenInDay >= cfg.perDay) continue;
       if (candidate.getTime() < minTime) continue;
-      if (taken.some((t) => Math.abs(t.getTime() - candidate.getTime()) < tooCloseMs)) continue;
+      if (taken.some((t) => Math.abs(t.getTime() - candidate.getTime()) < TOO_CLOSE_MS)) continue;
 
       return candidate;
     }
@@ -154,7 +155,29 @@ export function nextFreeSlot(now: Date, taken: Date[], cfg: SlotConfig): Date {
   return new Date((lastCandidate ? lastCandidate.getTime() : minTime) + 24 * 60 * 60 * 1000);
 }
 
-export async function nextPublishSlot(db: Db, now: Date = new Date()): Promise<Date> {
+/**
+ * The publish time a (re)schedule actually gets. A requested time that has already
+ * passed is replaced by the next free slot: approving a video that waited in review
+ * past its proposed slot would otherwise make it due at once, and a batch of such
+ * approvals would all post together. A future time within 30 minutes of another
+ * queued video is refused (conflictWith) so the owner can pick another.
+ */
+export function resolvePublishTime(
+  requested: Date,
+  now: Date,
+  taken: Date[],
+  cfg: SlotConfig,
+): { publishTime: Date; moved: boolean } | { conflictWith: Date } {
+  if (requested.getTime() <= now.getTime()) {
+    return { publishTime: nextFreeSlot(now, taken, cfg), moved: true };
+  }
+  const clash = taken.find((t) => Math.abs(t.getTime() - requested.getTime()) < TOO_CLOSE_MS);
+  if (clash) return { conflictWith: clash };
+  return { publishTime: requested, moved: false };
+}
+
+/** Publish times holding a slot (from 24 h ago on), leaving out the row being rescheduled. */
+export async function takenPublishTimes(db: Db, now: Date, excludeId?: string): Promise<Date[]> {
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   const rows = await db
@@ -164,9 +187,13 @@ export async function nextPublishSlot(db: Db, now: Date = new Date()): Promise<D
       and(
         inArray(ytPublishQueue.status, ["pending_review", "scheduled", "publishing", "published"]),
         gte(ytPublishQueue.publishTime, since),
+        excludeId ? ne(ytPublishQueue.id, excludeId) : undefined,
       ),
     );
 
-  const taken = rows.map((r) => r.publishTime);
-  return nextFreeSlot(now, taken, slotConfigFromEnv());
+  return rows.map((r) => r.publishTime);
+}
+
+export async function nextPublishSlot(db: Db, now: Date = new Date()): Promise<Date> {
+  return nextFreeSlot(now, await takenPublishTimes(db, now), slotConfigFromEnv());
 }
