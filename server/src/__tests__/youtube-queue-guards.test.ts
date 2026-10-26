@@ -30,3 +30,13 @@ describe("forcePublish status guard", () => {
     expect(isConfigured).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("processPublishQueue", () => {
+  it("asks for one due video per run, so a backlog never posts together", async () => {
+    const { processPublishQueue } = await import("../services/youtube/publish-queue.js");
+    const limits: number[] = [];
+    const chain = { from: () => chain, where: () => chain, orderBy: () => chain, limit: async (n: number) => (limits.push(n), []) };
+    await processPublishQueue({ select: () => chain } as unknown as Parameters<typeof processPublishQueue>[0]);
+    expect(limits).toEqual([1]);
+  });
+});

@@ -20,7 +20,7 @@ const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "";
 export const PUBLISHABLE_QUEUE_STATUSES = ["pending_review", "scheduled", "paused"];
 
 /**
- * Process the publish queue — publish all items that are due.
+ * Process the publish queue — publish the next due item.
  */
 export async function processPublishQueue(db: Db): Promise<number> {
   const now = new Date();
@@ -34,8 +34,9 @@ export async function processPublishQueue(db: Db): Promise<number> {
         lte(ytPublishQueue.publishTime, now),
       ),
     )
-    .orderBy(ytPublishQueue.priority)
-    .limit(5);
+    .orderBy(ytPublishQueue.priority, ytPublishQueue.publishTime)
+    // One video per run (every 15 min): a backlog of due videos never goes out together.
+    .limit(1);
 
   if (dueItems.length === 0) return 0;
 
