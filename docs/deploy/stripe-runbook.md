@@ -56,6 +56,8 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 ## Env var contract — what each var does, where it must be set
 
+> **Never write a secret's value in this file** (it is in a public repo): name the variable and where it is set, nothing more.
+
 VPS = `/opt/team-dashboard/.env.production` on **VPS4 (`31.220.61.14`)** — NOT VPS1 (`.12`). Always confirm with `dig +short api.coherencedaddy.com` before SSHing.
 Vercel = the public storefront's Vercel project env settings.
 
@@ -66,7 +68,7 @@ Vercel = the public storefront's Vercel project env settings.
 | `STRIPE_WEBHOOK_SECRET` | VPS | ✅ set | **Global** webhook signing secret — used by Intel API webhook + as fallback for any product-specific secret that's missing |
 | `STRIPE_WEBHOOK_SECRET_CREDITSCORE` | VPS | ✅ set | CreditScore webhook signature verification |
 | `STRIPE_WEBHOOK_SECRET_DIRECTORY` | VPS | ✅ set | Directory Listings webhook signature verification |
-| `STRIPE_WEBHOOK_SECRET_WATCHTOWER` | VPS | ⚠️ **TO ADD** (`whsec_xyfUNOcT9nJJ1EQ55lxL2nY9mgBLE5Pt`, captured 2026-05-09) | Watchtower webhook signature verification. **Without this, Stripe's POST gets rejected as invalid signature** because the global secret is for the Intel API endpoint, not Watchtower. |
+| `STRIPE_WEBHOOK_SECRET_WATCHTOWER` | VPS | ✅ set (value lives only in `/opt/team-dashboard/.env.production` on VPS4; a value written here until 2026-10-27 was removed and is not the one in use) | Watchtower webhook signature verification. **Without this, Stripe's POST gets rejected as invalid signature** because the global secret is for the Intel API endpoint, not Watchtower. |
 | `STRIPE_WEBHOOK_SECRET_UNIVERSITY` | VPS | ⛔ **TO ADD** (capture `whsec_…` when the `/api/university/webhook` endpoint is registered **on the Starwise account**) | Coherent Ones University webhook signature verification. The University webhook endpoint is registered on the **Starwise** account (where University bills), so this signing secret comes from Starwise. Falls back to the global secret if unset, but the global is for the CD Intel API endpoint — set this once the dedicated Starwise webhook exists. |
 | `STRIPE_PRICE_*` (all bare price IDs) | VPS | ✅ all set | Direct price-ID resolution for non-Watchtower products. Must be hand-updated if a price is rotated. |
 | `WATCHTOWER_STRIPE_PRICE_ID` | VPS | ⛔ deliberately unset | Watchtower resolves by lookup_key first — this env var is only the fallback. Leaving unset keeps the lookup_key path canonical. |
