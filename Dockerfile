@@ -1,4 +1,8 @@
-FROM node:lts-trixie-slim AS base
+# Pinned to Node 24 (what CI tests and prod ran). `node:lts-trixie-slim` moved
+# to Node 26, which no longer ships corepack, so `corepack enable` failed and
+# no image could be built (2026-11-04). Until 2026-11-04 this line was
+# `FROM node:lts-trixie-slim AS base`. Move to a newer major on purpose only.
+FROM node:24-trixie-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git ffmpeg \
      # Playwright Chromium dependencies for presentation slide rendering
