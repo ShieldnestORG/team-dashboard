@@ -1,6 +1,6 @@
 # Alerting Policy — immediate vs weekly recap
 
-> **Cluster:** operations/alerting · **Tags:** alerts, email, severity, weekly recap, alert_events, cron watchdog, egress-watch · **Related:** [Cron Inventory](cron-inventory.md), [Agent Cron Ownership](../guides/agent-cron-ownership.md), [VPS Cheat Sheet](../deploy/vps-cheat-sheet.md)
+> **Cluster:** operations/alerting · **Tags:** alerts, email, severity, weekly recap, alert_events, cron watchdog, egress-watch · **Related:** [Cron Inventory](cron-inventory.md), [Blog Distribution](../products/blog-distribution.md), [Agent Cron Ownership](../guides/agent-cron-ownership.md), [VPS Cheat Sheet](../deploy/vps-cheat-sheet.md)
 
 Owner directive (2026-07-09): **the ops inbox gets an immediate email only for genuinely
 important events; everything else lands in one predictable Sunday recap.** Before this,
@@ -13,12 +13,17 @@ failures + host egress alerts = multiple emails/day).
 
 | Severity | Types | Behavior |
 |---|---|---|
-| **critical** | `service_down`, `service_recovered`, `health_down`, `disk_warning`, `memory_warning`, `cron_breaker`, `weekly_recap`, and all other non-routine types | Emailed immediately (Brevo-first, Proton SMTP fallback) **and** persisted to `alert_events` |
+| **critical** | `service_down`, `service_recovered`, `health_down`, `disk_warning`, `memory_warning`, `cron_breaker`, `weekly_recap`, `blog_publish_failing`, and all other non-routine types | Emailed immediately (Brevo-first, Proton SMTP fallback) **and** persisted to `alert_events` |
 | **routine** | `cron_stale`, `eval_failed` | Persisted to `alert_events` only — surfaces in the Sunday recap |
 
 - The routine set lives in `ROUTINE_TYPES` in `alerting.ts`. Keep it small: it exists to
   stop inbox noise, not to hide outages.
 - The 1h per-type cooldown applies to both severities (bounds `alert_events` rows too).
+  Since 2026-11-04 a caller that sends one type for several subjects passes
+  `sendAlert(type, subject, body, { cooldownKey })` so one subject cannot mute another
+  (the `cron_breaker` lesson below). The default key is still the type.
+- Since 2026-11-04 the email HTML escapes `<`, `>` and `&` in the subject and body: alert
+  text carries remote error strings (HTML error pages, provider bodies).
 - `cron_breaker` (circuit breaker auto-disabling a crash-looping job) got its own type on
   2026-07-09 — it previously shared `cron_stale`'s cooldown key, so a watchdog alert could
   silently suppress a breaker trip for an hour.
@@ -28,7 +33,9 @@ failures + host egress alerts = multiple emails/day).
   `service_down` actually paged. A single transient timeout (e.g. a one-off 15s Ollama
   `/api/version` blip) no longer emails; a genuine outage still pages within a few minutes.
 
-## Persistence: `alert_events` (migration 0151)
+## Persistence: `alert_events` (migration 0152)
+
+*(This heading said migration 0151 until 2026-11-04; the file is `0152_alert_events.sql`.)*
 
 Every alert (emailed or not) inserts a row: `type`, `severity`, `subject`, `body`,
 `email_sent`, `email_error`, `created_at`. Set up via `setAlertDb(db)` at boot
@@ -40,7 +47,7 @@ Every alert (emailed or not) inserts a row: `type`, `severity`, `subject`, `body
 One email summarizing: last 7 days of `alert_events` grouped by type, currently unhealthy
 crons (same filter as the watchdog), and the latest eval run. **Sends even when all
 clear** — a missing Sunday email is itself a signal. Replaced `alert:digest` (daily 07:00
-eval digest), whose `system_crons` row is deleted by migration 0151 because the registry
+eval digest), whose `system_crons` row is deleted by migration 0152 (this said 0151 until 2026-11-04) because the registry
 sync only upserts and an orphaned row would eventually flag as critically stale.
 
 ## Host-level egress alerts (VPS1 + VPS4, not in the app registry)
@@ -55,6 +62,16 @@ Changes made 2026-07-09:
   compromise signal (miners peg cores; their bandwidth is tiny).
 - **Daily summaries → weekly** (`egress-weekly-summary.sh`, Sundays 23:55, both boxes),
   aggregating a per-day table for the week.
+
+## Blog publish targets (`alert:blog-publish-health`, hourly at :30)
+
+Added 2026-11-04. The cron fires a critical `blog_publish_failing` alert when a target
+(cd / sn / tokns-app) has 5 failed attempts in a row, or 2+ attempts in 24 h with none
+succeeding. It sends one email per target per outage. The once-per-outage check reads
+`alert_events` rows with `email_sent = true`, so a failed send is retried. Each target has
+its own cooldown key. Why: the cd leg failed with 401
+on every post from 2026-04-27 to 2026-11-03 and nothing alerted. Rule, dry run and blind
+spots: [Blog Distribution](../products/blog-distribution.md#failure-alert-alertblog-publish-health).
 
 ## History / why this exists
 

@@ -162,6 +162,19 @@ export function startAlertCrons(db?: Db) {
       },
     });
 
+    // Blog publish health — hourly at :30 (blog crons publish at :00-:10).
+    // Critical alert when cd / sn / tokns-app keeps failing; one per outage.
+    registerCronJob({
+      jobName: "alert:blog-publish-health",
+      schedule: "30 * * * *",
+      ownerAgent: "nova",
+      sourceFile: "alert-crons.ts",
+      handler: async () => {
+        const { checkBlogPublishHealth } = await import("./blog-publish-health.js");
+        return { targets: await checkBlogPublishHealth(db) };
+      },
+    });
+
     // Weekly ops recap — Sunday 8 AM, the one scheduled ops email.
     registerCronJob({
       jobName: "alert:weekly-recap",
@@ -175,6 +188,6 @@ export function startAlertCrons(db?: Db) {
     });
   }
 
-  const jobCount = db ? 5 : 1;
+  const jobCount = db ? 6 : 1;
   logger.info({ count: jobCount }, "Alert cron jobs registered");
 }

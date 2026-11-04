@@ -20,6 +20,7 @@ describe("alertSeverity routing", () => {
       "memory_warning",
       "cron_breaker",
       "weekly_recap",
+      "blog_publish_failing",
     ] as const) {
       expect(alertSeverity(type)).toBe("critical");
     }
