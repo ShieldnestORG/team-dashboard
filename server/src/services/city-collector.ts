@@ -1,7 +1,7 @@
 /**
  * City Collector — multi-source local intelligence pipeline.
  *
- * Given a city, we pull signals from five data paths in parallel, merge +
+ * Given a city, we pull signals from six data paths in parallel, merge +
  * deduplicate + rank via Ollama, then store the result as one row in
  * `city_intelligence`. Three ranked top-50 buckets per city:
  *
@@ -11,8 +11,9 @@
  *
  * Sources:
  *   1. Firecrawl `search`   — raw web-search scraping (broad)
- *   2. Google Trends RSS    — trending queries (US-geo)
- *   3. Bing News API        — city-filtered news
+ *   2. Google Trends RSS    — trending queries (US-geo, national: not local)
+ *   3. Bing News API        — city-filtered news (needs BING_NEWS_KEY)
+ *   3b. Google News RSS     — city-filtered news, last 7 days, no key
  *   4. Reddit search        — r/{city} + query filter for service demand
  *   5. Yelp via Firecrawl   — service category demand proxies
  *
@@ -38,9 +39,12 @@ const FIRECRAWL_URL =
 const BING_NEWS_API_URL = "https://api.bing.microsoft.com/v7.0/news/search";
 const BING_NEWS_KEY = process.env.BING_NEWS_KEY || "";
 const GOOGLE_TRENDS_RSS_URL = "https://trends.google.com/trending/rss?geo=US";
-const FRESHNESS_DAYS = 30;
+// 6 days: the Monday refresh cron must find last week's row stale, so the
+// Tuesday city-trends blog reads this week's news (was 30 → same list 4-5 weeks).
+const FRESHNESS_DAYS = 6;
 const TOP_K = 50;
 const PER_SOURCE_FETCH_TIMEOUT_MS = 25_000;
+const FIRECRAWL_SEARCH_BUDGET_MS = 120_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -332,6 +336,54 @@ async function collectBingNews(q: CityQuery): Promise<{
       fetchedAt: new Date().toISOString(),
       itemCount: articles.length,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Source 3b: Google News RSS search (city-filtered, last 7 days). No key.
+// Bing News has no key on prod, so this is the only working local-news feed.
+// ---------------------------------------------------------------------------
+
+const decodeXml = (s: string): string =>
+  s
+    .replace(/<!\[CDATA\[|\]\]>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .trim();
+
+/** Headlines from a Google News RSS feed, with the trailing " - Publisher" removed. */
+export function parseGoogleNewsRss(xml: string): string[] {
+  const out: string[] = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  let match: RegExpExecArray | null;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const raw = match[1]!.match(/<title>([\s\S]*?)<\/title>/)?.[1];
+    if (!raw) continue;
+    const title = decodeXml(raw).replace(/\s+-\s+[^-]+$/, "").trim();
+    if (title) out.push(title);
+  }
+  return out;
+}
+
+async function collectGoogleNews(q: CityQuery): Promise<{
+  signals: RawSignal[];
+  source: CityRawSource;
+}> {
+  const cityLabel = [`"${q.city}"`, q.region].filter(Boolean).join(" ");
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(`${cityLabel} when:7d`)}&hl=en-US&gl=US&ceid=US:en`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(PER_SOURCE_FETCH_TIMEOUT_MS) });
+  const titles = res.ok ? parseGoogleNewsRss(await res.text()) : [];
+  return {
+    signals: titles.map((term) => ({
+      term: term.slice(0, 160),
+      source: "google-news",
+      bucketHint: "trending",
+      weight: 1,
+    })),
+    source: { source: "google-news", url, fetchedAt: new Date().toISOString(), itemCount: titles.length },
   };
 }
 
@@ -652,17 +704,20 @@ export async function collectCity(
     });
 
   try {
-    const [firecrawl, gTrends, bing, reddit, yelp] = await Promise.all([
-      withTimeout("firecrawl-search", collectFirecrawlSearches(q)),
+    const [firecrawl, gTrends, bing, gNews, reddit, yelp] = await Promise.all([
+      // 5 sequential searches at ~11 s each (measured 2026-11-04) never fit the
+      // 25 s default, so the whole source was dropped every run.
+      withTimeout("firecrawl-search", collectFirecrawlSearches(q), FIRECRAWL_SEARCH_BUDGET_MS),
       withTimeout("google-trends", collectGoogleTrends(q)),
       withTimeout("bing-news", collectBingNews(q)),
+      withTimeout("google-news", collectGoogleNews(q)),
       withTimeout("reddit", collectReddit(q)),
       withTimeout("yelp", collectYelp(q)),
     ]);
 
     const rawSignals: RawSignal[] = [];
     const rawSources: CityRawSource[] = [];
-    for (const part of [firecrawl, gTrends, bing, reddit, yelp]) {
+    for (const part of [firecrawl, gTrends, bing, gNews, reddit, yelp]) {
       if (!part) continue;
       rawSignals.push(...part.signals);
       rawSources.push(part.source);

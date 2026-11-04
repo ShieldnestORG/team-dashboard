@@ -40,6 +40,8 @@ export interface ContentJobDef {
   xAccountSlug?: string;
   // topic overrides the topic picker with a fixed string
   topic?: string;
+  // false = blog posts stay as drafts for Content Review (no auto-publish)
+  autoPublish?: boolean;
 }
 
 export const JOB_DEFS: ContentJobDef[] = [
@@ -118,6 +120,8 @@ export const JOB_DEFS: ContentJobDef[] = [
     topicPicker: "city-trends",
     publishTarget: "cd",
     brand: "cd",
+    // Owner 2026-11-04: drafts only until the local-news topics prove good.
+    autoPublish: false,
   },
 ];
 
@@ -484,6 +488,67 @@ async function pickToknsPromoTopic(db: Db): Promise<TopicResult> {
 
 const COMPANY_ID = process.env.TEAM_DASHBOARD_COMPANY_ID || "8365d8c2-ea73-4c04-af78-a7db3ee7ecd4";
 
+/** National Google Trends terms are the same for every city: never "local". */
+const NATIONAL_TREND_SOURCES = new Set(["google-trends"]);
+/** A term written about in this window is not picked again. */
+export const CITY_TREND_REPEAT_WINDOW_DAYS = 90;
+const CITY_TREND_PROMPT_PREFIX = 'Write a blog post about "';
+
+export function cityTrendPrompt(term: string, city: string): string {
+  return `${CITY_TREND_PROMPT_PREFIX}${term}" relevant to local businesses and residents in ${city}. Focus on practical local relevance, community impact, and how small businesses can leverage this trend.`;
+}
+
+/** The term inside a stored city-trends prompt, lower-cased; null for other topics. */
+export function cityTrendTermFromPrompt(topic: string): string | null {
+  if (!topic.startsWith(CITY_TREND_PROMPT_PREFIX)) return null;
+  const m = topic.match(/^Write a blog post about "(.*)" relevant to local businesses and residents in /s);
+  return m ? m[1]!.trim().toLowerCase() : null;
+}
+
+export interface CityTrendCandidate {
+  term: string;
+  score: number;
+  source?: string;
+  city: string;
+  /** 1 / (partner content mentions + 1) */
+  mentionWeight: number;
+}
+
+/**
+ * Highest weighted local term not written about recently. Ties keep the
+ * earlier candidate. Null when nothing is left (the job then skips the week).
+ */
+export function chooseCityTrendTopic(
+  candidates: CityTrendCandidate[],
+  usedTerms: Set<string>,
+): CityTrendCandidate | null {
+  let best: CityTrendCandidate | null = null;
+  for (const c of candidates) {
+    if (!c.term.trim()) continue;
+    if (c.source && NATIONAL_TREND_SOURCES.has(c.source)) continue;
+    if (usedTerms.has(c.term.trim().toLowerCase())) continue;
+    if (!best || c.score * c.mentionWeight > best.score * best.mentionWeight) best = c;
+  }
+  return best;
+}
+
+async function recentCityTrendTerms(db: Db): Promise<Set<string>> {
+  const rows = (await db
+    .select({ topic: contentItems.topic })
+    .from(contentItems)
+    .where(
+      sql`${contentItems.companyId} = ${COMPANY_ID}
+          AND ${contentItems.topic} LIKE ${CITY_TREND_PROMPT_PREFIX + "%"}
+          AND ${contentItems.createdAt} > now() - make_interval(days => ${CITY_TREND_REPEAT_WINDOW_DAYS})`,
+    )) as Array<{ topic: string }>;
+  const used = new Set<string>();
+  for (const r of rows) {
+    const t = cityTrendTermFromPrompt(r.topic);
+    if (t) used.add(t);
+  }
+  return used;
+}
+
 async function pickCityTrendTopic(db: Db): Promise<{ display: string; prompt: string } | null> {
   // Find city_intelligence rows that are ready and still fresh, joined to
   // partners that have a location set.
@@ -503,8 +568,8 @@ async function pickCityTrendTopic(db: Db): Promise<{ display: string; prompt: st
 
   if (partners.length === 0) return null;
 
-  // For each partner, find the city_intelligence row
-  let bestTopic: { term: string; score: number; city: string; mentionWeight: number } | null = null;
+  // For each partner, collect the city_intelligence trending terms
+  const candidates: CityTrendCandidate[] = [];
 
   for (const partner of partners) {
     if (!partner.location) continue;
@@ -535,23 +600,21 @@ async function pickCityTrendTopic(db: Db): Promise<{ display: string; prompt: st
     const row = rows[0];
     if (!row || !row.trendingTopics || (row.trendingTopics as unknown[]).length === 0) continue;
 
-    const topics = row.trendingTopics as Array<{ term: string; score: number }>;
+    const topics = row.trendingTopics as Array<{ term: string; score: number; source?: string }>;
     // Weight by topic score × inverse of content mentions (boost least-mentioned partners)
     const mentionWeight = 1 / ((partner.contentMentions ?? 0) + 1);
-    for (const t of topics.slice(0, 3)) {
-      const weighted = t.score * mentionWeight;
-      if (!bestTopic || weighted > bestTopic.mentionWeight) {
-        const city = [row.city, row.region].filter(Boolean).join(", ");
-        bestTopic = { term: t.term, score: t.score, city, mentionWeight: weighted };
-      }
+    const city = [row.city, row.region].filter(Boolean).join(", ");
+    for (const t of topics) {
+      candidates.push({ term: t.term, score: t.score, source: t.source, city, mentionWeight });
     }
   }
 
+  const bestTopic = chooseCityTrendTopic(candidates, await recentCityTrendTerms(db));
   if (!bestTopic) return null;
 
   return {
     display: `${bestTopic.term} — local trends in ${bestTopic.city}`,
-    prompt: `Write a blog post about "${bestTopic.term}" relevant to local businesses and residents in ${bestTopic.city}. Focus on practical local relevance, community impact, and how small businesses can leverage this trend.`,
+    prompt: cityTrendPrompt(bestTopic.term, bestTopic.city),
   };
 }
 
@@ -625,7 +688,7 @@ export function startContentCrons(db: Db) {
         } else if (def.topicPicker === "city-trends") {
           const cityResult = await pickCityTrendTopic(db);
           if (!cityResult) {
-            logger.info({ job: def.name }, "content:city-trends: no fresh city data, skipping");
+            logger.info({ job: def.name }, "content:city-trends: no fresh unused local topic, skipping");
             return;
           }
           topicRaw = cityResult;
@@ -707,8 +770,8 @@ export function startContentCrons(db: Db) {
             "Content cron completed — item queued as pending",
           );
 
-          // Auto-publish blog posts to target(s)
-          if (def.contentType === "blog_post") {
+          // Auto-publish blog posts to target(s), unless the job is drafts-only
+          if (def.contentType === "blog_post" && def.autoPublish !== false) {
             const target = def.publishTarget || "cd";
             const category = def.topicPicker === "chain-metrics" || def.topicPicker === "xrp-focus"
               ? "crypto" as const
