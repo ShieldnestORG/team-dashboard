@@ -80,7 +80,7 @@ Generate → publish wiring owned by this repo (see [docs/products/blog-distribu
 
 | Target slug | Destination | Status | Env vars |
 |---|---|---|---|
-| `cd`        | `https://www.coherencedaddy.com/blog/<slug>` | **LIVE** — ~2–3 posts/day | `CD_BLOG_API_URL`, `CD_BLOG_API_KEY` |
+| `cd`        | `https://coherencedaddy.com/blog/<slug>` | **Fixed 2026-11-04** — every post was refused 401 from 2026-04-27 (www→apex redirect dropped the key), and the site only started showing API posts with the storefront blog PR of 2026-11-04 *(until 2026-11-04 this row said "LIVE — ~2–3 posts/day" with the www URL)* | `CD_BLOG_API_URL`, `CD_BLOG_API_KEY` |
 | `sn`        | `https://shieldnest.org/blog/<slug>` | **LIVE** | `SN_BLOG_API_URL`, `SN_BLOG_API_KEY` |
 | `tokns-app` | `https://app.tokns.fi/articles/<slug>` + dashboard "News & Insights" feed | **LIVE** | `TOKNS_APP_BLOG_API_URL`, `TOKNS_APP_BLOG_API_KEY` |
 | _(read-only)_ | `https://tokns.fi/lab` ("the Lab") — fetches from `app.tokns.fi/api/articles` client-side (CORS-allowlisted) | **LIVE** | _(no publisher env; reads tokns-app)_ |

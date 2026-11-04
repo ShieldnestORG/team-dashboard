@@ -273,6 +273,8 @@ export function contentRoutes(db: Db) {
       const category = "ecosystem" as BlogPost["category"];
       const post = buildBlogPostFromContent(item.content, item.topic, category);
       if (item.slug) post.slug = item.slug;
+      // Keep the original date on coherencedaddy (price snapshots go stale).
+      if (target === "cd" && item.publishedAt) post.date = new Date(item.publishedAt).toISOString();
 
       const { success, error, result } = await republishTarget(post, target);
 
