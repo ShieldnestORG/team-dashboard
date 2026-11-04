@@ -107,7 +107,9 @@ All blog crons are registered in `server/src/services/content-crons.ts::JOB_DEFS
 | `content:tx-chain-daily` | `0 8 * * *` | `sn` | tx | `chain-metrics` |
 | `content:slideshow-blog:cd` | `0 12 * * 3,6` | `cd` | cd | — |
 | `content:slideshow-blog:sn` | `0 13 * * 2,5` | `sn` | tx | — |
-| `content:city-trends:blog` | `0 9 * * 2` | `cd` | cd | `city-trends` |
+| `content:city-trends:blog` | `0 9 * * 2` | `cd` | cd | `city-trends` (**drafts only**: `autoPublish: false`) |
+
+> **`content:city-trends:blog` writes drafts only (2026-11-04).** It waits in Content Review; the "Publish to cd" chip sends it. Topics come from the partner city's local sources (Google News by city, Firecrawl); national Google Trends terms are skipped, and a term used in the last 90 days is never picked again. With no unused local term the job skips the week. City data refreshes every 6 days. *(Until 2026-11-04 it auto-published to cd and repeated one national Google Trends term for 4-5 weeks, because the city row was cached 30 days and nothing checked past topics; Bing News had no key, and Firecrawl always timed out.)*
 
 > **Routing tune-up opportunity.** The current `publishTarget: "all"` jobs broadcast to cd + sn + tokns-app indiscriminately. If you want brand-aware routing (e.g. CD-branded posts stay on CD only; tokns-brand posts go to tokns-app only), change each cron's `publishTarget` explicitly. This doc is the source of truth — update the table when you do.
 
