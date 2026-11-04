@@ -8,7 +8,9 @@ import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 // Blog Publisher — multi-target publishing for the CD ecosystem.
 //
 // Target surfaces (as of 2026-04-22):
-//   cd         → coherencedaddy.com/blog      — POST /api/blog/posts  (LIVE, Neon)
+//   cd         → coherencedaddy.com/blog      — POST /api/blog/posts  (Neon blog_posts; shown
+//                                                on /blog since coherencedaddy PR "show
+//                                                team-dashboard posts", 2026-11-04)
 //   sn         → shieldnest.org/blog          — POST /api/articles    (Neon; ships
 //                                                with the shieldnest_landing_page
 //                                                feat/blog-pipeline branch)
@@ -26,10 +28,12 @@ import { buildBrandSystemPromptBlock } from "./brand-personas.js";
 // ---------------------------------------------------------------------------
 
 import { callOllamaGenerate, OLLAMA_MODEL } from "./ollama-client.js";
-// NB: use the www. form — the apex coherencedaddy.com 307-redirects to www, and
-// while node's undici DOES follow 307s on POST, some older Node versions + Vercel
-// edge proxies have a nasty history of dropping bodies mid-redirect. Skip the hop.
-const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://www.coherencedaddy.com/api/blog/posts";
+// NB: use the apex form. www.coherencedaddy.com 308-redirects to the apex, and
+// Node's fetch drops the Authorization header on a cross-host redirect, so a
+// www URL turns every post into 401 "Unauthorized" (every cd post failed that
+// way from 2026-04-27 to 2026-11-04). Until 2026-11-04 this comment said the
+// apex 307-redirected to www and told you to use the www form.
+const BLOG_API_URL = process.env.CD_BLOG_API_URL || "https://coherencedaddy.com/api/blog/posts";
 const BLOG_API_KEY = process.env.CD_BLOG_API_KEY || "";
 const SN_BLOG_API_URL = process.env.SN_BLOG_API_URL || "https://shieldnest.org/api/articles";
 const SN_BLOG_API_KEY = process.env.SN_BLOG_API_KEY || "";
@@ -85,6 +89,8 @@ export interface BlogPost {
   content: string;
   reading_time: number;
   content_format?: "text" | "slideshow";
+  /** Original publish date (ISO 8601). coherencedaddy honours it; it defaults to now. */
+  date?: string;
 }
 
 // tokns.fi / TX ecosystem links — injected into crypto, ecosystem, xrp, comparison posts
@@ -131,14 +137,14 @@ export async function generateBlogPostOllama(signal: {
   const relatedTools = TOOL_LINKS[category] || TOOL_LINKS.tools!;
   const toolLinksStr = relatedTools
     .slice(0, 4)
-    .map((t) => `- <a href="https://freetools.coherencedaddy.com/${t.slug}">${t.name}</a>`)
+    .map((t) => `- <a href="https://coherencedaddy.com/tools/${t.slug}">${t.name}</a>`)
     .join("\n");
 
   const contextBlock = intelContext ? `\nUse this real-time data and analysis to make the article factual and data-backed:\n${intelContext}\n` : "";
   const brandBlock = buildBrandSystemPromptBlock(brand ?? "cd");
   const currentYear = new Date().getFullYear();
 
-  const prompt = `You are a content writer for Coherence Daddy, a faith-driven technology ecosystem. Write an SEO-optimized blog post about crypto, AI, tech tools, personal finance, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on freetools.coherencedaddy.com. Write in HTML format (h2, p, a, ul, li tags only). No markdown. Frame this content as why Answer Engine Optimization (AEO) outperforms traditional SEO in ${currentYear}. Use the AEO angle — how being findable in AI-powered directories matters more than Google rankings.${brandBlock}
+  const prompt = `You are a content writer for Coherence Daddy, a faith-driven technology ecosystem. Write an SEO-optimized blog post about crypto, AI, tech tools, personal finance, self-help, wellness, faith, and entrepreneurship. Always include internal links to free tools on coherencedaddy.com/tools. Write in HTML format (h2, p, a, ul, li tags only). No markdown. Frame this content as why Answer Engine Optimization (AEO) outperforms traditional SEO in ${currentYear}. Use the AEO angle — how being findable in AI-powered directories matters more than Google rankings.${brandBlock}
 
 Write a blog post (600-800 words) about: "${signal.topic}"
 
@@ -197,19 +203,50 @@ Return ONLY a JSON object with these fields (no markdown fences, no extra text):
 // Used by content-crons.ts after Ollama generates blog_post content
 // ---------------------------------------------------------------------------
 
+/**
+ * The writer model often wraps its whole answer in a ```html (or ```markdown)
+ * fence, and a call-to-action is appended after it. Drop the fence markers and
+ * keep everything else, so no site shows a literal ``` line.
+ */
+export function unwrapLeadingFence(content: string): string {
+  const open = content.match(/^\s*```[\w-]*[ \t]*\r?\n/);
+  if (!open) return content;
+  const rest = content.slice(open[0].length);
+  const close = rest.match(/\r?\n```[ \t]*(?:\r?\n|$)/);
+  if (!close || close.index === undefined) return rest;
+  return `${rest.slice(0, close.index)}\n${rest.slice(close.index + close[0].length)}`;
+}
+
+function plainText(fragment: string): string {
+  return fragment
+    .replace(/<[^>]+>/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|\*|`)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function buildBlogPostFromContent(
-  htmlContent: string,
+  rawContent: string,
   topic: string,
   category: BlogPost["category"] = "ecosystem",
 ): BlogPost {
-  // Extract title from first h1 or h2 tag
-  const titleMatch = htmlContent.match(/<h[12][^>]*>(.*?)<\/h[12]>/is);
-  const rawTitle = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : topic;
+  const htmlContent = unwrapLeadingFence(rawContent);
+
+  // Title: first <h1>/<h2>, else the first Markdown "#"/"##" heading, else the topic.
+  // (Until 2026-11-04 only HTML headings were read, so Markdown posts went out
+  // with the topic line as title and description.)
+  const titleMatch = htmlContent.match(/<h[12][^>]*>(.*?)<\/h[12]>/is) ?? htmlContent.match(/^[ \t]*#{1,2}[ \t]+(.+?)[ \t#]*$/m);
+  const rawTitle = titleMatch ? plainText(titleMatch[1]) || topic : topic;
   const title = rawTitle.slice(0, 100);
 
-  // Description: first 160 chars of topic (or first paragraph text)
+  // Description: first <p>, else the first Markdown paragraph, else the topic.
   const paraMatch = htmlContent.match(/<p[^>]*>(.*?)<\/p>/is);
-  const paraText = paraMatch ? paraMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+  const mdPara = htmlContent
+    .split(/\r?\n\s*\r?\n/)
+    .map((block) => block.trim())
+    .find((block) => block.length >= 40 && !/^(#|<|---|```|[-*] |\d+\. )/.test(block));
+  const paraText = paraMatch ? plainText(paraMatch[1]) : mdPara ? plainText(mdPara).replace(/^TL;DR:?\s*/i, "") : "";
   const description = (paraText || topic).slice(0, 160);
 
   // Keywords from topic words (filter short words)
@@ -236,7 +273,12 @@ export function buildBlogPostFromContent(
 // Publish BlogPost to coherencedaddy.com blog API
 // ---------------------------------------------------------------------------
 
-export async function publishPost(post: BlogPost): Promise<{ success: boolean; error?: string }> {
+export async function publishPost(
+  post: BlogPost,
+  // "suffix": a new post whose slug is taken gets a timestamped slug.
+  // "exists": a retry of a post we already sent; 409 means it is already live.
+  opts: { onConflict?: "suffix" | "exists" } = {},
+): Promise<{ success: boolean; error?: string }> {
   if (!BLOG_API_KEY) {
     return { success: false, error: "CD_BLOG_API_KEY not set" };
   }
@@ -258,6 +300,11 @@ export async function publishPost(post: BlogPost): Promise<{ success: boolean; e
     }
 
     const err = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error: string };
+
+    if (res.status === 409 && opts.onConflict === "exists") {
+      logger.info({ slug: post.slug, target: "coherencedaddy" }, "Blog already on CD (409) — treating as published");
+      return { success: true };
+    }
 
     // Duplicate slug — retry with timestamp suffix
     if (res.status === 409) {
@@ -475,7 +522,7 @@ export async function buildPartnerFooter(db: Db, _category: string): Promise<str
 // click through to the live post.
 export function liveUrlFor(target: "cd" | "sn" | "toknsApp", slug: string): string {
   switch (target) {
-    case "cd": return `https://www.coherencedaddy.com/blog/${slug}`;
+    case "cd": return `https://coherencedaddy.com/blog/${slug}`;
     case "sn": return `https://shieldnest.org/blog/${slug}`;
     case "toknsApp": return `https://app.tokns.fi/articles/${slug}`;
   }
@@ -572,7 +619,9 @@ export async function republishTarget(
   target: "cd" | "sn" | "tokns-app",
 ): Promise<{ success: boolean; error?: string; result: PublishTargetResult }> {
   let raw: { success: boolean; error?: string };
-  if (target === "cd") raw = await publishPost(post);
+  // A retry: a 409 from coherencedaddy means the post is already there, not a
+  // new post to re-slug (until 2026-11-04 a retry posted a timestamped duplicate).
+  if (target === "cd") raw = await publishPost(post, { onConflict: "exists" });
   else if (target === "sn") raw = await publishToShieldNest(post);
   else raw = await publishToToknsApp(post);
 

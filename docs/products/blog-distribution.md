@@ -12,11 +12,13 @@ Canonical state of blog generation and distribution across the Coherence Daddy +
 
 ## Target surfaces
 
-All three writable surfaces are **LIVE**. One read-only surface (`tokns.fi/lab`) re-reads from `tokns-app`.
+All three writable surfaces are **LIVE** (cd since 2026-11-04, see below). One read-only surface (`tokns.fi/lab`) re-reads from `tokns-app`. *(Until 2026-11-04 this line said all three were LIVE without the cd note.)*
+
+> **cd outage, 2026-04-27 → 2026-11-04.** `www.coherencedaddy.com` now 308-redirects to the apex, and Node's fetch drops `Authorization` on a cross-host redirect, so every cd post got 401 "Unauthorized" (425 posts; the key itself matched). Separately, coherencedaddy's `/blog` pages never read `blog_posts` until the storefront PR of 2026-11-04, so even the April "successes" 404'd on the site and showed only in its RSS feed. Fix: `CD_BLOG_API_URL` on VPS4 set to the apex (2026-11-04 06:30 UTC), the code default and `liveUrlFor("cd")` moved to the apex, and the storefront now renders `blog_posts` with tags. Missed posts are backfilled with `POST /api/content/queue/:id/republish/cd` (it now sends the original date and treats a 409 as "already live"). Posts whose text was trimmed by the 90-day retention sweep cannot be republished from here.
 
 | Slug | Endpoint | Render URL | Storage | Vercel project | Status |
 |---|---|---|---|---|---|
-| `cd` | `POST https://www.coherencedaddy.com/api/blog/posts` | `https://www.coherencedaddy.com/blog/<slug>` | Neon Postgres | `shieldnestorg/coherencedaddy` | **LIVE** |
+| `cd` | `POST https://coherencedaddy.com/api/blog/posts` (apex — never `www.`, see the outage note) | `https://coherencedaddy.com/blog/<slug>` (+ `/blog/tag/<tag>`) | Neon Postgres | `shieldnestorg/coherencedaddy` | **LIVE** since 2026-11-04 *(until 2026-11-04 this row gave the www URLs and said LIVE)* |
 | `sn` | `POST https://www.shieldnest.org/api/articles` | `https://shieldnest.org/blog/<slug>` | Neon Postgres (shared with team-dashboard) | `shieldnestorg/shieldnest_landing_page` | **LIVE** |
 | `tokns-app` | `POST https://app.tokns.fi/api/articles` | `https://app.tokns.fi/articles/<slug>` + rendered in `/dashboard` "News & Insights" | Supabase | `shieldnestorg/tokns` | **LIVE** |
 | _(read-only)_ | `GET https://app.tokns.fi/api/articles` | `https://tokns.fi/lab` | _(reads `tokns-app` data)_ | `shieldnestorg/tokns.fi_landing_page` | **LIVE** — /lab fetches client-side, CORS allowed for tokns.fi |
@@ -113,7 +115,7 @@ All blog crons are registered in `server/src/services/content-crons.ts::JOB_DEFS
 
 | Env var | Owner | Lives on | Notes |
 |---|---|---|---|
-| `CD_BLOG_API_URL` | team-dashboard | VPS4 | default: `https://www.coherencedaddy.com/api/blog/posts` |
+| `CD_BLOG_API_URL` | team-dashboard | VPS4 | `https://coherencedaddy.com/api/blog/posts` (apex; set on VPS4 2026-11-04, also the code default). A `www.` URL breaks auth: the 308 to the apex drops the key. *(Until 2026-11-04 this said the default was the www URL.)* |
 | `CD_BLOG_API_KEY` | team-dashboard | VPS4 | must match `BLOG_API_KEY` in `coherencedaddy` Vercel env |
 | `SN_BLOG_API_URL` | team-dashboard | VPS4 | set to `https://www.shieldnest.org/api/articles` (www form skips 307 hop) |
 | `SN_BLOG_API_KEY` | team-dashboard | VPS4 | must match `BLOG_API_KEY` in `shieldnest_landing_page` Vercel env |
