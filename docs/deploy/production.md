@@ -21,9 +21,10 @@ affiliates.coherencedaddy.com              Firecrawl :3002 + BGE-M3 TEI :8080 + 
                                            VPS4 → VPS1 over Tailscale mesh (100.65.70.18 ↔ 100.67.128.51)
 
 Neon (database)                            DECOMMISSIONED 2026-05-08
-PostgreSQL (managed)                       VPS2 168.231.127.180 — handed off, do not reference
-                                           VPS3 147.79.78.251 — payment lapses; rollwithsolo / runatthebullets
-                                                                were on this box, migration follow-up
+PostgreSQL (managed)                       VPS2 168.231.127.180 — not team-dashboard's; do not reference
+                                           VPS3 147.79.78.251   — not team-dashboard's; do not reference
+                                           (2026-10-15: both are live and used by other projects;
+                                            see the note under the VPS table)
 ```
 
 - **Frontend (public)**: Vercel — auto-deploys all 9 coherencedaddy.com subdomains on push to main via `middleware.ts` subdomain routing.
@@ -78,7 +79,9 @@ ssh root@31.220.61.12 'cd /opt/bge-m3 && docker compose pull && docker compose u
 | VPS1 (`shield-llm`) | 31.220.61.12 | 100.67.128.51 | Hostinger Game Panel 8 (32 GB / 8 vCPU / 400 GB) | Firecrawl + BGE-M3 + Ollama, Tailnet-only |
 | VPS4 (`shield-main-1`) | 31.220.61.14 | 100.65.70.18 | Hostinger Game Panel 4 (16 GB / 4 vCPU / 200 GB) | team-dashboard backend, nginx, public 80/443 |
 
-VPS2 (`168.231.127.180`) was nuked 2026-05-08 (XMRig compromise via Ollama RCE) and handed off. VPS3 (`147.79.78.251`) is decommissioning — payment lapse imminent. Do not provision new services there.
+**2026-10-15 — corrected:** VPS2 (`168.231.127.180`) and VPS3 (`147.79.78.251`) are both live, reinstalled on 2026-09-26 for other, non-team-dashboard workloads. Neither is decommissioning. Do not provision team-dashboard services on either. The owner's private infrastructure notes hold the canonical server list.
+**Naming trap:** CHANGELOG entries from April 2026 (e.g. `[2026-04-14k]`) call `31.220.61.14` "VPS_2" and `168.231.127.180` "VPS_4". Since May the names are VPS4 = `.14`, VPS2 = `.180`. Go by IP.
+*(Until 2026-10-15 this paragraph read: "VPS2 (`168.231.127.180`) was nuked 2026-05-08 (XMRig compromise via Ollama RCE) and handed off. VPS3 (`147.79.78.251`) is decommissioning — payment lapse imminent. Do not provision new services there." The compromise history stands; the "decommissioning" and "payment lapse" parts are stale.)*
 
 ## Container hardening (deployed 2026-05-09)
 

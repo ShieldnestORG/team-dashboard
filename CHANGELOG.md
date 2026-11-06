@@ -281,6 +281,8 @@ Firecrawl crashed in prod on 2026-05-21 because the 2026-05-09 hardening pass ad
 
 ## [2026-04-14k] — firecrawl.coherencedaddy.com HTTPS + VPS credentials saved
 
+> **Naming note (2026-10-15):** this entry's VPS numbers are the April 2026 ones (VPS_2 = `31.220.61.14`, VPS_4 = `168.231.127.180`). Since May, VPS4 = `.14` and VPS2 = `.180` — see [docs/deploy/production.md](docs/deploy/production.md).
+
 Closes the DNS/Nginx vhost follow-up from `[2026-04-14i]` and `[2026-04-14j]`.
 
 ### nginx vhost + Let's Encrypt cert on VPS_4
