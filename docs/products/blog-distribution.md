@@ -1,4 +1,5 @@
 # Blog Distribution — Team Dashboard
+> **Cluster:** products/blog · **Tags:** blog, publish targets, publish_results, blog_publish_failing, alert:blog-publish-health · **Related:** [Alerting Policy](../operations/alerting-policy.md), [Cron Inventory](../operations/cron-inventory.md)
 
 Canonical state of blog generation and distribution across the Coherence Daddy + ShieldnestORG ecosystem. Last audited: 2026-04-22 (post-deploy, all surfaces live).
 
@@ -145,13 +146,25 @@ All blog crons are registered in `server/src/services/content-crons.ts::JOB_DEFS
 6. Extend the `TARGETS` array in [`ui/src/pages/ContentReview.tsx`](../../ui/src/pages/ContentReview.tsx) so the chip row includes the new target.
 7. If the new target repo needs an endpoint, mirror the `shieldnest_landing_page` `/api/articles/route.ts` pattern.
 
+## Failure alert (`alert:blog-publish-health`)
+
+Added 2026-11-04 after the cd outage: every coherencedaddy.com post failed with 401 "Unauthorized" from 2026-04-27 to 2026-11-03 (425 posts) and nothing alerted for six months.
+
+- **Cron:** `alert:blog-publish-health`, hourly at :30 (`30 * * * *`), owner `nova`, registered in `server/src/services/alert-crons.ts`; logic in `server/src/services/blog-publish-health.ts`.
+- **Reads** `content_items.publish_results` per target (`cd`, `sn`, `toknsApp`), ordered by `created_at` (the attempt time).
+- **Rule:** a target is failing when its **last 5 attempts all failed**, or when it had **2+ attempts in the last 24 h and none succeeded**. On the real history, "1+ attempts" would also have emailed once for a one-off tokns-app failure on 2026-08-14 that the next post fixed. "2+" avoids that and only delays the cd alert by 2 hours.
+- **Alert:** type `blog_publish_failing`, critical, so it emails immediately and writes an `alert_events` row. The subject is fixed per target (`Blog publish failing: cd (coherencedaddy.com)`). The body gives the failures in a row, the last 24 h attempts and successes, the last success time and the last error text.
+- **One email per target per outage:** a target stays quiet when an `alert_events` row with `email_sent = true` is newer than its last success. It emails again only after it publishes successfully and then fails again. This survives restarts. If the email itself failed (no transport, Brevo and SMTP down), the row does not count, so the cron keeps retrying. Retries come about every 2 h, because the 1 h `sendAlert` cooldown blocks the next hourly run. Each target has its own cooldown key, so two targets failing in the same hour both email.
+- **Dry run over the real history (2026-04-22 → 2026-11-04):** one alert, cd at 2026-04-27 11:30 UTC (2 failures, last success 2026-04-25 10:04 UTC, error "Unauthorized"). Nothing for sn (its 71 one-off slug clashes in 2026-05 to 07 each sat between successes) or tokns-app.
+- **Not covered:** `seo-engine.ts` and the slideshow blog crons publish without writing a `content_items` row, so their attempts are invisible here. A single job failing every day while other jobs keep the target healthy (the 2026-05 to 07 `content:tx-chain-daily` slug clash on sn) is also not caught: the rule watches targets, not jobs. An admin retry (`POST /api/content/queue/:id/republish/:target`) rewrites the leg on an old row, so it counts at that row's `created_at`, not at the retry time.
+
 ## Operational health
 
 Quick live probes:
 
 ```bash
-# CD
-curl -s "https://www.coherencedaddy.com/api/blog/posts?limit=3" | jq '.posts[].slug'
+# CD (www answers 308 with no body; use the apex — this line used www until 2026-11-04)
+curl -s "https://coherencedaddy.com/api/blog/posts?limit=3" | jq '.posts[].slug'
 
 # SN
 curl -sL "https://shieldnest.org/api/articles?limit=3" | jq '.posts[].slug'

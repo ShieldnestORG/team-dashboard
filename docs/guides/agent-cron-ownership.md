@@ -143,13 +143,14 @@ Sage orchestrates the 4 content personality agents below.
 | `content:aeo:blog` | `0 11 * * 1,4` | content-crons | AEO-optimized blogs Mon/Thu → CD + tokns |
 | `content:tokns-promo:blog` | `0 14 * * 2,5` | content-crons | tokns.fi feature spotlight blogs Tue/Fri → CD + tokns |
 
-### Nova (CTO) — 3 jobs
+### Nova (CTO) — 4 jobs
 
 | Job | Schedule | Service | Description |
 |-----|----------|---------|-------------|
 | `eval:smoke` | `0 6 * * *` | eval-crons | Daily promptfoo eval suite |
 | `alert:health-check` | `*/5 * * * *` | alert-crons | Readiness probe every 5 minutes |
 | `alert:weekly-recap` | `0 8 * * 0` | alert-crons | Sunday ops recap email (7d of `alert_events` + cron health + latest eval); replaced `alert:digest` 2026-07-09 |
+| `alert:blog-publish-health` | `30 * * * *` | alert-crons | Critical `blog_publish_failing` email when a blog target (cd / sn / tokns-app) keeps failing; one per target per outage (added 2026-11-04) |
 
 ### Core (Backend Dev) — 1 job
 

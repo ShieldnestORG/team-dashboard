@@ -11,7 +11,10 @@ export type AlertType =
   // AI provider failures (provider-alerts.ts). All critical (not routine) →
   // immediate owner email + alert_events. Deduped per provider/class/day by the
   // caller, so these never spam even during a sustained outage.
-  | "provider_capped" | "provider_unauthorized" | "provider_error";
+  | "provider_capped" | "provider_unauthorized" | "provider_error"
+  // A blog publish target (cd / sn / tokns-app) keeps failing
+  // (blog-publish-health.ts). Critical; one per target per outage.
+  | "blog_publish_failing";
 
 // Severity routing: "critical" types email immediately; "routine" types are
 // only persisted to alert_events and surfaced by the Sunday alert:weekly-recap
@@ -79,11 +82,25 @@ export function getRecentAlerts(): AlertRecord[] {
   return [...recentAlerts].reverse(); // newest first
 }
 
-export async function sendAlert(type: AlertType, subject: string, body: string): Promise<void> {
+// Alert text can carry remote error strings; the email puts it in HTML.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// opts.cooldownKey: a caller that sends one type for several subjects (e.g. one
+// alert per blog target) passes its own key, so one subject's cooldown cannot
+// swallow another's alert. Defaults to the type.
+export async function sendAlert(
+  type: AlertType,
+  subject: string,
+  body: string,
+  opts: { cooldownKey?: string } = {},
+): Promise<void> {
+  const cooldownKey = opts.cooldownKey ?? type;
   // Check cooldown
-  const lastSent = lastSentByType.get(type);
+  const lastSent = lastSentByType.get(cooldownKey);
   if (lastSent && Date.now() - lastSent < COOLDOWN_MS) {
-    logger.debug({ type }, "Alert suppressed (cooldown)");
+    logger.debug({ type, cooldownKey }, "Alert suppressed (cooldown)");
     return;
   }
 
@@ -104,10 +121,10 @@ export async function sendAlert(type: AlertType, subject: string, body: string):
     const to = process.env.ALERT_EMAIL_TO;
     const from = process.env.ALERT_EMAIL_FROM || process.env.SMTP_USER;
     const html = `<div style="font-family:system-ui,sans-serif;max-width:600px">
-          <h2 style="color:#ef4444">${subject}</h2>
+          <h2 style="color:#ef4444">${escapeHtml(subject)}</h2>
           <p style="color:#666;font-size:12px">Alert type: ${type} | ${new Date().toISOString()}</p>
           <div style="background:#f8f8f8;padding:16px;border-radius:8px;margin:16px 0">
-            <pre style="white-space:pre-wrap;font-size:14px">${body}</pre>
+            <pre style="white-space:pre-wrap;font-size:14px">${escapeHtml(body)}</pre>
           </div>
           <p style="color:#999;font-size:11px">Sent by Team Dashboard alerting system</p>
         </div>`;
@@ -121,7 +138,7 @@ export async function sendAlert(type: AlertType, subject: string, body: string):
         );
         if (sent) {
           record.emailSent = true;
-          lastSentByType.set(type, Date.now());
+          lastSentByType.set(cooldownKey, Date.now());
           logger.info({ type, subject }, "Alert email sent (Brevo-first)");
         } else {
           record.error = "no transport (Brevo + SMTP both unavailable)";
@@ -155,5 +172,5 @@ export async function sendAlert(type: AlertType, subject: string, body: string):
   // Always store in memory regardless of email success
   recentAlerts.push(record);
   if (recentAlerts.length > MAX_ALERTS) recentAlerts.shift();
-  lastSentByType.set(type, Date.now());
+  lastSentByType.set(cooldownKey, Date.now());
 }
