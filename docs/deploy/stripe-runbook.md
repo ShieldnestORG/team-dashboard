@@ -10,6 +10,27 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 ## Account inventory
 
+> **Updated 2026-11-13 (owner decision 2026-11-12: "exegesis can take all coherencedaddy payments").** All
+> Coherence Daddy products, University and Rex Voice included, now bill on the **Exegesis Ventures** account. The
+> 2026-07-13 → 2026-11-13 production account (`acct_1TsdfKI4ork6rI44`, company Starwise) is an idle fallback.
+> `STRIPE_SECRET_KEY` and `UNIVERSITY_STRIPE_SECRET_KEY` on VPS4 are the **same** Exegesis key, so the
+> "University on a separate account" split described further down no longer applies in production; the code
+> path stays in case it is ever split again. To learn which account is live, ask the **VPS4** key, never
+> `team-dashboard/.env` on a laptop (that file's key went stale twice). Until 2026-11-13 this section said
+> `acct_1TJQyw…` was "THE ONE" (true in May; wrong from 2026-07-13 to 2026-11-13).
+
+| Account | Company / payout bank | Role | Where the secret lives |
+|---|---|---|---|
+| **`acct_1TJQywQvkbvTR7Og`** ✅ LIVE | Exegesis Ventures · Chase …5199 | Every CD product (team-dashboard + storefront shop/donate/pack) since 2026-11-13. 34 prices, same lookup keys as before. | VPS4 `.env.production` `STRIPE_SECRET_KEY` = `UNIVERSITY_STRIPE_SECRET_KEY` (restricted `rk_live`, no payout/transfer/refund write); Vercel `STRIPE_SECRET_KEY` + `PACK_STRIPE_SECRET_KEY` |
+| `acct_1TsdfKI4ork6rI44` | Starwise Ventures · Chase …5239 | Production 2026-07-13 → 2026-11-13. Catalog and webhooks kept as a fallback; 0 subscriptions. | Old key only in the VPS4 env backup `/opt/team-dashboard/.cdmove/env.production.bak-20261113T172633` |
+| `acct_1Tjps8Af8PjDIzDY` | Starwise Ventures ("Evntrace") · Chase …5239 | MDB tiers and Starwise bookkeeping. Pre-July University/voice prices are leftovers this app no longer uses. | Not used by this repo |
+| `acct_1QF1QeQwTOfgszhy` | "TXEN.Ai" | Stale sandbox | — |
+
+Rollback of the 2026-11-13 move: `python3 /root/cdmove_switch.py rollback` on VPS4, then redeploy (restores the env
+and plan-table backups).
+
+<details><summary>Superseded inventory (as audited 2026-05-09)</summary>
+
 | Account ID | Name | Owns | Where the secret lives |
 |---|---|---|---|
 | **`acct_1TJQywQvkbvTR7Og`** ✅ THE ONE | Coherence Daddy (live) | Every product/price ID in `team-dashboard/.env` and on the VPS — **except University**. Suffix `*QvkbvTR7Og` on a price ID = this account. | `STRIPE_SECRET_KEY` in `team-dashboard/.env` (rk_live restricted key). Same key in `/opt/team-dashboard/.env.production` on VPS4. |
@@ -18,7 +39,9 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 > **Two-account split:** University products bill on the **Starwise Ventures** Stripe account; every other product (CreditScore, Watchtower, Directory, Partners, Intel API) bills on **Coherence Daddy**. The shared low-level client (`server/src/services/stripe-client.ts` `stripeRequest()`) defaults to `STRIPE_SECRET_KEY` (Coherence Daddy). University-specific call sites — the price lookup + checkout (`routes/university-checkout.ts`) and the billing-portal session for University members (`routes/portal.ts`) — pass `universityStripeKey()` (= `UNIVERSITY_STRIPE_SECRET_KEY ?? STRIPE_SECRET_KEY`) so they hit Starwise. A University checkout/portal call made with the shared CD key would fail because the `university_monthly` price + the customer live only on Starwise.
 
-## Live product + price inventory (audited 2026-05-09)
+</details>
+
+## Live product + price inventory (audited 2026-05-09; superseded — the live catalog is the 34 lookup-keyed prices on the Exegesis account, 2026-11-13)
 
 | Product | Price ID prefix | $ | Cadence | lookup_key | Code |
 |---|---|---|---|---|---|
@@ -41,7 +64,7 @@ covers the **shared infra** (accounts, webhooks, env contract) and the
 
 **Fragility note:** Watchtower is the **only** product using `lookup_key` resolution. Every other product is referenced by bare price ID via env vars (e.g. `STRIPE_PRICE_CREDITSCORE_STARTER`). Adopting `lookup_key` for the others is queued as a follow-up in [open-followups.md](#open-follow-ups) — it's a robustness/migration win, not a today-blocker.
 
-## Live webhook inventory (audited 2026-05-09)
+## Live webhook inventory (audited 2026-05-09; superseded — 6 endpoints recreated on the Exegesis account 2026-11-13, API version 2026-06-24.dahlia)
 
 | Endpoint URL | Stripe ID prefix | Events | Secret env var | Purpose |
 |---|---|---|---|---|
@@ -158,6 +181,12 @@ After creating a price with a new lookup_key, `prices/search?query=lookup_key:'<
 
 ## Changelog
 
+- **2026-11-13** — All Coherence Daddy billing moved from `acct_1TsdfKI4ork6rI44` (Starwise) to
+  `acct_1TJQywQvkbvTR7Og` (Exegesis Ventures), per the owner's 2026-11-12 decision. 34 prices copied by lookup key,
+  6 webhooks recreated, VPS4 env (20 vars) and plan tables (19 cells) switched, Rex Voice ids moved to env (#221),
+  storefront Vercel keys switched. Checkouts verified on Exegesis. Bank payments (ACH) turned on.
+- **2026-07-13** — (recorded 2026-11-13) cutover to `acct_1TsdfKI4ork6rI44`, commit a987dbad; this runbook was
+  not updated at the time.
 - **2026-05-09** — Live Watchtower product/price/webhook all created on
   `acct_1TJQywQvkbvTR7Og`. Captured webhook signing secret. New env var
   `STRIPE_WEBHOOK_SECRET_WATCHTOWER` to be set on VPS4 in this same deploy.

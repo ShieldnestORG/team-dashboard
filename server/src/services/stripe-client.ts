@@ -19,16 +19,18 @@ function stripeKey(override?: string): string {
 }
 
 /**
- * University products bill on a SEPARATE Stripe account (Starwise Ventures),
- * not the shared Coherence Daddy account. Returns the University secret key.
+ * Returns the secret key for the Stripe account University bills on. Since
+ * 2026-11-13 that is the same Exegesis Ventures account as STRIPE_SECRET_KEY
+ * (owner: all Coherence Daddy revenue → Exegesis); the separate variable keeps
+ * University splittable onto its own account without code changes.
  *
  * FAIL CLOSED by default: the shared-key fallback is allowed ONLY when
  * NODE_ENV is explicitly 'development' or 'test'. For any other value
  * (including unset/empty/'production'/'staging'/typos like 'prod') the
  * University key is REQUIRED — falling back to the shared STRIPE_SECRET_KEY
- * would land University money in the wrong (Coherence Daddy / Exegesis)
- * account, so a missing UNIVERSITY_STRIPE_SECRET_KEY throws instead of
- * silently mischarging.
+ * could land University money in the wrong account if they are ever split
+ * again, so a missing UNIVERSITY_STRIPE_SECRET_KEY throws instead of silently
+ * mischarging.
  *
  * In dev/test we keep the shared-key fallback so local (single-account) work
  * keeps working; returns undefined only if neither is set.
