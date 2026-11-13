@@ -706,16 +706,25 @@ export type VoiceAddonTier = "1hr" | "2p5hr";
 // The metadata.product marker that routes a checkout to the add-on handler.
 export const VOICE_ADDON_PRODUCT = "university_voice_addon";
 
-// tier → { Stripe price, seconds granted }. Price ids are the two live add-on
-// prices on the Coherence Daddy account under Starwise (acct_1TsdfKI4ork6rI44,
-// 2026-07-13 cutover — all CD revenue bills there); seconds mirror
-// VOICE_ADDON_TIER_SECONDS.
+// tier → { Stripe price, seconds granted }. Price ids come from
+// VOICE_ADDON_PRICE_1HR / VOICE_ADDON_PRICE_2P5HR so a Stripe account move is an
+// env change, not a code change (owner 2026-11-12: CD revenue → the Exegesis
+// account). Defaults are the add-on prices on acct_1TsdfKI4ork6rI44 (the
+// 2026-07-13 cutover account); seconds mirror VOICE_ADDON_TIER_SECONDS.
 export const VOICE_ADDON_TIERS: Record<
   VoiceAddonTier,
   { priceId: string; seconds: number }
 > = {
-  "1hr": { priceId: "price_1TseAAI4ork6rI44c6yhHEkn", seconds: 3600 },
-  "2p5hr": { priceId: "price_1TseAAI4ork6rI44sBsZgLJf", seconds: 9000 },
+  "1hr": {
+    priceId:
+      process.env.VOICE_ADDON_PRICE_1HR?.trim() || "price_1TseAAI4ork6rI44c6yhHEkn",
+    seconds: 3600,
+  },
+  "2p5hr": {
+    priceId:
+      process.env.VOICE_ADDON_PRICE_2P5HR?.trim() || "price_1TseAAI4ork6rI44sBsZgLJf",
+    seconds: 9000,
+  },
 };
 
 // Reverse lookup: Stripe price id → tier, or null when it isn't an add-on price.
