@@ -27,7 +27,10 @@ function has(result: ValidationResult, code: string): boolean {
   return result.violations.some((v) => v.code === code);
 }
 
-const facts = loadTxFacts();
+// Fixed "now" inside the 30-day window of the 2026-10-10 fixtures, so the suite
+// does not depend on today's date. The 30-day rule itself is unchanged.
+const FIXTURE_NOW = new Date("2026-10-20");
+const facts = loadTxFacts(FIXTURE_NOW);
 
 describe("loadTxFacts / factsToPromptBlock", () => {
   it("loads only re-checked, non-stale facts", () => {
