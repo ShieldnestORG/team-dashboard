@@ -137,7 +137,7 @@ jobs:
 
   e2e:
     needs: [policy]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: Playwright has no chromium build for ubuntu-26.04
     timeout-minutes: 30
 
     # External postgres with pgvector preinstalled. Embedded-postgres
