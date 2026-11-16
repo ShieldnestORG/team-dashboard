@@ -24,15 +24,13 @@ import { callOllamaGenerate } from "./ollama-client.js";
 
 const SITE_CONTEXT_HINTS: Record<string, string> = {
   "coherencedaddy.com":
-    "508(c)(1)(A) faith-driven ecosystem: private self-help, 523+ free tools, AI agents, project directory",
+    "508(c)(1)(A) faith-driven ecosystem: Coherent Education membership (courses, brain training, daily practice tools at /education), 523+ free tools, AI agents, project directory",
   "token.coherencedaddy.com":
     "Daddy Token migration from Roll to TX Blockchain (Cosmos SDK)",
   "directory.coherencedaddy.com":
     "532+ project directory with real-time intel from CoinGecko/GitHub/Twitter/Reddit",
   "law.coherencedaddy.com":
     "Coherence Law — auditable AI for fiduciary intelligence (trustees, legal)",
-  "optimize-me.coherencedaddy.com":
-    "Optimize Me — private self-help app, no data leaves device",
   "freetools.coherencedaddy.com":
     "523+ free browser-based AI and crypto tools, no signup",
   "app.tokns.fi":
@@ -161,10 +159,6 @@ const SITE_REPO_MAP: Record<string, SiteMeta> = {
   "law.coherencedaddy.com": {
     repo: "ShieldnestORG/coherencedaddy",
     rootLayoutPath: "app/law-home/layout.tsx",
-  },
-  "optimize-me.coherencedaddy.com": {
-    repo: "ShieldnestORG/coherencedaddy",
-    rootLayoutPath: "app/optimize-me-home/layout.tsx",
   },
   "app.tokns.fi": {
     repo: "ShieldnestORG/v1_shieldnest_org",

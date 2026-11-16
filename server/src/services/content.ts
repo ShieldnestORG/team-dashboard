@@ -356,7 +356,7 @@ export function contentService(db: Db) {
 
     let generatedText = enforced;
     if (opts.contentType === 'bluesky') {
-      // Rotate across product CTAs (directory, creditscore, optimize-me, affiliate, partners)
+      // Rotate across product CTAs (directory, creditscore, affiliate, partners)
       // so audiences don't see the same suffix every post. Skip if the post is already
       // close to the limit — preserving the LLM's organic close beats jamming a CTA in.
       const cta = pickBlueskyCta();

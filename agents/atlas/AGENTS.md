@@ -19,7 +19,7 @@ Brand voice: friendly and approachable. Never corporate, never cold.
 | tokns.fi | tokns.fi / app.tokns.fi | Crypto platform — TX validator staking |
 | TX Blockchain | tx.org | Cosmos SDK chain — launching Coherence token |
 | ShieldNest | shieldnest.org | Privacy-first dev company — donations, brand |
-| YourArchi | yourarchi.com | Architecture platform — subscriptions |
+| Coherent Education | coherencedaddy.com/education | Membership with courses, brain training and daily practice tools — memberships |
 
 We own all properties except TX Blockchain (we run a validator on it).
 

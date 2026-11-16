@@ -24,14 +24,12 @@ graph TB
 
     %% ── Product ventures (consumer) ─────────────────────────────
     subgraph PRODUCTS["Consumer Products & Properties"]
-        YA["YourArchi — yourarchi.com\n(flagship self-help / notes app)"]
         TXF["tokns.fi — crypto / NFT / staking platform\n(+ app.tokns.fi dashboard)"]
         TX["TX Blockchain — tx.org\n(Cosmos SDK chain, validator)"]
         DAO["Trustee DAO — dao.nestd.xyz\n(VPS4 — DAO governance)"]
         ROLL["rollwithsolo.com / runatthebullets.com\n(ShieldNest properties, were on VPS3 — migration TBD)"]
     end
 
-    SN --> YA
     SN --> TXF
     SN --> TX
     SN --> DAO
@@ -47,7 +45,7 @@ graph TB
         S_PART["partners — AEO network\n(self-serve funnel at /partners-pricing)"]
         S_CS["creditscore — SEO audit"]
         S_LAW["law — legal AI"]
-        S_OPT["optimize-me — privacy notes"]
+        S_EDU["/education — Coherent Education\n(courses, brain training, daily practice tools,\noptimize-me.* redirects here since 2026-11-15)"]
         S_SHOP["shop — merch PREVIEW only"]
     end
 
@@ -94,7 +92,7 @@ graph TB
 |---|---|---|
 | **Governance** | Coherence Daddy (508(c)(1)(A)) | Mission, donations, brand, public-facing hub |
 | **Build arm** | ShieldNest | All ecosystem repos, infra, VPS fleet, blockchain validator |
-| **Flagship product** | YourArchi | yourarchi.com — private self-help / notes app |
+| **Membership** | Coherent Education | coherencedaddy.com/education — membership with courses, brain training and daily practice tools. *Until 2026-11-15 this row read "Flagship product · YourArchi · yourarchi.com — private self-help / notes app"; that product (later Optimize Me) is retired and its tools are now the practice section of the membership.* |
 | **Crypto layer** | tokns.fi + TX Blockchain | Token, staking, NFT platform, Cosmos validator |
 | **Governance DAO** | Trustee DAO | On-chain ecosystem governance |
 | **Public storefront (marketing)** | `ShieldnestORG/coherencedaddy` Next.js app | 9 subdomains, blog, tutorial library, LLM discovery, donations |

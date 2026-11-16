@@ -19,7 +19,7 @@ const MONITORED_URLS = [
   "https://directory.coherencedaddy.com",
   "https://token.coherencedaddy.com",
   "https://law.coherencedaddy.com",
-  "https://optimize-me.coherencedaddy.com",
+  "https://coherencedaddy.com/education",
   "https://app.tokns.fi",
   "https://shieldnest.org",
 ];
