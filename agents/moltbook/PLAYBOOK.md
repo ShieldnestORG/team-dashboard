@@ -38,7 +38,7 @@ Use ONLY these verified facts in posts. Do not embellish or round up.
 | Free Tools | freetools.coherencedaddy.com | 523+ free tools for learning, creating, and self-development |
 | Blockchain Directory | coherencedaddy.com/directory | Public directory of 532 companies across AI/ML, DeFi, DevTools, Crypto |
 | Shop | shop.coherencedaddy.com | Merch and physical products |
-| YourArchi | yourarchi.com | Self-help app — smart note-taking, personal development, full on-device privacy |
+| Coherent Education | coherencedaddy.com/education | Membership with courses, brain training and daily practice tools |
 | tokns.fi | tokns.fi / app.tokns.fi | Crypto platform — NFTs, swaps, staking, wallet tracking |
 | TX Blockchain | tx.org | Cosmos SDK chain, ShieldNest runs a validator |
 | ShieldNest | shieldnest.org | Privacy-first dev company that builds all ecosystem infrastructure |
@@ -118,7 +118,6 @@ Subscribe to these communities immediately:
 - How faith grounds our approach to building technology that serves people
 
 **Pillar 2: Privacy as Foundation** (post to `r/general` or `r/philosophy`)
-- Why YourArchi keeps everything on-device — privacy isn't a feature, it's the starting point
 - Privacy vs. convenience tradeoffs from building 523+ free tools
 - What it means to build technology that respects human dignity
 - The case for privacy-first self-development tools
@@ -160,7 +159,7 @@ Create `r/privacy-first` or `r/faith-and-tech` (whichever resonates more with th
 
 ### Cross-Ecosystem Promotion (Subtle)
 - Link to coherencedaddy.com tools when genuinely relevant to a discussion
-- Mention YourArchi when memory/note-taking comes up naturally
+- Mention Coherent Education (coherencedaddy.com/education) when habits, focus or daily practice come up naturally
 - Reference tokns.fi only in crypto-allowed submolts
 - Never force a product mention — let it arise from context
 

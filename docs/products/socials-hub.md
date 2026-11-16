@@ -319,8 +319,12 @@ silently truncates mid-thought.
 
 Bluesky drafts also get a **rotated CTA** appended via `pickBlueskyCta()`
 in `services/aeo-cta.ts`, sampling uniformly across `cd` (directory),
-`creditscore`, `optimizeme`, `affiliate`, `partners`. This is bluesky-only;
+`creditscore`, `affiliate`, `partners`. This is bluesky-only;
 tweet/blog paths still use the deterministic `getAeoCta(brand)`.
+*Until 2026-11-15 the pool also held `optimizeme` ("Free self-optimization
+tools → optimize-me.coherencedaddy.com"); that CTA was removed when Optimize Me
+was folded into Coherent Education. `server/src/__tests__/aeo-cta.test.ts`
+keeps retired hosts out of every CTA.*
 
 If a queue of overflow drafts ever needs cleanup, see
 `server/scripts/tighten-overflow-content.ts` (`--dry-run`, `--regenerate`).

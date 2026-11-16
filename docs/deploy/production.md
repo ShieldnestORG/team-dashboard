@@ -14,7 +14,7 @@ partners.coherencedaddy.com                   intel.coherencedaddy.com
 creditscore.coherencedaddy.com                Trustee DAO + Game Panel still live here
 shop.coherencedaddy.com                       (trustee-gateway-api :4001, trustee-frontend :3006,
 law.coherencedaddy.com                         AMP Game Panel :8080, dao.nestd.xyz)
-optimize-me.coherencedaddy.com
+optimize-me.coherencedaddy.com  (redirect only since 2026-11-15; was the Optimize Me product)
                                            VPS1 31.220.61.12 (LLM/scrape stack — Tailnet only)
 affiliates.coherencedaddy.com              Firecrawl :3002 + BGE-M3 TEI :8080 + Ollama :11434
   └─ JWT auth, separate from admin session All bound to Tailnet 100.67.128.51 — no public bind

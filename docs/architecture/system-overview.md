@@ -24,7 +24,7 @@ One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` s
 
 | Subdomain | Purpose |
 |---|---|
-| `coherencedaddy.com` | Mission hub — faith-driven tech, YourArchi spotlight, donations (Stripe + crypto), FAQ |
+| `coherencedaddy.com` | Mission hub — faith-driven tech, Coherent Education (`/education`: membership with courses, brain training and daily practice tools), donations (Stripe + crypto), FAQ. *Until 2026-11-15 this row said "YourArchi spotlight" instead of Coherent Education.* |
 | `freetools.coherencedaddy.com` | 501+ public tools with SSR content; hosts all LLM/agent discovery files |
 | `directory.coherencedaddy.com` | 532+ projects across Crypto, AI/ML, DeFi, DevTools — powered by Intel API |
 | `token.coherencedaddy.com` | Crypto / NFT / staking dashboard |
@@ -32,7 +32,7 @@ One Next.js 15 App Router app serving **all 9 subdomains** via `middleware.ts` s
 | `creditscore.coherencedaddy.com` | Redirect → `freetools.coherencedaddy.com/creditscore-home` (actual tool). Plan catalog, checkout session creation, Stripe webhooks, rescan cron, and report persistence all live in this repo at `/api/creditscore/*`. |
 | `shop.coherencedaddy.com` | Merch **preview** (Next.js). Authoritative cart/checkout is a Hostinger WordPress + WooCommerce store aggregating **Printful**, **Printify**, and first-party products — see [Org Structure › Shop Storefront Detail](./org-structure.md#shop-storefront-detail). |
 | `law.coherencedaddy.com` | Legal / law tools subdomain |
-| `optimize-me.coherencedaddy.com` | Self-optimization tools subdomain |
+| `optimize-me.coherencedaddy.com` | Redirect only. Optimize Me is not its own product any more: since 2026-11-15 it is the daily practice tools inside Coherent Education. The coherencedaddy branch `feat/optimize-me-into-education` points this host at `/education#practice`; measured 2026-11-15 before that ships, it still 301s to `/optimize-me-home`. *Until 2026-11-15 this row said "Self-optimization tools subdomain".* |
 
 ### Tutorial library (added 2026-04-25)
 
@@ -55,7 +55,7 @@ Per-tutorial: full OG meta + Twitter cards, `HowTo` JSON-LD, AdSense banner that
 ### Other Ecosystem Properties
 All properties below are owned by the **ShieldnestORG** Vercel organization unless noted. Each Vercel project name is listed so the control plane can trace which repo deploys which domain.
 
-- **YourArchi** (yourarchi.com) — flagship self-help product: smart note-taking and personal development app with full privacy (no data leaves the device)
+- **YourArchi / Optimize Me** — retired. Renamed Optimize Me in May 2026, offline since July 2026 (its app answers 503, yourarchi.com answers 404), and folded into Coherent Education as the daily practice tools on 2026-11-15 (canonical write-up: coherencedaddy repo `CLAUDE.md`, "Optimize Me is part of Coherent Education"). *Until 2026-11-15 this bullet said "flagship self-help product: smart note-taking and personal development app with full privacy (no data leaves the device)". That privacy wording was wrong: entries were stored on the server.*
 - **ShieldNest** (shieldnest.org) — privacy-first dev company; root site. Vercel project: `shieldnestorg/shieldnest_landing_page`. A blog section is **planned** (no `/blog` route live yet).
 - **tokns.fi** — TX ecosystem marketing site. Vercel project: `shieldnestorg/tokns.fi_landing_page`. Blog section is called **"the Lab"** (`tokns.fi/lab`) — **planned**, not yet live.
 - **app.tokns.fi** — crypto dashboard (NFTs, swaps, staking, wallet tracking). Vercel project: `shieldnestorg/tokns`. Blog content surfaces as a **"News & Insights"** section at the bottom of `/dashboard` — **planned**, not yet live.

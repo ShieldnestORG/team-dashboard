@@ -52,7 +52,8 @@ Answer Engine Optimization ensures AI assistants (ChatGPT, Claude, Perplexity) c
 | directory.* | Yes | Yes | DataCatalog+WebSite+FAQ+Dataset | Yes | Yes | Yes |
 | token.* | Yes | Yes | WebPage+Breadcrumb | Yes | Yes | Yes |
 | law.* | Yes | Yes | WebSite+SoftwareApp+Breadcrumb | Yes | Yes | Yes |
-| optimize-me.* | Yes | Yes | WebSite+SoftwareApp+Breadcrumb | Yes | Yes | Yes |
+
+*Until 2026-11-15 this table also had an `optimize-me.*` row (robots, sitemap, OG, llms.txt and canonical all Yes; JSON-LD WebSite+SoftwareApp+Breadcrumb). That host is redirect-only now: Optimize Me is the daily practice tools inside Coherent Education, and the weekly audit (`server/src/services/seo-audit-cron.ts`) checks `https://coherencedaddy.com/education` instead.*
 
 ## Partner Microsites
 
