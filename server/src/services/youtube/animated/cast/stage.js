@@ -1,7 +1,7 @@
-/* VENDORED for the YouTube cast (2026-11-16) from an internal animation kit, lib/stage.js at 9459db5. Only change: the
+/* VENDORED for the YouTube cast (2026-11-16) from an internal animation kit, lib/stage.js at 9459db5. Only changes: the first comment line (it named the kit) and the
  * export line at the end also exposes makeSynth and wavBase64, so the scenes page can render its music bed. Keep in step
  * with the kit: copy the file again rather than editing it here. */
-/* motion-lab stage runtime (classic script: <script src="/lib/stage.js"></script>, before the piece's own script).
+/* Stage runtime (classic script: <script src="/lib/stage.js"></script>, before the piece's own script).
  *
  * A piece calls Stage.define({...}) once. That sets the contract render.mjs and check.mjs read:
  *   window.__meta      {width, height, fps, duration, loop, fonts, cues}

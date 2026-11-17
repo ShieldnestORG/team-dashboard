@@ -1,7 +1,7 @@
-/* VENDORED for the YouTube cast (2026-11-16) from an internal animation kit, lib/character.js at 9459db5, unchanged.
+/* VENDORED for the YouTube cast (2026-11-16) from an internal animation kit, lib/character.js at 9459db5; code unchanged (two comment lines that named the kit's private docs were shortened).
  * Keep in step with the kit: copy the file again rather than editing it here. */
-/* motion-lab character rig (classic script: <script src="/lib/character.js"></script>, after /lib/stage.js).
- * How to make a character with it: docs/CHARACTERS.md. Tests: test/character.test.mjs (one per rule), test/character.mutations.mjs.
+/* Character rig (classic script: <script src="/lib/character.js"></script>, after /lib/stage.js).
+ * How to make a character with it, and its tests (one per rule, plus mutation tests), live with the kit.
  *
  * Contract: every pose is a PURE function of t. No state is carried between frames: there is no integrator that
  * is stepped once per frame, no "previous pose", nothing random, no clock, no timer, no CSS animation. Secondary motion

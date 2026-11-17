@@ -142,7 +142,7 @@ card. Built 2026-11-16 from the owner's ask to bring the new character animation
   the bed buffer) is covered by the real renders above, not by a unit test.
 - **Not decided / not done:** the switch on VPS4 (which pillars, if any); a library of original instrumental beds (for
   example Suno songs made once and reused, which would replace the synthesized bed) needs the owner's yes because song
-  downloads are counted; the teaser Short and 3D proposals (motion-lab `docs/YOUTUBE-INTEGRATION.md`) are unchanged.
+  downloads are counted; the earlier teaser-Short and 3D-video proposals (kept with the animation kit) are unchanged.
   Nobody has listened by ear: every sound judgement above is a measurement.
 
 ## Voice
