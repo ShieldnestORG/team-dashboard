@@ -132,6 +132,22 @@ card. Built 2026-11-16 from the owner's ask to bring the new character animation
 - **If it breaks:** a cast render that throws is rendered again without the cast from the same timeline and words (no
   second forced alignment, no extra voice credits), so the day still gets its animated video; `yt_productions.assets.cast`
   records `{pillar, used, error?, places, shown, music}`. The sync gate is the same animated gate as before.
+- **Proof on a real episode** (2026-11-16, `787084c8` "Why Systems Beat Motivation", made by the VPS4 nightly run that
+  morning; its timeline and voice WAV copied off VPS4 read-only, rendered on the owner's Mac with this branch): 4,762 frames,
+  158.72 s; the gears shown in all 20 scenes (title right-centre 1.2x, list scenes bottom-left 1.25x, section cards
+  bottom-middle or bottom-right 1.35-1.5x, quote bottom-right 1.2x, end card right-centre 1.45x); 3D bodies (`look: 3d`);
+  bed 92 bpm, 1,159 notes; voice -16.5 LUFS, bed set -3.1 dB, finished mix -16.7 LUFS. The production sync gate
+  (animated mode) passes on it: 36 of 36 planned changes matched, no issues (the original video: 36 of 36). Whisper
+  `base.en` on the finished audio: 5 word errors in 474, the same 5 as on the original video (1.1% both; the transcripts
+  differ by three commas), so the bed does not cost the voice its clarity on that measure. Nobody has listened by ear.
+- **Render time:** measured on the Mac back to back in one queue slot, 900-frame window 20-50 s: plain animated 29.87
+  frames/s, with the 3D cast and music 18.25 frames/s (the full episode: 17.91). Headless Chromium drew the 3D in software
+  there too (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device ...))`), as VPS4 does. Estimate for VPS4 (not measured
+  there): the cast adds 21.3 ms a frame on the Mac; VPS4 runs the plain look at about 96 ms a frame (10.4 frames/s,
+  2026-10-09), 2.9x the Mac; scaling the extra by 2.9x (like the plain work) to 4x (core count, worst case) gives 157-181
+  ms a frame, so about 12.5-14.5 min of render for a 158 s video instead of about 7.6 min, plus about 15 s for the bed and
+  its three loudness passes. The nightly run (starts about 06:03 UTC, 565-792 s end to end over the last 30 nights) would
+  end about 06:20-06:25 UTC; the publish slot is 15:00 UTC. A timed run on VPS4 itself needs the owner's yes.
 - **Tests:** `youtube-cast.test.ts` runs the cast's planning layer in Node (stage.js, character.js and cast.js in one vm context): the
   switch, the timeline field, frame 0 already moving, no two acts of one gear within 0.9 s, the gears' mesh, a scene with
   no room, placement never touching text over 400 random layouts, the bed restarting its bar on each section, nothing
