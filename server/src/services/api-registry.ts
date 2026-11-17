@@ -271,7 +271,7 @@ export const API_REGISTRY: ApiRouteGroup[] = [
     description: "AEO partner network — CRUD, metrics, dashboard",
     authType: "authenticated",
     category: "integrations",
-    pingUrl: "/api/partners",
+    pingUrl: "/api/health/readiness",
   },
   {
     name: "Partner Sites",

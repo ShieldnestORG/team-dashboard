@@ -179,6 +179,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── POST /prefill — Scrape a website and extract partner data (no save) ──
   router.post("/prefill", async (req, res) => {
+    assertBoard(req);
     try {
       const { website, name } = req.body as { website?: string; name?: string };
       if (!website || typeof website !== "string") {
@@ -195,6 +196,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── GET / — List all partners ───────────────────────────────────
   router.get("/", async (req, res) => {
+    assertBoard(req);
     try {
       const status = req.query.status as string | undefined;
       const industry = req.query.industry as string | undefined;
@@ -286,6 +288,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── GET /:slug — Get single partner ─────────────────────────────
   router.get("/:slug", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
       const [partner] = await db
@@ -647,6 +650,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── GET /:slug/clicks — Paginated click log ─────────────────────
   router.get("/:slug/clicks", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
@@ -692,6 +696,7 @@ export function partnerRoutes(db: Db): Router {
 
   // ── GET /:slug/metrics — Partner click metrics ──────────────────
   router.get("/:slug/metrics", async (req, res) => {
+    assertBoard(req);
     try {
       const slug = req.params.slug as string;
 
@@ -827,44 +832,6 @@ export function partnerRoutes(db: Db): Router {
     } catch (err) {
       logger.error({ err }, "Failed to get partner dashboard");
       res.status(500).json({ error: "Failed to get partner dashboard" });
-    }
-  });
-
-  // ── GET /directory — Public partner directory (no auth needed) ──
-  // Note: this is mounted under authenticated routes, but we include it
-  // for agents calling via API key. For the public-facing version,
-  // use partnerDirectoryRoutes below.
-  router.get("/directory", async (_req, res) => {
-    try {
-      const partners = await db
-        .select({
-          slug: partnerCompanies.slug,
-          name: partnerCompanies.name,
-          industry: partnerCompanies.industry,
-          location: partnerCompanies.location,
-          description: partnerCompanies.description,
-          website: partnerCompanies.website,
-          siteUrl: partnerCompanies.siteUrl,
-          siteDeployStatus: partnerCompanies.siteDeployStatus,
-          logoUrl: partnerCompanies.logoUrl,
-          services: partnerCompanies.services,
-        })
-        .from(partnerCompanies)
-        .where(
-          and(
-            eq(partnerCompanies.companyId, COMPANY_ID),
-            or(
-              eq(partnerCompanies.status, "active"),
-              eq(partnerCompanies.status, "trial"),
-            ),
-          ),
-        )
-        .orderBy(partnerCompanies.name);
-
-      res.json({ partners });
-    } catch (err) {
-      logger.error({ err }, "Failed to get partner directory");
-      res.status(500).json({ error: "Failed to get partner directory" });
     }
   });
 
