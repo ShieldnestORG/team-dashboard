@@ -210,6 +210,7 @@ export async function runProductionPipeline(
         );
       } catch (err) {
         visualModeUsed = "presentation-fallback";
+        if (cast) castRecord = { pillar: strategy.pillar, used: false, error: err instanceof Error ? err.message : String(err) };
         logger.error({ productionId, err }, "YT Pipeline: animated render failed — falling back to presentation slides");
       }
     }

@@ -206,6 +206,18 @@ describe("runProductionPipeline animated wiring", () => {
     }
   });
 
+  it("YT_CAST_PILLARS on and both animated renders fail: slides ship, assets.cast still says the cast was asked for", async () => {
+    process.env.YT_CAST_PILLARS = "all";
+    try {
+      m.renderAnimatedVideo.mockRejectedValue(new Error("chromium exploded"));
+      const { db, sets } = makeDb();
+      await production.runProductionPipeline(db as never, "topic", "animated");
+      expect(assetsOf(sets)).toMatchObject({ visualMode: "presentation-fallback", cast: { pillar: "p", used: false, error: "chromium exploded" } });
+    } finally {
+      delete process.env.YT_CAST_PILLARS;
+    }
+  });
+
   it("animated render throws: logs the error and the normal presentation path still makes the video", async () => {
     m.renderAnimatedVideo.mockRejectedValue(new Error("chromium exploded"));
     const { db, sets } = makeDb();

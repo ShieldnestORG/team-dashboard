@@ -140,9 +140,11 @@ describe("the gears' performance (plan)", () => {
       }
     }
   });
-  it("frame 0 is already moving: BODY is mid-drop at t = 0", () => {
+  it("frame 0 is already moving: BODY is mid-drop at t = 0, not hanging at the top", () => {
     expect(body.pose(0).lift).toBeGreaterThan(20);
-    expect(body.pose(0).lift).not.toBeCloseTo(body.pose(1 / 30).lift, 3);
+    // moving AT frame 0: it was higher a frame before (a drop released at 0 would still be at rest there)
+    expect(body.pose(-1 / 30).lift - body.pose(0).lift).toBeGreaterThan(1);
+    expect(body.pose(0).lift - body.pose(1 / 30).lift).toBeGreaterThan(1);
   });
   it("never starts two acts of one gear within 0.9 s", () => {
     for (const id of ["body", "focus", "direction"]) {
@@ -243,8 +245,10 @@ describe("the music bed (bedPlan)", () => {
     expect(segs.map((s) => s.kind)).toEqual(["intro", "section", "section", "conclusion", "hook", "cta"]);
   });
   it("restarts its bar on every section: a kick, a whoosh and a bell land exactly on each section's first frame", () => {
-    for (const s of segs.filter((x) => x.kind === "section")) {
-      for (const kind of ["kick", "whoosh", "bell"]) expect(notesIn(s.a, s.a + 1e-6, kind).length).toBe(1);
+    const starts = BEATS.filter((b) => b.type === "section_title").map((b) => b.startSec);
+    expect(starts).toHaveLength(2);
+    for (const a of starts) {
+      for (const kind of ["kick", "whoosh", "bell"]) expect(notesIn(a, a + 1e-6, kind).length).toBe(1);
     }
   });
   it("drops the drums and the plucks under the quote, and plays nothing past the end", () => {
