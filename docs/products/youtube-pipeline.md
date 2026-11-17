@@ -115,9 +115,24 @@ card. Built 2026-11-16 from the owner's ask to bring the new character animation
   before). No WebGL: the page probes `getContext("webgl2")` first and draws the gears flat in SVG (`look: "flat"` in the
   cast report, a warning in the log), since three.js would otherwise log console errors and the renderer fails a page on
   any console error. Owner, 2026-11-16 ~16:25 PST, about the new character work: "SHOULD BE 3D CHARACTER AND ANIMATIONS".
+- **Explainer scenes** (`cast/vignettes.js`, since 2026-11-17; owner: "can get more create with the animations where the
+  animations are like explainers"): on a spoken line whose words name an idea the gears can act out, a small wordless
+  picture of that idea plays beside the text and the gears play their part. Twelve scenes: **spark** (a spark flares above
+  BODY and dies to an ember; BODY droops), **loop** (a loop with three dots circles the meshed gears; they race), **friction**
+  (a rock jams the gears until it pops away; they spin free), **steps** (blocks stack into a stair, a check lands on top),
+  **compare** (a seesaw tips), **wait** (an hourglass runs out; they slow), **protect** (a shield with a check closes over
+  them), **warning** (a sign flashes, FOCUS does a double take), **bulb** (a bulb above FOCUS lights), **link** (lines join the
+  gears to three more), **rest** (a moon rises, they slow almost to a stop, eyes half shut), **sprout** (a seedling grows).
+  Code picks the scene from the line's words with ordered keyword rules (warning, then explicit comparisons, then the
+  rest), never the same scene twice running within a scene, and never the sprout next to money words (a growing plant
+  beside staking or rewards would read as a promise of returns). The scene's moment lands on its key word ("fades",
+  "remove", "but"...) at the time forced alignment gave that word. A line with no such idea gets the gears' plain
+  reaction. On `787084c8`, 25 of its 28 content lines got a scene. Props are SVG shapes in the channel's colours (coral, gold,
+  green, ink, muted, surface), drawn in the cast's own space, so they move and scale with it; list scenes give the cast
+  180 px of headroom for them and up to 1.45x size bottom-left.
 - **Never over the text:** for each scene the page measures every line of text (the text runs' line boxes, icon tiles,
   the button) and tries the cast's spots for that kind of scene (title: right; section card: right, then bottom middle,
-  big; list: bottom left, then bottom right; quote: bottom right; end card: right), largest scale first, keeping 26 px
+  big; list: bottom left up to 1.45x, then bottom right; quote: bottom right; end card: right), largest scale first, keeping 26 px
   clear of any text. Between two list scenes it keeps its spot unless another is clearly bigger. Nowhere fits: the gears
   step out below the frame and drop back in on the next scene. The gears move between spots with a jump while the
   scenes cross-fade (from 0.25 s before a scene to 0.35 s after its start).
@@ -140,6 +155,9 @@ card. Built 2026-11-16 from the owner's ask to bring the new character animation
   (animated mode) passes on it: 36 of 36 planned changes matched, no issues (the original video: 36 of 36). Whisper
   `base.en` on the finished audio: 5 word errors in 474, the same 5 as on the original video (1.1% both; the transcripts
   differ by three commas), so the bed does not cost the voice its clarity on that measure. Nobody has listened by ear.
+  Re-rendered 2026-11-17 with the explainer scenes: same speed (window: plain 30.28 frames/s, cast with scenes 18.43; full
+  episode 17.82), same loudness, Whisper still the same 5 word errors; the sync gate passes with 35 of 36 planned changes
+  matched (one fewer than without the scenes; the bar is 75%).
 - **Render time:** measured on the Mac back to back in one queue slot, 900-frame window 20-50 s: plain animated 29.87
   frames/s, with the 3D cast and music 18.25 frames/s (the full episode: 17.91). Headless Chromium drew the 3D in software
   there too (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device ...))`), as VPS4 does. Estimate for VPS4 (not measured
