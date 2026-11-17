@@ -90,6 +90,12 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
 *Since 2026-11-17 the music is an original song (`YT_MUSIC_DIR`), and there are no sound effects; the anchor name of this
 section is kept so links to it still work.*
 
+**LIVE on VPS4 since 2026-11-17 17:42Z for mindset videos only** (#227 merged as `9241936a`, container started
+17:42:37Z, healthy; `.env.production` has `YT_CAST_PILLARS=motivation` and `YT_MUSIC_DIR=/paperclip/youtube/music`, backup
+`.env.production.bak-yt-cast-1794936759`; four Suno instrumentals in the data volume's `youtube/music/motivation/`, sha256
+matched the originals). Owner's word for it: "yea try on minset videos". Crypto and TX videos are unchanged. Every cast
+video still waits for the owner's approval in the dashboard before it posts.
+
 **In plain words:** in an animated video, three cartoon 3D gears with faces (BODY coral, FOCUS gold, DIRECTION green, the
 channel's dimension colours) drop in at the start, hop when a new section starts, do a double take when a number is
 read, look at the line being spoken, settle calm under the closing thought and cheer on the end card. They never speak
@@ -178,26 +184,29 @@ removed and Suno songs took their place.
   this measure).
 - **Render time:** measured on the Mac back to back in one queue slot, 900-frame window 20-50 s: plain animated 29.87
   frames/s, with the 3D cast and music 18.25 frames/s (the full episode: 17.91). Headless Chromium drew the 3D in software
-  there too (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device ...))`), as VPS4 does. Estimate for VPS4 (not measured
-  there): the cast adds 21.3 ms a frame on the Mac; VPS4 runs the plain look at about 96 ms a frame (10.4 frames/s,
-  2026-10-09), 2.9x the Mac; scaling the extra by 2.9x (like the plain work) to 4x (core count, worst case) gives 157-181
-  ms a frame, so about 12.5-14.5 min of render for a 158 s video instead of about 7.6 min, plus a few seconds for the
-  song's loudness passes. The nightly run (starts about 06:03 UTC, 565-792 s end to end on the 22 nights Oct 26 to Nov 16) would
-  end about 06:20-06:25 UTC; the publish slot is 15:00 UTC. A timed run on VPS4 itself needs the owner's yes.
+  there too (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device ...))`), as VPS4 does. **Measured on VPS4** (2026-11-17
+  17:4xZ, in the live container right after the deploy, at nice 10, the 787084c8 timeline 20-26 s with the cast and its
+  song): 180 frames at 4.44 frames/s (225 ms a frame), no 3D fallback warning. The plain look runs about 10.4 frames/s
+  there (2026-10-09), so a 158 s cast video takes about 18 min of render instead of about 7.6 min (a 6 s window includes
+  the first-frame shader set-up, so a whole video may run a little faster). The nightly run (starts about 06:03 UTC,
+  565-792 s end to end on the 22 nights Oct 26 to Nov 16) would end about 06:25-06:35 UTC on a mindset night; the
+  publish slot is 15:00 UTC, and nothing in the cron runner limits a job's time. *(This line held an estimate of
+  12.5-14.5 min until the measurement: it scaled the Mac's cost by 2.9-4x; VPS4 drew the cast slower than that.)*
 - **Tests:** `youtube-cast.test.ts` runs the cast's planning layer in Node (stage.js, character.js and cast.js in one vm context): the
   switch, the timeline field, frame 0 already moving, no two acts of one gear within 0.9 s, the gears' mesh, a scene with
   no room, placement never touching text over 400 random layouts, the song pick (`pickSong`: by seed, any case, no
   traversal), the song path in the timeline (a missing file fails at load), no sound effects (the cast and the page hold
   no synth, no audio context, no bed), the mix filter (fades; a real ffmpeg run where ffmpeg exists), the 3D outline and
-  face matrix, the shipping (build copy, script order, the vendored three.js), and the fallback render. Six key guards were
-  broken one at a time in a scratch copy and each turned its test red.
+  face matrix, the shipping (build copy, script order, the vendored three.js), and the fallback render. Twelve key guards
+  (2026-11-16/17) and then seven for the songs (2026-11-17) were broken one at a time in a scratch copy after a passing
+  control, and each turned its test red.
   `youtube-production-animated.test.ts` covers the switch off, on (with a song from `YT_MUSIC_DIR`), on with no song, and
-  on-but-failed. The page layer (measuring, the SVG,
-  the bed buffer) is covered by the real renders above, not by a unit test.
-- **Not decided / not done:** the switch on VPS4 (which pillars, if any); a library of original instrumental beds (for
-  example Suno songs made once and reused, which would replace the synthesized bed) needs the owner's yes because song
-  downloads are counted; the earlier teaser-Short and 3D-video proposals (kept with the animation kit) are unchanged.
-  Nobody has listened by ear: every sound judgement above is a measurement.
+  on-but-failed. The page layer (measuring, the SVG, the 3D bodies) is covered by the real renders above, not by a unit
+  test.
+- **Not decided / not done:** the crypto and TX pillars (no songs made for them yet; each new song spends one of the
+  month's counted downloads); the earlier teaser-Short and 3D-video proposals (kept with the animation kit) are unchanged.
+  Nobody has listened by ear: every sound judgement above is a measurement. *(Until 2026-11-17 this line also listed the
+  switch on VPS4 and the song library as open: both decided that day.)*
 
 ## Voice
 
