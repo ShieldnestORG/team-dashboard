@@ -146,7 +146,7 @@ card. Built 2026-11-16 from the owner's ask to bring the new character animation
   there): the cast adds 21.3 ms a frame on the Mac; VPS4 runs the plain look at about 96 ms a frame (10.4 frames/s,
   2026-10-09), 2.9x the Mac; scaling the extra by 2.9x (like the plain work) to 4x (core count, worst case) gives 157-181
   ms a frame, so about 12.5-14.5 min of render for a 158 s video instead of about 7.6 min, plus about 15 s for the bed and
-  its three loudness passes. The nightly run (starts about 06:03 UTC, 565-792 s end to end over the last 30 nights) would
+  its three loudness passes. The nightly run (starts about 06:03 UTC, 565-792 s end to end on the 22 nights Oct 26 to Nov 16) would
   end about 06:20-06:25 UTC; the publish slot is 15:00 UTC. A timed run on VPS4 itself needs the owner's yes.
 - **Tests:** `youtube-cast.test.ts` runs the cast's planning layer in Node (stage.js, character.js and cast.js in one vm context): the
   switch, the timeline field, frame 0 already moving, no two acts of one gear within 0.9 s, the gears' mesh, a scene with
