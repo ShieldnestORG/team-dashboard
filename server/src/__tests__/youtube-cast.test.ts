@@ -81,12 +81,19 @@ describe("shipping the cast", () => {
     const pkg = JSON.parse(readFileSync(join(CAST_DIR, "..", "..", "..", "..", "..", "package.json"), "utf8"));
     expect(pkg.scripts.build).toContain("cp src/services/youtube/animated/cast/*.js dist/services/youtube/animated/cast/");
   });
-  it("scenes.html loads stage.js, character.js and cast.js from cast/, in that order, before its own script", () => {
+  it("scenes.html loads three.min.js, stage.js, character.js and cast.js from cast/, in that order, before its own script", () => {
     const html = readFileSync(join(CAST_DIR, "..", "scenes.html"), "utf8");
-    const at = ["cast/stage.js", "cast/character.js", "cast/cast.js"].map((f) => html.indexOf(`<script src="${f}"></script>`));
+    const at = ["cast/three.min.js", "cast/stage.js", "cast/character.js", "cast/cast.js"].map((f) => html.indexOf(`<script src="${f}"></script>`));
     expect(at.every((i) => i > 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
-    expect(at[2]).toBeLessThan(html.indexOf("window.seek = "));
+    expect(at[3]).toBeLessThan(html.indexOf("window.seek = "));
+  });
+  it("the vendored three.js is 0.186.1, a classic script that sets window.THREE, with its licence kept", () => {
+    const three = readFileSync(join(CAST_DIR, "three.min.js"), "utf8");
+    expect(three.slice(0, 400)).toContain("three.js 0.186.1 (MIT");
+    expect(three).toContain("@license");
+    expect(three).not.toMatch(/^\s*(import|export)\s/m);
+    expect(three).toContain("window.THREE");
   });
 });
 
@@ -188,6 +195,31 @@ describe("the gears' performance (plan)", () => {
     expect(JSON.parse(JSON.stringify(Cast.plan(BEATS, SCENES, placesFor(), 5)))).toEqual(JSON.parse(JSON.stringify(plan)));
     const other = Cast.plan(BEATS, SCENES, placesFor(), 6);
     expect(JSON.stringify(other.specs)).not.toBe(JSON.stringify(plan.specs));
+  });
+});
+
+describe("the 3D bodies' pure parts", () => {
+  it("gearOutline: N teeth, every point between the root and tip radius, the same radii as the SVG path", () => {
+    for (const N of [24, 18, 14]) {
+      const o = Cast.gearOutline(N, 76.8, 3);
+      expect(o.pts).toHaveLength(N * 6); // 4 tooth corners + 2 inner root-arc points per tooth
+      for (const [x, y] of o.pts) {
+        const r = Math.hypot(x, y);
+        expect(r).toBeGreaterThanOrEqual(o.rr - 1e-9);
+        expect(r).toBeLessThanOrEqual(o.ro + 1e-9);
+      }
+      const svg = Cast.gearPath(N, 76.8);
+      expect(o.ro).toBeCloseTo(svg.ro, 9);
+      expect(o.rr).toBeCloseTo(svg.rr, 9);
+    }
+  });
+  it("faceMatrix: the face is foreshortened like the tilted hub (an orthographic view of a tilted plane)", () => {
+    const m = /^matrix\(([^)]+)\)$/.exec(Cast.faceMatrix())!;
+    const [a, b, c, d] = m[1].split(" ").map(Number);
+    expect(a).toBeCloseTo(Math.cos(-0.45), 3); // width shrinks by cos of the turn about y
+    expect(d).toBeCloseTo(Math.cos(0.35), 3); // height by cos of the lean about x
+    expect(c).toBe(0);
+    expect(b).toBeCloseTo(-Math.sin(0.35) * Math.sin(-0.45), 3);
   });
 });
 

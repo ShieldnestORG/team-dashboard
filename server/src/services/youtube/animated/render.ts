@@ -596,7 +596,10 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
   const executablePath = opts.chromiumPath ?? process.env.YT_ANIMATED_CHROMIUM ?? undefined;
   let browser;
   try {
-    browser = await chromium.launch({ headless: true, executablePath, args: ["--force-color-profile=srgb"] });
+    // the cast's 3D gears need WebGL, which headless Chromium gives through SwiftShader only with these flags; a video
+    // without a cast launches Chromium exactly as before
+    const args = ["--force-color-profile=srgb", ...(timeline.cast ? ["--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [])];
+    browser = await chromium.launch({ headless: true, executablePath, args });
   } catch (err) {
     throw new Error(
       `could not start Chromium (${err instanceof Error ? err.message.split("\n")[0] : String(err)}). ` +

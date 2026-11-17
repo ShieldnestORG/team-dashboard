@@ -49,7 +49,24 @@
     return { d: d + " Z", m, ro, rr };
   }
 
-  function gearRig(g) {
+  /** The same outline as gearPath() as points (the root arcs in `arcSteps` steps), for the 3D bodies. */
+  function gearOutline(N, rp, arcSteps = 3) {
+    const m = (2 * rp) / N, ro = rp + 0.9 * m, rr = rp - 1.2 * m, pitch = (2 * Math.PI) / N;
+    const P = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const th = i * pitch;
+      pts.push(P(rr, th - 0.33 * pitch), P(ro, th - 0.16 * pitch), P(ro, th + 0.16 * pitch), P(rr, th + 0.33 * pitch));
+      for (let k = 1; k < arcSteps; k++) pts.push(P(rr, th + 0.33 * pitch + (0.34 * pitch * k) / arcSteps));
+    }
+    return { pts, m, ro, rr };
+  }
+
+  /**
+   * One gear as a rig. flat = true: the whole gear is SVG (rim, depth, rivets, face plate, face). flat = false: the body is
+   * drawn in 3D (bodies3d) and the SVG draws only the face on top; the parts are the same, so the performance is the same.
+   */
+  function gearRig(g, flat = true) {
     const p = gearPath(g.N, RP), R = p.rr - 0.19 * RP, teeth = { d: p.d, fill: g.col, stroke: g.col, sw: f2(0.55 * p.m) };
     const rivets = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
       const a = (k * Math.PI) / 4 + 0.2, r = (p.rr + R) / 2, s = (p.rr - R) * 0.17;
@@ -61,10 +78,10 @@
       shapes: [],
       parts: [
         // the rim's thickness: the same teeth a little lower, shaded; it turns with the rim
-        { id: "depth", at: [0, f2(-p.ro + 0.9 * p.m)], z: -1, rotor: true, shapes: [teeth, { d: p.d, fill: SHADE, stroke: SHADE, sw: teeth.sw }] },
-        { id: "rotor", at: [0, f2(-p.ro)], z: -1, rotor: true, shapes: [teeth, ...rivets] },
+        { id: "depth", at: [0, f2(-p.ro + 0.9 * p.m)], z: -1, rotor: true, shapes: flat ? [teeth, { d: p.d, fill: SHADE, stroke: SHADE, sw: teeth.sw }] : [] },
+        { id: "rotor", at: [0, f2(-p.ro)], z: -1, rotor: true, shapes: flat ? [teeth, ...rivets] : [] },
         // the face plate does not turn
-        { id: "plate", at: [0, f2(-p.ro)], shapes: [{ ellipse: [0, 0, f2(R + 3), f2(R + 3)], fill: RING }, { ellipse: [0, 0, f2(R), f2(R)], fill: g.col }] },
+        { id: "plate", at: [0, f2(-p.ro)], shapes: flat ? [{ ellipse: [0, 0, f2(R + 3), f2(R + 3)], fill: RING }, { ellipse: [0, 0, f2(R), f2(R)], fill: g.col }] : [] },
       ],
       face: {
         part: "plate", at: [0, f2(-0.08 * R)], gap: f2(0.4 * R), rx: f2(er), ry: f2(er * 1.08), pr: f2(er * 0.46), sw: f2(0.05 * R),
@@ -273,8 +290,8 @@
   }
 
   /** The three actors of a plan, meshed: BODY's angle from its keys, FOCUS from BODY, DIRECTION from FOCUS. */
-  function actors(p) {
-    const rigs = GEARS.map(gearRig);
+  function actors(p, flat = true) {
+    const rigs = GEARS.map((g) => gearRig(g, flat));
     const keysFn = (t) => M.spin(t, p.spinKeys, 0);
     const body = C.actor(rigs[0], { ...p.specs.body, spins: { rotor: keysFn, depth: keysFn } });
     const focusA = (t) => M.mesh(body.spinAngle("rotor", t), { drive: 24, driven: 18, axis: AX_BF });
@@ -444,6 +461,93 @@
     return { L, R };
   }
 
+  // ------------------------------------------------------------------ 3D bodies (three.js; the faces stay SVG on top)
+  // Each gear's body is its outline extruded with a bevel, a raised hub and eight rivets, in a cartoon (toon) material: three
+  // flat bands of light, the lit face exactly the brand colour (key 2.8 + ambient 0.34 = pi, the Lambert normaliser). It is
+  // tipped so the rim's thickness shows, and turns about its own axis by the kit's spin angle. The SVG face gets the same
+  // tilt (faceMatrix: an orthographic view of a tilted plane is an exact 2x2 matrix), so it sits painted on the hub.
+  // Pure: draw(t) sets every transform from the kit's pose(t) and renders once; nothing carries over between frames.
+  const TILT = [0.35, -0.45]; // radians about x and y (three.js Euler XYZ): the top leans back, the right turns away
+  const HUB_FRONT = 0.1; // the hub's front face, in front of the body's, as a share of RP
+  /** SVG matrix(a b c d e f) that lays the face on the tilted hub: R = Rx(TILT[0]) Ry(TILT[1]) seen along z, y flipped. */
+  function faceMatrix() {
+    const [ax, by] = TILT, h = HUB_FRONT * RP;
+    const n = (v) => Math.round(v * 10000) / 10000;
+    return `matrix(${n(Math.cos(by))} ${n(-Math.sin(ax) * Math.sin(by))} 0 ${n(Math.cos(ax))} ${n(Math.sin(by) * h)} ${n(Math.sin(ax) * Math.cos(by) * h)})`;
+  }
+  function bodies3d(THREE, canvas, cast) {
+    // ask for the context ourselves first: without WebGL, three.js would log console errors, and the renderer treats any
+    // console error as a broken page (the whole cast would be dropped instead of drawn flat)
+    const opts = { alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: "low-power", premultipliedAlpha: true };
+    const context = canvas.getContext("webgl2", opts);
+    if (!context) throw new Error("no WebGL2 context");
+    const renderer = new THREE.WebGLRenderer({ canvas, context, ...opts });
+    renderer.setPixelRatio(1);
+    renderer.setSize(W, H, false);
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.NoToneMapping;
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(0, W, 0, -H, 1, 6000);
+    camera.position.set(0, 0, 3000);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.34));
+    const key = new THREE.DirectionalLight(0xffffff, 2.8);
+    key.position.set(-0.45, 0.6, 1);
+    scene.add(key);
+    const bands = new THREE.DataTexture(new Uint8Array([110, 190, 255]), 3, 1, THREE.RedFormat);
+    bands.minFilter = bands.magFilter = THREE.NearestFilter;
+    bands.needsUpdate = true;
+    const group = new THREE.Group();
+    scene.add(group);
+    const rivetMat = new THREE.MeshBasicMaterial({ color: COL.canvas, transparent: true, opacity: 0.42 });
+    const nodes = GEARS.map((g, i) => {
+      const o = gearOutline(g.N, RP), R = o.rr - 0.19 * RP, D = 0.2 * RP, B = 0.05 * RP;
+      const shape = new THREE.Shape(o.pts.map(([x, y]) => new THREE.Vector2(x, -y)));
+      const bodyGeo = new THREE.ExtrudeGeometry(shape, { depth: D, bevelEnabled: true, bevelThickness: B, bevelSize: B * 0.8, bevelSegments: 2, curveSegments: 1 });
+      bodyGeo.translate(0, 0, -(D + B)); // the front face at z = 0
+      const mat = new THREE.MeshToonMaterial({ color: g.col, gradientMap: bands });
+      const spin = new THREE.Group();
+      spin.add(new THREE.Mesh(bodyGeo, mat));
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.16 * RP, 64), mat);
+      hub.rotation.x = Math.PI / 2;
+      hub.position.z = (HUB_FRONT - 0.08) * RP; // its front face at HUB_FRONT * RP
+      spin.add(hub);
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4 + 0.2, r = (o.rr + R) / 2, s = (o.rr - R) * 0.17;
+        const rivet = new THREE.Mesh(new THREE.CylinderGeometry(s, s, 1, 16), rivetMat);
+        rivet.rotation.x = Math.PI / 2;
+        rivet.position.set(r * Math.cos(a), -r * Math.sin(a), 0.6);
+        spin.add(rivet);
+      }
+      const tilt = new THREE.Group();
+      tilt.rotation.set(TILT[0], TILT[1], 0);
+      tilt.add(spin);
+      const centre = new THREE.Group();
+      centre.position.set(0, o.ro, 0); // the rig's root is the feet; the gear's centre is ro above them
+      centre.add(tilt);
+      const rootN = new THREE.Group();
+      rootN.position.z = 40 * i; // later gears in front, as the SVG draws them
+      rootN.add(centre);
+      group.add(rootN);
+      return { rootN, spin };
+    });
+    return {
+      draw(t, G, poses) {
+        group.position.set(G.x, -G.y, 0);
+        group.scale.set(G.s, G.s, G.s);
+        poses.forEach((P, i) => {
+          const n = nodes[i];
+          n.rootN.position.x = P.x;
+          n.rootN.position.y = -P.y;
+          n.rootN.rotation.z = -P.rot;
+          n.rootN.scale.set(P.sx * P.scale * P.flip, P.sy * P.scale, P.scale);
+          n.spin.rotation.z = -cast[i].spinAngle("rotor", t);
+        });
+        renderer.render(scene, camera);
+      },
+    };
+  }
+
   // ------------------------------------------------------------------ page layer (DOM)
   const NS = "http://www.w3.org/2000/svg";
 
@@ -484,7 +588,23 @@
     o.seek(0);
 
     const p = plan(o.beats, o.scenes.map((s) => ({ kind: s.kind, start: s.start, end: s.end, beats: s.beats })), places, o.seed);
-    const cast = actors(p);
+    // 3D bodies when three.js and WebGL are there; otherwise the whole gear in SVG (the same performance, flat)
+    let look = "flat", bodies = null, canvas = null, cast = null;
+    if (o.three !== false && root.THREE) {
+      try {
+        cast = actors(p, false);
+        canvas = document.createElement("canvas");
+        canvas.setAttribute("style", `position:absolute;left:0;top:0;width:${W}px;height:${H}px;pointer-events:none`);
+        o.stage.insertBefore(canvas, o.before ?? null);
+        bodies = bodies3d(root.THREE, canvas, cast);
+        look = "3d";
+      } catch (err) {
+        canvas?.remove();
+        cast = bodies = null;
+        warnings.push(`cast: 3D bodies unavailable (${err && err.message ? err.message : err}); drawing the gears flat`);
+      }
+    }
+    if (!cast) cast = actors(p, true);
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("id", "cast");
     svg.setAttribute("width", String(W));
@@ -494,6 +614,7 @@
     const group = document.createElementNS(NS, "g");
     svg.appendChild(group);
     const views = cast.map((a) => a.mount(group));
+    const FACE_MATRIX = faceMatrix();
 
     const events = [];
     cast.forEach((a, i) => a.events.forEach((e) => events.push({ t: e.t + 1 / 30, kind: e.kind, level: e.level, actor: GEARS[i].id })));
@@ -504,9 +625,14 @@
       draw(t) {
         const g = groupAt(t, p.keys);
         group.setAttribute("transform", `translate(${f2(g.x)} ${f2(g.y)}) scale(${Math.round(g.s * 1000) / 1000})`);
-        for (const v of views) v.draw(t);
+        const poses = views.map((v) => v.draw(t));
+        if (bodies) {
+          for (const v of views) v.nodes.plate.setAttribute("transform", `${v.nodes.plate.getAttribute("transform")} ${FACE_MATRIX}`);
+          bodies.draw(t, g, poses);
+        }
       },
       report: {
+        look,
         places: places.map((P, k) => ({ kind: o.scenes[k].kind, start: o.scenes[k].start, ...(P.hidden ? { hidden: true } : { anchor: P.anchor, scale: P.s }) })),
         actors: cast.length,
         acts: Object.values(p.specs).reduce((n, s) => n + s.moves.length, 0),
@@ -537,5 +663,5 @@
     };
   }
 
-  root.Cast = { COL, GEARS, CLUSTER, HEAD, SPOTS, gearPath, gearRig, spotBox, placeFor, targetOf, groupAt, plan, actors, segments, bedPlan, addTone, addBuffer, mixBed, mount };
+  root.Cast = { COL, GEARS, CLUSTER, HEAD, SPOTS, gearPath, gearRig, spotBox, placeFor, targetOf, groupAt, plan, actors, segments, bedPlan, addTone, addBuffer, mixBed, gearOutline, faceMatrix, mount };
 })(typeof window !== "undefined" ? window : globalThis);
