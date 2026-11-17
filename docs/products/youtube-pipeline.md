@@ -11,7 +11,7 @@ is on screen exactly while its own sentence is spoken, and a new video waits for
 
 | Thing | Where |
 |---|---|
-| Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `animated-video.ts` + `word-timings.ts` + `animated/` (animated mode), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
+| Code | `server/src/services/youtube/` — `production.ts` (orchestrator), `script-writer.ts`, `presentation-renderer.ts` (beats + slides), `tts.ts`, `yt-video-assembler.ts` (ffmpeg + sync gate), `animated-video.ts` + `word-timings.ts` + `animated/` (animated mode; `animated/cast/` = the gears and music bed, off by default), `seo-optimizer.ts`, `publish-queue.ts`, `yt-crons.ts` |
 | Runs in | VPS4 (`31.220.61.14`), container `team-dashboard-server-1`, container clock UTC |
 | Crons (`yt-crons.ts`) | `yt:daily-production` 06:00 · `yt:publish-queue` every 15 min, one due video per run (*until 2026-10-25: up to 5 per run*) · `yt:daily-analytics` 09:00 · `yt:optimization` 22:00 · `yt:weekly-strategy` Sun 08:00 · `yt:cleanup-videos` 02:00 (all UTC); `YT_PIPELINE_ENABLED=false` silences them. Since 2026-10-10 (`DEV-117`) `yt:cleanup-videos` also purges slide PNGs, the thumbnail, and `timeline_<id>.json` / `video_<id>.animated.failed`; the `archive/` review copy is never touched |
 | Mode | **`YT_VISUAL_MODE=animated` on VPS4 since 2026-10-09 19:02 PDT** (owner: "make animated the default"; env backup `.env.production.bak-yt-animated-1791597734`; container recreated, env read back inside it): the nightly cron makes **animated** videos, slides only as the render-error fallback. *This row said until that evening:* `YT_VISUAL_MODE=presentation` on VPS4 (checked 2026-10-07, still so after the 2026-10-09 deploy): the nightly cron makes **slide** videos until the owner decides otherwise. `animated` is merged (#198), deployed and opt-in (env value, or the third argument of `runProductionPipeline`); see [Animated mode](#animated-mode-yt_visual_modeanimated) |
@@ -84,6 +84,66 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
   max offset 0.233 s; queued `pending_review` for 2026-10-11 14:00Z; `assets.visualMode = animated`; stored chapters
   00:00 Introduction, 00:18, 00:47, 01:15, 01:43, 02:07, 02:33 Takeaways.
 - **No migration:** the only schema-adjacent change is the type of the `assets` jsonb column (adds `visualMode`).
+
+## Cast and music bed (`YT_CAST_PILLARS`, off by default)
+
+**In plain words:** in an animated video, three cartoon 3D gears with faces (BODY coral, FOCUS gold, DIRECTION green, the
+channel's dimension colours) drop in at the start, hop when a new section starts, do a double take when a number is
+read, look at the line being spoken, settle calm under the closing thought and cheer on the end card. They never speak
+and they never cover a word. Under Mark's voice runs a synthesized music bed: chords that restart on every section with a
+whoosh and a bell, a soft pulse in the sections, a lift on the takeaways, only a pad under the quote, a resolve on the end
+card. Built 2026-11-16 from the owner's ask to bring the new character animations and music into the daily videos.
+
+- **Switch:** `YT_CAST_PILLARS`, a comma list of content pillars as stored in `yt_content_strategies.pillar` (`motivation`,
+  `crypto`, `tx_blockchain`) or `all`. **Unset or empty (the default) = off: the videos are exactly as before.** It only
+  acts in animated mode. `castFor()` (`animated-video.ts`) reads it and seeds the cast from the production id, so a
+  re-render of the same production is identical. Not set on VPS4 (owner's decision pending).
+- **Code:** `animated/cast/cast.js` (the cast: plan, placement, music bed, 3D bodies, page layer) plus files vendored
+  unchanged: `cast/stage.js` and `cast/character.js` from an internal animation kit (`stage.js` has one added export,
+  `makeSynth`, `wavBase64`; `character.js` is the character rig: squash and stretch, faces, hops, takes, meshed gear spin,
+  every pose a pure function of t) and `cast/three.min.js` (three.js 0.186.1, MIT, bundled as one classic script because
+  `scenes.html` is opened from file://, where ES module imports are refused; how it was made is in its header).
+  `scenes.html` loads them and builds the cast only when the timeline has a `cast` field; `render.ts` validates
+  `cast: {seed, music}`. The server build copies `animated/cast/*.js` into `dist` beside `scenes.html`.
+  *`.gitignore` ignores `server/src/**/*.js` (build output), so it carries an exception for `animated/cast/*.js`; without
+  it the scripts would never have been committed and every cast render would have fallen back.*
+- **3D:** each gear's body is its character-sheet outline extruded with a bevel, a raised hub and eight rivets, in a
+  cartoon (toon) material with three bands of light, lit so the face toward the light is exactly the brand colour (key 2.8
+  + ambient 0.34 = pi), tipped (0.35 rad about x, -0.45 about y) so the thickness shows, turning by the rig's spin angle. The
+  faces stay the rig's SVG faces on top, laid onto the tipped hub with the same tilt as an SVG `matrix()`. Chromium gets
+  `--enable-unsafe-swiftshader --ignore-gpu-blocklist` only for a video with a cast (a video without one launches exactly as
+  before). No WebGL: the page probes `getContext("webgl2")` first and draws the gears flat in SVG (`look: "flat"` in the
+  cast report, a warning in the log), since three.js would otherwise log console errors and the renderer fails a page on
+  any console error. Owner, 2026-11-16 ~16:25 PST, about the new character work: "SHOULD BE 3D CHARACTER AND ANIMATIONS".
+- **Never over the text:** for each scene the page measures every line of text (the text runs' line boxes, icon tiles,
+  the button) and tries the cast's spots for that kind of scene (title: right; section card: right, then bottom middle,
+  big; list: bottom left, then bottom right; quote: bottom right; end card: right), largest scale first, keeping 26 px
+  clear of any text. Between two list scenes it keeps its spot unless another is clearly bigger. Nowhere fits: the gears
+  step out below the frame and drop back in on the next scene. The gears move between spots with a jump while the
+  scenes cross-fade (from 0.25 s before a scene to 0.35 s after its start).
+- **Sound:** the page draws the bed's notes into one sample buffer (pads and bass synthesized directly; kick, pluck,
+  bell, whoosh and the gears' landing thuds are the kit's own one-shot sounds), `render.ts` reads it back in 10 s chunks,
+  measures the voice and the bed (EBU R128), sets the bed `BED_UNDER_VOICE_LU` = 12 LU under the voice and lets the voice
+  duck it (`sidechaincompress`, threshold 0.05, ratio 3), then sums with no normalisation and a peak limiter with
+  auto-level off, so the voice keeps its own loudness. Measured on `787084c8` (2026-11-16): the bed sits a median 20.7 LU
+  under the voice while Mark speaks and 14.4 LU under in the pauses.
+  *A first setting (18 LU, ratio 6) measured 35.0 / 21.7 LU: inaudible. A first bed built as a Web Audio graph (about
+  4,000 scheduled nodes) took 92 s to render in headless Chromium; drawn straight into a buffer it takes 1.4 s.*
+- **If it breaks:** a cast render that throws is rendered again without the cast from the same timeline and words (no
+  second forced alignment, no extra voice credits), so the day still gets its animated video; `yt_productions.assets.cast`
+  records `{pillar, used, error?, places, shown, music}`. The sync gate is the same animated gate as before.
+- **Tests:** `youtube-cast.test.ts` runs the cast's planning layer in Node (stage.js, character.js and cast.js in one vm context): the
+  switch, the timeline field, frame 0 already moving, no two acts of one gear within 0.9 s, the gears' mesh, a scene with
+  no room, placement never touching text over 400 random layouts, the bed restarting its bar on each section, nothing
+  played past the end, the home chord at the end, the pad and bass synthesis, the mix filter, the 3D outline and face
+  matrix, the shipping (build copy, script order, the vendored three.js), and the fallback render. Six key guards were
+  broken one at a time in a scratch copy and each turned its test red.
+  `youtube-production-animated.test.ts` covers the switch off, on, and on-but-failed. The page layer (measuring, the SVG,
+  the bed buffer) is covered by the real renders above, not by a unit test.
+- **Not decided / not done:** the switch on VPS4 (which pillars, if any); a library of original instrumental beds (for
+  example Suno songs made once and reused, which would replace the synthesized bed) needs the owner's yes because song
+  downloads are counted; the teaser Short and 3D proposals (motion-lab `docs/YOUTUBE-INTEGRATION.md`) are unchanged.
+  Nobody has listened by ear: every sound judgement above is a measurement.
 
 ## Voice
 
@@ -307,6 +367,11 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   dialog open with the server's sentence; no sideways scroll. Not covered by a unit test: the dialog's own
   "which fields changed" wiring (browser-checked only).
 
+- **2026-11-16** — Cast and music bed (`YT_CAST_PILLARS`, off by default; branch `feat/yt-cast-and-music`): the owner asked to bring
+  the new character animations and original music into the daily videos ("upgrade some of our videos and explainers with
+  these animations and musics"), then, about the new characters, "SHOULD BE 3D CHARACTER AND ANIMATIONS". See "Cast and
+  music bed" above. Not deployed; the switch is the owner's call.
+
 ## Owner decisions, 2026-10-08
 
 | Topic | Decision |
@@ -358,8 +423,10 @@ Evidence behind these items (2026-10-07): [channel measurements](youtube-channel
   Remove it, or fix the stored title/description first. (The animated `d6d30d70` is `pending_review` for 2026-10-11 14:00Z.)
 - [ ] First drafts come back `TOO_SHORT` almost every time (10 of 10 TX scripts on 2026-10-10), so each script costs at
   least one repair call. Ask for the length up front in the prompt, then re-measure.
-- [ ] **Owner:** "How TX Reward Splits Work" (`c42a126f`) is `pending_review`; the fact-check says do not post it as is
-  (see the 2026-10-10 record). Remove it or post it with a correction.
+- [x] **Owner:** "How TX Reward Splits Work" (`c42a126f`) — removed from the queue on 2026-10-25 on the owner's word (queue row
+  `0796d180` only; the production and its MP4 kept; row backed up in `/root/yt-queue-removed-2026-10-25-0796d180.json` on VPS4).
+  *Until 2026-11-16 this item read:* "is `pending_review`; the fact-check says do not post it as is (see the 2026-10-10 record).
+  Remove it or post it with a correction."
 - [ ] Icon keyword picks are crude on non-crypto scripts (e.g. coins on "reward" in a habits video).
 - [ ] Tags still contain single topic words like "beats", "small", "stick".
 - [ ] Forced-alignment cost per ElevenLabs call is unmeasured (42 calls on `d6d30d70`).
