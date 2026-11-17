@@ -1,19 +1,20 @@
 // ---------------------------------------------------------------------------
-// The YouTube cast (animated/cast/cast.js): three gears with faces + a synthesized music bed, behind YT_CAST_PILLARS.
-// The page layer (measure the text, mount the SVG, render the bed in Chromium) needs a browser and is checked by a real
+// The YouTube cast (animated/cast/cast.js): three gears with faces + a song under the voice, behind YT_CAST_PILLARS.
+// The page layer (measure the text, mount the SVG and the 3D bodies in Chromium) needs a browser and is checked by a real
 // render; everything it decides with is pure and runs here: the vendored stage.js + character.js + cast.js are loaded into
 // one vm context, the same way the kit's own tests load them.
 // ---------------------------------------------------------------------------
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { castFor, renderAnimatedVideo } from "../services/youtube/animated-video.js";
-import { bedMixFilter, validateTimeline, type Timeline } from "../services/youtube/animated/render.js";
+import { castFor, pickSong, renderAnimatedVideo } from "../services/youtube/animated-video.js";
+import { bedMixFilter, loadTimeline, validateTimeline, type Timeline } from "../services/youtube/animated/render.js";
 
 const CAST_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "services", "youtube", "animated", "cast");
 const ctx: Record<string, any> = { console, URLSearchParams, location: { search: "" } };
@@ -110,24 +111,57 @@ describe("YT_CAST_PILLARS: the switch", () => {
     expect(castFor("crypto", "p", "all")).toBeDefined();
     expect(castFor(undefined, "p", "motivation")).toBeUndefined();
   });
-  it("seeds from the production id: same id, same video; another id, another seed; music on", () => {
+  it("seeds from the production id: same id, same video; another id, another seed (the song is pickSong's)", () => {
     const a = castFor("motivation", "787084c8-98d9-4f77-b2e3-02c08d268ae8", "all")!;
     expect(a).toEqual(castFor("motivation", "787084c8-98d9-4f77-b2e3-02c08d268ae8", "all"));
     expect(a.seed).not.toBe(castFor("motivation", "c40ab5a4-0000-0000-0000-000000000000", "all")!.seed);
     expect(Number.isInteger(a.seed) && a.seed >= 0 && a.seed < 2 ** 31).toBe(true);
-    expect(a.music).toBe(true);
+    expect(a).toEqual({ seed: a.seed });
+  });
+});
+
+describe("pickSong: the song under a cast video, from YT_MUSIC_DIR/<pillar>/", () => {
+  const top = mkdtempSync(join(tmpdir(), "yt-songs-test-"));
+  afterAll(() => rmSync(top, { recursive: true, force: true }));
+  const root = join(top, "music");
+  mkdirSync(join(root, "motivation"), { recursive: true });
+  mkdirSync(join(top, "outside"));
+  writeFileSync(join(top, "outside", "x.m4a"), ""); // a song a "../outside" pillar would reach without the name rule
+  for (const f of ["b.m4a", "a.mp3", "notes.txt", ".hidden.m4a", "c.WAV"]) writeFileSync(join(root, "motivation", f), "");
+  it("picks one song file by the seed, the same seed always the same song, in name order", () => {
+    const pick = async (seed: number) => (await pickSong("motivation", seed, root))?.slice(root.length + 1);
+    return Promise.all([0, 1, 2, 3].map(pick)).then((got) => expect(got).toEqual(["motivation/a.mp3", "motivation/b.m4a", "motivation/c.WAV", "motivation/a.mp3"]));
+  });
+  it("the pillar's own folder, any case; none for an unset dir, a missing folder, or a pillar that is not a plain name", async () => {
+    expect(await pickSong("MOTIVATION", 1, root)).toBe(join(root, "motivation", "b.m4a"));
+    for (const [pillar, dir] of [["crypto", root], ["motivation", undefined], ["motivation", " "], ["../outside", root], [undefined, root]] as const) {
+      expect(await pickSong(pillar, 0, dir)).toBeUndefined();
+    }
   });
 });
 
 describe("timeline.cast", () => {
   const base = { width: 1920, height: 1080, fps: 30, audio: null, beats: [{ type: "title", text: "x", startSec: 0, durSec: 1 }] };
-  it("is optional, and kept when valid", () => {
+  it("is optional, and kept when valid; music is a song file path or absent", () => {
     expect(validateTimeline(base).cast).toBeUndefined();
-    expect(validateTimeline({ ...base, cast: { seed: 7, music: true } }).cast).toEqual({ seed: 7, music: true });
+    expect(validateTimeline({ ...base, cast: { seed: 7 } }).cast).toEqual({ seed: 7 });
+    expect(validateTimeline({ ...base, cast: { seed: 7, music: "songs/a.m4a" } }).cast).toEqual({ seed: 7, music: "songs/a.m4a" });
   });
-  it("refuses a bad seed or music flag", () => {
-    for (const cast of [null, 3, { seed: "7", music: true }, { seed: -1, music: true }, { seed: 1.5, music: true }, { seed: 7 }, { seed: 7, music: "yes" }]) {
+  it("refuses a bad seed or music value", () => {
+    for (const cast of [null, 3, { seed: "7" }, { seed: -1 }, { seed: 1.5 }, { seed: 7, music: true }, { seed: 7, music: "" }, { seed: 7, music: 5 }]) {
       expect(() => validateTimeline({ ...base, cast })).toThrow(/cast/);
+    }
+  });
+  it("a song is found next to the timeline, and a missing one fails at load, before any frame is rendered", async () => {
+    const d = mkdtempSync(join(tmpdir(), "yt-song-load-"));
+    try {
+      writeFileSync(join(d, "song.m4a"), "");
+      writeFileSync(join(d, "ok.json"), JSON.stringify({ ...base, cast: { seed: 1, music: "song.m4a" } }));
+      writeFileSync(join(d, "gone.json"), JSON.stringify({ ...base, cast: { seed: 1, music: "nope.m4a" } }));
+      expect((await loadTimeline(join(d, "ok.json"))).songPath).toBe(join(d, "song.m4a"));
+      await expect(loadTimeline(join(d, "gone.json"))).rejects.toThrow(/no song at/);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
     }
   });
 });
@@ -358,91 +392,51 @@ describe("where the cast stands (placeFor)", () => {
   });
 });
 
-describe("the music bed (bedPlan)", () => {
-  const bed = Cast.bedPlan(BEATS, 5, []);
-  const segs = bed.segments as { kind: string; a: number; b: number }[];
-  const notesIn = (a: number, b: number, kind?: string) =>
-    bed.notes.filter((n: { at?: number; from?: number; kind: string }) => (n.at ?? n.from)! >= a - 1e-9 && (n.at ?? n.from)! < b - 1e-9 && (!kind || n.kind === kind));
-
-  it("follows the film: intro, a segment per section, conclusion, quote, end card", () => {
-    expect(segs.map((s) => s.kind)).toEqual(["intro", "section", "section", "conclusion", "hook", "cta"]);
-  });
-  it("restarts its bar on every section: a kick, a whoosh and a bell land exactly on each section's first frame", () => {
-    const starts = BEATS.filter((b) => b.type === "section_title").map((b) => b.startSec);
-    expect(starts).toHaveLength(2);
-    for (const a of starts) {
-      for (const kind of ["kick", "whoosh", "bell"]) expect(notesIn(a, a + 1e-6, kind).length).toBe(1);
-    }
-  });
-  it("drops the drums and the plucks under the quote, and plays nothing past the end", () => {
-    const hook = segs.find((s) => s.kind === "hook")!;
-    for (const kind of ["kick", "hat", "pluck"]) expect(notesIn(hook.a, hook.b, kind)).toHaveLength(0);
-    for (const n of bed.notes) {
-      expect((n.at ?? n.from) < TOTAL).toBe(true);
-      if (n.to !== undefined) expect(n.to).toBeLessThanOrEqual(TOTAL + 1e-9);
-    }
-  });
-  it("resolves on the home chord held to the end", () => {
-    const cta = segs.find((s) => s.kind === "cta")!;
-    const finals = bed.notes.filter((n: { kind: string; to?: number; from?: number; type?: string }) => n.kind === "tone" && n.type === "sawtooth" && n.to === TOTAL && n.from! >= cta.a);
-    const rootHz = 440 * Math.pow(2, (bed.key + 12 - 69) / 12);
-    expect(finals.map((n: { f: number }) => n.f).sort((a: number, b: number) => a - b)[0]).toBeCloseTo(rootHz, 1);
-    expect(finals).toHaveLength(3);
-  });
-  it("is the same for the same seed, and the seed picks the key, the chords and the tempo", () => {
-    expect(JSON.stringify(Cast.bedPlan(BEATS, 5, []))).toBe(JSON.stringify(bed));
-    const keys = new Set([0, 1, 2].map((s) => Cast.bedPlan(BEATS, s, []).key));
-    const tempi = new Set([0, 9, 18].map((s) => Cast.bedPlan(BEATS, s, []).bpm));
-    expect(keys.size).toBe(3);
-    expect(tempi.size).toBe(3);
-  });
-  it("puts a soft thud under each gear landing, inside the film only", () => {
-    const withEvents = Cast.bedPlan(BEATS, 5, [
-      { t: -0.1, kind: "land", actor: "body", level: 1 },
-      { t: 2, kind: "land", actor: "focus", level: 0.38 },
-      { t: TOTAL + 1, kind: "land", actor: "body", level: 1 },
-    ]);
-    const bloops = withEvents.notes.filter((n: { kind: string }) => n.kind === "bloop");
-    expect(bloops).toHaveLength(1);
-    expect(bloops[0]).toMatchObject({ at: 2, f: 380 });
+describe("no sound effects (owner, 2026-11-17: not the style for these videos)", () => {
+  it("the cast makes no sound: no synthesized bed, no one-shots, nothing in the page that plays or renders audio", () => {
+    for (const fn of ["bedPlan", "mixBed", "addTone", "addBuffer", "segments"]) expect(Cast[fn]).toBeUndefined();
+    const page = ["cast.js", "vignettes.js"].map((f) => readFileSync(join(CAST_DIR, f), "utf8")).join("\n") +
+      readFileSync(join(CAST_DIR, "..", "scenes.html"), "utf8");
+    expect(page).not.toMatch(/makeSynth|AudioContext|renderCastBed|castBedChunk|whoosh|bloop/);
   });
 });
 
-describe("the bed's sustained voices (addTone: pads and bass, synthesised in one pass)", () => {
-  const sr = 8000;
-  const tone = (o: Record<string, unknown> = {}) => {
-    const L = new Float32Array(sr * 3), R = new Float32Array(sr * 3);
-    Cast.addTone(L, R, sr, { from: 1, to: 2, f: 220, type: "sawtooth", detune: [-8, 8], attack: 0.2, release: 0.3, gain: 0.1, lowpass: 1000, ...o });
-    return { L, R };
-  };
-  const rms = (x: Float32Array, a: number, b: number) => Math.sqrt(x.slice(a * sr, b * sr).reduce((s, v) => s + v * v, 0) / ((b - a) * sr));
-  it("sounds only between from and to, rises over the attack and falls over the release", () => {
-    const { L, R } = tone();
-    expect(rms(L, 0, 0.999)).toBe(0);
-    expect(rms(L, 2.001, 3)).toBe(0);
-    expect(rms(L, 1.0, 1.1)).toBeLessThan(rms(L, 1.3, 1.6) * 0.75); // still rising
-    expect(rms(L, 1.9, 2.0)).toBeLessThan(rms(L, 1.3, 1.6) * 0.5); // falling
-    expect(Array.from(L)).toEqual(Array.from(R)); // centred, like synth.tone() at pan 0
-  });
-  it("the low-pass takes the edge off: the same saw is quieter with a lower cut-off", () => {
-    expect(rms(tone({ lowpass: 300 }).L, 1.3, 1.6)).toBeLessThan(rms(tone({ lowpass: 2500 }).L, 1.3, 1.6) * 0.8);
-  });
-  it("adds to what is already there and never writes outside the arrays", () => {
-    const L = new Float32Array(sr), R = new Float32Array(sr).fill(0.25);
-    Cast.addTone(L, R, sr, { from: 0.5, to: 5, f: 110, type: "triangle", detune: [0], attack: 0.01, release: 0.2, gain: 0.1, lowpass: 400 });
-    expect(L.length).toBe(sr);
-    expect(R[0]).toBe(0.25);
-    expect(R[sr - 1]).not.toBe(0.25);
-  });
-});
-
-describe("the bed mix (ffmpeg filter)", () => {
-  it("leaves the voice alone: no normalising mix, a limiter with auto-level off, the bed ducked by the voice", () => {
-    const f = bedMixFilter(-7.25);
+describe("the song mix (ffmpeg filter)", () => {
+  it("leaves the voice alone: no normalising mix, a limiter with auto-level off, the song ducked by the voice", () => {
+    const f = bedMixFilter(-7.25, 158);
     expect(f).toContain("volume=-7.25dB");
     expect(f).toContain("[bed][key]sidechaincompress");
     expect(f).toContain("amix=inputs=2:duration=first:normalize=0");
     expect(f).toContain("alimiter=limit=0.97:level=disabled");
+  });
+  it("fades the song in over 1.5 s and out over the video's last 4 s (half each on a very short clip)", () => {
+    expect(bedMixFilter(0, 158)).toContain("afade=t=in:st=0:d=1.500,afade=t=out:st=154.000:d=4.000");
+    expect(bedMixFilter(0, 4)).toContain("afade=t=in:st=0:d=1.500,afade=t=out:st=2.000:d=2.000");
+  });
+  const hasFfmpeg = (() => {
+    try {
+      execFileSync("ffmpeg", ["-version"], { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  it.skipIf(!hasFfmpeg)("is a filter ffmpeg runs: a 3 s voice over a longer song gives 3 s of sound", () => {
+    const d = mkdtempSync(join(tmpdir(), "yt-mix-"));
+    try {
+      const out = join(d, "mix.wav");
+      execFileSync("ffmpeg", [
+        "-v", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=64x36:d=3",
+        "-f", "lavfi", "-i", "sine=f=220:d=3",
+        "-f", "lavfi", "-i", "anoisesrc=d=10:a=0.3",
+        "-filter_complex", bedMixFilter(-6, 3), "-map", "[mix]", out,
+      ]);
+      const probe = execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", out]).toString();
+      expect(Number(probe)).toBeCloseTo(3, 1);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });
 
@@ -464,7 +458,7 @@ describe("renderAnimatedVideo with a cast", () => {
     let alignCalls = 0;
     const r = await renderAnimatedVideo({
       productionId: "p1", beats, slideDurations: [2, 3], speechDurations: [1.4, 3], audioPath: "/a.wav", outDir: dir,
-      cast: { seed: 3, music: true },
+      cast: { seed: 3, music: "/song.m4a" },
       aligner: async (a, b) => (alignCalls++, aligner(a, b as never)),
       render: async (o) => {
         const tl = JSON.parse(readFileSync(o.timelinePath, "utf8")) as Timeline;
@@ -475,6 +469,7 @@ describe("renderAnimatedVideo with a cast", () => {
       },
     });
     expect(seen.map((t) => !!t.cast)).toEqual([true, false]);
+    expect(seen[0].cast?.music).toBe("/song.m4a"); // the retry drops the song with the gears: the plain video, as before
     expect(seen[0].beats[0].words).toEqual(seen[1].beats[0].words);
     expect(alignCalls).toBe(1);
     expect(r).toMatchObject({ castUsed: false, castError: "cast exploded", cast: null, music: null });

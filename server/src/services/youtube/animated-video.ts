@@ -6,7 +6,7 @@
  * mp4. The caller (production.ts) decides what to do when this throws.
  */
 
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { renderAnimated, type CastOptions, type CastReport, type MusicReport, type Timeline } from "./animated/render.js";
@@ -57,9 +57,10 @@ export function buildAnimatedTimeline(
 }
 
 /**
- * The switch: YT_CAST_PILLARS lists the content pillars whose daily videos get the cast and its music bed
+ * The switch: YT_CAST_PILLARS lists the content pillars whose daily videos get the cast and a song under the voice
  * (comma-separated, e.g. "motivation" or "motivation,crypto,tx_blockchain"; "all" = every pillar). Unset or empty = off,
  * the default: the videos stay exactly as they were. The seed comes from the production id, so a re-render is identical.
+ * The song is added by pickSong().
  */
 export function castFor(pillar: string | undefined, productionId: string, raw: string | undefined = process.env.YT_CAST_PILLARS): CastOptions | undefined {
   const list = (raw ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -67,7 +68,22 @@ export function castFor(pillar: string | undefined, productionId: string, raw: s
   if (!list.includes("all") && !(pillar && list.includes(pillar.toLowerCase()))) return undefined;
   let h = 2166136261;
   for (const ch of productionId) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return { seed: (h >>> 0) % 2 ** 31, music: true };
+  return { seed: (h >>> 0) % 2 ** 31 };
+}
+
+const SONG_EXTS = new Set([".m4a", ".mp3", ".wav", ".ogg", ".opus", ".flac", ".aac"]);
+
+/**
+ * The song under a cast video: one file from YT_MUSIC_DIR/<pillar>/ (original instrumentals made once and kept on the
+ * server, not in this repo), picked by the cast's seed, so a re-render gets the same song. No folder, or no song in it:
+ * undefined, and the video has the voice only.
+ */
+export async function pickSong(pillar: string | undefined, seed: number, dir: string | undefined = process.env.YT_MUSIC_DIR): Promise<string | undefined> {
+  if (!dir?.trim() || !pillar || !/^[a-z0-9_-]+$/i.test(pillar)) return undefined;
+  const folder = path.resolve(dir, pillar.toLowerCase());
+  const names = await readdir(folder).catch(() => [] as string[]);
+  const songs = names.filter((n) => !n.startsWith(".") && SONG_EXTS.has(path.extname(n).toLowerCase())).sort();
+  return songs.length ? path.join(folder, songs[seed % songs.length]) : undefined;
 }
 
 export interface RenderAnimatedVideoOptions {
@@ -83,7 +99,7 @@ export interface RenderAnimatedVideoOptions {
   chromiumPath?: string;
   /** Replaces the ElevenLabs forced alignment (tests, offline runs). */
   aligner?: (audioPath: string, beats: AlignBeatInput[]) => Promise<AlignResult>;
-  /** The gears (and music bed). If that render fails, the video is rendered again without them (same timeline, no new alignment). */
+  /** The gears (and the song). If that render fails, the video is rendered again without them (same timeline, no new alignment). */
   cast?: CastOptions;
   /** Replaces the frame renderer (tests). */
   render?: typeof renderAnimated;

@@ -3,13 +3,12 @@
  * Three gears with faces, BODY (coral, 24 teeth), FOCUS (gold, 18) and DIRECTION (green, 14), drawn from the brand's
  * three-gears character sheet, meshed so they turn together. They never speak: they react to the narration (they drop in,
  * hop on a new section, take a surprise on a number, look at the line being read, settle calm on the closing thought) and
- * keep out of the text's way. Plus a synthesized music bed under Mark's voice: chords that restart on every section, a soft
- * pulse in the sections, a lift on the takeaways, pad only under the quote, a resolve on the end card.
+ * keep out of the text's way. They make no sound: the video's music is a song mixed in by render.ts (YT_MUSIC_DIR).
  *
  * Classic script, loaded after stage.js and character.js (both vendored beside this file).
  * Two layers:
- *   - plan (pure data, also runs in Node: server/src/__tests__/youtube-cast.test.ts): placeFor(), plan(), groupAt(), bedPlan().
- *   - page (DOM): mount() measures where each scene's text is, mounts the SVG, draw(t), renderBed(), bedChunk().
+ *   - plan (pure data, also runs in Node: server/src/__tests__/youtube-cast.test.ts): placeFor(), plan(), groupAt().
+ *   - page (DOM): mount() measures where each scene's text is, mounts the SVG, draw(t).
  * Contract, same as scenes.html: everything on screen is a pure function of t (no clock, no random, no state between frames).
  */
 (function (root) {
@@ -325,166 +324,6 @@
     return [body, focus, direction];
   }
 
-  // ------------------------------------------------------------------ the music bed (pure plan)
-  const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
-  const PROGS = [
-    [[0, 4, 7], [7, 11, 14], [9, 12, 16], [5, 9, 12]], // I V vi IV
-    [[9, 12, 16], [5, 9, 12], [0, 4, 7], [7, 11, 14]], // vi IV I V
-    [[0, 4, 7], [9, 12, 16], [5, 9, 12], [7, 11, 14]], // I vi IV V
-  ];
-  const KEYS = [50, 53, 48]; // D3, F3, C3
-  const BPMS = [84, 88, 92];
-
-  /** Segments of the film the music follows: each starts a new bar and the progression from its first chord. */
-  function segments(beats) {
-    const lastBeat = beats[beats.length - 1], total = lastBeat.startSec + lastBeat.durSec;
-    const out = [];
-    beats.forEach((b, i) => {
-      const kind = i === 0 ? "intro" : b.type === "section_title" ? "section" : b.type === "conclusion" ? "conclusion" : b.type === "hook" ? "hook" : b.type === "cta" ? "cta" : null;
-      if (!kind) return;
-      if (out.length && out[out.length - 1].kind === kind && kind !== "section") return; // a second conclusion beat continues the first
-      out.push({ kind, a: b.startSec });
-    });
-    out.forEach((s, i) => { s.b = i + 1 < out.length ? out[i + 1].a : total; });
-    return { segs: out.filter((s) => s.b - s.a > 0.05), total };
-  }
-
-  /**
-   * bedPlan(beats, seed, events) -> {bpm, key, total, notes}. notes: [{at, kind, ...}] for renderBed(); kind is a Stage synth voice
-   * (tone, bell, kick, tick, whoosh, bloop). events: the gears' land/snap events (sound one frame after the picture).
-   */
-  function bedPlan(beats, seed = 1, events = []) {
-    const key = KEYS[seed % 3], prog = PROGS[Math.floor(seed / 3) % 3], bpm = BPMS[Math.floor(seed / 9) % 3];
-    const beat = 60 / bpm, bar = 4 * beat;
-    const { segs, total } = segments(beats);
-    const notes = [];
-    const end = (t) => Math.min(t, total);
-    const LAYERS = {
-      intro: { lp: 800, bass: false, arp: 1, drums: false, bells: false },
-      section: { lp: 1000, bass: true, arp: 2, drums: true, bells: false },
-      conclusion: { lp: 1500, bass: true, arp: 2, drums: true, bells: true },
-      hook: { lp: 650, bass: false, arp: 0, drums: false, bells: false },
-      cta: { lp: 1100, bass: true, arp: 2, drums: true, bells: false },
-    };
-    for (const sg of segs) {
-      const L = LAYERS[sg.kind];
-      if (sg.kind !== "intro") {
-        notes.push({ kind: "whoosh", at: sg.a, rise: Math.min(0.7, sg.a), fall: 0.35, f0: 250, f1: 2600, gain: 0.08 });
-        notes.push({ kind: "bell", at: sg.a, f: f2(midiHz(key + 24)), decay: 1.6, gain: 0.07 });
-      }
-      for (let n = 0; sg.a + n * bar < sg.b - 0.05; n++) {
-        const t = sg.a + n * bar, tEnd = end(Math.min(t + bar, sg.b)), chord = prog[n % 4];
-        const last = sg.kind === "cta" && t + bar >= sg.b;
-        const tones = last ? [0, 4, 7] : chord; // the end card resolves on the home chord
-        for (const iv of tones) {
-          notes.push({ kind: "tone", from: t, to: last ? total : Math.min(tEnd + 0.25, total), f: f2(midiHz(key + 12 + iv)), type: "sawtooth", detune: [-8, 8], attack: n === 0 ? 0.4 : 0.25, release: last ? Math.min(2.5, total - t) : 0.5, gain: 0.016, lowpass: L.lp });
-        }
-        const rootHz = f2(midiHz(key - 12 + (tones[0] % 12)));
-        for (let q = 0; q < 4; q++) {
-          const tq = t + q * beat;
-          if (tq >= sg.b - 0.02) break;
-          if (L.bass && (q === 0 || q === 2) && !(last && q > 0)) notes.push({ kind: "tone", from: tq, to: end(tq + beat * 1.6), f: rootHz, type: "triangle", detune: [0], attack: 0.012, release: 0.2, gain: 0.085, lowpass: 420 });
-          if (L.drums && !last) {
-            if (q === 0 || q === 2) notes.push({ kind: "kick", at: tq });
-            notes.push({ kind: "hat", at: tq + beat / 2 });
-          }
-          if (L.arp) {
-            const steps = L.arp === 2 ? [0, 0.5] : [0];
-            steps.forEach((o, j) => {
-              const ta = tq + o * beat;
-              if (ta >= sg.b - 0.02 || (last && q > 0)) return;
-              const deg = tones[(q * steps.length + j) % 3] + 12 * ((q + j) % 2);
-              notes.push({ kind: "pluck", at: ta, f: f2(midiHz(key + 12 + deg)) });
-            });
-          }
-          if (L.bells && q === 0) notes.push({ kind: "bell", at: tq, f: f2(midiHz(key + 24 + tones[1])), decay: 1.2, gain: 0.035 });
-        }
-      }
-    }
-    const VOICE = { body: 280, focus: 380, direction: 500 };
-    for (const e of events) {
-      if (e.t < 0 || e.t >= total) continue;
-      if (e.kind === "land") notes.push({ kind: "bloop", at: e.t, f: VOICE[e.actor] ?? 400, gain: f2(0.07 * (e.level ?? 1)) });
-      else if (e.kind === "snap") notes.push({ kind: "snap", at: e.t });
-    }
-    notes.sort((p, q) => (p.at ?? p.from) - (q.at ?? q.from));
-    return { bpm, key, total, notes, segments: segs };
-  }
-
-  /**
-   * A sustained voice (pad, bass) added straight into L/R: a naive saw or triangle per detune, a 2-pole low-pass (RBJ, Q 0.7)
-   * and the same linear attack / hold / release as Stage's synth.tone(), at its pan-0 level (0.707 per channel).
-   * Pure: arrays in, arrays changed; it runs in Node too.
-   */
-  function addTone(L, R, sr, n) {
-    const i0 = Math.max(0, Math.round(n.from * sr)), i1 = Math.min(L.length, Math.round(n.to * sr));
-    if (i1 <= i0) return;
-    const a = Math.max(n.attack, 1 / sr), relStart = Math.max(n.from + a, n.to - n.release), lp = n.lowpass ?? 0;
-    let b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
-    if (lp > 0) {
-      const w = (2 * Math.PI * Math.min(lp, sr * 0.45)) / sr, al = Math.sin(w) / (2 * 0.7), c = Math.cos(w), a0 = 1 + al;
-      b0 = (1 - c) / 2 / a0; b1 = (1 - c) / a0; b2 = b0; a1 = (-2 * c) / a0; a2 = (1 - al) / a0;
-    }
-    const det = n.detune ?? [0], k = (n.gain * Math.SQRT1_2) / det.length;
-    const inc = det.map((c) => (n.f * Math.pow(2, c / 1200)) / sr), ph = det.map(() => 0);
-    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-    for (let i = i0; i < i1; i++) {
-      const t = i / sr;
-      let x = 0;
-      for (let j = 0; j < inc.length; j++) {
-        const p = ph[j];
-        x += n.type === "triangle" ? 1 - 4 * Math.abs(p - 0.5) : n.type === "sine" ? Math.sin(2 * Math.PI * p) : 2 * p - 1;
-        ph[j] = p + inc[j] >= 1 ? p + inc[j] - 1 : p + inc[j];
-      }
-      const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-      x2 = x1; x1 = x; y2 = y1; y1 = y;
-      const env = t < n.from + a ? (t - n.from) / a : t < relStart ? 1 : Math.max(0, (n.to - t) / Math.max(n.to - relStart, 1 / sr));
-      const v = y * env * k;
-      L[i] += v;
-      R[i] += v;
-    }
-  }
-
-  /** A stereo AudioBuffer added into L/R so that its sample `peakIndex` lands at `at` seconds. */
-  function addBuffer(L, R, sr, buf, peakIndex, at, gain) {
-    const bl = buf.getChannelData(0), br = buf.numberOfChannels > 1 ? buf.getChannelData(1) : bl;
-    const start = Math.round(at * sr) - peakIndex;
-    const j0 = Math.max(0, -start), j1 = Math.min(bl.length, L.length - start);
-    for (let j = j0; j < j1; j++) {
-      L[start + j] += bl[j] * gain;
-      R[start + j] += br[j] * gain;
-    }
-  }
-
-  /**
-   * The bed as two Float32Arrays. Sustained voices are synthesised here (addTone); the one-shots are the kit's own sound
-   * designs (Stage.makeSynth: kick, tick, bell, whoosh, bloop), drawn once each into a buffer and added at their crest.
-   * No Web Audio graph is rendered: 158 s of bed as ~4,000 scheduled nodes took 92 s in headless Chromium (measured
-   * 2026-11-16); this way it is one pass over the samples. `synth` needs a context only as a buffer factory.
-   */
-  function mixBed(bp, synth, frames) {
-    const sr = synth.sr, L = new Float32Array(frames), R = new Float32Array(frames);
-    const cache = new Map();
-    // each voice's crest is at the end of its attack in stage.js: bell and bloop 2 ms, kick 1.5 ms, tick 0.4 ms, whoosh = rise
-    const shot = (key, make, peakIndex) => {
-      if (!cache.has(key)) cache.set(key, { buf: make().src.buffer, peakIndex });
-      return cache.get(key);
-    };
-    for (const n of bp.notes) {
-      let s = null, gain = 1;
-      if (n.kind === "tone") { addTone(L, R, sr, n); continue; }
-      if (n.kind === "pluck") { s = shot(`p${n.f}`, () => synth.bell({ at: 0, f: n.f, partials: [1, 2, 3], amps: [1, 0.3, 0.1], decay: 0.45, gain: 1, maxHz: 6000 }), Math.round(0.002 * sr)); gain = 0.035; }
-      else if (n.kind === "bell") { s = shot(`b${n.f}/${n.decay}`, () => synth.bell({ at: 0, f: n.f, decay: n.decay, gain: 1 }), Math.round(0.002 * sr)); gain = n.gain; }
-      else if (n.kind === "kick") { s = shot("kick", () => synth.kick({ at: 0, f0: 120, f1: 48, decay: 0.2, gain: 1, click: 0.08 }), Math.round(0.0015 * sr)); gain = 0.3; }
-      else if (n.kind === "hat") { s = shot("hat", () => synth.tick({ at: 0, f: 6500, decay: 0.018, gain: 1, noise: 0.85 }), Math.round(0.0004 * sr)); gain = 0.05; }
-      else if (n.kind === "snap") { s = shot("snap", () => synth.tick({ at: 0, f: 1800, decay: 0.02, gain: 1, noise: 0.2 }), Math.round(0.0004 * sr)); gain = 0.06; }
-      else if (n.kind === "whoosh") { const rise = Math.max(n.rise, 0.05); s = shot(`w${rise}`, () => synth.whoosh({ at: rise, rise, fall: n.fall, f0: n.f0, f1: n.f1, gain: 1 }), Math.round(rise * sr)); gain = n.gain; }
-      else if (n.kind === "bloop") { s = shot(`o${n.f}`, () => synth.bloop({ at: 0, f: n.f, bend: 1.3, decay: 0.1, gain: 1 }), Math.round(0.002 * sr)); gain = n.gain; }
-      if (s) addBuffer(L, R, sr, s.buf, s.peakIndex, n.at, gain);
-    }
-    return { L, R };
-  }
-
   // ------------------------------------------------------------------ 3D bodies (three.js; the faces stay SVG on top)
   // Each gear's body is its outline extruded with a bevel, a raised hub and eight rivets, in a cartoon (toon) material: three
   // flat bands of light, the lit face exactly the brand colour (key 2.8 + ambient 0.34 = pi, the Lambert normaliser). It is
@@ -594,7 +433,7 @@
 
   /**
    * mount({stage, before, beats, scenes, seek, seed}): measure, plan, build the SVG. scenes: [{kind, start, end, root, beats: [index]}].
-   * Returns {draw(t), report, renderBed(sampleRate), bedChunk(start, count)}.
+   * Returns {draw(t), report}.
    */
   function mount(o) {
     const warnings = [];
@@ -649,11 +488,6 @@
     const views = cast.map((a) => a.mount(group));
     const FACE_MATRIX = faceMatrix();
 
-    const events = [];
-    cast.forEach((a, i) => a.events.forEach((e) => events.push({ t: e.t + 1 / 30, kind: e.kind, level: e.level, actor: GEARS[i].id })));
-    const bp = bedPlan(o.beats, o.seed, events);
-    let bed = null;
-
     return {
       draw(t) {
         const g = groupAt(t, p.keys);
@@ -678,32 +512,10 @@
         actors: cast.length,
         vignettes: p.vignettes.map((v) => ({ kind: v.kind, beat: v.beat, at: v.a, payoff: v.k })),
         acts: Object.values(p.specs).reduce((n, s) => n + s.moves.length, 0),
-        bed: { bpm: bp.bpm, key: bp.key, notes: bp.notes.length, segments: bp.segments.length },
         warnings,
-      },
-      async renderBed(sampleRate = 48000) {
-        // the context is only a buffer factory for the kit's one-shots; it is never rendered
-        const ctx = new OfflineAudioContext(2, 128, sampleRate);
-        const { L, R } = mixBed(bp, S.makeSynth(ctx, ctx.createGain(), o.seed, "mix"), Math.ceil(bp.total * sampleRate));
-        let peak = 0;
-        for (let i = 0; i < L.length; i++) peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
-        bed = { L, R, gain: peak > 0 ? 0.5 / peak : 0 }; // peak at -6 dBFS; render.ts sets the level against the voice
-        return { frames: L.length, sampleRate, peak };
-      },
-      bedChunk(start, count) {
-        if (!bed) throw new Error("renderBed() first");
-        const end = Math.min(start + count, bed.L.length), out = new Int16Array(Math.max(0, end - start) * 2);
-        for (let i = start, j = 0; i < end; i++, j += 2) {
-          out[j] = Math.round(clamp(bed.L[i] * bed.gain, -1, 1) * 32767);
-          out[j + 1] = Math.round(clamp(bed.R[i] * bed.gain, -1, 1) * 32767);
-        }
-        const u8 = new Uint8Array(out.buffer);
-        let s = "";
-        for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
-        return btoa(s);
       },
     };
   }
 
-  root.Cast = { COL, GEARS, CLUSTER, headFor, SPOTS, gearPath, gearRig, spotBox, placeFor, targetOf, groupAt, plan, actors, segments, bedPlan, addTone, addBuffer, mixBed, gearOutline, faceMatrix, mount };
+  root.Cast = { COL, GEARS, CLUSTER, headFor, SPOTS, gearPath, gearRig, spotBox, placeFor, targetOf, groupAt, plan, actors, gearOutline, faceMatrix, mount };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFileSync } from "node:fs";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -171,22 +171,40 @@ describe("runProductionPipeline animated wiring", () => {
     expect(assetsOf(sets).cast).toBeUndefined();
   });
 
-  it("YT_CAST_PILLARS names the video's pillar: the render gets the cast and assets.cast records what it did", async () => {
+  it("YT_CAST_PILLARS names the video's pillar: the render gets the cast and a song from YT_MUSIC_DIR/<pillar>/, and assets.cast records what it did", async () => {
     process.env.YT_CAST_PILLARS = "other, p";
+    const musicDir = join(dir, "music");
+    mkdirSync(join(musicDir, "p"), { recursive: true });
+    writeFileSync(join(musicDir, "p", "only-song.m4a"), "");
+    process.env.YT_MUSIC_DIR = musicDir;
     try {
       const base = await m.renderAnimatedVideo.getMockImplementation()!({ productionId: "prod-1", outDir: join(dir, "videos") });
-      const music = { voiceLufs: -16.5, bedLufs: -20, bedGainDb: -14.5, mixLufs: -16.3 };
+      const music = { track: "only-song.m4a", voiceLufs: -16.5, bedLufs: -14, bedGainDb: -14.5, mixLufs: -16.3 };
       m.renderAnimatedVideo.mockResolvedValue({
         ...base, castUsed: true, music,
-        cast: { places: [{ kind: "title", start: 0, anchor: "rc", scale: 1.25 }, { kind: "list", start: 5, hidden: true }], actors: 3, acts: 9, bed: { bpm: 88, key: 50, notes: 400, segments: 4 }, warnings: [] },
+        cast: { places: [{ kind: "title", start: 0, anchor: "rc", scale: 1.25 }, { kind: "list", start: 5, hidden: true }], actors: 3, acts: 9, warnings: [] },
       });
       const { db, sets } = makeDb();
       const result = await production.runProductionPipeline(db as never, "topic", "animated");
       const cast = m.renderAnimatedVideo.mock.calls[0][0].cast;
-      expect(cast).toMatchObject({ music: true });
+      expect(cast.music).toBe(join(musicDir, "p", "only-song.m4a"));
       expect(Number.isInteger(cast.seed)).toBe(true);
       expect(assetsOf(sets)).toMatchObject({ visualMode: "animated", cast: { pillar: "p", used: true, places: 2, shown: 1, music } });
       expect(result.status).toBe("ready");
+    } finally {
+      delete process.env.YT_CAST_PILLARS;
+      delete process.env.YT_MUSIC_DIR;
+    }
+  });
+
+  it("YT_CAST_PILLARS on but no song for the pillar (YT_MUSIC_DIR unset): the cast without music, voice only", async () => {
+    process.env.YT_CAST_PILLARS = "p";
+    try {
+      const { db } = makeDb();
+      await production.runProductionPipeline(db as never, "topic", "animated");
+      const cast = m.renderAnimatedVideo.mock.calls[0][0].cast;
+      expect(cast).toBeDefined();
+      expect(cast.music).toBeUndefined();
     } finally {
       delete process.env.YT_CAST_PILLARS;
     }

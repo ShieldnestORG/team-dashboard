@@ -186,7 +186,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   <div id="scenes"></div>
   <div id="cap"></div>
 </div>
-<!-- The cast (gears with faces + music bed): only used when the timeline has a `cast` field (YT_CAST_PILLARS). -->
+<!-- The cast (gears with faces and explainer scenes): only used when the timeline has a `cast` field (YT_CAST_PILLARS). -->
 <script src="cast/three.min.js"></script>
 <script src="cast/stage.js"></script>
 <script src="cast/character.js"></script>
@@ -1016,13 +1016,6 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     window.seek(0);
     return window.__report();
   };
-
-  // The cast's music bed (only with a cast): render it once, then read it back in chunks (base64 16-bit stereo PCM).
-  window.renderCastBed = (sampleRate) => {
-    if (!castView) throw new Error("this timeline has no cast");
-    return castView.renderBed(sampleRate);
-  };
-  window.castBedChunk = (start, count) => castView.bedChunk(start, count);
 
   // Test hook: which beat is on screen at t, and which of its words is being spoken, computed
   // from the timeline data alone (never the DOM). word is -1 when t is between words.

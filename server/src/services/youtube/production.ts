@@ -18,7 +18,7 @@ import { optimizeSEO, chaptersFromBeats, withChapters, type SeoData } from "./se
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, verifySlideSync, type YtAssembleResult, type SyncReport } from "./yt-video-assembler.js";
-import { castFor, renderAnimatedVideo } from "./animated-video.js";
+import { castFor, pickSong, renderAnimatedVideo } from "./animated-video.js";
 import { buildBeats, buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Beat, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
@@ -176,10 +176,16 @@ export async function runProductionPipeline(
     // reason the day still gets the normal slide video: fall through to the presentation path below.
     let video: YtAssembleResult | undefined;
     let visualModeUsed: string = mode; // recorded as assets.visualMode: animated | presentation | presentation-fallback | <other mode>
-    // assets.cast: the gears + music bed (YT_CAST_PILLARS, off by default); null when the switch did not ask for them
+    // assets.cast: the gears + a song under the voice (YT_CAST_PILLARS, off by default; songs from YT_MUSIC_DIR/<pillar>/);
+    // null when the switch did not ask for them
     let castRecord: { pillar: string; used: boolean; error?: string; places?: number; shown?: number; music?: unknown } | null = null;
     if (mode === "animated" && beats && perSlideDurations && chunkContentDurations) {
       const cast = castFor(strategy.pillar, productionId);
+      if (cast) {
+        const song = await pickSong(strategy.pillar, cast.seed);
+        if (song) cast.music = song;
+        else logger.warn({ productionId, pillar: strategy.pillar }, "YT Pipeline: cast on but no song in YT_MUSIC_DIR/<pillar>/ — voice only");
+      }
       try {
         logger.info({ productionId, beats: beats.length, cast: !!cast }, "YT Pipeline: rendering animated video...");
         const animated = await renderAnimatedVideo({

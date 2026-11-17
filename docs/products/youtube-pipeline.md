@@ -87,24 +87,36 @@ This section said "not yet run on VPS4" and "VPS4 speed is unmeasured" until tha
 
 ## Cast and music bed (`YT_CAST_PILLARS`, off by default)
 
+*Since 2026-11-17 the music is an original song (`YT_MUSIC_DIR`), and there are no sound effects; the anchor name of this
+section is kept so links to it still work.*
+
 **In plain words:** in an animated video, three cartoon 3D gears with faces (BODY coral, FOCUS gold, DIRECTION green, the
 channel's dimension colours) drop in at the start, hop when a new section starts, do a double take when a number is
 read, look at the line being spoken, settle calm under the closing thought and cheer on the end card. They never speak
-and they never cover a word. Under Mark's voice runs a synthesized music bed: chords that restart on every section with a
-whoosh and a bell, a soft pulse in the sections, a lift on the takeaways, only a pad under the quote, a resolve on the end
-card. Built 2026-11-16 from the owner's ask to bring the new character animations and music into the daily videos.
+and they never cover a word. Under Mark's voice runs one original instrumental song, faded in and out and ducked under
+his voice; nothing else makes a sound. Built 2026-11-16 from the owner's ask to bring the new character animations and
+music into the daily videos; on 2026-11-17 the owner said "make songs on suno and yea try on minset videos and on
+explainers, i dont think i like sound effects styling on videos", so the synthesized bed and every sound effect were
+removed and Suno songs took their place.
 
 - **Switch:** `YT_CAST_PILLARS`, a comma list of content pillars as stored in `yt_content_strategies.pillar` (`motivation`,
   `crypto`, `tx_blockchain`) or `all`. **Unset or empty (the default) = off: the videos are exactly as before.** It only
   acts in animated mode. `castFor()` (`animated-video.ts`) reads it and seeds the cast from the production id, so a
-  re-render of the same production is identical. Not set on VPS4 (owner's decision pending).
+  re-render of the same production is identical.
+- **Songs:** `YT_MUSIC_DIR` points at a folder on the server with one subfolder per pillar (`motivation/`, `crypto/`,
+  `tx_blockchain/`) of original instrumentals (`.m4a`, `.mp3`, `.wav`, `.ogg`, `.opus`, `.flac`, `.aac`); they live on the
+  server's data volume, not in this public repo. `pickSong()` (`animated-video.ts`) picks one per video from the cast's
+  seed (name order, seed mod count), so a re-render gets the same song. No folder or no song for the pillar: the cast
+  runs with the voice only and the log says so. A missing song file fails at timeline load, before any frame. The first
+  four (2026-11-17, mindset, 3:30 each, Suno Pro, no voice in any: Whisper large-v3 heard only music) are recorded in
+  [project name withheld]'s song notes with their Suno ids.
 - **Code:** `animated/cast/cast.js` (the cast: plan, placement, music bed, 3D bodies, page layer) plus files vendored
-  unchanged: `cast/stage.js` and `cast/character.js` from an internal animation kit (`stage.js` has one added export,
-  `makeSynth`, `wavBase64`; `character.js` is the character rig: squash and stretch, faces, hops, takes, meshed gear spin,
+  unchanged: `cast/stage.js` and `cast/character.js` from an internal animation kit (`stage.js` changed in its first
+  comment line only; `character.js` is the character rig: squash and stretch, faces, hops, takes, meshed gear spin,
   every pose a pure function of t) and `cast/three.min.js` (three.js 0.186.1, MIT, bundled as one classic script because
   `scenes.html` is opened from file://, where ES module imports are refused; how it was made is in its header).
   `scenes.html` loads them and builds the cast only when the timeline has a `cast` field; `render.ts` validates
-  `cast: {seed, music}`. The server build copies `animated/cast/*.js` into `dist` beside `scenes.html`.
+  `cast: {seed, music?}` (`music` = the song's path). The server build copies `animated/cast/*.js` into `dist` beside `scenes.html`.
   *`.gitignore` ignores `server/src/**/*.js` (build output), so it carries an exception for `animated/cast/*.js`; without
   it the scripts would never have been committed and every cast render would have fallen back.*
 - **3D:** each gear's body is its character-sheet outline extruded with a bevel, a raised hub and eight rivets, in a
@@ -136,17 +148,19 @@ card. Built 2026-11-16 from the owner's ask to bring the new character animation
   clear of any text. Between two list scenes it keeps its spot unless another is clearly bigger. Nowhere fits: the gears
   step out below the frame and drop back in on the next scene. The gears move between spots with a jump while the
   scenes cross-fade (from 0.25 s before a scene to 0.35 s after its start).
-- **Sound:** the page draws the bed's notes into one sample buffer (pads and bass synthesized directly; kick, pluck,
-  bell, whoosh and the gears' landing thuds are the kit's own one-shot sounds), `render.ts` reads it back in 10 s chunks,
-  measures the voice and the bed (EBU R128), sets the bed `BED_UNDER_VOICE_LU` = 12 LU under the voice and lets the voice
-  duck it (`sidechaincompress`, threshold 0.05, ratio 3), then sums with no normalisation and a peak limiter with
-  auto-level off, so the voice keeps its own loudness. Measured on `787084c8` (2026-11-16): the bed sits a median 20.7 LU
-  under the voice while Mark speaks and 14.4 LU under in the pauses.
-  *A first setting (18 LU, ratio 6) measured 35.0 / 21.7 LU: inaudible. A first bed built as a Web Audio graph (about
-  4,000 scheduled nodes) took 92 s to render in headless Chromium; drawn straight into a buffer it takes 1.4 s.*
+- **Sound:** the page makes no sound. `render.ts` adds the song as a third ffmpeg input (`-stream_loop -1`: a song shorter
+  than the video starts again), measures the voice and the song (EBU R128), sets the song `BED_UNDER_VOICE_LU` = 12 LU
+  under the voice, fades it in over 1.5 s and out over the last 4 s, lets the voice duck it (`sidechaincompress`,
+  threshold 0.05, ratio 3), then sums with no normalisation and a peak limiter with auto-level off, so the voice keeps its
+  own loudness. Measured on `787084c8` with `mindset-2b` (2026-11-17): the song sits a median 19.2 LU under the voice while
+  Mark speaks and 13.2 LU under in the pauses; voice -16.5 LUFS, finished mix -16.6 LUFS.
+  *Until 2026-11-17 this was a synthesized bed drawn by the page (chords restarting on each section with a whoosh and a
+  bell, the gears' landing thuds): measured 20.7 / 14.4 LU under; removed on the owner's word. Earlier traps from it: a
+  first setting (18 LU, ratio 6) measured 35.0 / 21.7 LU, inaudible; a Web Audio graph of about 4,000 nodes took 92 s to
+  render in headless Chromium.*
 - **If it breaks:** a cast render that throws is rendered again without the cast from the same timeline and words (no
   second forced alignment, no extra voice credits), so the day still gets its animated video; `yt_productions.assets.cast`
-  records `{pillar, used, error?, places, shown, music}`. The sync gate is the same animated gate as before.
+  records `{pillar, used, error?, places, shown, music}` (`music` = `{track, voiceLufs, bedLufs, bedGainDb, mixLufs}`). The sync gate is the same animated gate as before.
 - **Proof on a real episode** (2026-11-16, `787084c8` "Why Systems Beat Motivation", made by the VPS4 nightly run that
   morning; its timeline and voice WAV copied off VPS4 read-only, rendered on the owner's Mac with this branch): 4,762 frames,
   158.72 s; the gears shown in all 20 scenes (title right-centre 1.2x, list scenes bottom-left 1.25x, section cards
@@ -157,22 +171,28 @@ card. Built 2026-11-16 from the owner's ask to bring the new character animation
   differ by three commas), so the bed does not cost the voice its clarity on that measure. Nobody has listened by ear.
   Re-rendered 2026-11-17 with the explainer scenes: same speed (window: plain 30.28 frames/s, cast with scenes 18.43; full
   episode 17.82), same loudness, Whisper still the same 5 word errors; the sync gate passes with 35 of 36 planned changes
-  matched (one fewer than without the scenes; the bar is 75%).
+  matched (one fewer than without the scenes; the bar is 75%). Re-rendered 2026-11-17 with the Suno song and no sound
+  effects (the production pick for this id: `mindset-2b`): 4,762 frames at 18.68 frames/s, gears in all 20 scenes, sync
+  gate 35 of 36 matched; Whisper `base.en` 7 word errors in 474 on the new mix and 9 on the original video, both
+  transcribed the same way that day (the earlier "5 on both" was a different run; the song does not cost clarity on
+  this measure).
 - **Render time:** measured on the Mac back to back in one queue slot, 900-frame window 20-50 s: plain animated 29.87
   frames/s, with the 3D cast and music 18.25 frames/s (the full episode: 17.91). Headless Chromium drew the 3D in software
   there too (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device ...))`), as VPS4 does. Estimate for VPS4 (not measured
   there): the cast adds 21.3 ms a frame on the Mac; VPS4 runs the plain look at about 96 ms a frame (10.4 frames/s,
   2026-10-09), 2.9x the Mac; scaling the extra by 2.9x (like the plain work) to 4x (core count, worst case) gives 157-181
-  ms a frame, so about 12.5-14.5 min of render for a 158 s video instead of about 7.6 min, plus about 15 s for the bed and
-  its three loudness passes. The nightly run (starts about 06:03 UTC, 565-792 s end to end on the 22 nights Oct 26 to Nov 16) would
+  ms a frame, so about 12.5-14.5 min of render for a 158 s video instead of about 7.6 min, plus a few seconds for the
+  song's loudness passes. The nightly run (starts about 06:03 UTC, 565-792 s end to end on the 22 nights Oct 26 to Nov 16) would
   end about 06:20-06:25 UTC; the publish slot is 15:00 UTC. A timed run on VPS4 itself needs the owner's yes.
 - **Tests:** `youtube-cast.test.ts` runs the cast's planning layer in Node (stage.js, character.js and cast.js in one vm context): the
   switch, the timeline field, frame 0 already moving, no two acts of one gear within 0.9 s, the gears' mesh, a scene with
-  no room, placement never touching text over 400 random layouts, the bed restarting its bar on each section, nothing
-  played past the end, the home chord at the end, the pad and bass synthesis, the mix filter, the 3D outline and face
-  matrix, the shipping (build copy, script order, the vendored three.js), and the fallback render. Six key guards were
+  no room, placement never touching text over 400 random layouts, the song pick (`pickSong`: by seed, any case, no
+  traversal), the song path in the timeline (a missing file fails at load), no sound effects (the cast and the page hold
+  no synth, no audio context, no bed), the mix filter (fades; a real ffmpeg run where ffmpeg exists), the 3D outline and
+  face matrix, the shipping (build copy, script order, the vendored three.js), and the fallback render. Six key guards were
   broken one at a time in a scratch copy and each turned its test red.
-  `youtube-production-animated.test.ts` covers the switch off, on, and on-but-failed. The page layer (measuring, the SVG,
+  `youtube-production-animated.test.ts` covers the switch off, on (with a song from `YT_MUSIC_DIR`), on with no song, and
+  on-but-failed. The page layer (measuring, the SVG,
   the bed buffer) is covered by the real renders above, not by a unit test.
 - **Not decided / not done:** the switch on VPS4 (which pillars, if any); a library of original instrumental beds (for
   example Suno songs made once and reused, which would replace the synthesized bed) needs the owner's yes because song
@@ -405,6 +425,10 @@ Live videos also ran 0.34–1.9 s past their audio (frozen end card) before the 
   the new character animations and original music into the daily videos ("upgrade some of our videos and explainers with
   these animations and musics"), then, about the new characters, "SHOULD BE 3D CHARACTER AND ANIMATIONS". See "Cast and
   music bed" above. Not deployed; the switch is the owner's call.
+- **2026-11-17** — Songs instead of the synthesized bed, and no sound effects (owner: "make songs on suno and yea try on
+  minset videos and on explainers, i dont think i like sound effects styling on videos"): `YT_MUSIC_DIR` + `pickSong()`,
+  four mindset instrumentals; the owner's "yea try on minset videos" answered which videos get it first
+  (`YT_CAST_PILLARS=motivation`).
 
 ## Owner decisions, 2026-10-08
 
