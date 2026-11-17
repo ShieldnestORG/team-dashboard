@@ -8,15 +8,19 @@
  *     page is paused and set to that time, so frame i is the page at exactly that moment),
  *  4. pipe the frames into ffmpeg (libx264, yuv420p), then mux the timeline's audio if there is one.
  *
- * Nothing here is wired into the production pipeline yet. The page and its fonts live beside this file
- * (scenes.html, assets/fonts); copy them next to the compiled file when this ships.
+ * The page, its fonts and the cast scripts live beside this file (scenes.html, assets/fonts, cast/); the server build
+ * copies them next to the compiled file.
+ *
+ * Cast (timeline.cast, off unless the production asks for it): three gears with faces react to the narration on the
+ * same clock, and with `music` a song (an original instrumental from YT_MUSIC_DIR) is mixed under the voice: set 12 LU
+ * under it, ducked by it (sidechain), faded in and out. Without a cast nothing below changes.
  *
  * Chromium: uses Playwright's own build by default. Set YT_ANIMATED_CHROMIUM (or pass chromiumPath) to use
  * a different executable, e.g. when the cached browser build does not match the installed Playwright.
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Writable } from "node:stream";
@@ -50,6 +54,33 @@ export interface Timeline {
   /** Optional SRT file, relative to the timeline file (or absolute). Without it cues are derived from beat text. */
   captions?: string;
   beats: Beat[];
+  /** The gears and (with music) a song under the voice; absent = the classic look, unchanged. */
+  cast?: CastOptions;
+}
+
+export interface CastOptions {
+  /** Varies the gears' moves; the same seed always gives the same video. */
+  seed: number;
+  /** A song file (relative to the timeline file, or absolute) to mix under the voice; absent = voice only. */
+  music?: string;
+}
+
+export interface CastReport {
+  places: Array<{ kind: string; start: number; anchor?: string; scale?: number; hidden?: boolean }>;
+  actors: number;
+  acts: number;
+  warnings: string[];
+}
+
+export interface MusicReport {
+  /** The song's file name. */
+  track: string;
+  voiceLufs: number;
+  bedLufs: number;
+  /** dB applied to the bed before ducking: puts it BED_UNDER_VOICE_LU under the voice. */
+  bedGainDb: number;
+  /** Loudness of the finished soundtrack. */
+  mixLufs: number;
 }
 
 export interface Cue {
@@ -62,6 +93,8 @@ export interface LoadedTimeline {
   timeline: Timeline;
   cues: Cue[];
   audioPath: string | null;
+  /** The song under the voice (timeline.cast.music, resolved), or null. */
+  songPath: string | null;
   /** End of the last beat, in seconds. */
   totalSec: number;
 }
@@ -93,6 +126,10 @@ export interface RenderResult {
   animations: number;
   /** Layout warnings from the page; the video was still rendered. */
   warnings: string[];
+  /** What the cast did (null without a cast). */
+  cast: CastReport | null;
+  /** The song's levels (null without music). */
+  music: MusicReport | null;
 }
 
 interface PageReport {
@@ -104,6 +141,7 @@ interface PageReport {
   cues: number;
   /** Things that did not fit (text taller than its room, caption cues that would be cut off). */
   warnings: string[];
+  cast: CastReport | null;
   fonts: Array<{ family: string; status: string }>;
 }
 
@@ -202,6 +240,14 @@ export function validateTimeline(raw: unknown): Timeline {
   if (!Number.isInteger(fps) || fps < 1 || fps > 120) bad("fps must be an integer from 1 to 120");
   if (r.audio !== null && r.audio !== undefined && typeof r.audio !== "string") bad("audio must be a path string or null");
   if (r.captions !== undefined && typeof r.captions !== "string") bad("captions must be a path string");
+  let cast: CastOptions | undefined;
+  if (r.cast !== undefined) {
+    if (typeof r.cast !== "object" || r.cast === null) bad("cast must be an object");
+    const c = r.cast as Record<string, unknown>;
+    if (typeof c.seed !== "number" || !Number.isInteger(c.seed) || c.seed < 0 || c.seed > 2 ** 31) bad("cast.seed must be an integer from 0 to 2^31");
+    if (c.music !== undefined && (typeof c.music !== "string" || c.music.trim() === "")) bad("cast.music must be a song file path");
+    cast = { seed: c.seed, ...(c.music !== undefined ? { music: c.music as string } : {}) };
+  }
   if (!Array.isArray(r.beats) || r.beats.length === 0) bad("beats must be a non-empty array");
 
   const beats: Beat[] = r.beats.map((b: unknown, i: number) => {
@@ -290,6 +336,7 @@ export function validateTimeline(raw: unknown): Timeline {
     audio: typeof r.audio === "string" ? r.audio : null,
     captions: r.captions as string | undefined,
     beats,
+    ...(cast ? { cast } : {}),
   };
 }
 
@@ -376,11 +423,14 @@ export async function loadTimeline(timelinePath: string): Promise<LoadedTimeline
   const dir = path.dirname(abs);
   const timeline = validateTimeline(JSON.parse(await readFile(abs, "utf8")));
   const audioPath = timeline.audio ? path.resolve(dir, timeline.audio) : null;
+  const songPath = timeline.cast?.music ? path.resolve(dir, timeline.cast.music) : null;
+  // a missing song fails here, before minutes of frames, not at the mux
+  if (songPath) await stat(songPath).catch(() => bad(`cast.music: no song at ${songPath}`));
   const cues = timeline.captions
     ? parseSrt(await readFile(path.resolve(dir, timeline.captions), "utf8"))
     : deriveCues(timeline.beats);
   const last = timeline.beats[timeline.beats.length - 1];
-  return { timeline, cues, audioPath, totalSec: last.startSec + last.durSec };
+  return { timeline, cues, audioPath, songPath, totalSec: last.startSec + last.durSec };
 }
 
 // ---------------------------------------------------------------------------
@@ -422,6 +472,59 @@ function runFfmpeg(args: string[], what: string): Encoder {
 
 /** ffmpeg's stdin closed: ffmpeg exited. Its exit status and stderr (the reason) arrive a moment later. */
 class PipeClosedError extends Error {}
+
+// ---------------------------------------------------------------------------
+// Music (cast with a song only)
+// ---------------------------------------------------------------------------
+
+/**
+ * The song sits this many LU under the voice before ducking, and the voice ducks it further while Mark speaks.
+ * Measured on episode 787084c8 with the Suno instrumental mindset-2b (2026-11-17, 400 ms loudness frames of the ducked song
+ * against the voice): the song sits a median 19.2 LU under the voice while Mark speaks and 13.2 LU under the voice's
+ * level in the pauses; Whisper base.en made 7 word errors in 474 on the mix, 9 on the original video without music.
+ */
+export const BED_UNDER_VOICE_LU = 12;
+
+/** Integrated loudness (EBU R128, LUFS) of a file or a window of it. NaN for silence. */
+export async function measureLufs(file: string, fromSec?: number, durSec?: number): Promise<number> {
+  const args = ["-hide_banner", "-nostats"];
+  if (fromSec !== undefined) args.push("-ss", String(fromSec));
+  if (durSec !== undefined) args.push("-t", String(durSec));
+  args.push("-i", file, "-af", "ebur128=framelog=quiet", "-f", "null", "-");
+  const stderr = await new Promise<string>((resolve, reject) => {
+    const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", (d: Buffer) => {
+      err = (err + d.toString()).slice(-8000);
+    });
+    child.on("error", (e) => reject(new Error(`could not start ffmpeg for loudness: ${e.message}`)));
+    child.on("close", (code) => (code === 0 ? resolve(err) : reject(new Error(`ffmpeg loudness exited with ${code}: ${err.trim()}`))));
+  });
+  const summary = stderr.slice(stderr.lastIndexOf("Summary:"));
+  const m = /I:\s+(-?[\d.]+|-inf)\s+LUFS/.exec(summary);
+  return m && m[1] !== "-inf" ? Number(m[1]) : Number.NaN;
+}
+
+/** Seconds the song takes to fade in at the start and out at the end of the video. */
+export const SONG_FADE_IN = 1.5;
+export const SONG_FADE_OUT = 4;
+
+/**
+ * The mux filter with a song: voice untouched; the song faded in and out over the clip's `clipSec`, at `bedGainDb`, ducked
+ * by the voice (sidechaincompress), summed with no normalisation, then a peak limiter with auto-level off (so the voice
+ * keeps the loudness it has without music).
+ */
+export function bedMixFilter(bedGainDb: number, clipSec: number): string {
+  const st = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
+  const out = Math.min(SONG_FADE_OUT, clipSec / 2);
+  const fades = `afade=t=in:st=0:d=${Math.min(SONG_FADE_IN, clipSec / 2).toFixed(3)},afade=t=out:st=${(clipSec - out).toFixed(3)}:d=${out.toFixed(3)}`;
+  return (
+    `[1:a]${st},asplit=2[voice][key];` +
+    `[2:a]${st},${fades},volume=${bedGainDb.toFixed(2)}dB[bed];` +
+    "[bed][key]sidechaincompress=threshold=0.05:ratio=3:attack=20:release=500[ducked];" +
+    "[voice][ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.97:level=disabled[mix]"
+  );
+}
 
 function writeFrame(stream: Writable, chunk: Buffer): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -466,7 +569,7 @@ function encodeArgs(fps: number, outFile: string): string[] {
 export async function renderAnimated(opts: RenderOptions): Promise<RenderResult> {
   const log = opts.log ?? (() => undefined);
   const wallStart = performance.now();
-  const { timeline, cues, audioPath, totalSec } = await loadTimeline(opts.timelinePath);
+  const { timeline, cues, audioPath, songPath, totalSec } = await loadTimeline(opts.timelinePath);
   const fps = timeline.fps;
   const from = opts.fromSec ?? 0;
   const to = Math.min(opts.toSec ?? totalSec, totalSec);
@@ -477,12 +580,17 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
   const outPath = path.resolve(opts.outPath);
   await mkdir(path.dirname(outPath), { recursive: true });
   const videoFile = audioPath ? `${outPath}.video.tmp.mp4` : outPath;
+  // the song needs a voice to sit under; a timeline without audio gets the gears only
+  const song = audioPath ? songPath : null;
 
   const { chromium } = await import("playwright");
   const executablePath = opts.chromiumPath ?? process.env.YT_ANIMATED_CHROMIUM ?? undefined;
   let browser;
   try {
-    browser = await chromium.launch({ headless: true, executablePath, args: ["--force-color-profile=srgb"] });
+    // the cast's 3D gears need WebGL, which headless Chromium gives through SwiftShader only with these flags; a video
+    // without a cast launches Chromium exactly as before
+    const args = ["--force-color-profile=srgb", ...(timeline.cast ? ["--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [])];
+    browser = await chromium.launch({ headless: true, executablePath, args });
   } catch (err) {
     throw new Error(
       `could not start Chromium (${err instanceof Error ? err.message.split("\n")[0] : String(err)}). ` +
@@ -513,6 +621,13 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
         `${report.cues} caption cues; rendering ${frames} frames (${from}s to ${to.toFixed(3)}s at ${fps} fps)`,
     );
     for (const w of report.warnings) log(`WARNING: ${w}`);
+    if (report.cast) {
+      const shown = report.cast.places.filter((p) => !p.hidden).length;
+      log(
+        `cast: ${report.cast.actors} gears, ${report.cast.acts} acts, shown in ${shown} of ${report.cast.places.length} scenes; ` +
+          (song ? `song ${path.basename(song)}` : "no song"),
+      );
+    }
 
     const loopStart = performance.now();
     let nextLog = loopStart + 5000;
@@ -534,7 +649,35 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
     await browser.close();
     browser = undefined;
 
-    if (audioPath) {
+    let music: MusicReport | null = null;
+    if (audioPath && song) {
+      // level the song against this video's own voice, then duck it under the voice and mix
+      const voiceLufs = await measureLufs(audioPath, from, to - from);
+      const bedLufs = await measureLufs(song, from, to - from);
+      if (!Number.isFinite(voiceLufs) || !Number.isFinite(bedLufs)) {
+        throw new Error(`music: loudness not measurable (voice ${voiceLufs}, song ${bedLufs})`);
+      }
+      const bedGainDb = voiceLufs - BED_UNDER_VOICE_LU - bedLufs;
+      const mux = runFfmpeg(
+        [
+          "-hide_banner", "-loglevel", "error", "-y",
+          "-i", videoFile,
+          "-ss", String(from), "-t", String(to - from), "-i", audioPath,
+          // a song shorter than the video starts again from its top
+          "-stream_loop", "-1", "-ss", String(from), "-t", String(to - from), "-i", song,
+          "-filter_complex", bedMixFilter(bedGainDb, to - from),
+          "-map", "0:v:0", "-map", "[mix]",
+          "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart",
+          outPath,
+        ],
+        "audio mux with music",
+      );
+      mux.stdin.end();
+      await mux.done;
+      await rm(videoFile, { force: true });
+      music = { track: path.basename(song), voiceLufs, bedLufs, bedGainDb, mixLufs: await measureLufs(outPath) };
+      log(`music ${music.track}: voice ${voiceLufs} LUFS, song ${bedLufs} LUFS, song gain ${bedGainDb.toFixed(1)} dB, mix ${music.mixLufs} LUFS`);
+    } else if (audioPath) {
       const mux = runFfmpeg(
         [
           "-hide_banner", "-loglevel", "error", "-y",
@@ -562,6 +705,8 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
       scenes: report.scenes.length,
       animations: report.animations,
       warnings: report.warnings,
+      cast: report.cast ?? null,
+      music,
     };
   } catch (err) {
     if (err instanceof PipeClosedError) {

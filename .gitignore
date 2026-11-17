@@ -33,6 +33,8 @@ cli/package.dev.json
 
 # Build artifacts in src directories
 server/src/**/*.js
+# ...except the YouTube cast scripts, which are hand-written browser scripts loaded by scenes.html (not build output)
+!server/src/services/youtube/animated/cast/*.js
 server/src/**/*.js.map
 server/src/**/*.d.ts
 server/src/**/*.d.ts.map

@@ -18,7 +18,7 @@ import { optimizeSEO, chaptersFromBeats, withChapters, type SeoData } from "./se
 import { generateThumbnail, type ThumbnailResult } from "./thumbnail.js";
 import { generateTTSAudio, generateChunkedTTS, type TTSResult } from "./tts.js";
 import { assembleYouTubeVideo, generateCaptions, generateChunkedCaptions, validateCaptions, verifySlideSync, type YtAssembleResult, type SyncReport } from "./yt-video-assembler.js";
-import { renderAnimatedVideo } from "./animated-video.js";
+import { castFor, pickSong, renderAnimatedVideo } from "./animated-video.js";
 import { buildBeats, buildSlidesFromScriptAI, buildSlidesFromScript, renderSlidesToImages, type Beat, type Slide } from "./presentation-renderer.js";
 import { walkSite, type SiteWalkResult } from "./site-walker.js";
 import { generateWalkthroughScript } from "./walkthrough-writer.js";
@@ -176,9 +176,18 @@ export async function runProductionPipeline(
     // reason the day still gets the normal slide video: fall through to the presentation path below.
     let video: YtAssembleResult | undefined;
     let visualModeUsed: string = mode; // recorded as assets.visualMode: animated | presentation | presentation-fallback | <other mode>
+    // assets.cast: the gears + a song under the voice (YT_CAST_PILLARS, off by default; songs from YT_MUSIC_DIR/<pillar>/);
+    // null when the switch did not ask for them
+    let castRecord: { pillar: string; used: boolean; error?: string; places?: number; shown?: number; music?: unknown } | null = null;
     if (mode === "animated" && beats && perSlideDurations && chunkContentDurations) {
+      const cast = castFor(strategy.pillar, productionId);
+      if (cast) {
+        const song = await pickSong(strategy.pillar, cast.seed);
+        if (song) cast.music = song;
+        else logger.warn({ productionId, pillar: strategy.pillar }, "YT Pipeline: cast on but no song in YT_MUSIC_DIR/<pillar>/ — voice only");
+      }
       try {
-        logger.info({ productionId, beats: beats.length }, "YT Pipeline: rendering animated video...");
+        logger.info({ productionId, beats: beats.length, cast: !!cast }, "YT Pipeline: rendering animated video...");
         const animated = await renderAnimatedVideo({
           productionId,
           beats,
@@ -186,8 +195,19 @@ export async function runProductionPipeline(
           speechDurations: chunkContentDurations,
           audioPath: tts.audioPath,
           outDir: VIDEO_DIR,
+          cast,
           log: (line) => logger.info({ productionId }, `animated: ${line}`),
         });
+        if (cast) {
+          castRecord = {
+            pillar: strategy.pillar,
+            used: animated.castUsed,
+            ...(animated.castError ? { error: animated.castError } : {}),
+            ...(animated.cast ? { places: animated.cast.places.length, shown: animated.cast.places.filter((p) => !p.hidden).length } : {}),
+            ...(animated.music ? { music: animated.music } : {}),
+          };
+          if (animated.castError) logger.error({ productionId, err: animated.castError }, "YT Pipeline: cast render failed — plain animated video made instead");
+        }
         video = { videoPath: animated.videoPath, durationSec: animated.durationSec, fileSizeBytes: animated.fileSizeBytes };
         visualModeUsed = "animated";
         logger.info(
@@ -196,6 +216,7 @@ export async function runProductionPipeline(
         );
       } catch (err) {
         visualModeUsed = "presentation-fallback";
+        if (cast) castRecord = { pillar: strategy.pillar, used: false, error: err instanceof Error ? err.message : String(err) };
         logger.error({ productionId, err }, "YT Pipeline: animated render failed — falling back to presentation slides");
       }
     }
@@ -341,6 +362,7 @@ export async function runProductionPipeline(
           visualAssets,
           visualMode: visualModeUsed,
           animatedGateIssues,
+          ...(castRecord ? { cast: castRecord } : {}),
         },
         timeline: {
           created: new Date().toISOString(),
