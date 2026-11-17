@@ -186,6 +186,10 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   <div id="scenes"></div>
   <div id="cap"></div>
 </div>
+<!-- The cast (gears with faces + music bed): only used when the timeline has a `cast` field (YT_CAST_PILLARS). -->
+<script src="cast/stage.js"></script>
+<script src="cast/character.js"></script>
+<script src="cast/cast.js"></script>
 <script>
 (() => {
   "use strict";
@@ -206,6 +210,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
   const warnings = [];         // things that did not fit; render.ts prints them
   let capEl = null;
   let capIdx = -2;
+  let castView = null;         // the gears (cast/cast.js), only when the timeline asks for them
 
   /* ---------- small helpers ---------- */
   const h = (tag, cls, text) => {
@@ -960,6 +965,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     for (let i = 0; i < anims.length; i++) anims[i].currentTime = ms;
     updateCounters(tSec);
     updateCaption(tSec);
+    if (castView) castView.draw(tSec);
   };
 
   window.loadTimeline = async (timeline, cueList) => {
@@ -993,9 +999,28 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
     }
     capEl.textContent = "";
     if (cut) warnings.push(`${cut} caption cue(s) are wider than the caption bar and would be cut off, first at ${firstCut.start.toFixed(2)} s: "${firstCut.text}"`);
+    if (timeline.cast) {
+      const beatIndex = new Map(timelineBeats.map((b, i) => [b, i]));
+      castView = window.Cast.mount({
+        stage: document.getElementById("stage"),
+        before: capEl,
+        beats: timelineBeats,
+        scenes: scenes.map((s) => ({ kind: s.kind, start: s.start, end: s.end, root: s.root, beats: s.beats.map((b) => beatIndex.get(b)) })),
+        seek: window.seek,
+        seed: timeline.cast.seed,
+      });
+      for (const w of castView.report.warnings) warnings.push(w);
+    }
     window.seek(0);
     return window.__report();
   };
+
+  // The cast's music bed (only with a cast): render it once, then read it back in chunks (base64 16-bit stereo PCM).
+  window.renderCastBed = (sampleRate) => {
+    if (!castView) throw new Error("this timeline has no cast");
+    return castView.renderBed(sampleRate);
+  };
+  window.castBedChunk = (start, count) => castView.bedChunk(start, count);
 
   // Test hook: which beat is on screen at t, and which of its words is being spoken, computed
   // from the timeline data alone (never the DOM). word is -1 when t is between words.
@@ -1024,6 +1049,7 @@ body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: v
       counters: counters.length,
       cues: cues.length,
       warnings: warnings.slice(),
+      cast: castView ? castView.report : null,
       fonts: [...document.fonts].map((f) => ({ family: f.family.replace(/"/g, ""), status: f.status })),
     };
   };

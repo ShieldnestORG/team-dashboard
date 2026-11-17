@@ -48,7 +48,10 @@ vi.mock("../services/youtube/archive.js", () => ({
 vi.mock("../services/youtube/site-walker.js", () => ({ walkSite: vi.fn() }));
 vi.mock("../services/youtube/walkthrough-writer.js", () => ({ generateWalkthroughScript: vi.fn() }));
 vi.mock("../services/visual-backends/index.js", () => ({ getAvailableBackends: () => [] }));
-vi.mock("../services/youtube/animated-video.js", () => ({ renderAnimatedVideo: m.renderAnimatedVideo }));
+vi.mock("../services/youtube/animated-video.js", async (orig) => ({
+  ...(await orig<typeof import("../services/youtube/animated-video.js")>()),
+  renderAnimatedVideo: m.renderAnimatedVideo,
+}));
 vi.mock("../services/youtube/tts.js", () => ({
   generateChunkedTTS: m.generateChunkedTTS,
   generateTTSAudio: vi.fn(),
@@ -158,6 +161,49 @@ describe("runProductionPipeline animated wiring", () => {
     expect(result.status).toBe("ready");
     expect(result.video?.fileSizeBytes).toBe(12345);
     expect(inserts.some((v) => v.productionId === "prod-1" && v.status === "pending_review")).toBe(true);
+  });
+
+  it("YT_CAST_PILLARS off (the default): no cast is asked for and assets.cast is not written", async () => {
+    delete process.env.YT_CAST_PILLARS;
+    const { db, sets } = makeDb();
+    await production.runProductionPipeline(db as never, "topic", "animated");
+    expect(m.renderAnimatedVideo.mock.calls[0][0].cast).toBeUndefined();
+    expect(assetsOf(sets).cast).toBeUndefined();
+  });
+
+  it("YT_CAST_PILLARS names the video's pillar: the render gets the cast and assets.cast records what it did", async () => {
+    process.env.YT_CAST_PILLARS = "other, p";
+    try {
+      const base = await m.renderAnimatedVideo.getMockImplementation()!({ productionId: "prod-1", outDir: join(dir, "videos") });
+      const music = { voiceLufs: -16.5, bedLufs: -20, bedGainDb: -14.5, mixLufs: -16.3 };
+      m.renderAnimatedVideo.mockResolvedValue({
+        ...base, castUsed: true, music,
+        cast: { places: [{ kind: "title", start: 0, anchor: "rc", scale: 1.25 }, { kind: "list", start: 5, hidden: true }], actors: 3, acts: 9, bed: { bpm: 88, key: 50, notes: 400, segments: 4 }, warnings: [] },
+      });
+      const { db, sets } = makeDb();
+      const result = await production.runProductionPipeline(db as never, "topic", "animated");
+      const cast = m.renderAnimatedVideo.mock.calls[0][0].cast;
+      expect(cast).toMatchObject({ music: true });
+      expect(Number.isInteger(cast.seed)).toBe(true);
+      expect(assetsOf(sets)).toMatchObject({ visualMode: "animated", cast: { pillar: "p", used: true, places: 2, shown: 1, music } });
+      expect(result.status).toBe("ready");
+    } finally {
+      delete process.env.YT_CAST_PILLARS;
+    }
+  });
+
+  it("YT_CAST_PILLARS on but the cast render failed: the plain animated video ships, assets.cast says why", async () => {
+    process.env.YT_CAST_PILLARS = "all";
+    try {
+      const base = await m.renderAnimatedVideo.getMockImplementation()!({ productionId: "prod-1", outDir: join(dir, "videos") });
+      m.renderAnimatedVideo.mockResolvedValue({ ...base, castUsed: false, castError: "page errors: boom", cast: null, music: null });
+      const { db, sets } = makeDb();
+      await production.runProductionPipeline(db as never, "topic", "animated");
+      expect(assetsOf(sets)).toMatchObject({ visualMode: "animated", cast: { pillar: "p", used: false, error: "page errors: boom" } });
+      expect(m.loggerError).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.YT_CAST_PILLARS;
+    }
   });
 
   it("animated render throws: logs the error and the normal presentation path still makes the video", async () => {

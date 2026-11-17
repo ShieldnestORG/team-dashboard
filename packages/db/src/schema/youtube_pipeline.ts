@@ -95,6 +95,7 @@ export const ytProductions = pgTable(
       archiveDir?: string; // archive/<YYYY-MM>/<id>/ — kept for the monthly review, never purged
       visualMode?: string; // which path made the video: animated | presentation | presentation-fallback (type only, no migration)
       animatedGateIssues?: string[]; // the first gate's issues when an animated video failed its gate and fell back to slides (type only, no migration)
+      cast?: { pillar: string; used: boolean; error?: string; places?: number; shown?: number; music?: unknown }; // YT_CAST_PILLARS: the gears + music bed; used=false when the cast render failed and the plain look was made (type only, no migration)
     }>(),
     timeline: jsonb("timeline").$type<{
       created?: string;

@@ -9,7 +9,7 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { renderAnimated, type Timeline } from "./animated/render.js";
+import { renderAnimated, type CastOptions, type CastReport, type MusicReport, type Timeline } from "./animated/render.js";
 import type { Beat } from "./presentation-renderer.js";
 import { alignBeatWords, type AlignBeatInput, type AlignResult, type TimedWord } from "./word-timings.js";
 
@@ -24,6 +24,7 @@ export function buildAnimatedTimeline(
   slideDurations: number[],
   audioPath: string,
   words?: (TimedWord[] | undefined)[],
+  cast?: CastOptions,
 ): Timeline {
   if (beats.length !== slideDurations.length) {
     throw new Error(`animated timeline: ${beats.length} beats but ${slideDurations.length} slide durations`);
@@ -52,7 +53,21 @@ export function buildAnimatedTimeline(
     if (w && w.length > 0) item.words = w;
     return item;
   });
-  return { width: 1920, height: 1080, fps: 30, audio: path.resolve(audioPath), beats: out };
+  return { width: 1920, height: 1080, fps: 30, audio: path.resolve(audioPath), beats: out, ...(cast ? { cast } : {}) };
+}
+
+/**
+ * The switch: YT_CAST_PILLARS lists the content pillars whose daily videos get the cast and its music bed
+ * (comma-separated, e.g. "motivation" or "motivation,crypto,tx_blockchain"; "all" = every pillar). Unset or empty = off,
+ * the default: the videos stay exactly as they were. The seed comes from the production id, so a re-render is identical.
+ */
+export function castFor(pillar: string | undefined, productionId: string, raw: string | undefined = process.env.YT_CAST_PILLARS): CastOptions | undefined {
+  const list = (raw ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (list.length === 0) return undefined;
+  if (!list.includes("all") && !(pillar && list.includes(pillar.toLowerCase()))) return undefined;
+  let h = 2166136261;
+  for (const ch of productionId) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return { seed: (h >>> 0) % 2 ** 31, music: true };
 }
 
 export interface RenderAnimatedVideoOptions {
@@ -68,6 +83,10 @@ export interface RenderAnimatedVideoOptions {
   chromiumPath?: string;
   /** Replaces the ElevenLabs forced alignment (tests, offline runs). */
   aligner?: (audioPath: string, beats: AlignBeatInput[]) => Promise<AlignResult>;
+  /** The gears (and music bed). If that render fails, the video is rendered again without them (same timeline, no new alignment). */
+  cast?: CastOptions;
+  /** Replaces the frame renderer (tests). */
+  render?: typeof renderAnimated;
   log?: (line: string) => void;
 }
 
@@ -80,6 +99,12 @@ export interface RenderAnimatedVideoResult {
   estimated: number;
   /** Everything: alignment, render, encode, mux. */
   wallSec: number;
+  /** Did the finished video get the cast? false when none was asked for, or when it failed and the plain look was rendered. */
+  castUsed: boolean;
+  /** Why the cast render failed (the plain look was rendered instead). */
+  castError?: string;
+  cast: CastReport | null;
+  music: MusicReport | null;
 }
 
 export async function renderAnimatedVideo(opts: RenderAnimatedVideoOptions): Promise<RenderAnimatedVideoResult> {
@@ -100,13 +125,31 @@ export async function renderAnimatedVideo(opts: RenderAnimatedVideoOptions): Pro
   const aligner = opts.aligner ?? ((a: string, b: AlignBeatInput[]) => alignBeatWords(a, b, { log }));
   const { words, aligned, estimated } = await aligner(audioPath, alignInput);
 
-  const timeline = buildAnimatedTimeline(beats, slideDurations, audioPath, words);
+  const render = opts.render ?? renderAnimated;
   await mkdir(outDir, { recursive: true });
   const timelinePath = path.join(outDir, `timeline_${productionId}.json`);
-  await writeFile(timelinePath, JSON.stringify(timeline, null, 2));
-
   const videoPath = path.join(outDir, `video_${productionId}.mp4`);
-  const rendered = await renderAnimated({ timelinePath, outPath: videoPath, chromiumPath: opts.chromiumPath, log });
+  const renderWith = async (cast: CastOptions | undefined) => {
+    await writeFile(timelinePath, JSON.stringify(buildAnimatedTimeline(beats, slideDurations, audioPath, words, cast), null, 2));
+    return render({ timelinePath, outPath: videoPath, chromiumPath: opts.chromiumPath, log });
+  };
+
+  let rendered: Awaited<ReturnType<typeof renderAnimated>>;
+  let castUsed = false;
+  let castError: string | undefined;
+  if (opts.cast) {
+    try {
+      rendered = await renderWith(opts.cast);
+      castUsed = true;
+    } catch (err) {
+      // the cast is new; the plain animated look is proven: a cast failure must not cost the day its animated video
+      castError = err instanceof Error ? err.message : String(err);
+      log(`cast render failed, rendering the plain animated look instead: ${castError}`);
+      rendered = await renderWith(undefined);
+    }
+  } else {
+    rendered = await renderWith(undefined);
+  }
   const { size } = await stat(videoPath);
 
   return {
@@ -117,5 +160,9 @@ export async function renderAnimatedVideo(opts: RenderAnimatedVideoOptions): Pro
     aligned,
     estimated,
     wallSec: (performance.now() - t0) / 1000,
+    castUsed,
+    ...(castError ? { castError } : {}),
+    cast: castUsed ? (rendered.cast ?? null) : null,
+    music: castUsed ? (rendered.music ?? null) : null,
   };
 }

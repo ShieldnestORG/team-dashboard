@@ -8,15 +8,19 @@
  *     page is paused and set to that time, so frame i is the page at exactly that moment),
  *  4. pipe the frames into ffmpeg (libx264, yuv420p), then mux the timeline's audio if there is one.
  *
- * Nothing here is wired into the production pipeline yet. The page and its fonts live beside this file
- * (scenes.html, assets/fonts); copy them next to the compiled file when this ships.
+ * The page, its fonts and the cast scripts live beside this file (scenes.html, assets/fonts, cast/); the server build
+ * copies them next to the compiled file.
+ *
+ * Cast (timeline.cast, off unless the production asks for it): three gears with faces react to the narration on the
+ * same clock, and with `music` a synthesized bed is rendered by the page, set 12 LU under the voice and ducked
+ * under it (sidechain), then mixed in. Without a cast nothing below changes.
  *
  * Chromium: uses Playwright's own build by default. Set YT_ANIMATED_CHROMIUM (or pass chromiumPath) to use
  * a different executable, e.g. when the cached browser build does not match the installed Playwright.
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Writable } from "node:stream";
@@ -50,6 +54,32 @@ export interface Timeline {
   /** Optional SRT file, relative to the timeline file (or absolute). Without it cues are derived from beat text. */
   captions?: string;
   beats: Beat[];
+  /** The gears and (with music) the synthesized bed; absent = the classic look, unchanged. */
+  cast?: CastOptions;
+}
+
+export interface CastOptions {
+  /** Picks the bed's key, chords and tempo and varies the gears' moves; the same seed always gives the same video. */
+  seed: number;
+  /** Mix the synthesized music bed under the voice. */
+  music: boolean;
+}
+
+export interface CastReport {
+  places: Array<{ kind: string; start: number; anchor?: string; scale?: number; hidden?: boolean }>;
+  actors: number;
+  acts: number;
+  bed: { bpm: number; key: number; notes: number; segments: number };
+  warnings: string[];
+}
+
+export interface MusicReport {
+  voiceLufs: number;
+  bedLufs: number;
+  /** dB applied to the bed before ducking: puts it BED_UNDER_VOICE_LU under the voice. */
+  bedGainDb: number;
+  /** Loudness of the finished soundtrack. */
+  mixLufs: number;
 }
 
 export interface Cue {
@@ -93,6 +123,10 @@ export interface RenderResult {
   animations: number;
   /** Layout warnings from the page; the video was still rendered. */
   warnings: string[];
+  /** What the cast did (null without a cast). */
+  cast: CastReport | null;
+  /** The music bed's levels (null without music). */
+  music: MusicReport | null;
 }
 
 interface PageReport {
@@ -104,12 +138,15 @@ interface PageReport {
   cues: number;
   /** Things that did not fit (text taller than its room, caption cues that would be cut off). */
   warnings: string[];
+  cast: CastReport | null;
   fonts: Array<{ family: string; status: string }>;
 }
 
 interface PageApi {
   loadTimeline(timeline: Timeline, cues: Cue[]): Promise<PageReport>;
   seek(tSec: number): void;
+  renderCastBed(sampleRate: number): Promise<{ frames: number; sampleRate: number; peak: number }>;
+  castBedChunk(start: number, count: number): string;
 }
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -202,6 +239,14 @@ export function validateTimeline(raw: unknown): Timeline {
   if (!Number.isInteger(fps) || fps < 1 || fps > 120) bad("fps must be an integer from 1 to 120");
   if (r.audio !== null && r.audio !== undefined && typeof r.audio !== "string") bad("audio must be a path string or null");
   if (r.captions !== undefined && typeof r.captions !== "string") bad("captions must be a path string");
+  let cast: CastOptions | undefined;
+  if (r.cast !== undefined) {
+    if (typeof r.cast !== "object" || r.cast === null) bad("cast must be an object");
+    const c = r.cast as Record<string, unknown>;
+    if (typeof c.seed !== "number" || !Number.isInteger(c.seed) || c.seed < 0 || c.seed > 2 ** 31) bad("cast.seed must be an integer from 0 to 2^31");
+    if (typeof c.music !== "boolean") bad("cast.music must be true or false");
+    cast = { seed: c.seed, music: c.music };
+  }
   if (!Array.isArray(r.beats) || r.beats.length === 0) bad("beats must be a non-empty array");
 
   const beats: Beat[] = r.beats.map((b: unknown, i: number) => {
@@ -290,6 +335,7 @@ export function validateTimeline(raw: unknown): Timeline {
     audio: typeof r.audio === "string" ? r.audio : null,
     captions: r.captions as string | undefined,
     beats,
+    ...(cast ? { cast } : {}),
   };
 }
 
@@ -423,6 +469,72 @@ function runFfmpeg(args: string[], what: string): Encoder {
 /** ffmpeg's stdin closed: ffmpeg exited. Its exit status and stderr (the reason) arrive a moment later. */
 class PipeClosedError extends Error {}
 
+// ---------------------------------------------------------------------------
+// Music bed (cast with music only)
+// ---------------------------------------------------------------------------
+
+/**
+ * The bed sits this many LU under the voice before ducking, and the voice ducks it further while Mark speaks. Measured on
+ * episode 787084c8 (2026-11-16, 400 ms loudness frames of the ducked bed against the voice): the bed is a median 20.7 LU
+ * under the voice while he speaks and 14.4 LU under the voice's level in the pauses. The first setting (18 LU, ratio 6,
+ * threshold 0.02) measured 35.0 and 21.7 LU there: a bed nobody would hear.
+ */
+export const BED_UNDER_VOICE_LU = 12;
+
+/** Integrated loudness (EBU R128, LUFS) of a file or a window of it. NaN for silence. */
+export async function measureLufs(file: string, fromSec?: number, durSec?: number): Promise<number> {
+  const args = ["-hide_banner", "-nostats"];
+  if (fromSec !== undefined) args.push("-ss", String(fromSec));
+  if (durSec !== undefined) args.push("-t", String(durSec));
+  args.push("-i", file, "-af", "ebur128=framelog=quiet", "-f", "null", "-");
+  const stderr = await new Promise<string>((resolve, reject) => {
+    const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", (d: Buffer) => {
+      err = (err + d.toString()).slice(-8000);
+    });
+    child.on("error", (e) => reject(new Error(`could not start ffmpeg for loudness: ${e.message}`)));
+    child.on("close", (code) => (code === 0 ? resolve(err) : reject(new Error(`ffmpeg loudness exited with ${code}: ${err.trim()}`))));
+  });
+  const summary = stderr.slice(stderr.lastIndexOf("Summary:"));
+  const m = /I:\s+(-?[\d.]+|-inf)\s+LUFS/.exec(summary);
+  return m && m[1] !== "-inf" ? Number(m[1]) : Number.NaN;
+}
+
+/** 16-bit stereo PCM WAV header for `frames` frames. */
+function wavHeader(frames: number, sampleRate: number): Buffer {
+  const data = frames * 4;
+  const b = Buffer.alloc(44);
+  b.write("RIFF", 0, "ascii");
+  b.writeUInt32LE(36 + data, 4);
+  b.write("WAVE", 8, "ascii");
+  b.write("fmt ", 12, "ascii");
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20); // PCM
+  b.writeUInt16LE(2, 22); // stereo
+  b.writeUInt32LE(sampleRate, 24);
+  b.writeUInt32LE(sampleRate * 4, 28);
+  b.writeUInt16LE(4, 32);
+  b.writeUInt16LE(16, 34);
+  b.write("data", 36, "ascii");
+  b.writeUInt32LE(data, 40);
+  return b;
+}
+
+/**
+ * The mux filter with a bed: voice untouched; bed at `bedGainDb`, ducked by the voice (sidechaincompress), summed with no
+ * normalisation, then a peak limiter with auto-level off (so the voice keeps the loudness it has without a bed).
+ */
+export function bedMixFilter(bedGainDb: number): string {
+  const st = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
+  return (
+    `[1:a]${st},asplit=2[voice][key];` +
+    `[2:a]${st},volume=${bedGainDb.toFixed(2)}dB[bed];` +
+    "[bed][key]sidechaincompress=threshold=0.05:ratio=3:attack=20:release=500[ducked];" +
+    "[voice][ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.97:level=disabled[mix]"
+  );
+}
+
 function writeFrame(stream: Writable, chunk: Buffer): Promise<void> {
   return new Promise((resolve, reject) => {
     if (stream.destroyed || stream.writableEnded) {
@@ -477,6 +589,8 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
   const outPath = path.resolve(opts.outPath);
   await mkdir(path.dirname(outPath), { recursive: true });
   const videoFile = audioPath ? `${outPath}.video.tmp.mp4` : outPath;
+  // the bed needs a voice to sit under; a timeline without audio gets the gears only
+  const bedFile = timeline.cast?.music && audioPath ? `${outPath}.bed.tmp.wav` : null;
 
   const { chromium } = await import("playwright");
   const executablePath = opts.chromiumPath ?? process.env.YT_ANIMATED_CHROMIUM ?? undefined;
@@ -513,6 +627,13 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
         `${report.cues} caption cues; rendering ${frames} frames (${from}s to ${to.toFixed(3)}s at ${fps} fps)`,
     );
     for (const w of report.warnings) log(`WARNING: ${w}`);
+    if (report.cast) {
+      const shown = report.cast.places.filter((p) => !p.hidden).length;
+      log(
+        `cast: ${report.cast.actors} gears, ${report.cast.acts} acts, shown in ${shown} of ${report.cast.places.length} scenes; ` +
+          `bed ${report.cast.bed.bpm} bpm, ${report.cast.bed.notes} notes${bedFile ? "" : " (not mixed)"}`,
+      );
+    }
 
     const loopStart = performance.now();
     let nextLog = loopStart + 5000;
@@ -529,12 +650,52 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
     const loopSec = (performance.now() - loopStart) / 1000;
     if (pageErrors.length) throw new Error(`page errors: ${pageErrors.slice(0, 3).join(" | ")}`);
 
+    if (bedFile) {
+      const bed = await page.evaluate((sr) => (window as unknown as PageApi).renderCastBed(sr), 48000);
+      if (!(bed.peak > 0)) throw new Error("the music bed rendered silent");
+      const chunks: Buffer[] = [wavHeader(bed.frames, bed.sampleRate)];
+      const step = bed.sampleRate * 10;
+      for (let at = 0; at < bed.frames; at += step) {
+        const b64 = await page.evaluate(([a, n]) => (window as unknown as PageApi).castBedChunk(a, n), [at, step] as [number, number]);
+        chunks.push(Buffer.from(b64, "base64"));
+      }
+      await writeFile(bedFile, Buffer.concat(chunks));
+    }
+
     encoder.stdin.end();
     await encoder.done;
     await browser.close();
     browser = undefined;
 
-    if (audioPath) {
+    let music: MusicReport | null = null;
+    if (audioPath && bedFile) {
+      // level the bed against this video's own voice, then duck it under the voice and mix
+      const voiceLufs = await measureLufs(audioPath, from, to - from);
+      const bedLufs = await measureLufs(bedFile, from, to - from);
+      if (!Number.isFinite(voiceLufs) || !Number.isFinite(bedLufs)) {
+        throw new Error(`music bed: loudness not measurable (voice ${voiceLufs}, bed ${bedLufs})`);
+      }
+      const bedGainDb = voiceLufs - BED_UNDER_VOICE_LU - bedLufs;
+      const mux = runFfmpeg(
+        [
+          "-hide_banner", "-loglevel", "error", "-y",
+          "-i", videoFile,
+          "-ss", String(from), "-t", String(to - from), "-i", audioPath,
+          "-ss", String(from), "-t", String(to - from), "-i", bedFile,
+          "-filter_complex", bedMixFilter(bedGainDb),
+          "-map", "0:v:0", "-map", "[mix]",
+          "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart",
+          outPath,
+        ],
+        "audio mux with music bed",
+      );
+      mux.stdin.end();
+      await mux.done;
+      await rm(videoFile, { force: true });
+      await rm(bedFile, { force: true });
+      music = { voiceLufs, bedLufs, bedGainDb, mixLufs: await measureLufs(outPath) };
+      log(`music bed: voice ${voiceLufs} LUFS, bed ${bedLufs} LUFS, bed gain ${bedGainDb.toFixed(1)} dB, mix ${music.mixLufs} LUFS`);
+    } else if (audioPath) {
       const mux = runFfmpeg(
         [
           "-hide_banner", "-loglevel", "error", "-y",
@@ -562,6 +723,8 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
       scenes: report.scenes.length,
       animations: report.animations,
       warnings: report.warnings,
+      cast: report.cast ?? null,
+      music,
     };
   } catch (err) {
     if (err instanceof PipeClosedError) {
@@ -572,6 +735,7 @@ export async function renderAnimated(opts: RenderOptions): Promise<RenderResult>
     encoder.kill();
     await browser?.close().catch(() => undefined);
     await rm(videoFile, { force: true });
+    if (bedFile) await rm(bedFile, { force: true });
     if (audioPath) await rm(outPath, { force: true });
     throw encoderFailure ?? err;
   }
