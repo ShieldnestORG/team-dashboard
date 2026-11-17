@@ -6,7 +6,7 @@ import { Router, type Request } from "express";
 import { deployPartnerMicrosite } from "../services/partner-deployment.js";
 import { publishPartnerContent, publishAllDraftContent } from "../services/partner-site-publisher.js";
 import { generatePartnerBlogPost } from "../services/partner-site-content.js";
-import { eq, and, desc, count } from "drizzle-orm";
+import { eq, and, desc, count, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { partnerCompanies, partnerSiteContent } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
@@ -30,6 +30,18 @@ function getSlug(req: Request): string {
 export function partnerSiteRoutes(db: Db): Router {
   const router = Router({ mergeParams: true });
 
+  // Site management is a logged-in dashboard surface (deploys, AI content
+  // generation, publishing). Require a board actor on every route here;
+  // partner microsites read the public feed in partnerSiteFeedRoutes below.
+  // Mirrors the guard in voice-snippets.ts / socials.ts.
+  router.use((req, res, next) => {
+    if (req.actor?.type !== "board") {
+      res.status(401).json({ error: "authentication required" });
+      return;
+    }
+    next();
+  });
+
   // Helper: resolve partner by slug
   async function resolvePartner(slug: string) {
     const [partner] = await db
@@ -43,6 +55,18 @@ export function partnerSiteRoutes(db: Db): Router {
       )
       .limit(1);
     return partner ?? null;
+  }
+
+  // Helper: WHERE clause limiting partner_site_content rows to the partner in
+  // the URL, as a subquery so the route stays one database round trip.
+  function ownedBySlug(slug: string) {
+    return inArray(
+      partnerSiteContent.partnerId,
+      db
+        .select({ id: partnerCompanies.id })
+        .from(partnerCompanies)
+        .where(and(eq(partnerCompanies.companyId, COMPANY_ID), eq(partnerCompanies.slug, slug))),
+    );
   }
 
   // ── GET /config — Site config + deploy status ─────────────────
@@ -207,12 +231,15 @@ export function partnerSiteRoutes(db: Db): Router {
   router.put("/content/:contentId", async (req, res) => {
     try {
       const contentId = (req.params as Record<string, string>).contentId;
-      const body = req.body as Record<string, unknown>;
+
+      // Never let the body re-home a row to another partner or company.
+      const { id: _id, partnerId: _partnerId, companyId: _companyId, createdAt: _createdAt, ...body } =
+        (req.body ?? {}) as Record<string, unknown>;
 
       const [updated] = await db
         .update(partnerSiteContent)
         .set({ ...body, updatedAt: new Date() })
-        .where(eq(partnerSiteContent.id, contentId))
+        .where(and(eq(partnerSiteContent.id, contentId), ownedBySlug(getSlug(req))))
         .returning();
 
       if (!updated) {
@@ -230,6 +257,13 @@ export function partnerSiteRoutes(db: Db): Router {
   router.post("/content/:contentId/publish", async (req, res) => {
     try {
       const contentId = (req.params as Record<string, string>).contentId;
+
+      const [owned] = await db
+        .select({ id: partnerSiteContent.id })
+        .from(partnerSiteContent)
+        .where(and(eq(partnerSiteContent.id, contentId), ownedBySlug(getSlug(req))))
+        .limit(1);
+      if (!owned) { res.status(404).json({ error: "Content not found" }); return; }
 
       const success = await publishPartnerContent(db, contentId);
       if (!success) {
