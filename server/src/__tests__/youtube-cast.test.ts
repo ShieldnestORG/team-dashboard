@@ -19,7 +19,7 @@ const CAST_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "services",
 const ctx: Record<string, any> = { console, URLSearchParams, location: { search: "" } };
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const f of ["stage.js", "character.js", "cast.js"]) vm.runInContext(readFileSync(join(CAST_DIR, f), "utf8"), ctx, { filename: f });
+for (const f of ["stage.js", "character.js", "cast.js", "vignettes.js"]) vm.runInContext(readFileSync(join(CAST_DIR, f), "utf8"), ctx, { filename: f });
 const { Cast, Character } = ctx;
 const M = Character.motion;
 
@@ -33,7 +33,7 @@ function timeline(): B[] {
     ["content", "Systems are design.", "In this video"],
     ["section_title", "Motivation vs Systems.", "Motivation vs Systems"],
     ["content", "A spark fades.", "Motivation vs Systems", "alert"],
-    ["content", "Show up for 2 minutes.", "Motivation vs Systems", "clock"],
+    ["content", "Say it 2 more times.", "Motivation vs Systems", "clock"],
     ["content", "Schedule actions.", "Motivation vs Systems", "check"],
     ["section_title", "Small wins.", "Small wins"],
     ["content", "Small habits build confidence.", "Small wins", "lightbulb"],
@@ -83,10 +83,10 @@ describe("shipping the cast", () => {
   });
   it("scenes.html loads three.min.js, stage.js, character.js and cast.js from cast/, in that order, before its own script", () => {
     const html = readFileSync(join(CAST_DIR, "..", "scenes.html"), "utf8");
-    const at = ["cast/three.min.js", "cast/stage.js", "cast/character.js", "cast/cast.js"].map((f) => html.indexOf(`<script src="${f}"></script>`));
+    const at = ["cast/three.min.js", "cast/stage.js", "cast/character.js", "cast/cast.js", "cast/vignettes.js"].map((f) => html.indexOf(`<script src="${f}"></script>`));
     expect(at.every((i) => i > 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
-    expect(at[3]).toBeLessThan(html.indexOf("window.seek = "));
+    expect(at[4]).toBeLessThan(html.indexOf("window.seek = "));
   });
   it("the vendored three.js is 0.186.1, a classic script that sets window.THREE, with its licence kept", () => {
     const three = readFileSync(join(CAST_DIR, "three.min.js"), "utf8");
@@ -166,7 +166,7 @@ describe("the gears' performance (plan)", () => {
     }
   });
   it("a number being read gets FOCUS's double take just before the word", () => {
-    const beat = BEATS.find((b) => b.text.includes("2 minutes"))!;
+    const beat = BEATS.find((b) => b.text.includes("2 more times"))!;
     const word = beat.words!.find((w) => w.w === "2")!;
     const shown = Cast.plan(BEATS, SCENES, placesFor(-1), 5); // that line's scene is the one placesFor() hides by default
     expect(plan.specs.focus.moves.some((m: { at: number }) => m.at > beat.startSec && m.at < beat.startSec + beat.durSec)).toBe(false);
@@ -223,10 +223,97 @@ describe("the 3D bodies' pure parts", () => {
   });
 });
 
+describe("explainer scenes (vignettes.js): a picture of each line's idea that the gears act out", () => {
+  const VG = Cast.VIGNETTES;
+  it("picks the scene from the line's words", () => {
+    const cases: Array<[string, string | null]> = [
+      ["Motivation is a spark that gets you started, but it always fades away.", "spark"],
+      ["A system is a repeatable process that works regardless of your current mood.", "loop"],
+      ["Discipline is easier when you remove the obstacles between you and the task.", "friction"],
+      ["Small habits create a track record of success that builds real confidence.", "steps"],
+      ["Spotting crypto scam red flags before you click.", "warning"],
+      ["Unbonding takes a waiting period before you can move your coins.", "wait"],
+      ["Never share your seed phrase; keep your keys offline.", "protect"],
+      ["Rest is part of the work, so sleep and recover.", "rest"],
+      ["Choose systems instead of willpower.", "compare"],
+      ["Your peer group shapes the standards you hold.", "link"],
+      ["The idea clicks once you understand the design.", "bulb"],
+      ["Eventually you become the person who does the work.", "sprout"],
+      ["Say it out loud.", null],
+    ];
+    for (const [text, kind] of cases) expect([text, VG.pick(text, null)]).toEqual([text, kind]);
+  });
+  it("never the same scene twice running, and no growing plant next to money words (no promise of returns)", () => {
+    expect(VG.pick("Motivation fades.", "spark")).not.toBe("spark");
+    expect(VG.pick("Your skills grow.", null)).toBe("sprout"); // control: the same shape of line without money words
+    expect(VG.pick("Your staking rewards grow.", null)).toBeNull(); // only the sprout would match, and money words switch it off
+    expect(VG.pick("Your habits grow over time.", "loop")).toBe("wait"); // "over time" is next once the loop is used
+  });
+  it("lands the scene's moment on its key word, read from the forced-alignment word times", () => {
+    const b = { startSec: 10, durSec: 4, words: ["it", "always", "fades", "away."].map((w, i) => ({ w, s: 10.5 + i * 0.6, e: 10.9 + i * 0.6 })) };
+    expect(VG.payoffTime(b, "spark")).toBeCloseTo(12.3, 9); // the last key word: "away"
+    expect(VG.payoffTime({ ...b, words: [] }, "spark")).toBeCloseTo(12.2, 9); // no words: 55% in
+    expect(VG.payoffTime({ startSec: 0, durSec: 4, words: [{ w: "Instead", s: 0, e: 0.3 }] }, "compare")).toBeCloseTo(0.6, 9); // never before 0.6 s in
+  });
+  it("every scene's acting is valid character data, and its pose stays finite through the line", () => {
+    for (const kind of VG.KINDS) {
+      const beats = [
+        { type: "title", text: "t", startSec: 0, durSec: 3 },
+        { type: "content", text: "x", title: "L", startSec: 3, durSec: 4.5, words: [] },
+        { type: "cta", text: "c", startSec: 7.5, durSec: 3 },
+      ];
+      const scenes = [
+        { kind: "title", start: 0, end: 3, beats: [0] },
+        { kind: "list", start: 3, end: 7.5, beats: [1] },
+        { kind: "cta", start: 7.5, end: 10.5, beats: [2] },
+      ];
+      const pickWas = VG.pick;
+      VG.pick = () => kind; // force this scene on the line
+      try {
+        const places = scenes.map((sc) => ({ ...Cast.placeFor(sc.kind, [], null), target: [900, 500] }));
+        const p = Cast.plan(beats, scenes, places, 3);
+        expect(p.vignettes.map((v: { kind: string }) => v.kind)).toEqual([kind]);
+        const actors = Cast.actors(p);
+        for (let t = 0; t <= 10.5; t += 0.1) for (const a of actors) {
+          const q = a.pose(t);
+          for (const v of [q.x, q.y, q.sx, q.sy, q.face.lid, q.parts.rotor.rot]) expect(Number.isFinite(v)).toBe(true);
+        }
+      } finally {
+        VG.pick = pickWas;
+      }
+    }
+  });
+  it("friction jams the gears until the rock goes, then they spin free", () => {
+    const b = { type: "content", text: "Remove the obstacles first.", title: "L", startSec: 3, durSec: 4, words: [{ w: "Remove", s: 4.2, e: 4.6 }] };
+    const beats = [{ type: "title", text: "t", startSec: 0, durSec: 3 }, b, { type: "cta", text: "c", startSec: 7, durSec: 3 }];
+    const scenes = [{ kind: "title", start: 0, end: 3, beats: [0] }, { kind: "list", start: 3, end: 7, beats: [1] }, { kind: "cta", start: 7, end: 10, beats: [2] }];
+    const p = Cast.plan(beats, scenes, scenes.map((sc) => ({ ...Cast.placeFor(sc.kind, [], null), target: [900, 500] })), 3);
+    const body = Cast.actors(p)[0];
+    const turn = (a: number, z: number) => Math.abs(body.spinAngle("rotor", z) - body.spinAngle("rotor", a));
+    expect(p.vignettes[0]).toMatchObject({ kind: "friction", k: 4.2 });
+    expect(turn(3.3, 4.2)).toBeLessThan(0.05); // jammed
+    expect(turn(4.6, 5.5)).toBeGreaterThan(1.5); // free
+  });
+  it("a scene shows from just before its line to 0.3 s after it, fading in and out", () => {
+    const v = { a: 5, e: 9 };
+    expect(VG.showAt(4.9, v)).toBe(0);
+    expect(VG.showAt(7, v)).toBe(1);
+    expect(VG.showAt(9.15, v)).toBeCloseTo(0.5, 9);
+    expect(VG.showAt(9.31, v)).toBe(0);
+  });
+  it("the memory of the last scene resets at a new scene: a spark line right after a section still gets its spark", () => {
+    const mk = (text: string, start: number) => ({ type: "content", text, title: "L" + start, startSec: start, durSec: 4, words: [] });
+    const beats = [{ type: "title", text: "t", startSec: 0, durSec: 3 }, mk("Motivation is a feeling.", 3), { type: "section_title", text: "S.", startSec: 7, durSec: 2 }, mk("Motivation is a spark that fades.", 9), { type: "cta", text: "c", startSec: 13, durSec: 3 }];
+    const scenes = [{ kind: "title", start: 0, end: 3, beats: [0] }, { kind: "list", start: 3, end: 7, beats: [1] }, { kind: "section", start: 7, end: 9, beats: [2] }, { kind: "list", start: 9, end: 13, beats: [3] }, { kind: "cta", start: 13, end: 16, beats: [4] }];
+    const p = Cast.plan(beats, scenes, scenes.map((sc) => ({ ...Cast.placeFor(sc.kind, [], null), target: [900, 500] })), 3);
+    expect(p.vignettes.map((v: { kind: string }) => v.kind)).toEqual(["spark", "spark"]);
+  });
+});
+
 describe("where the cast stands (placeFor)", () => {
   it("with no text, takes the first spot at its largest scale", () => {
     expect(Cast.placeFor("section", [], null)).toMatchObject({ anchor: "rc", s: 1.7 });
-    expect(Cast.placeFor("list", [], null)).toMatchObject({ anchor: "bl", s: 1.25 });
+    expect(Cast.placeFor("list", [], null)).toMatchObject({ anchor: "bl", s: 1.45 });
   });
   it("never overlaps text: 400 random layouts, every chosen box is clear of every text box by the margin", () => {
     let seed = 12345;
@@ -240,7 +327,7 @@ describe("where the cast stands (placeFor)", () => {
       const kind = ["title", "section", "list", "quote", "cta"][n % 5];
       const P = Cast.placeFor(kind, rects, null);
       if (P.hidden) { hidden++; continue; }
-      const b = Cast.spotBox(P.anchor, P.s);
+      const b = Cast.spotBox(P.anchor, P.s, kind);
       expect(b.x >= 0 && b.top >= 0 && b.x + b.w <= 1920 && b.top + b.h <= 1080).toBe(true);
       for (const [l, t, r, bt] of rects) {
         const clear = b.x >= r + 26 || b.x + b.w <= l - 26 || b.top >= bt + 26 || b.top + b.h <= t - 26;
@@ -255,15 +342,19 @@ describe("where the cast stands (placeFor)", () => {
   });
   it("between list scenes keeps its spot when that still fits and nothing is clearly bigger (no needless jumps)", () => {
     const prev = Cast.placeFor("list", [[0, 600, 700, 1080]], null); // bottom-left taken: br
-    expect(prev).toMatchObject({ anchor: "br" });
-    expect(Cast.placeFor("list", [], prev)).toMatchObject({ anchor: "br", s: prev.s });
+    expect(prev).toMatchObject({ anchor: "br", s: 1 });
+    // next scene: bottom-left free again but only up to 1.3x (text above it), not clearly bigger than 1.0 + 0.35: stay
+    expect(Cast.placeFor("list", [[0, 300, 600, 430]], prev)).toMatchObject({ anchor: "br", s: 1 });
+    // a clearly bigger spot (1.45x) wins
+    expect(Cast.placeFor("list", [], prev)).toMatchObject({ anchor: "bl", s: 1.45 });
   });
   it("a section card always takes its own bigger spot, even right after a list", () => {
     const prev = Cast.placeFor("list", [], null);
     // a long section title across the middle: the right-centre spot is taken, the bottom-middle is not
     const P = Cast.placeFor("section", [[160, 440, 1800, 540]], prev);
     expect(P).toMatchObject({ anchor: "bm" });
-    expect(P.s).toBeGreaterThan(prev.s);
+    expect(P.s).toBeGreaterThan(1);
+    expect(Cast.placeFor("section", [], prev)).toMatchObject({ anchor: "rc", s: 1.7 }); // never sticks to the list's spot
   });
 });
 

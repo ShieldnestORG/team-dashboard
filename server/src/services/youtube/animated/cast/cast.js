@@ -103,7 +103,10 @@
     const centres = c.map((p) => [f2(p[0] - x0), f2(p[1] - y0)]);
     return { centres, ro, scale: GEARS.map((g) => g.N / 24), w: f2(x1 - x0), h: f2(y1 - y0) };
   })();
-  const HEAD = 90; // headroom above the cluster (cast space) for hops and the drop-in
+  // headroom above the cluster (cast space): hops and the drop-in everywhere; list scenes also hold the explainer props
+  // (vignettes.js) up there
+  const HEADS = { list: 180 };
+  const headFor = (kind) => HEADS[kind] ?? 90;
 
   // ------------------------------------------------------------------ where the cast stands in each scene
   // Candidate spots per scene kind, best first, each with the largest scale it may take. A spot is used only where the cast's
@@ -114,15 +117,15 @@
   const SPOTS = {
     title: [["rc", 1.25], ["br", 1.0], ["tr", 1.0]],
     section: [["rc", 1.7], ["bm", 1.5], ["br", 1.4]],
-    list: [["bl", 1.25], ["br", 1.0], ["tr", 0.9]],
+    list: [["bl", 1.45], ["br", 1.0], ["tr", 0.9]],
     quote: [["br", 1.2], ["rc", 1.2], ["tr", 1.0]],
     cta: [["rc", 1.5], ["br", 1.2]],
   };
-  function spotBox(anchor, s) {
-    const w = CLUSTER.w * s, h = (CLUSTER.h + HEAD) * s;
+  function spotBox(anchor, s, kind = "list") {
+    const head = headFor(kind), w = CLUSTER.w * s, h = (CLUSTER.h + head) * s;
     const x = anchor === "bl" ? 48 : anchor === "bm" ? (W - w) / 2 : W - (anchor === "rc" ? 96 : 48) - w;
     const top = anchor === "tr" ? 36 : anchor === "rc" ? (H - h) / 2 : H - 28 - h;
-    return { x, top, w, h, y: top + HEAD * s }; // y: where cast-space y = 0 lands
+    return { x, top, w, h, y: top + head * s }; // y: where cast-space y = 0 lands
   }
   const hits = (b, rects) =>
     rects.some(([l, t, r, btm]) => b.x < r + MARGIN && b.x + b.w > l - MARGIN && b.top < btm + MARGIN && b.top + b.h > t - MARGIN);
@@ -132,7 +135,7 @@
     let best = null;
     for (const [anchor, max] of SPOTS[kind] ?? SPOTS.list) {
       for (let s = max; s >= MIN_SCALE - 1e-9; s = Math.round((s - 0.05) * 100) / 100) {
-        const b = spotBox(anchor, s);
+        const b = spotBox(anchor, s, kind);
         if (!hits(b, rects)) {
           if (!best || s > best.s + 1e-9) best = { anchor, s, x: b.x, y: b.y };
           break;
@@ -140,7 +143,7 @@
       }
     }
     if (kind === "list" && prev && !prev.hidden && prev.kind === "list") {
-      const b = spotBox(prev.anchor, prev.s);
+      const b = spotBox(prev.anchor, prev.s, kind);
       if (!hits(b, rects) && (!best || best.s <= prev.s + 0.35)) return { anchor: prev.anchor, s: prev.s, x: b.x, y: b.y, kind };
     }
     return best ? { ...best, kind } : { hidden: true, kind };
@@ -203,7 +206,10 @@
       return { x: f2((0.9 * dx) / L), y: f2((0.75 * dy) / L) };
     };
 
-    let content = 0;
+    let content = 0, prevKind = null;
+    const VG = root.Cast && root.Cast.VIGNETTES; // the explainer scenes (vignettes.js), when loaded
+    const vignettes = [], vigByBeat = new Map();
+    const H = { ids, act, face, look: (id, at, l) => looks[id].push({ at, ...l }) };
     scenes.forEach((sc, k) => {
       const P = places[k];
       if (P.hidden) return;
@@ -239,12 +245,25 @@
         ids.forEach((id, i) => act(id, { at: t0 + 0.55 + 0.15 * i, do: "hop", height: 64 - 10 * i }));
         ids.forEach((id) => { face(id, t0 + 0.6, "happy"); face(id, Math.min(sc.end, t0 + 1.8), "calm"); });
       } else if (sc.kind === "list") {
+        prevKind = null; // "never the same scene twice running" is about neighbouring lines, not across a scene change
         for (const bi of sc.beats) {
           const b = beats[bi], tb = b.startSec;
           if (b.type === "conclusion") {
             ids.forEach((id, i) => { act(id, { at: tb + 0.1 + 0.14 * i, do: "hop", height: 46 - 8 * i }); face(id, tb + 0.2, "happy"); });
             continue;
           }
+          // an explainer scene when the line names an idea the gears can act out; otherwise they just react
+          const kind = VG ? VG.pick(b.text, prevKind) : null;
+          if (kind) {
+            const v = { kind, a: tb, e: tb + b.durSec, k: f2(VG.payoffTime(b, kind)), beat: bi };
+            VG.V[kind].act(H, v);
+            vignettes.push(v);
+            vigByBeat.set(bi, v);
+            prevKind = kind;
+            content++;
+            continue;
+          }
+          prevKind = null;
           const who = ids[content % 3], mood = MOOD[b.icon] ?? "calm";
           content++;
           if (mood === "shock") act(who, { at: tb + 0.05, do: "take", amount: 0.7, face: "shock", after: "happy" });
@@ -267,12 +286,17 @@
     // BODY drives; it turns while Mark speaks and eases off in the gaps between beats. FOCUS and DIRECTION mesh with it.
     const SPEED = { title: 1.5, content: 0.85, section_title: 1.2, conclusion: 1.6, hook: 0.3, cta: 1.3 };
     const spin = [[0, 0.4]];
-    for (const b of beats) {
+    beats.forEach((b, bi) => {
       const a = b.startSec, e = b.startSec + b.durSec, w = SPEED[b.type] ?? 0.8;
+      const v = vigByBeat.get(bi), vs = v && VG.V[v.kind].speed;
+      if (vs) {
+        spin.push(...vs(v));
+        return;
+      }
       if (b.type === "section_title") spin.push([a + 0.05, 4.2], [Math.min(e - 0.1, a + 0.8), w]);
       else spin.push([a + 0.15, w]);
       spin.push([Math.max(a + 0.2, e - 0.45), w], [e - 0.02, 0.35]);
-    }
+    });
     spin.sort((p, q) => p[0] - q[0]);
     const spinKeys = spin.filter((p, i) => i === 0 || p[0] > spin[i - 1][0] + 1e-6).map(([t, w]) => [f2(t), f2(w)]);
 
@@ -286,7 +310,7 @@
       };
     });
     const keys = scenes.map((sc, k) => ({ at: sc.start, ...(places[k].hidden ? { hidden: true, x: 0, y: H + 60, s: 1 } : { x: places[k].x, y: places[k].y, s: places[k].s }) }));
-    return { specs, spinKeys, keys, total };
+    return { specs, spinKeys, keys, total, vignettes };
   }
 
   /** The three actors of a plan, meshed: BODY's angle from its keys, FOCUS from BODY, DIRECTION from FOCUS. */
@@ -613,6 +637,15 @@
     o.stage.insertBefore(svg, o.before ?? null);
     const group = document.createElementNS(NS, "g");
     svg.appendChild(group);
+    // the explainer props sit in cast space under the gears' SVG (faces) and over the 3D bodies' canvas
+    const VG = root.Cast.VIGNETTES, propsG = document.createElementNS(NS, "g");
+    group.appendChild(propsG);
+    const props = VG ? p.vignettes.map((v) => {
+      const g = document.createElementNS(NS, "g");
+      g.setAttribute("data-vignette", v.kind);
+      propsG.appendChild(g);
+      return { v, g, st: VG.V[v.kind].build(g, v) };
+    }) : [];
     const views = cast.map((a) => a.mount(group));
     const FACE_MATRIX = faceMatrix();
 
@@ -625,6 +658,14 @@
       draw(t) {
         const g = groupAt(t, p.keys);
         group.setAttribute("transform", `translate(${f2(g.x)} ${f2(g.y)}) scale(${Math.round(g.s * 1000) / 1000})`);
+        for (const pr of props) {
+          const o = VG.showAt(t, pr.v);
+          pr.g.setAttribute("display", o > 0 ? "inline" : "none");
+          if (o > 0) {
+            pr.g.setAttribute("opacity", String(Math.round(o * 1000) / 1000));
+            VG.V[pr.v.kind].draw(pr.st, t, pr.v);
+          }
+        }
         const poses = views.map((v) => v.draw(t));
         if (bodies) {
           for (const v of views) v.nodes.plate.setAttribute("transform", `${v.nodes.plate.getAttribute("transform")} ${FACE_MATRIX}`);
@@ -635,6 +676,7 @@
         look,
         places: places.map((P, k) => ({ kind: o.scenes[k].kind, start: o.scenes[k].start, ...(P.hidden ? { hidden: true } : { anchor: P.anchor, scale: P.s }) })),
         actors: cast.length,
+        vignettes: p.vignettes.map((v) => ({ kind: v.kind, beat: v.beat, at: v.a, payoff: v.k })),
         acts: Object.values(p.specs).reduce((n, s) => n + s.moves.length, 0),
         bed: { bpm: bp.bpm, key: bp.key, notes: bp.notes.length, segments: bp.segments.length },
         warnings,
@@ -663,5 +705,5 @@
     };
   }
 
-  root.Cast = { COL, GEARS, CLUSTER, HEAD, SPOTS, gearPath, gearRig, spotBox, placeFor, targetOf, groupAt, plan, actors, segments, bedPlan, addTone, addBuffer, mixBed, gearOutline, faceMatrix, mount };
+  root.Cast = { COL, GEARS, CLUSTER, headFor, SPOTS, gearPath, gearRig, spotBox, placeFor, targetOf, groupAt, plan, actors, segments, bedPlan, addTone, addBuffer, mixBed, gearOutline, faceMatrix, mount };
 })(typeof window !== "undefined" ? window : globalThis);
