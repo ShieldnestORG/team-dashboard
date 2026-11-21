@@ -1,6 +1,7 @@
 import { createTransport, type Transporter } from "nodemailer";
 import { logger } from "../middleware/logger.js";
 import { sendMailBrevoFirst, brevoConfigured } from "./brevo.js";
+import { h, meta, monoBox, renderOwnerEmail } from "./email-theme.js";
 import { alertEvents, type Db } from "@paperclipai/db";
 
 // Alert types
@@ -82,11 +83,6 @@ export function getRecentAlerts(): AlertRecord[] {
   return [...recentAlerts].reverse(); // newest first
 }
 
-// Alert text can carry remote error strings; the email puts it in HTML.
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 // opts.cooldownKey: a caller that sends one type for several subjects (e.g. one
 // alert per blog target) passes its own key, so one subject's cooldown cannot
 // swallow another's alert. Defaults to the type.
@@ -120,20 +116,23 @@ export async function sendAlert(
   } else {
     const to = process.env.ALERT_EMAIL_TO;
     const from = process.env.ALERT_EMAIL_FROM || process.env.SMTP_USER;
-    const html = `<div style="font-family:system-ui,sans-serif;max-width:600px">
-          <h2 style="color:#ef4444">${escapeHtml(subject)}</h2>
-          <p style="color:#666;font-size:12px">Alert type: ${type} | ${new Date().toISOString()}</p>
-          <div style="background:#f8f8f8;padding:16px;border-radius:8px;margin:16px 0">
-            <pre style="white-space:pre-wrap;font-size:14px">${escapeHtml(body)}</pre>
-          </div>
-          <p style="color:#999;font-size:11px">Sent by Team Dashboard alerting system</p>
-        </div>`;
+    // Light branded frame (email-theme.ts). Alert text can carry remote error
+    // strings: the frame escapes every value it is given. The plain-text part
+    // keeps the body exactly as sent.
+    const stamp = new Date().toISOString();
+    const metaLine = `Alert type: ${type} | ${stamp}`;
+    const { html, text } = renderOwnerEmail({
+      title: subject,
+      label: "Alert",
+      body: h`${meta(h`Alert type: ${type} | <span style="white-space:nowrap;">${stamp}</span>`)}${monoBox(body, { pre: true })}`,
+      text: `${subject}\n\n${metaLine}\n\n${body}\n\nOwner-only message from Team Dashboard.`,
+    });
 
     if (to && from && (brevoConfigured() || getTransporter())) {
       try {
         // Brevo-first; falls back to Proton SMTP if Brevo is unconfigured or fails.
         const sent = await sendMailBrevoFirst(
-          { from, to, subject: `[Team Dashboard] ${subject}`, html },
+          { from, to, subject: `[Team Dashboard] ${subject}`, html, text },
           getTransporter(),
         );
         if (sent) {

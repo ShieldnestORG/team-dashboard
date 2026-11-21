@@ -2,12 +2,43 @@
 // Reusable transactional email service
 // Built on the same nodemailer transporter pattern as alerting.ts
 // Templates: directory-welcome, partner-welcome, intel-welcome,
-//            checkout-reminder, renewal-reminder
+//            checkout-reminder, renewal-reminder, and the affiliate set.
+//
+// Look: every template is rendered through ./email-theme.ts (the house email
+// look ported from coherencedaddy-landing emails/theme.ts). A builder picks its
+// frame: "transactional" (account/activity mail), "commercial" (nudges and
+// promos; adds the unsubscribe link) or owner-only (light frame for mail that
+// goes to the business inbox). Every send carries a plain-text part.
 // ---------------------------------------------------------------------------
 
 import { createTransport, type Transporter } from "nodemailer";
 import { logger } from "../middleware/logger.js";
 import { sendMailBrevoFirst, brevoConfigured } from "./brevo.js";
+import {
+  CARD,
+  HAIRLINE,
+  bulletList,
+  code,
+  ctaButton,
+  dataTable,
+  escapeHtml,
+  h,
+  heading,
+  lead,
+  label,
+  link,
+  monoBox,
+  note,
+  nowrap,
+  para,
+  raw,
+  renderCustomerEmail,
+  renderOwnerEmail,
+  rule,
+  secondaryLink,
+  type CustomerKind,
+  type SafeHtml,
+} from "./email-theme.js";
 
 // Lazy transporter — same env vars as alerting.ts
 let _transporter: Transporter | null = null;
@@ -30,35 +61,6 @@ function getTransporter(): Transporter | null {
   });
 
   return _transporter;
-}
-
-/**
- * Send a password-reset link (better-auth `sendResetPassword` callback).
- * Silently skips if SMTP is not configured — better-auth still returns success
- * to the caller regardless, which avoids leaking whether an email is registered.
- */
-export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
-  const transport = getTransporter();
-  if (!transport) {
-    logger.warn({ to }, "email-templates: SMTP not configured — password reset email skipped");
-    return;
-  }
-  const from = process.env.ALERT_EMAIL_FROM ?? "noreply@coherencedaddy.com";
-  const safeUrl = String(resetUrl)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  await transport.sendMail({
-    from,
-    to,
-    subject: "Reset your team dashboard password",
-    html: [
-      "<p>We received a request to reset your team dashboard password.</p>",
-      `<p><a href="${safeUrl}">Click here to choose a new password</a>.</p>`,
-      "<p>This link expires shortly. If you didn't request a reset, you can safely ignore this email.</p>",
-    ].join(""),
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -150,78 +152,64 @@ export interface EmailVars {
 }
 
 // ---------------------------------------------------------------------------
-// Shared HTML shell
+// Frames: every builder returns { subject, html, text }
 // ---------------------------------------------------------------------------
 
-function htmlShell(title: string, body: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${title}</title>
-</head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:32px 0;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;max-width:600px;width:100%;">
-          <!-- Header -->
-          <tr>
-            <td style="background:#FF876D;padding:24px 32px;">
-              <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.5px;">
-                Coherence Daddy
-              </span>
-            </td>
-          </tr>
-          <!-- Body -->
-          <tr>
-            <td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">
-              ${body}
-            </td>
-          </tr>
-          <!-- Footer -->
-          <tr>
-            <td style="background:#f9f9f9;padding:20px 32px;border-top:1px solid #eeeeee;">
-              <p style="margin:0;font-size:12px;color:#999999;">
-                Coherence Daddy &mdash; <a href="https://coherencedaddy.com" style="color:#4ECDC4;text-decoration:none;">coherencedaddy.com</a><br />
-                If you didn&rsquo;t sign up for this, you can safely ignore this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+interface Built {
+  subject: string;
+  html: string;
+  text: string;
 }
 
-function ctaButton(href: string, label: string): string {
-  return `<p style="margin:24px 0 0;">
-    <a href="${href}" style="display:inline-block;background:#FF876D;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:6px;">
-      ${label}
-    </a>
-  </p>`;
+/** Customer-facing mail in the full house letterhead. */
+function customer(subject: string, body: SafeHtml, kind: CustomerKind = "transactional"): Built {
+  const { html, text } = renderCustomerEmail({ title: subject, body, kind });
+  return { subject, html, text };
 }
 
-function secondaryLink(href: string, label: string): string {
-  return `<p style="margin:12px 0 0;font-size:13px;">
-    <a href="${href}" style="color:#4ECDC4;">${label}</a>
-  </p>`;
+/** Owner-only mail in the light branded frame (no postal address, no unsubscribe). */
+function ownerOnly(subject: string, title: string, tag: string, body: SafeHtml): Built {
+  const { html, text } = renderOwnerEmail({ title, label: tag, body });
+  return { subject, html, text };
 }
 
-function monoBox(content: string): string {
-  return `<div style="margin:16px 0;background:#f4f4f4;border:1px solid #e0e0e0;border-radius:4px;padding:14px 16px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;color:#333333;word-break:break-all;">
-    ${content}
-  </div>`;
+/** The closing "Questions?" block most affiliate mails end with. */
+function questions(sentence: SafeHtml): SafeHtml {
+  return h`${rule()}${note(sentence)}`;
+}
+
+function mailto(addr: string): SafeHtml {
+  return link(`mailto:${addr}`, addr);
+}
+
+/**
+ * Send a password-reset link (better-auth `sendResetPassword` callback).
+ * Silently skips if SMTP is not configured — better-auth still returns success
+ * to the caller regardless, which avoids leaking whether an email is registered.
+ */
+export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
+  const transport = getTransporter();
+  if (!transport) {
+    logger.warn({ to }, "email-templates: SMTP not configured — password reset email skipped");
+    return;
+  }
+  const from = process.env.ALERT_EMAIL_FROM ?? "noreply@coherencedaddy.com";
+  const subject = "Reset your team dashboard password";
+  const body = h`
+    ${heading("Reset your password")}
+    ${para("We received a request to reset your team dashboard password.")}
+    ${ctaButton(String(resetUrl), "Choose a new password")}
+    ${note("This link expires shortly. If you didn't request a reset, you can safely ignore this email.")}
+  `;
+  const { html, text } = customer(subject, body);
+  await transport.sendMail({ from, to, subject, html, text });
 }
 
 // ---------------------------------------------------------------------------
 // Template builders
 // ---------------------------------------------------------------------------
 
-function buildDirectoryWelcome(vars: EmailVars): { subject: string; html: string } {
+function buildDirectoryWelcome(vars: EmailVars): Built {
   const tier = vars.listingTier ?? "Featured";
   const dirUrl = vars.directoryUrl ?? "https://directory.coherencedaddy.com";
   const dashUrl = vars.dashboardUrl ?? "https://coherencedaddy.com/intel";
@@ -229,30 +217,28 @@ function buildDirectoryWelcome(vars: EmailVars): { subject: string; html: string
 
   const subject = `Your ${tier} listing is live on the Coherence Daddy Directory!`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Welcome to the Directory, ${name}!</h2>
-    <p style="margin:0 0 16px;">Your <strong>${tier}</strong> listing is now live on the Coherence Daddy Directory — real-time AI/ML, Crypto, DeFi, and DevTools intelligence for 530+ projects.</p>
+  const body = h`
+    ${heading(`Welcome to the Directory, ${name}!`)}
+    ${para(h`Your <strong>${tier}</strong> listing is now live on the Coherence Daddy Directory — real-time AI/ML, Crypto, DeFi, and DevTools intelligence for 530+ projects.`)}
 
-    <p style="margin:0 0 8px;font-weight:600;">What happens next:</p>
-    <ul style="margin:0 0 16px;padding-left:20px;">
-      <li style="margin-bottom:8px;">Your company card appears with a <strong>${tier}</strong> badge in search results</li>
-      <li style="margin-bottom:8px;">Our AI content engine will begin weaving your brand into relevant articles</li>
-      <li style="margin-bottom:8px;">Monthly analytics reports will land in your inbox automatically</li>
-    </ul>
+    ${lead("What happens next:")}
+    ${bulletList([
+      h`Your company card appears with a <strong>${tier}</strong> badge in search results`,
+      "Our AI content engine will begin weaving your brand into relevant articles",
+      "Monthly analytics reports will land in your inbox automatically",
+    ])}
 
     ${ctaButton(dirUrl, "View Your Listing →")}
     ${secondaryLink(dashUrl, "Manage your subscription")}
 
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Want more? The <a href="https://coherencedaddy.com/partner-network" style="color:#4ECDC4;">Partner Network</a> drives targeted traffic to your site through AI-generated content and tracked redirect links.
-    </p>
+    ${rule()}
+    ${note(h`Want more? The ${link("https://coherencedaddy.com/partner-network", "Partner Network")} drives targeted traffic to your site through AI-generated content and tracked redirect links.`)}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body);
 }
 
-function buildPartnerWelcome(vars: EmailVars): { subject: string; html: string } {
+function buildPartnerWelcome(vars: EmailVars): Built {
   const name = vars.companyName ?? vars.recipientName ?? "there";
   const dashUrl = vars.partnerDashboardUrl ?? "https://coherencedaddy.com/partner-dashboard";
   const token = vars.partnerToken;
@@ -261,89 +247,83 @@ function buildPartnerWelcome(vars: EmailVars): { subject: string; html: string }
 
   const dashLink = token ? `${dashUrl}?token=${token}` : dashUrl;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Welcome, ${name}!</h2>
-    <p style="margin:0 0 16px;">You&rsquo;re now part of the Coherence Daddy Partner Network. Our AI content engine will start driving traffic your way through articles, social content, and AEO-optimized posts.</p>
+  const body = h`
+    ${heading(`Welcome, ${name}!`)}
+    ${para("You’re now part of the Coherence Daddy Partner Network. Our AI content engine will start driving traffic your way through articles, social content, and AEO-optimized posts.")}
 
-    <p style="margin:0 0 8px;font-weight:600;">Your partner dashboard is ready:</p>
-    <ul style="margin:0 0 16px;padding-left:20px;">
-      <li style="margin-bottom:8px;">Track real-time click counts and content mentions</li>
-      <li style="margin-bottom:8px;">See which content pieces are sending you traffic</li>
-      <li style="margin-bottom:8px;">View 30-day trends and source breakdowns</li>
-    </ul>
+    ${lead("Your partner dashboard is ready:")}
+    ${bulletList([
+      "Track real-time click counts and content mentions",
+      "See which content pieces are sending you traffic",
+      "View 30-day trends and source breakdowns",
+    ])}
 
     ${ctaButton(dashLink, "Open Your Dashboard →")}
 
-    ${token ? `<p style="margin:16px 0 0;font-size:13px;color:#777777;">Your dashboard link is unique to you — bookmark it. Your access token: <code style="background:#f4f4f4;padding:2px 6px;border-radius:3px;">${token}</code></p>` : ""}
+    ${token && h`${note("Your dashboard link is unique to you — bookmark it. Your access token:")}${monoBox(token)}`}
 
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reply to this email or reach us at <a href="mailto:info@coherencedaddy.com" style="color:#4ECDC4;">info@coherencedaddy.com</a>.
-    </p>
+    ${rule()}
+    ${note(h`Questions? Reply to this email or reach us at ${mailto("info@coherencedaddy.com")}.`)}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body);
 }
 
-function buildIntelWelcome(vars: EmailVars): { subject: string; html: string } {
+function buildIntelWelcome(vars: EmailVars): Built {
   const plan = vars.planName ?? "Starter";
   const apiKey = vars.apiKey ?? "";
   const docsUrl = vars.docsUrl ?? "https://coherencedaddy.com/intel/docs";
 
   const subject = `Your Coherence Daddy Intel API key — ${plan}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Welcome to the Intel API!</h2>
-    <p style="margin:0 0 16px;">You&rsquo;re on the <strong>${plan}</strong> plan. Below is your API key — save it somewhere safe, it will only be shown once.</p>
+  const body = h`
+    ${heading("Welcome to the Intel API!")}
+    ${para(h`You’re on the <strong>${plan}</strong> plan. Below is your API key — save it somewhere safe, it will only be shown once.`)}
 
-    <p style="margin:0 0 4px;font-weight:600;font-size:13px;color:#555555;">YOUR API KEY</p>
+    ${label("Your API key")}
     ${monoBox(apiKey)}
 
-    <p style="margin:16px 0 8px;font-weight:600;">Quickstart:</p>
-    ${monoBox(`curl -H "Authorization: Bearer ${apiKey}" \\<br />&nbsp;&nbsp;https://api.coherencedaddy.com/api/intel/companies`)}
+    ${lead("Quickstart:")}
+    ${monoBox(h`curl https://api.coherencedaddy.com/api/intel/companies \\<br />&nbsp;&nbsp;-H "Authorization: Bearer ${apiKey}"`)}
 
-    <p style="margin:16px 0 8px;font-weight:600;">What you have access to:</p>
-    <ul style="margin:0 0 16px;padding-left:20px;">
-      <li style="margin-bottom:6px;"><code style="font-size:13px;">/api/intel/companies</code> — 530+ tracked projects</li>
-      <li style="margin-bottom:6px;"><code style="font-size:13px;">/api/intel/search</code> — full-text + vector search</li>
-      <li style="margin-bottom:6px;"><code style="font-size:13px;">/api/intel/prices</code> — hourly price updates</li>
-      <li style="margin-bottom:6px;"><code style="font-size:13px;">/api/intel/news</code> — aggregated news + social signals</li>
-    </ul>
+    ${lead("What you have access to:")}
+    ${bulletList([
+      h`${code("/api/intel/companies")} — 530+ tracked projects`,
+      h`${code("/api/intel/search")} — full-text + vector search`,
+      h`${code("/api/intel/prices")} — hourly price updates`,
+      h`${code("/api/intel/news")} — aggregated news + social signals`,
+    ])}
 
     ${ctaButton(docsUrl, "Read the Docs →")}
     ${secondaryLink("https://coherencedaddy.com/intel/billing", "Manage your subscription")}
 
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      If you didn&rsquo;t sign up, reply to this email and we&rsquo;ll revoke the key immediately.
-    </p>
+    ${rule()}
+    ${note("If you didn’t sign up, reply to this email and we’ll revoke the key immediately.")}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body);
 }
 
-function buildCheckoutReminder(vars: EmailVars): { subject: string; html: string } {
+function buildCheckoutReminder(vars: EmailVars): Built {
   const tier = vars.tierName ?? "your selected plan";
   const checkoutUrl = vars.checkoutUrl ?? "https://coherencedaddy.com";
   const name = vars.recipientName ?? "there";
 
   const subject = `You left something behind — complete your ${tier} checkout`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Still interested, ${name}?</h2>
-    <p style="margin:0 0 16px;">You started a checkout for <strong>${tier}</strong> but didn&rsquo;t complete it. Your spot is still available — pick up where you left off.</p>
+  const body = h`
+    ${heading(`Still interested, ${name}?`)}
+    ${para(h`You started a checkout for <strong>${tier}</strong> but didn’t complete it. Your spot is still available — pick up where you left off.`)}
 
     ${ctaButton(checkoutUrl, "Complete Checkout →")}
 
-    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
-      If you changed your mind, no action is needed — your checkout session will expire automatically.
-    </p>
+    ${note("If you changed your mind, no action is needed — your checkout session will expire automatically.")}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body, "commercial");
 }
 
-function buildRenewalReminder(vars: EmailVars): { subject: string; html: string } {
+function buildRenewalReminder(vars: EmailVars): Built {
   const subName = vars.subscriptionName ?? "your subscription";
   const renewalDate = vars.renewalDate ?? "soon";
   const manageUrl = vars.manageUrl ?? "https://coherencedaddy.com/intel/billing";
@@ -351,22 +331,20 @@ function buildRenewalReminder(vars: EmailVars): { subject: string; html: string 
 
   const subject = `Your ${subName} renews on ${renewalDate}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Renewal reminder, ${name}</h2>
-    <p style="margin:0 0 16px;">Just a heads-up: <strong>${subName}</strong> is set to automatically renew on <strong>${renewalDate}</strong>.</p>
-    <p style="margin:0 0 16px;">If you&rsquo;d like to make changes, update your plan, or cancel before then, use the link below.</p>
+  const body = h`
+    ${heading(`Renewal reminder, ${name}`)}
+    ${para(h`Just a heads-up: <strong>${subName}</strong> is set to automatically renew on <strong>${renewalDate}</strong>.`)}
+    ${para("If you’d like to make changes, update your plan, or cancel before then, use the link below.")}
 
     ${ctaButton(manageUrl, "Manage Subscription →")}
 
-    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
-      No action needed if you&rsquo;d like to continue — your subscription will renew automatically.
-    </p>
+    ${note("No action needed if you’d like to continue — your subscription will renew automatically.")}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body);
 }
 
-function buildAffiliateApplication(vars: EmailVars): { subject: string; html: string } {
+function buildAffiliateApplication(vars: EmailVars): Built {
   const affiliateName = vars.affiliateName ?? "Unknown";
   const email = vars.recipientEmail;
   const adminUrl =
@@ -374,66 +352,51 @@ function buildAffiliateApplication(vars: EmailVars): { subject: string; html: st
 
   const subject = `New Affiliate Application — ${affiliateName}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">New Affiliate Application</h2>
-    <p style="margin:0 0 16px;">
-      <strong>${affiliateName}</strong> (<a href="mailto:${email}" style="color:#4ECDC4;">${email}</a>)
-      has applied to become a Coherence Daddy affiliate. Their account is currently <strong>pending</strong> — review and approve or reject below.
-    </p>
+  const body = h`
+    ${para(h`<strong>${affiliateName}</strong> (${mailto(email)}) has applied to become a Coherence Daddy affiliate. Their account is currently <strong>pending</strong> — review and approve or reject below.`)}
     ${ctaButton(adminUrl, "Review Application →")}
-    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
-      Log in to the admin dashboard to change their status to <em>active</em> or <em>suspended</em>.
-    </p>
+    ${note(h`Log in to the admin dashboard to change their status to <em>active</em> or <em>suspended</em>.`)}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return ownerOnly(subject, "New Affiliate Application", "Affiliates", body);
 }
 
-function buildAffiliateApproved(vars: EmailVars): { subject: string; html: string } {
+function buildAffiliateApproved(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const dashUrl = vars.affiliateDashboardUrl ?? "https://affiliates.coherencedaddy.com/dashboard";
 
   const subject = "You're approved — Welcome to the Coherence Daddy Affiliate Program";
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Congratulations, ${name}!</h2>
-    <p style="margin:0 0 16px;">
-      Your affiliate account is now <strong>active</strong>. You can start adding prospects and earning commissions right away.
-    </p>
-    <p style="margin:0 0 8px;font-weight:600;">What to do next:</p>
-    <ul style="margin:0 0 16px;padding-left:20px;">
-      <li style="margin-bottom:8px;">Log in to your dashboard and add your first prospect</li>
-      <li style="margin-bottom:8px;">Share your referrals and track your earnings in real time</li>
-      <li style="margin-bottom:8px;">Reach out if you have any questions — we&rsquo;re here to help</li>
-    </ul>
+  const body = h`
+    ${heading(`Congratulations, ${name}!`)}
+    ${para(h`Your affiliate account is now <strong>active</strong>. You can start adding prospects and earning commissions right away.`)}
+    ${lead("What to do next:")}
+    ${bulletList([
+      "Log in to your dashboard and add your first prospect",
+      "Share your referrals and track your earnings in real time",
+      "Reach out if you have any questions — we’re here to help",
+    ])}
     ${ctaButton(dashUrl, "Go to Your Dashboard →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reply to this email or reach us at <a href="mailto:info@coherencedaddy.com" style="color:#4ECDC4;">info@coherencedaddy.com</a>.
-    </p>
+    ${questions(h`Questions? Reply to this email or reach us at ${mailto("info@coherencedaddy.com")}.`)}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body);
 }
 
-function buildAffiliateResetPassword(vars: EmailVars): { subject: string; html: string } {
+function buildAffiliateResetPassword(vars: EmailVars): Built {
   const token = vars.resetToken ?? "";
   const resetUrl = `https://affiliates.coherencedaddy.com/reset-password?token=${token}`;
 
   const subject = "Reset your Coherence Daddy affiliate password";
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Password reset request</h2>
-    <p style="margin:0 0 16px;">
-      Someone requested a password reset for your Coherence Daddy affiliate account. If that was you, click the button below. The link is valid for <strong>1 hour</strong>.
-    </p>
+  const body = h`
+    ${heading("Password reset request")}
+    ${para(h`Someone requested a password reset for your Coherence Daddy affiliate account. If that was you, click the button below. The link is valid for <strong>1 hour</strong>.`)}
     ${ctaButton(resetUrl, "Reset My Password →")}
-    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
-      If you didn&rsquo;t request this, you can safely ignore this email — your password will not change.
-    </p>
+    ${note("If you didn’t request this, you can safely ignore this email — your password will not change.")}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body);
 }
 
 // ---------------------------------------------------------------------------
@@ -459,9 +422,7 @@ function payoutMethodLabel(method: string | undefined): string {
   }
 }
 
-export function buildAffiliateCommissionCreated(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateCommissionCreated(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl =
@@ -469,34 +430,23 @@ export function buildAffiliateCommissionCreated(
     vars.affiliateDashboardUrl ??
     "https://affiliates.coherencedaddy.com/earnings";
   const amount = formatDollars(vars.amountCents);
-  const lead = vars.leadName ?? "a new lead";
+  const lead_ = vars.leadName ?? "a new lead";
   const kind = vars.type === "recurring" ? "recurring" : "initial";
 
-  const subject = `New commission pending — $${amount} from ${lead}`;
+  const subject = `New commission pending — $${amount} from ${lead_}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Nice work, ${name}!</h2>
-    <p style="margin:0 0 16px;">
-      A new <strong>${kind}</strong> commission of <strong>$${amount}</strong> just dropped into your ledger from <strong>${lead}</strong>.
-    </p>
-    <p style="margin:0 0 16px;">
-      Heads up: there&rsquo;s a standard <strong>30-day hold window</strong> — after that the commission moves from <em>pending</em> to <em>approved</em> and rolls into your next monthly payout batch.
-    </p>
+  const body = h`
+    ${heading(`Nice work, ${name}!`)}
+    ${para(h`A new <strong>${kind}</strong> commission of <strong>$${amount}</strong> just dropped into your ledger from <strong>${lead_}</strong>.`)}
+    ${para(h`Heads up: there’s a standard <strong>30-day hold window</strong> — after that the commission moves from <em>pending</em> to <em>approved</em> and rolls into your next monthly payout batch.`)}
     ${ctaButton(dashUrl, "View Your Earnings →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions? Reach us at ${mailto(support)}.`)}
   `;
 
-  const text = `Nice work, ${name}!\n\nA new ${kind} commission of $${amount} just dropped into your ledger from ${lead}.\n\nThere is a standard 30-day hold window — after that the commission moves from pending to approved and rolls into your next monthly payout batch.\n\nView your earnings: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliateCommissionApproved(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateCommissionApproved(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl =
@@ -509,26 +459,17 @@ export function buildAffiliateCommissionApproved(
 
   const subject = `$${total} in commissions approved`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Great news, ${name}!</h2>
-    <p style="margin:0 0 16px;">
-      <strong>${count}</strong> ${plural} totaling <strong>$${total}</strong> just passed the hold window and will be paid in your next monthly batch.
-    </p>
+  const body = h`
+    ${heading(`Great news, ${name}!`)}
+    ${para(h`<strong>${count}</strong> ${plural} totaling <strong>$${total}</strong> just passed the hold window and will be paid in your next monthly batch.`)}
     ${ctaButton(dashUrl, "View Your Earnings →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions? Reach us at ${mailto(support)}.`)}
   `;
 
-  const text = `Great news, ${name}!\n\n${count} ${plural} totaling $${total} just passed the hold window and will be paid in your next monthly batch.\n\nView your earnings: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliatePayoutSent(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliatePayoutSent(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl =
@@ -550,31 +491,20 @@ export function buildAffiliatePayoutSent(
 
   const subject = `Payout sent — $${amount}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Your payout is on its way, ${name}</h2>
-    <p style="margin:0 0 16px;">
-      We just sent <strong>$${amount}</strong> covering <strong>${count}</strong> commission${count === 1 ? "" : "s"} via <strong>${methodLabel}</strong>.
-    </p>
-    <p style="margin:0 0 4px;font-weight:600;font-size:13px;color:#555555;">REFERENCE</p>
+  const body = h`
+    ${heading(`Your payout is on its way, ${name}`)}
+    ${para(h`We just sent <strong>$${amount}</strong> covering <strong>${count}</strong> commission${count === 1 ? "" : "s"} via <strong>${methodLabel}</strong>.`)}
+    ${label("Reference")}
     ${monoBox(ref)}
-    <p style="margin:0 0 16px;">
-      Expected to land within <strong>${landing}</strong>.
-    </p>
+    ${para(h`Expected to land within <strong>${nowrap(landing)}</strong>.`)}
     ${ctaButton(dashUrl, "View Payout History →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions? Reach us at ${mailto(support)}.`)}
   `;
 
-  const text = `Your payout is on its way, ${name}.\n\nWe just sent $${amount} covering ${count} commission${count === 1 ? "" : "s"} via ${methodLabel}.\n\nReference: ${ref}\nExpected to land within ${landing}.\n\nView payout history: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliatePayoutHeld(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliatePayoutHeld(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl =
@@ -586,64 +516,41 @@ export function buildAffiliatePayoutHeld(
 
   const subject = "Action needed on your payout";
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Payout on hold, ${name}</h2>
-    <p style="margin:0 0 16px;">
-      Your pending payout of <strong>$${amount}</strong> has been placed on hold.
-    </p>
-    <p style="margin:0 0 4px;font-weight:600;font-size:13px;color:#555555;">REASON</p>
+  const body = h`
+    ${heading(`Payout on hold, ${name}`)}
+    ${para(h`Your pending payout of <strong>$${amount}</strong> has been placed on hold.`)}
+    ${label("Reason")}
     ${monoBox(reason)}
-    <p style="margin:16px 0;">
-      Please reply directly to this email, or reach us at
-      <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>, and we&rsquo;ll help sort it out.
-    </p>
+    ${para(h`Please reply directly to this email, or reach us at ${mailto(support)}, and we’ll help sort it out.`)}
     ${ctaButton(dashUrl, "View Payouts →")}
   `;
 
-  const text = `Payout on hold, ${name}.\n\nYour pending payout of $${amount} has been placed on hold.\n\nReason: ${reason}\n\nPlease reply directly to this email, or reach us at ${support}, and we will help sort it out.\n\nView payouts: ${dashUrl}`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliateLockExpired(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateLockExpired(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl =
     vars.dashboardUrl ??
     vars.affiliateDashboardUrl ??
     "https://affiliates.coherencedaddy.com/leads";
-  const lead = vars.leadName ?? "a lead";
+  const lead_ = vars.leadName ?? "a lead";
 
-  const subject = `Lock expired on ${lead}`;
+  const subject = `Lock expired on ${lead_}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Heads up, ${name}</h2>
-    <p style="margin:0 0 16px;">
-      The 30-day attribution lock on <strong>${lead}</strong> has expired without
-      the lead converting past qualification, and the record is now open for
-      re-assignment.
-    </p>
-    <p style="margin:0 0 16px;">
-      If you&rsquo;re still actively working this one, reach out to us right away
-      so we can review the status together — otherwise no action is needed.
-    </p>
+  const body = h`
+    ${heading(`Heads up, ${name}`)}
+    ${para(h`The 30-day attribution lock on <strong>${lead_}</strong> has expired without the lead converting past qualification, and the record is now open for re-assignment.`)}
+    ${para("If you’re still actively working this one, reach out to us right away so we can review the status together — otherwise no action is needed.")}
     ${ctaButton(dashUrl, "View Your Leads →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions? Reach us at ${mailto(support)}.`)}
   `;
 
-  const text = `Heads up, ${name}.\n\nThe 30-day attribution lock on ${lead} has expired without the lead converting past qualification, and the record is now open for re-assignment.\n\nIf you're still actively working this one, reach out to us right away — otherwise no action is needed.\n\nView your leads: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliateLeadStatusChange(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateLeadStatusChange(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl =
@@ -651,31 +558,22 @@ export function buildAffiliateLeadStatusChange(
     vars.dashboardUrl ??
     vars.affiliateDashboardUrl ??
     "https://affiliates.coherencedaddy.com/leads";
-  const lead = vars.leadName ?? "your lead";
+  const lead_ = vars.leadName ?? "your lead";
   const statusLabel = vars.statusLabel ?? vars.toStatus ?? "Updated";
 
-  const subject = `${lead}: ${statusLabel}`;
+  const subject = `${lead_}: ${statusLabel}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Status update, ${name}</h2>
-    <p style="margin:0 0 16px;">
-      <strong>${lead}</strong> moved to <strong>${statusLabel}</strong>.
-    </p>
+  const body = h`
+    ${heading(`Status update, ${name}`)}
+    ${para(h`<strong>${lead_}</strong> moved to <strong>${statusLabel}</strong>.`)}
     ${ctaButton(dashUrl, "View Lead →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions? Reach us at ${mailto(support)}.`)}
   `;
 
-  const text = `Status update, ${name}.\n\n${lead} moved to ${statusLabel}.\n\nView lead: ${dashUrl}\n\nQuestions? Reach us at ${support}.`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliateTierUpgraded(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateTierUpgraded(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl =
@@ -684,94 +582,63 @@ export function buildAffiliateTierUpgraded(
   const fromTier = vars.fromTier ? vars.fromTier.replace(/^./, (c) => c.toUpperCase()) : null;
   const rate = vars.newRate ?? "—";
 
-  const subject = `You&rsquo;re now a ${toTier} affiliate`;
+  const subject = `You're now a ${toTier} affiliate`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Congrats, ${name}! 🎉</h2>
-    <p style="margin:0 0 16px;">
-      You&rsquo;ve been promoted to <strong>${toTier}</strong>${fromTier ? ` from ${fromTier}` : ""}.
-      Your commission rate is now <strong>${rate}</strong> on all future qualifying referrals.
-    </p>
-    <p style="margin:0 0 16px;">
-      This kicks in automatically on your next approved commission — no action needed.
-    </p>
+  const body = h`
+    ${heading(`Congrats, ${name}! 🎉`)}
+    ${para(h`You’ve been promoted to <strong>${toTier}</strong>${fromTier ? ` from ${fromTier}` : ""}. Your commission rate is now <strong>${rate}</strong> on all future qualifying referrals.`)}
+    ${para("This kicks in automatically on your next approved commission — no action needed.")}
     ${ctaButton(dashUrl, "View Your Dashboard →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? Reach us at <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions? Reach us at ${mailto(support)}.`)}
   `;
 
-  const text = `Congrats, ${name}!\n\nYou've been promoted to ${toTier}${fromTier ? ` from ${fromTier}` : ""}. Your commission rate is now ${rate} on all future qualifying referrals.\n\nThis kicks in automatically on your next approved commission — no action needed.\n\nView your dashboard: ${dashUrl}\n\nQuestions? ${support}`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliateViolationWarning(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateViolationWarning(vars: EmailVars): Built {
   const name = vars.recipientName ?? "Team";
   const affiliate = vars.affiliateName ?? "an affiliate";
-  const rule = vars.ruleCode ?? "policy_violation";
+  const rule_ = vars.ruleCode ?? "policy_violation";
   const severity = vars.severity ?? "warning";
   const excerpt = vars.evidenceExcerpt ?? "(no excerpt available)";
   const adminUrl = vars.adminAffiliatesUrl ?? "https://dashboard.coherencedaddy.com/affiliates/compliance";
 
   const subject = `[${severity.toUpperCase()}] Affiliate violation detected — ${affiliate}`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Compliance alert for ${name}</h2>
-    <p style="margin:0 0 16px;">
-      A potential violation was detected for <strong>${affiliate}</strong>.
-    </p>
-    <p style="margin:0 0 8px;"><strong>Rule:</strong> ${rule}</p>
-    <p style="margin:0 0 8px;"><strong>Severity:</strong> ${severity}</p>
-    ${monoBox(excerpt.replace(/</g, "&lt;").replace(/>/g, "&gt;"))}
-    <p style="margin:16px 0 0;">
-      Review in the compliance queue to acknowledge, overturn, or enforce.
-    </p>
+  const body = h`
+    ${para(h`A potential violation was detected for <strong>${affiliate}</strong>.`)}
+    ${dataTable([
+      ["Rule", rule_],
+      ["Severity", severity],
+    ])}
+    ${label("Excerpt")}
+    ${monoBox(excerpt)}
+    ${para("Review in the compliance queue to acknowledge, overturn, or enforce.")}
     ${ctaButton(adminUrl, "Open Compliance Queue →")}
   `;
 
-  const text = `Compliance alert.\n\nA potential violation was detected for ${affiliate}.\nRule: ${rule}\nSeverity: ${severity}\nExcerpt: ${excerpt}\n\nReview: ${adminUrl}`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return ownerOnly(subject, `Compliance alert for ${name}`, "Compliance", body);
 }
 
-export function buildAffiliateSuspended(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateSuspended(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const reason = vars.reason ?? vars.suspensionReason ?? "a policy violation";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
 
   const subject = "Your affiliate account has been suspended";
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Important notice, ${name}</h2>
-    <p style="margin:0 0 16px;">
-      Your Coherence Daddy affiliate account has been <strong>suspended</strong>.
-    </p>
-    <p style="margin:0 0 8px;"><strong>Reason:</strong> ${reason}</p>
-    <p style="margin:16px 0 0;">
-      During suspension, you can still view your dashboard but cannot submit new
-      leads, request merch, or earn new commissions. Existing pending commissions
-      may be reviewed for clawback.
-    </p>
-    <p style="margin:16px 0 0;">
-      If you believe this is in error, reply to this email or reach us at
-      <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+  const body = h`
+    ${heading(`Important notice, ${name}`)}
+    ${para(h`Your Coherence Daddy affiliate account has been <strong>suspended</strong>.`)}
+    ${para(h`<strong>Reason:</strong> ${reason}`)}
+    ${para("During suspension, you can still view your dashboard but cannot submit new leads, request merch, or earn new commissions. Existing pending commissions may be reviewed for clawback.")}
+    ${para(h`If you believe this is in error, reply to this email or reach us at ${mailto(support)}.`)}
   `;
 
-  const text = `Important notice, ${name}.\n\nYour Coherence Daddy affiliate account has been suspended.\n\nReason: ${reason}\n\nDuring suspension, you can still view your dashboard but cannot submit new leads, request merch, or earn new commissions. Existing pending commissions may be reviewed for clawback.\n\nIf you believe this is in error, reply or reach us at ${support}.`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-export function buildAffiliateGiveawayWinner(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateGiveawayWinner(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const campaign = vars.campaignName ?? "our latest campaign";
   const prize = vars.prize ?? "a giveaway prize";
@@ -780,64 +647,37 @@ export function buildAffiliateGiveawayWinner(
 
   const subject = `🎁 You won the ${campaign} giveaway!`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Congrats, ${name}! 🎉</h2>
-    <p style="margin:0 0 16px;">
-      You&rsquo;re a winner in the <strong>${campaign}</strong> giveaway.
-      Your prize: <strong>${prize}</strong>.
-    </p>
-    <p style="margin:0 0 16px;">
-      Reply to this email within 7 days to claim your prize with your shipping
-      details (if applicable).
-    </p>
+  const body = h`
+    ${heading(`Congrats, ${name}! 🎉`)}
+    ${para(h`You’re a winner in the <strong>${campaign}</strong> giveaway. Your prize: <strong>${prize}</strong>.`)}
+    ${para("Reply to this email within 7 days to claim your prize with your shipping details (if applicable).")}
     ${ctaButton(dashUrl, "View Promotions →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions? ${mailto(support)}.`)}
   `;
 
-  const text = `Congrats, ${name}!\n\nYou're a winner in the ${campaign} giveaway. Prize: ${prize}.\n\nReply within 7 days to claim with shipping details.\n\nView: ${dashUrl}\n\nQuestions? ${support}`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body, "commercial");
 }
 
-export function buildAffiliateReengagement(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateReengagement(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
   const dashUrl = vars.affiliateDashboardUrl ?? "https://affiliates.coherencedaddy.com/dashboard";
   const days = vars.daysInactive ?? 45;
 
-  const subject = "We&rsquo;ve missed you — easy lead wins waiting";
+  const subject = "We've missed you — easy lead wins waiting";
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Still here, ${name}?</h2>
-    <p style="margin:0 0 16px;">
-      It&rsquo;s been about <strong>${days} days</strong> since you last submitted
-      a lead. Your account is still in good standing and your commission rate
-      is intact — we just wanted to nudge you in case life got busy.
-    </p>
-    <p style="margin:0 0 16px;">
-      Got a warm intro you&rsquo;ve been sitting on? A single well-qualified
-      lead can push you toward the next tier.
-    </p>
+  const body = h`
+    ${heading(`Still here, ${name}?`)}
+    ${para(h`It’s been about <strong>${days} days</strong> since you last submitted a lead. Your account is still in good standing and your commission rate is intact — we just wanted to nudge you in case life got busy.`)}
+    ${para("Got a warm intro you’ve been sitting on? A single well-qualified lead can push you toward the next tier.")}
     ${ctaButton(dashUrl, "Submit a Lead →")}
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions or need support? <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+    ${questions(h`Questions or need support? ${mailto(support)}.`)}
   `;
 
-  const text = `Still here, ${name}?\n\nIt's been about ${days} days since your last lead submission. Your account is still in good standing and your commission rate is intact.\n\nGot a warm intro? A single qualified lead can push you toward the next tier.\n\nSubmit a lead: ${dashUrl}\n\nQuestions? ${support}`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body, "commercial");
 }
 
-export function buildAffiliateMerchShipped(
-  vars: EmailVars,
-): { subject: string; html: string; text: string } {
+export function buildAffiliateMerchShipped(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const item = vars.merchItem ?? "Your merch";
   const tracking = vars.trackingNumber ?? null;
@@ -845,49 +685,31 @@ export function buildAffiliateMerchShipped(
 
   const subject = `${item} is on the way! 📦`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">Shipped, ${name}!</h2>
-    <p style="margin:0 0 16px;">
-      <strong>${item}</strong> just left the warehouse and is headed to you.
-    </p>
-    ${tracking ? `<p style="margin:0 0 8px;"><strong>Tracking number:</strong></p>${monoBox(tracking)}` : ""}
-    <p style="margin:16px 0 0;">
-      Tag <strong>@coherencedaddy</strong> when you post it — we love seeing
-      our community rep the brand.
-    </p>
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions? <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a>.
-    </p>
+  const body = h`
+    ${heading(`Shipped, ${name}!`)}
+    ${para(h`<strong>${item}</strong> just left the warehouse and is headed to you.`)}
+    ${tracking && h`${lead("Tracking number:")}${monoBox(tracking)}`}
+    ${para(h`Tag <strong>@coherencedaddy</strong> when you post it — we love seeing our community rep the brand.`)}
+    ${questions(h`Questions? ${mailto(support)}.`)}
   `;
 
-  const text = `Shipped, ${name}!\n\n${item} just left the warehouse and is headed to you.${tracking ? `\n\nTracking: ${tracking}` : ""}\n\nTag @coherencedaddy when you post it.\n\nQuestions? ${support}`;
-
-  return { subject, html: htmlShell(subject, body), text };
+  return customer(subject, body);
 }
 
-function buildAffiliatePendingDigest(vars: EmailVars): { subject: string; html: string } {
+function buildAffiliatePendingDigest(vars: EmailVars): Built {
   const name = vars.affiliateName ?? vars.recipientName ?? "there";
   const support = vars.supportEmail ?? "info@coherencedaddy.com";
 
   const subject = "Your Coherence Daddy affiliate application — still under review";
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;">We haven&rsquo;t forgotten you, ${name}</h2>
-    <p style="margin:0 0 16px;">
-      Your application to join the Coherence Daddy Affiliate Program is still under review by our team.
-      We typically respond within <strong>1–2 business days</strong> — we appreciate your patience.
-    </p>
-    <p style="margin:0 0 16px;">
-      Once approved, you&rsquo;ll receive an email with a link to your dashboard where you can start submitting prospects and tracking your earnings.
-    </p>
-    <p style="margin:0;font-size:13px;color:#777777;">
-      Questions or concerns? Reach us at
-      <a href="mailto:${support}" style="color:#4ECDC4;">${support}</a> — we&rsquo;re happy to help.
-    </p>
+  const body = h`
+    ${heading(`We haven’t forgotten you, ${name}`)}
+    ${para(h`Your application to join the Coherence Daddy Affiliate Program is still under review by our team. We typically respond within <strong>${nowrap("1–2 business days")}</strong> — we appreciate your patience.`)}
+    ${para("Once approved, you’ll receive an email with a link to your dashboard where you can start submitting prospects and tracking your earnings.")}
+    ${note(h`Questions or concerns? Reach us at ${mailto(support)} — we’re happy to help.`)}
   `;
 
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body);
 }
 
 // ---------------------------------------------------------------------------
@@ -902,46 +724,39 @@ interface SharerWelcomeInput {
   qrPng: Buffer; // 600×600 PNG
 }
 
-function buildSharerWelcome(input: Omit<SharerWelcomeInput, "to" | "qrPng">): {
-  subject: string;
-  html: string;
-} {
+function buildSharerWelcome(input: Omit<SharerWelcomeInput, "to" | "qrPng">): Built {
   const { shareUrl, referralCode, shareLandingUrl } = input;
   const subject = "You're in. Your share link is live.";
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:24px;color:#222222;line-height:1.2;">You&rsquo;re in. Now go make some noise.</h2>
-    <p style="margin:0 0 20px;font-size:15px;">
-      Every click on your link is tracked to you. Prize drops, discounts,
-      commissions — details TBA, but the leaderboard starts the second you
-      hit send.
-    </p>
+  // The QR is a CID attachment on a white chip: a QR needs a light ground to scan.
+  const qr = raw(
+    `<div style="text-align:center;margin:8px 0 0;"><img src="cid:sharer-qr" alt="${escapeHtml(`QR code for ${shareUrl}`)}" width="300" height="300" style="display:inline-block;box-sizing:border-box;width:100%;max-width:300px;height:auto;border:1px solid ${HAIRLINE};border-radius:10px;padding:8px;background:${CARD};" /></div>`,
+  );
+  const body = h`
+    ${heading("You’re in. Now go make some noise.")}
+    ${para("Every click on your link is tracked to you. Prize drops, discounts, commissions — details TBA, but the leaderboard starts the second you hit send.")}
 
-    <p style="margin:0 0 6px;font-weight:600;color:#222222;">Your share link</p>
-    ${monoBox(`<a href="${shareUrl}" style="color:#333333;text-decoration:none;">${shareUrl}</a>`)}
+    ${lead("Your share link")}
+    ${monoBox(link(shareUrl, raw(escapeHtml(shareUrl).replace(/\//g, "/<wbr>"))))}
 
-    <p style="margin:20px 0 6px;font-weight:600;color:#222222;">Your code</p>
+    ${lead("Your code")}
     ${monoBox(referralCode)}
 
-    <p style="margin:28px 0 10px;font-weight:600;color:#222222;">Your QR (600×600 — screenshot, print, sticker, tattoo, whatever)</p>
-    <div style="text-align:center;margin:8px 0 0;">
-      <img src="cid:sharer-qr" alt="QR code for ${shareUrl}" width="300" height="300" style="display:inline-block;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#ffffff;" />
-    </div>
+    ${lead("Your QR (600×600 — screenshot, print, sticker, tattoo, whatever)")}
+    ${qr}
 
     ${ctaButton(shareLandingUrl, "Open your share page →")}
 
-    <hr style="margin:28px 0;border:none;border-top:1px solid #eeeeee;" />
-    <p style="margin:0 0 8px;font-weight:600;color:#222222;">What&rsquo;s next</p>
-    <ul style="margin:0 0 16px;padding-left:20px;color:#444444;">
-      <li style="margin-bottom:6px;">Drop the link in your stories, group chats, pinned posts.</li>
-      <li style="margin-bottom:6px;">Top sharers land in prize drops. Details TBA.</li>
-      <li style="margin-bottom:6px;">Want commissions? Apply for the affiliate program from your share page — we review manually.</li>
-    </ul>
+    ${rule()}
+    ${lead("What’s next")}
+    ${bulletList([
+      "Drop the link in your stories, group chats, pinned posts.",
+      "Top sharers land in prize drops. Details TBA.",
+      "Want commissions? Apply for the affiliate program from your share page — we review manually.",
+    ])}
 
-    <p style="margin:20px 0 0;font-size:13px;color:#777777;">
-      No newsletters. We only email you for affiliate updates and prize drops.
-    </p>
+    ${note("No newsletters. We only email you for affiliate updates and prize drops.")}
   `;
-  return { subject, html: htmlShell(subject, body) };
+  return customer(subject, body, "commercial");
 }
 
 export async function sendSharerWelcomeEmail(input: SharerWelcomeInput): Promise<void> {
@@ -951,7 +766,7 @@ export async function sendSharerWelcomeEmail(input: SharerWelcomeInput): Promise
     return;
   }
   const from = process.env.ALERT_EMAIL_FROM ?? "noreply@coherencedaddy.com";
-  const { subject, html } = buildSharerWelcome({
+  const { subject, html, text } = buildSharerWelcome({
     shareUrl: input.shareUrl,
     referralCode: input.referralCode,
     shareLandingUrl: input.shareLandingUrl,
@@ -962,6 +777,7 @@ export async function sendSharerWelcomeEmail(input: SharerWelcomeInput): Promise
       to: input.to,
       subject,
       html,
+      text,
       attachments: [
         {
           filename: `coherence-daddy-${input.referralCode}.png`,
@@ -1001,70 +817,71 @@ export async function sendTransactional(
 
   let subject: string;
   let html: string;
+  let text: string;
 
   switch (template) {
     case "directory-welcome":
-      ({ subject, html } = buildDirectoryWelcome(vars));
+      ({ subject, html, text } = buildDirectoryWelcome(vars));
       break;
     case "partner-welcome":
-      ({ subject, html } = buildPartnerWelcome(vars));
+      ({ subject, html, text } = buildPartnerWelcome(vars));
       break;
     case "intel-welcome":
-      ({ subject, html } = buildIntelWelcome(vars));
+      ({ subject, html, text } = buildIntelWelcome(vars));
       break;
     case "checkout-reminder":
-      ({ subject, html } = buildCheckoutReminder(vars));
+      ({ subject, html, text } = buildCheckoutReminder(vars));
       break;
     case "renewal-reminder":
-      ({ subject, html } = buildRenewalReminder(vars));
+      ({ subject, html, text } = buildRenewalReminder(vars));
       break;
     case "affiliate-application":
-      ({ subject, html } = buildAffiliateApplication(vars));
+      ({ subject, html, text } = buildAffiliateApplication(vars));
       break;
     case "affiliate-approved":
-      ({ subject, html } = buildAffiliateApproved(vars));
+      ({ subject, html, text } = buildAffiliateApproved(vars));
       break;
     case "affiliate-reset-password":
-      ({ subject, html } = buildAffiliateResetPassword(vars));
+      ({ subject, html, text } = buildAffiliateResetPassword(vars));
       break;
     case "affiliate-pending-digest":
-      ({ subject, html } = buildAffiliatePendingDigest(vars));
+      ({ subject, html, text } = buildAffiliatePendingDigest(vars));
       break;
     case "affiliate-commission-created":
-      ({ subject, html } = buildAffiliateCommissionCreated(vars));
+      ({ subject, html, text } = buildAffiliateCommissionCreated(vars));
       break;
     case "affiliate-commission-approved":
-      ({ subject, html } = buildAffiliateCommissionApproved(vars));
+      ({ subject, html, text } = buildAffiliateCommissionApproved(vars));
       break;
     case "affiliate-payout-sent":
-      ({ subject, html } = buildAffiliatePayoutSent(vars));
+      ({ subject, html, text } = buildAffiliatePayoutSent(vars));
       break;
     case "affiliate-payout-held":
-      ({ subject, html } = buildAffiliatePayoutHeld(vars));
+      ({ subject, html, text } = buildAffiliatePayoutHeld(vars));
       break;
     case "affiliate-lock-expired":
-      ({ subject, html } = buildAffiliateLockExpired(vars));
+      ({ subject, html, text } = buildAffiliateLockExpired(vars));
       break;
     case "affiliate-lead-status-change":
-      ({ subject, html } = buildAffiliateLeadStatusChange(vars));
+      ({ subject, html, text } = buildAffiliateLeadStatusChange(vars));
       break;
     case "affiliate-tier-upgraded":
-      ({ subject, html } = buildAffiliateTierUpgraded(vars));
+      ({ subject, html, text } = buildAffiliateTierUpgraded(vars));
       break;
     case "affiliate-violation-warning":
-      ({ subject, html } = buildAffiliateViolationWarning(vars));
+      ({ subject, html, text } = buildAffiliateViolationWarning(vars));
       break;
     case "affiliate-suspended":
-      ({ subject, html } = buildAffiliateSuspended(vars));
+      ({ subject, html, text } = buildAffiliateSuspended(vars));
       break;
     case "affiliate-giveaway-winner":
-      ({ subject, html } = buildAffiliateGiveawayWinner(vars));
+      ({ subject, html, text } = buildAffiliateGiveawayWinner(vars));
       break;
     case "affiliate-reengagement":
-      ({ subject, html } = buildAffiliateReengagement(vars));
+      ({ subject, html, text } = buildAffiliateReengagement(vars));
       break;
     case "affiliate-merch-shipped":
-      ({ subject, html } = buildAffiliateMerchShipped(vars));
+      ({ subject, html, text } = buildAffiliateMerchShipped(vars));
       break;
     default: {
       const _exhaustive: never = template;
@@ -1075,7 +892,7 @@ export async function sendTransactional(
 
   try {
     // Brevo-first; falls back to Proton SMTP if Brevo is unconfigured or fails.
-    const sent = await sendMailBrevoFirst({ from, to, bcc, subject, html }, transport);
+    const sent = await sendMailBrevoFirst({ from, to, bcc, subject, html, text }, transport);
     if (sent) {
       logger.info({ template, to }, "email-templates: sent");
     } else {
