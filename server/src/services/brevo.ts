@@ -3,7 +3,7 @@
 //
 // Mirrors the landing's lib/brevo.ts: a plain HTTPS POST to Brevo's API using
 // BREVO_API_KEY — no SDK (Node 18+ global fetch). Accepts the nodemailer-style
-// { from, to, subject, html, bcc, attachments } shape used by the existing
+// { from, to, subject, html, text, bcc, attachments } shape used by the existing
 // alerting + email-templates call sites so swapping in is a one-line change.
 //
 // `sendMailBrevoFirst` prefers Brevo and falls back to the provided nodemailer
@@ -34,6 +34,8 @@ export interface BackendMailOpts {
   to: string | string[];
   subject: string;
   html: string;
+  /** Plain-text alternative. Every branded send passes one. */
+  text?: string;
   bcc?: string | string[];
   attachments?: MailAttachment[];
 }
@@ -65,6 +67,7 @@ export async function sendBrevoEmail(opts: BackendMailOpts): Promise<boolean> {
     subject: opts.subject,
     htmlContent: opts.html,
   };
+  if (opts.text) body.textContent = opts.text;
   const bcc = toAddrList(opts.bcc);
   if (bcc) body.bcc = bcc;
   if (opts.attachments?.length) {
@@ -123,6 +126,7 @@ export async function sendMailBrevoFirst(
       bcc: opts.bcc,
       subject: opts.subject,
       html: opts.html,
+      text: opts.text,
       attachments: opts.attachments,
     });
     return true;

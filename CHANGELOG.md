@@ -7,6 +7,18 @@ until they ship to production.
 
 ## [Unreleased]
 
+### Branded emails — team-dashboard mail moves onto the house email look (2026-11-21, DEV-141)
+
+- New `server/src/services/email-theme.ts`: palette, PNG monogram + coral rule, components and two frames ported from
+  coherencedaddy-landing `emails/theme.ts` (ink-on-coral buttons, ink underlined links, no white label on coral).
+- All 21 `sendTransactional` templates, the dashboard password-reset mail and the shop-sharer welcome use it; customer mail
+  carries `Coherence Daddy · 415 Dairy Rd E413 · Kahului, HI 96732`, commercial mail adds an Unsubscribe link
+  (by email: no suppression list exists in this repo yet).
+- Owner-only mail (alerts, new-member notice, affiliate application, compliance alert) gets the light owner frame.
+- Every send now has a plain-text part (`text` through Brevo and the SMTP fallback). Text values are escaped when put in
+  the HTML. Two subjects that carried raw `&rsquo;` entities now use real apostrophes.
+- Guide: `docs/ux/email-look.md`.
+
 ### YouTube script v2 — honest scripts, owner's topic mix, one a day, archive (2026-10-08)
 
 - New script prompt + deterministic checker (`script-validator.ts`) with up to two repairs and no filler fallback; length

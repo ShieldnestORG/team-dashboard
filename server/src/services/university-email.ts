@@ -9,7 +9,12 @@
 //
 // FROM, subject, body, and "— Mark" voice are all owned by the storefront
 // template; we never set them here.
+//
+// The one mail team-dashboard renders itself is the owner-only "new paying
+// member" notice (buildNewMemberOwnerEmail below), in the house email look.
 // ---------------------------------------------------------------------------
+
+import { dataTable, h, renderOwnerEmail } from "./email-theme.js";
 
 // Deep-links into the portal / storefront. Fixed per the email contract.
 export const UNIVERSITY_LOGIN_URL =
@@ -87,4 +92,30 @@ export function firstNameFromDisplayName(
 ): string | undefined {
   const first = displayName?.trim().split(/\s+/)[0];
   return first || undefined;
+}
+
+/**
+ * Owner-only notice for every NEW paying member (sent via Brevo by
+ * university-stripe-handler.ts). Light branded frame; every value is escaped.
+ * `plan` is the display label ("Monthly"/"Annual"), not the plan key.
+ */
+export function buildNewMemberOwnerEmail(args: {
+  email: string;
+  displayName: string | null | undefined;
+  plan: string;
+  chargedDisplay: string;
+  whenIso: string;
+}): { subject: string; html: string; text: string } {
+  const subject = `💸 New ${args.chargedDisplay} member: ${args.email}`;
+  const { html, text } = renderOwnerEmail({
+    title: "💸 New paying member",
+    label: "Membership",
+    body: dataTable([
+      ["Email", h`<strong>${args.email}</strong>`],
+      ["Name", args.displayName ? args.displayName : "—"],
+      ["Plan", args.plan],
+      ["When", args.whenIso],
+    ]),
+  });
+  return { subject, html, text };
 }

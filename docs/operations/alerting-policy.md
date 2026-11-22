@@ -24,6 +24,10 @@ failures + host egress alerts = multiple emails/day).
   (the `cron_breaker` lesson below). The default key is still the type.
 - Since 2026-11-04 the email HTML escapes `<`, `>` and `&` in the subject and body: alert
   text carries remote error strings (HTML error pages, provider bodies).
+- Since 2026-11-21 the alert email is wrapped in the light Coherence Daddy owner frame
+  (`renderOwnerEmail` in `email-theme.ts`: monogram, coral rule, title, type + time line, body in a monospace chip) and
+  carries a plain-text part with the body exactly as sent. The subject (`[Team Dashboard] <subject>`), severity routing,
+  cooldowns and escaping are unchanged. See [Email look](../ux/email-look.md).
 - `cron_breaker` (circuit breaker auto-disabling a crash-looping job) got its own type on
   2026-07-09 — it previously shared `cron_stale`'s cooldown key, so a watchdog alert could
   silently suppress a breaker trip for an hour.
