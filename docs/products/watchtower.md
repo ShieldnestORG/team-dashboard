@@ -153,9 +153,20 @@ PR for the source list).
 4. Storefront-side `/api/email/watchtower` Resend template (mirrors `lib/creditscore-email.ts`).
 5. Portal CRUD + dashboard read view (Worker A).
 6. Structure diagram update — register the watchtower service in `ui/src/pages/Structure.tsx` `DEFAULT_DIAGRAM`.
+7. **Gemini engine is failing** (measured 2026-11-16/17): every call returns `429 You exceeded your current quota` (class `capped`), and since at least 2026-10-19 21–26 of its 26 weekly answers were empty or a short error. Runs complete on the other four engines, so digests are one engine short. Fix the Gemini API plan or billing (owner), then check that a run's Gemini answers are full length again.
 
 ## Changelog
 
+- **2026-11-16** — **Three own-brand comped subscriptions** (owner: "turn on watchtower for coherence
+  daddy and eventrace and jointhecoherent.com"): Coherence Daddy (`coherencedaddy.com`, digest to
+  info@coherencedaddy.com), Evntrace (`evntrace.com`, info@evntrace.com) and Coherent Education
+  (`jointhecoherent.com`, digest to support@coherencedaddy.com: that domain has no mail server, and
+  its site lists that address). Same shape as the 2026-10-11 comps: `active`, weekly,
+  `watchtower_monthly`, no Stripe ids, prompt version 1 (actor label `owner-request-2026-11-16`),
+  5 discovery prompts each that never name the brand. Written straight into the production database
+  in one transaction (skip if the domain already exists). One `test` run each the same night:
+  5 prompts × 5 engines, 0 mentions for all three; Gemini answered 429 (follow-up 7). First digests:
+  the Monday 09:00 UTC cron after that.
 - **2026-10-11** — **Four comped ecosystem subscriptions** (owner: "put them on the watchtower
   for free"): Starwise Ventures, Exegesis Ventures, Mark Joseph Jr Co, Upright Prospects. Seeded by
   `server/scripts/seed-ecosystem-partners-2026-10-11.ts` (dry run by default, `--apply` to write,
