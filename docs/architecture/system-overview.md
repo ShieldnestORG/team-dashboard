@@ -61,7 +61,7 @@ All properties below are owned by the **ShieldnestORG** Vercel organization unle
 - **app.tokns.fi** — crypto dashboard (NFTs, swaps, staking, wallet tracking). Vercel project: `shieldnestorg/tokns`. Blog content surfaces as a **"News & Insights"** section at the bottom of `/dashboard` — **planned**, not yet live.
 - **TX Blockchain** (tx.org) — Cosmos SDK chain; ShieldNest runs a validator. Goal: #1 validator via tokns.fi delegation.
 - **Trustee DAO** (dao.nestd.xyz) — DAO governance platform on VPS4 (31.220.61.14)
-- **rollwithsolo.com / runatthebullets.com** — ShieldNest properties; were on VPS3 (147.79.78.251) which is decommissioning post-2026-05-08 compromise. Migration target TBD.
+- **rollwithsolo.com / runatthebullets.com** — ShieldNest properties; were on VPS3 (147.79.78.251), which was rebuilt for another project on 2026-09-26 and is not theirs any more (corrected 2026-10-15; until then this said "which is decommissioning post-2026-05-08 compromise"). Migration target TBD.
 
 ### Production VPS layout (post-2026-05-09 swap)
 
